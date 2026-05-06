@@ -5,12 +5,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="BAB_", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    database_url: str = Field(default="sqlite+aiosqlite:///./bab.db")
-    secret_key: str = Field(default="dev-secret-key-change-me-minimum-32-chars")
-    encryption_key: str | None = None
-    environment: str = "development"
+    database_url: str = Field(
+        default="sqlite+aiosqlite:///./bab.db",
+        validation_alias="DATABASE_URL",
+    )
+    secret_key: str = Field(min_length=32, validation_alias="BAB_SECRET_KEY")
+    encryption_key: str = Field(validation_alias="BAB_ENCRYPTION_KEY")
+    environment: str = Field(default="development", validation_alias="BAB_ENVIRONMENT")
 
 
 @lru_cache
