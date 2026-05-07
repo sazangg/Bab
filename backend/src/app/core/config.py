@@ -13,7 +13,10 @@ class Settings(BaseSettings):
     )
     secret_key: str = Field(min_length=32, validation_alias="BAB_SECRET_KEY")
     encryption_key: str = Field(validation_alias="BAB_ENCRYPTION_KEY")
-    environment: str = Field(default="development", validation_alias="BAB_ENVIRONMENT")
+    environment: str = Field(
+        default="development",
+        validation_alias="BAB_ENVIRONMENT",
+    )
 
 
 @lru_cache
