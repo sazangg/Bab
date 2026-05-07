@@ -5,12 +5,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.modules.setup import facade
+from app.modules.setup.errors import SetupAlreadyCompletedError
 from app.modules.setup.schemas import (
     CreateFirstAdminRequest,
     CreateFirstAdminResponse,
     SetupStatusResponse,
 )
-from app.modules.setup.service import SetupAlreadyCompletedError
 
 router = APIRouter(prefix="/setup", tags=["setup"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
