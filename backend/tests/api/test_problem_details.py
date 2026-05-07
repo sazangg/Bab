@@ -22,7 +22,7 @@ def _add_problem_test_routes(app_client) -> None:
     @router.get("/test/problem-error")
     async def problem_error():
         raise ProblemException(
-            type="urn:bab:error:example",
+            problem_type="urn:bab:error:example",
             title="Example Error",
             status=409,
             detail="Example conflict",

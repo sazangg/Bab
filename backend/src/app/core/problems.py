@@ -7,8 +7,9 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
+type ProblemExtra = dict[str, Any]
 
-DEFAULT_PROBLEM_TYPES = {
+DEFAULT_PROBLEM_TYPES: dict[int, tuple[str, str]] = {
     status.HTTP_400_BAD_REQUEST: ("urn:bab:error:bad-request", "Bad Request"),
     status.HTTP_401_UNAUTHORIZED: ("urn:bab:error:unauthorized", "Unauthorized"),
     status.HTTP_403_FORBIDDEN: ("urn:bab:error:forbidden", "Forbidden"),
@@ -44,13 +45,13 @@ class ProblemException(Exception):
     def __init__(
         self,
         *,
-        type: str,
+        problem_type: str,
         title: str,
         status: int,
         detail: str,
-        extra: dict[str, Any] | None = None,
+        extra: ProblemExtra | None = None,
     ) -> None:
-        self.type = type
+        self.type = problem_type
         self.title = title
         self.status = status
         self.detail = detail
@@ -64,10 +65,13 @@ def install_problem_handlers(app: FastAPI) -> None:
     app.add_exception_handler(Exception, unhandled_exception_handler)
 
 
-async def problem_exception_handler(request: Request, exc: ProblemException) -> JSONResponse:
+async def problem_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    if not isinstance(exc, ProblemException):
+        return await unhandled_exception_handler(request, exc)
+
     return _problem_response(
         request=request,
-        type=exc.type,
+        problem_type=exc.type,
         title=exc.title,
         status_code=exc.status,
         detail=exc.detail,
@@ -75,11 +79,14 @@ async def problem_exception_handler(request: Request, exc: ProblemException) -> 
     )
 
 
-async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+async def http_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    if not isinstance(exc, HTTPException):
+        return await unhandled_exception_handler(request, exc)
+
     problem_type, title = _default_problem_type(exc.status_code)
     return _problem_response(
         request=request,
-        type=problem_type,
+        problem_type=problem_type,
         title=title,
         status_code=exc.status_code,
         detail=_detail_to_string(exc.detail),
@@ -89,12 +96,15 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
 
 async def validation_exception_handler(
     request: Request,
-    exc: RequestValidationError,
+    exc: Exception,
 ) -> JSONResponse:
+    if not isinstance(exc, RequestValidationError):
+        return await unhandled_exception_handler(request, exc)
+
     problem_type, title = _default_problem_type(status.HTTP_422_UNPROCESSABLE_CONTENT)
     return _problem_response(
         request=request,
-        type=problem_type,
+        problem_type=problem_type,
         title=title,
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         detail="Request validation failed",
@@ -107,7 +117,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     problem_type, title = _default_problem_type(status.HTTP_500_INTERNAL_SERVER_ERROR)
     return _problem_response(
         request=request,
-        type=problem_type,
+        problem_type=problem_type,
         title=title,
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         detail="An unexpected error occurred",
@@ -117,15 +127,15 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 def _problem_response(
     *,
     request: Request,
-    type: str,
+    problem_type: str,
     title: str,
     status_code: int,
     detail: str,
-    extra: dict[str, Any] | None = None,
+    extra: ProblemExtra | None = None,
     headers: dict[str, str] | None = None,
 ) -> JSONResponse:
     problem = ProblemDetail(
-        type=type,
+        type=problem_type,
         title=title,
         status=status_code,
         detail=detail,
