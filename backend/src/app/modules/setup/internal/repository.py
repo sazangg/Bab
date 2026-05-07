@@ -2,7 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.auth.models import Organization, User
-from app.modules.setup.models import SetupLock
+from app.modules.setup.internal.models import SetupLock
 
 
 async def user_exists(db: AsyncSession) -> bool:

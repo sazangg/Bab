@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.setup import service
+from app.modules.setup.internal import service
 from app.modules.setup.schemas import CreateFirstAdminRequest, CreateFirstAdminResponse
 
 

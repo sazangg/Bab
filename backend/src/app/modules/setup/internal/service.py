@@ -5,8 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import transaction
 from app.core.security import hash_password
-from app.modules.setup import repository
 from app.modules.setup.errors import SetupAlreadyCompletedError
+from app.modules.setup.internal import repository
 from app.modules.setup.schemas import CreateFirstAdminRequest, CreateFirstAdminResponse
 
 
