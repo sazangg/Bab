@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
+from app.modules.audit.internal.models import AuditLog
 from app.modules.auth.models import Organization, User
 from app.modules.setup.internal.models import SetupLock
 
@@ -44,11 +45,15 @@ async def test_setup_creates_first_admin(app_client, db_session: AsyncSession) -
 
     user = await db_session.scalar(select(User).where(User.email == "admin@example.com"))
     org = await db_session.scalar(select(Organization).where(Organization.name == "Personal"))
+    audit_log = await db_session.scalar(select(AuditLog).where(AuditLog.event == "setup.completed"))
 
     assert user is not None
     assert org is not None
+    assert audit_log is not None
     assert user.org_id == org.id
     assert user.role == "super_admin"
+    assert audit_log.org_id == org.id
+    assert audit_log.actor_user_id == user.id
     assert verify_password("correct horse battery staple", user.password_hash)
 
 

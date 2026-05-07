@@ -5,6 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import transaction
 from app.core.security import hash_password
+from app.modules.audit import facade as audit_facade
+from app.modules.audit.schemas import RecordAuditEvent
 from app.modules.setup.errors import SetupAlreadyCompletedError
 from app.modules.setup.internal import repository
 from app.modules.setup.schemas import CreateFirstAdminRequest, CreateFirstAdminResponse
@@ -35,6 +37,16 @@ async def create_first_admin(
                 password_hash=hash_password(payload.password),
                 role="super_admin",
                 db=db,
+            )
+            await audit_facade.record_event(
+                RecordAuditEvent(
+                    org_id=org.id,
+                    actor_user_id=user.id,
+                    event="setup.completed",
+                    target_type="organization",
+                    target_id=org.id,
+                ),
+                db,
             )
     except IntegrityError as exc:
         raise SetupAlreadyCompletedError from exc
