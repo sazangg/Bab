@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.auth.models import Organization, User
+from app.modules.auth.internal.models import Organization, User
 from app.modules.setup.internal.models import SetupLock
 
 

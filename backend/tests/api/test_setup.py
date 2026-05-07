@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
 from app.modules.audit.internal.models import AuditLog
-from app.modules.auth.models import Organization, User
+from app.modules.auth.internal.models import Organization, User
 from app.modules.setup.internal.models import SetupLock
 
 

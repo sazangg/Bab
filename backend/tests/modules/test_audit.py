@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.audit import facade as audit_facade
 from app.modules.audit.schemas import RecordAuditEvent
-from app.modules.auth.models import Organization
+from app.modules.auth.internal.models import Organization
 
 
 @pytest.mark.asyncio
