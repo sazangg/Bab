@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
 from app.modules.auth.models import Organization, User
+from app.modules.setup.models import SetupLock
 
 
 @pytest.mark.asyncio
@@ -78,3 +79,27 @@ async def test_setup_is_disabled_after_first_user_exists(app_client) -> None:
     assert first_response.status_code == 201
     assert status_response.json() == {"setup_required": False}
     assert second_response.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_setup_returns_conflict_when_setup_lock_already_exists(
+    app_client,
+    db_session: AsyncSession,
+) -> None:
+    db_session.add(SetupLock())
+    await db_session.commit()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post(
+            "/api/v1/setup",
+            json={
+                "email": "admin@example.com",
+                "password": "correct horse battery staple",
+                "organization_name": "Personal",
+            },
+        )
+
+    assert response.status_code == 409

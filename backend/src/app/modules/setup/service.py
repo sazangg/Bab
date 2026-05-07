@@ -1,10 +1,11 @@
 import re
 
-from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import transaction
 from app.core.security import hash_password
-from app.modules.auth.models import Organization, User
+from app.modules.setup import repository
 from app.modules.setup.schemas import CreateFirstAdminRequest, CreateFirstAdminResponse
 
 
@@ -13,32 +14,33 @@ class SetupAlreadyCompletedError(RuntimeError):
 
 
 async def setup_required(db: AsyncSession) -> bool:
-    first_user_id = await db.scalar(select(User.id).limit(1))
-    return first_user_id is None
+    return not await repository.user_exists(db)
 
 
 async def create_first_admin(
     payload: CreateFirstAdminRequest,
     db: AsyncSession,
 ) -> CreateFirstAdminResponse:
-    if not await setup_required(db):
-        raise SetupAlreadyCompletedError
+    try:
+        async with transaction(db):
+            if not await setup_required(db):
+                raise SetupAlreadyCompletedError
 
-    org = Organization(
-        name=payload.organization_name,
-        slug=_slugify(payload.organization_name),
-    )
-    db.add(org)
-    await db.flush()
-
-    user = User(
-        org_id=org.id,
-        email=payload.email,
-        password_hash=hash_password(payload.password),
-        role="super_admin",
-    )
-    db.add(user)
-    await db.commit()
+            await repository.create_setup_lock(db)
+            org = await repository.create_organization(
+                name=payload.organization_name,
+                slug=_slugify(payload.organization_name),
+                db=db,
+            )
+            user = await repository.create_user(
+                org_id=org.id,
+                email=payload.email,
+                password_hash=hash_password(payload.password),
+                role="super_admin",
+                db=db,
+            )
+    except IntegrityError as exc:
+        raise SetupAlreadyCompletedError from exc
 
     return CreateFirstAdminResponse(
         email=user.email,
