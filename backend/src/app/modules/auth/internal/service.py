@@ -1,16 +1,27 @@
 import secrets
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import transaction
-from app.core.security import create_access_token, hash_token, verify_password
+from app.core.security import (
+    SecurityError,
+    create_access_token,
+    decode_access_token,
+    hash_token,
+    verify_password,
+)
 from app.modules.audit import facade as audit_facade
 from app.modules.audit.schemas import RecordAuditEvent
-from app.modules.auth.errors import InvalidCredentialsError, InvalidRefreshTokenError
+from app.modules.auth.errors import (
+    InvalidAccessTokenError,
+    InvalidCredentialsError,
+    InvalidRefreshTokenError,
+)
 from app.modules.auth.internal import repository
 from app.modules.auth.internal.models import RefreshToken, User
-from app.modules.auth.schemas import LoginRequest, TokenResponse
+from app.modules.auth.schemas import AuthenticatedUser, LoginRequest, TokenResponse
 
 REFRESH_TOKEN_TTL = timedelta(days=30)
 
@@ -90,6 +101,20 @@ async def logout(raw_refresh_token: str | None, db: AsyncSession) -> None:
                 ),
                 db,
             )
+
+
+async def verify_access_token(token: str, db: AsyncSession) -> AuthenticatedUser:
+    try:
+        claims = decode_access_token(token)
+        user_id = UUID(claims["sub"])
+        user = await repository.get_user_by_id(user_id, db)
+    except (KeyError, SecurityError, ValueError) as exc:
+        raise InvalidAccessTokenError from exc
+
+    if user is None or not user.is_active:
+        raise InvalidAccessTokenError
+
+    return AuthenticatedUser(id=user.id, org_id=user.org_id, email=user.email, role=user.role)
 
 
 async def _issue_refresh_token(user: User, db: AsyncSession) -> tuple[str, RefreshToken]:
