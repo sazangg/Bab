@@ -1,6 +1,9 @@
 import os
 from collections.abc import AsyncGenerator
 
+os.environ.setdefault("BAB_SECRET_KEY", "test-secret-key-with-more-than-32-chars")
+os.environ.setdefault("BAB_ENCRYPTION_KEY", "mC2XCkbSXUHnJS1bAgRZ1LMvw4mDhF-GqXFf0ySFyDw=")
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -8,10 +11,8 @@ from app.core.database import Base, get_db
 from app.main import create_app
 from app.modules.audit.internal.models import AuditLog  # noqa: F401
 from app.modules.auth.internal.models import Organization, RefreshToken, User  # noqa: F401
+from app.modules.providers.internal.models import Provider  # noqa: F401
 from app.modules.setup.internal.models import SetupLock  # noqa: F401
-
-os.environ.setdefault("BAB_SECRET_KEY", "test-secret-key-with-more-than-32-chars")
-os.environ.setdefault("BAB_ENCRYPTION_KEY", "ODItNIY3r8D1OU4-mK6XeZglQFgy8WYK1gJlHq5QsbM=")
 
 
 @pytest.fixture
