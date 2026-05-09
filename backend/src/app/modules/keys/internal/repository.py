@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.keys.internal.models import ModelAlias, Project, ProjectProviderAccess
+from app.modules.keys.internal.models import ModelAlias, Project, ProjectProviderAccess, VirtualKey
 
 
 async def create_project(
@@ -130,4 +130,59 @@ async def get_model_alias_by_name(
 ) -> ModelAlias | None:
     return await db.scalar(
         select(ModelAlias).where(ModelAlias.alias == alias, ModelAlias.org_id == org_id)
+    )
+
+
+async def create_virtual_key(
+    *,
+    org_id: UUID,
+    project_id: UUID,
+    name: str,
+    key_hash: str,
+    key_prefix: str,
+    restrictions: list[dict[str, object]] | None,
+    expires_at,
+    db: AsyncSession,
+) -> VirtualKey:
+    virtual_key = VirtualKey(
+        org_id=org_id,
+        project_id=project_id,
+        name=name,
+        key_hash=key_hash,
+        key_prefix=key_prefix,
+        restrictions=restrictions,
+        expires_at=expires_at,
+    )
+    db.add(virtual_key)
+    await db.flush()
+    return virtual_key
+
+
+async def list_virtual_keys(
+    *,
+    org_id: UUID,
+    project_id: UUID,
+    db: AsyncSession,
+) -> list[VirtualKey]:
+    result = await db.scalars(
+        select(VirtualKey)
+        .where(VirtualKey.org_id == org_id, VirtualKey.project_id == project_id)
+        .order_by(VirtualKey.created_at.desc())
+    )
+    return list(result)
+
+
+async def get_virtual_key(
+    *,
+    org_id: UUID,
+    project_id: UUID,
+    key_id: UUID,
+    db: AsyncSession,
+) -> VirtualKey | None:
+    return await db.scalar(
+        select(VirtualKey).where(
+            VirtualKey.org_id == org_id,
+            VirtualKey.project_id == project_id,
+            VirtualKey.id == key_id,
+        )
     )

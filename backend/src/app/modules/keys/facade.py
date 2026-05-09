@@ -6,8 +6,10 @@ from app.core.database import Scope
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys.internal import service
 from app.modules.keys.schemas import (
+    CreatedVirtualKeyResponse,
     CreateModelAliasRequest,
     CreateProjectRequest,
+    CreateVirtualKeyRequest,
     GrantProjectProviderAccessRequest,
     ModelAliasResponse,
     ProjectProviderAccessResponse,
@@ -15,6 +17,8 @@ from app.modules.keys.schemas import (
     UpdateModelAliasRequest,
     UpdateProjectProviderAccessRequest,
     UpdateProjectRequest,
+    UpdateVirtualKeyRequest,
+    VirtualKeyResponse,
 )
 
 
@@ -160,3 +164,75 @@ async def deactivate_model_alias(
     db: AsyncSession,
 ) -> None:
     await service.deactivate_model_alias(alias_id=alias_id, actor=actor, scope=scope, db=db)
+
+
+async def create_virtual_key(
+    *,
+    project_id: UUID,
+    payload: CreateVirtualKeyRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> CreatedVirtualKeyResponse:
+    return await service.create_virtual_key(
+        project_id=project_id,
+        payload=payload,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def list_virtual_keys(
+    *,
+    project_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[VirtualKeyResponse]:
+    return await service.list_virtual_keys(project_id=project_id, scope=scope, db=db)
+
+
+async def get_virtual_key(
+    *,
+    project_id: UUID,
+    key_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> VirtualKeyResponse:
+    return await service.get_virtual_key(project_id=project_id, key_id=key_id, scope=scope, db=db)
+
+
+async def update_virtual_key(
+    *,
+    project_id: UUID,
+    key_id: UUID,
+    payload: UpdateVirtualKeyRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> VirtualKeyResponse:
+    return await service.update_virtual_key(
+        project_id=project_id,
+        key_id=key_id,
+        payload=payload,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def revoke_virtual_key(
+    *,
+    project_id: UUID,
+    key_id: UUID,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> None:
+    await service.revoke_virtual_key(
+        project_id=project_id,
+        key_id=key_id,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )

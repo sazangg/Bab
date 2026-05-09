@@ -90,3 +90,48 @@ class ModelAliasResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+
+
+class VirtualKeyRestriction(BaseModel):
+    provider_id: UUID
+    allowed_models: list[str] | None = None
+
+    @field_validator("allowed_models")
+    @classmethod
+    def reject_empty_model_list(cls, value: list[str] | None) -> list[str] | None:
+        if value == []:
+            raise ValueError(
+                "allowed_models must be null for all models or contain at least one model"
+            )
+        return value
+
+
+class CreateVirtualKeyRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    expires_at: datetime | None = None
+    restrictions: list[VirtualKeyRestriction] | None = None
+
+
+class UpdateVirtualKeyRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    expires_at: datetime | None = None
+    restrictions: list[VirtualKeyRestriction] | None = None
+
+
+class VirtualKeyResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    org_id: UUID
+    project_id: UUID
+    name: str
+    key_prefix: str
+    restrictions: list[VirtualKeyRestriction] | None
+    expires_at: datetime | None
+    revoked_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class CreatedVirtualKeyResponse(VirtualKeyResponse):
+    key: str

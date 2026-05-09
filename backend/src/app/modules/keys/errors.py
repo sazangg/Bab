@@ -12,3 +12,7 @@ class ModelAliasNotFoundError(Exception):
 
 class ModelAliasAlreadyExistsError(Exception):
     pass
+
+
+class VirtualKeyNotFoundError(Exception):
+    pass

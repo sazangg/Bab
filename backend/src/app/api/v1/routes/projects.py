@@ -8,14 +8,22 @@ from app.api.v1.deps import get_current_user, get_scope, require_role
 from app.core.database import Scope, get_db
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys import facade
-from app.modules.keys.errors import ProjectNotFoundError, ProjectProviderAccessNotFoundError
+from app.modules.keys.errors import (
+    ProjectNotFoundError,
+    ProjectProviderAccessNotFoundError,
+    VirtualKeyNotFoundError,
+)
 from app.modules.keys.schemas import (
+    CreatedVirtualKeyResponse,
     CreateProjectRequest,
+    CreateVirtualKeyRequest,
     GrantProjectProviderAccessRequest,
     ProjectProviderAccessResponse,
     ProjectResponse,
     UpdateProjectProviderAccessRequest,
     UpdateProjectRequest,
+    UpdateVirtualKeyRequest,
+    VirtualKeyResponse,
 )
 from app.modules.providers.errors import ProviderNotFoundError
 
@@ -24,6 +32,7 @@ DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RequestScope = Annotated[Scope, Depends(get_scope)]
 CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]
 ProjectAccessAdmin = Annotated[AuthenticatedUser, Depends(require_role("super_admin"))]
+VirtualKeyAdmin = Annotated[AuthenticatedUser, Depends(require_role("super_admin"))]
 
 
 @router.get("")
@@ -147,6 +156,110 @@ async def revoke_project_provider_access(
         raise HTTPException(status_code=404, detail="project not found") from exc
     except ProjectProviderAccessNotFoundError as exc:
         raise HTTPException(status_code=404, detail="project provider access not found") from exc
+
+
+@router.get("/{project_id}/keys")
+async def list_virtual_keys(
+    project_id: UUID,
+    scope: RequestScope,
+    db: DatabaseSession,
+    _: CurrentUser,
+) -> list[VirtualKeyResponse]:
+    try:
+        return await facade.list_virtual_keys(project_id=project_id, scope=scope, db=db)
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+
+
+@router.post("/{project_id}/keys", status_code=status.HTTP_201_CREATED)
+async def create_virtual_key(
+    project_id: UUID,
+    payload: CreateVirtualKeyRequest,
+    actor: VirtualKeyAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> CreatedVirtualKeyResponse:
+    try:
+        return await facade.create_virtual_key(
+            project_id=project_id,
+            payload=payload,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="provider not found") from exc
+
+
+@router.get("/{project_id}/keys/{key_id}")
+async def get_virtual_key(
+    project_id: UUID,
+    key_id: UUID,
+    scope: RequestScope,
+    db: DatabaseSession,
+    _: CurrentUser,
+) -> VirtualKeyResponse:
+    try:
+        return await facade.get_virtual_key(
+            project_id=project_id,
+            key_id=key_id,
+            scope=scope,
+            db=db,
+        )
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+    except VirtualKeyNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="virtual key not found") from exc
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="provider not found") from exc
+
+
+@router.patch("/{project_id}/keys/{key_id}")
+async def update_virtual_key(
+    project_id: UUID,
+    key_id: UUID,
+    payload: UpdateVirtualKeyRequest,
+    actor: VirtualKeyAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> VirtualKeyResponse:
+    try:
+        return await facade.update_virtual_key(
+            project_id=project_id,
+            key_id=key_id,
+            payload=payload,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+    except VirtualKeyNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="virtual key not found") from exc
+
+
+@router.delete("/{project_id}/keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_virtual_key(
+    project_id: UUID,
+    key_id: UUID,
+    actor: VirtualKeyAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> None:
+    try:
+        await facade.revoke_virtual_key(
+            project_id=project_id,
+            key_id=key_id,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+    except VirtualKeyNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="virtual key not found") from exc
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
