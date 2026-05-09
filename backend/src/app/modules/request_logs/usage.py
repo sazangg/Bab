@@ -33,6 +33,10 @@ def unknown_usage() -> UsageAccounting:
     )
 
 
+def estimate_request_tokens(request_messages: list[dict[str, Any]]) -> int:
+    return _estimate_tokens(_messages_text(request_messages))
+
+
 def _extract_provider_usage(response_body: dict[str, Any] | None) -> UsageAccounting | None:
     if response_body is None:
         return None

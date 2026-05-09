@@ -16,8 +16,8 @@ from app.modules.keys.internal.models import (  # noqa: F401
     Project,
     ProjectProviderAccess,
     VirtualKey,
-    VirtualKeyRequestCounter,
 )
+from app.modules.limits.internal.models import LimitCounter, LimitPolicy  # noqa: F401
 from app.modules.providers.internal.models import Provider  # noqa: F401
 from app.modules.request_logs.internal.models import RequestLog  # noqa: F401
 from app.modules.setup.internal.models import SetupLock  # noqa: F401

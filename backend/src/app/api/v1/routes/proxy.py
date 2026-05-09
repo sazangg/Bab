@@ -17,9 +17,11 @@ from app.modules.keys import facade as keys_facade
 from app.modules.keys.errors import (
     AccessDeniedError,
     InvalidVirtualKeyError,
-    RequestLimitExceededError,
 )
 from app.modules.keys.schemas import ResolveAccessRequest
+from app.modules.limits import facade as limits_facade
+from app.modules.limits.errors import LimitExceededError
+from app.modules.limits.schemas import LimitEvaluationContext
 from app.modules.providers import facade as providers_facade
 from app.modules.providers.errors import (
     ProviderAdapterNotFoundError,
@@ -31,6 +33,7 @@ from app.modules.request_logs import facade as request_logs_facade
 from app.modules.request_logs.schemas import RecordRequestLog
 from app.modules.request_logs.usage import (
     UsageAccounting,
+    estimate_request_tokens,
     unknown_usage,
     usage_from_provider_response,
 )
@@ -71,6 +74,8 @@ async def create_chat_completion(
     provider_payload = _to_provider_payload(body)
     raw_key = _extract_bearer_token(authorization)
     resolved = None
+    limit_reservations = []
+    estimated_tokens = 0
     try:
         resolved = await keys_facade.resolve_access(
             payload=ResolveAccessRequest(
@@ -80,7 +85,18 @@ async def create_chat_completion(
             ),
             db=db,
         )
-        await keys_facade.enforce_request_count_limits(resolved=resolved, db=db)
+        estimated_tokens = estimate_request_tokens(provider_payload.messages)
+        limit_reservations = await limits_facade.reserve_proxy_limits(
+            context=LimitEvaluationContext(
+                org_id=resolved.org_id,
+                project_id=resolved.project_id,
+                virtual_key_id=resolved.virtual_key_id,
+                provider_id=resolved.provider_id,
+                provider_model=resolved.provider_model,
+            ),
+            estimated_tokens=estimated_tokens,
+            db=db,
+        )
         upstream = await providers_facade.create_chat_completion(
             provider_id=resolved.provider_id,
             payload=ProviderChatCompletionRequest(
@@ -103,7 +119,7 @@ async def create_chat_completion(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="model or provider is not allowed for this key",
         ) from exc
-    except RequestLimitExceededError as exc:
+    except LimitExceededError as exc:
         if resolved is not None:
             await _record_proxy_request(
                 resolved=resolved,
@@ -115,7 +131,7 @@ async def create_chat_completion(
             )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="request limit exceeded",
+            detail="limit exceeded",
         ) from exc
     except (ProviderInactiveError, ProviderAdapterNotFoundError) as exc:
         if resolved is not None:
@@ -143,14 +159,23 @@ async def create_chat_completion(
             )
         return JSONResponse(status_code=exc.status_code, content=exc.body)
 
+    usage = usage_from_provider_response(
+        request_messages=provider_payload.messages,
+        response_body=upstream.body,
+    )
+    if usage.total_tokens is not None:
+        await limits_facade.reconcile_token_limits(
+            reservations=limit_reservations,
+            actual_tokens=usage.total_tokens,
+            estimated_tokens=estimated_tokens,
+            db=db,
+        )
+
     await _record_proxy_request(
         resolved=resolved,
         http_status=upstream.status_code,
         latency_ms=_elapsed_ms(started_at),
-        usage=usage_from_provider_response(
-            request_messages=provider_payload.messages,
-            response_body=upstream.body,
-        ),
+        usage=usage,
         error_code=None,
         db=db,
     )

@@ -110,16 +110,12 @@ class CreateVirtualKeyRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     expires_at: datetime | None = None
     restrictions: list[VirtualKeyRestriction] | None = None
-    request_limit_per_minute: int | None = Field(default=None, ge=1)
-    request_limit_per_day: int | None = Field(default=None, ge=1)
 
 
 class UpdateVirtualKeyRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     expires_at: datetime | None = None
     restrictions: list[VirtualKeyRestriction] | None = None
-    request_limit_per_minute: int | None = Field(default=None, ge=1)
-    request_limit_per_day: int | None = Field(default=None, ge=1)
 
 
 class VirtualKeyResponse(BaseModel):
@@ -131,8 +127,6 @@ class VirtualKeyResponse(BaseModel):
     name: str
     key_prefix: str
     restrictions: list[VirtualKeyRestriction] | None
-    request_limit_per_minute: int | None
-    request_limit_per_day: int | None
     expires_at: datetime | None
     revoked_at: datetime | None
     created_at: datetime

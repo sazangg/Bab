@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.core.security import encrypt, hash_password, hash_token
 from app.modules.auth.internal.models import Organization, User
 from app.modules.keys.internal.models import ModelAlias, Project, ProjectProviderAccess, VirtualKey
+from app.modules.limits.internal.models import LimitCounter, LimitPolicy
 from app.modules.providers.internal.models import Provider
 from app.modules.request_logs.internal.models import RequestLog
 
@@ -19,8 +20,6 @@ async def _create_proxy_graph(
     raw_key: str = "bab-sk-test-key",
     allowed_models: list[str] | None = None,
     key_restrictions: list[dict[str, object]] | None = None,
-    request_limit_per_minute: int | None = None,
-    request_limit_per_day: int | None = None,
 ) -> tuple[Project, Provider]:
     org = Organization(name="Proxy Org", slug="proxy-org")
     db_session.add(org)
@@ -59,12 +58,35 @@ async def _create_proxy_graph(
             key_hash=hash_token(raw_key),
             key_prefix=raw_key[:16],
             restrictions=key_restrictions,
-            request_limit_per_minute=request_limit_per_minute,
-            request_limit_per_day=request_limit_per_day,
         )
     )
     await db_session.commit()
     return project, provider
+
+
+async def _create_limit_policy(
+    db_session: AsyncSession,
+    *,
+    org_id,
+    scope_type: str,
+    scope_id,
+    metric: str,
+    window: str,
+    limit_value: int,
+    scope_value: str | None = None,
+) -> LimitPolicy:
+    policy = LimitPolicy(
+        org_id=org_id,
+        scope_type=scope_type,
+        scope_id=scope_id,
+        scope_value=scope_value,
+        metric=metric,
+        window=window,
+        limit_value=limit_value,
+    )
+    db_session.add(policy)
+    await db_session.commit()
+    return policy
 
 
 async def _request_with_mock_upstream(app_client, handler, *, json_body, headers):
@@ -294,7 +316,15 @@ async def test_proxy_enforces_request_count_limit(
     _, provider = await _create_proxy_graph(
         db_session,
         allowed_models=None,
-        request_limit_per_minute=1,
+    )
+    await _create_limit_policy(
+        db_session,
+        org_id=provider.org_id,
+        scope_type="provider",
+        scope_id=provider.id,
+        metric="request_count",
+        window="minute",
+        limit_value=1,
     )
 
     async def handler(_: httpx.Request) -> httpx.Response:
@@ -324,3 +354,46 @@ async def test_proxy_enforces_request_count_limit(
     logs = (await db_session.scalars(select(RequestLog).order_by(RequestLog.created_at))).all()
     assert [log.http_status for log in logs] == [200, 429]
     assert logs[-1].error_code == "request_limit_exceeded"
+
+
+@pytest.mark.asyncio
+async def test_proxy_reserves_and_reconciles_token_limit(
+    app_client,
+    db_session: AsyncSession,
+) -> None:
+    project, provider = await _create_proxy_graph(db_session, allowed_models=None)
+    await _create_limit_policy(
+        db_session,
+        org_id=project.org_id,
+        scope_type="project",
+        scope_id=project.id,
+        metric="token_count",
+        window="day",
+        limit_value=100,
+    )
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl_123",
+                "choices": [{"message": {"role": "assistant", "content": "Hello"}}],
+                "usage": {"prompt_tokens": 9, "completion_tokens": 4, "total_tokens": 13},
+            },
+        )
+
+    response = await _request_with_mock_upstream(
+        app_client,
+        handler,
+        headers={
+            "Authorization": "Bearer bab-sk-test-key",
+            "X-Bab-Provider-Id": str(provider.id),
+        },
+        json_body={"model": "gpt-5.4", "messages": [{"role": "user", "content": "Hi"}]},
+    )
+
+    counter = await db_session.scalar(select(LimitCounter))
+
+    assert response.status_code == 200
+    assert counter is not None
+    assert counter.consumed_amount == 13
