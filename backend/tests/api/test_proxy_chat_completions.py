@@ -353,7 +353,7 @@ async def test_proxy_enforces_request_count_limit(
     assert second_response.status_code == 429
     logs = (await db_session.scalars(select(RequestLog).order_by(RequestLog.created_at))).all()
     assert [log.http_status for log in logs] == [200, 429]
-    assert logs[-1].error_code == "request_limit_exceeded"
+    assert logs[-1].error_code == "limit_exceeded"
 
 
 @pytest.mark.asyncio

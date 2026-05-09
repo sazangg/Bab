@@ -126,7 +126,7 @@ async def create_chat_completion(
                 http_status=status.HTTP_429_TOO_MANY_REQUESTS,
                 latency_ms=_elapsed_ms(started_at),
                 usage=unknown_usage(),
-                error_code="request_limit_exceeded",
+                error_code="limit_exceeded",
                 db=db,
             )
         raise HTTPException(
