@@ -1,10 +1,11 @@
-import { Outlet } from "react-router-dom";
+import { Link, Outlet, useLocation } from "react-router-dom";
 
 import { useLogoutApiV1AuthLogoutPost } from "@/shared/api/generated/auth/auth";
 import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/features/auth/model/auth-store";
 
 export function DashboardLayout() {
+  const location = useLocation();
   const clearSession = useAuthStore((state) => state.clearSession);
   const logoutMutation = useLogoutApiV1AuthLogoutPost({
     mutation: {
@@ -20,7 +21,9 @@ export function DashboardLayout() {
         <aside className="hidden w-64 border-r bg-sidebar px-4 py-6 lg:block">
           <p className="text-sm font-semibold tracking-normal text-sidebar-foreground">Bab</p>
           <nav className="mt-6 space-y-1 text-sm text-sidebar-foreground">
-            <p className="rounded-md bg-sidebar-accent px-3 py-2">Providers & projects</p>
+            <NavLink to="/" label="Providers & projects" active={location.pathname === "/"} />
+            <NavLink to="/keys" label="Virtual keys" active={location.pathname === "/keys"} />
+            <NavLink to="/logs" label="Logs & analytics" active={location.pathname === "/logs"} />
           </nav>
         </aside>
         <section className="flex min-w-0 flex-1 flex-col">
@@ -41,5 +44,17 @@ export function DashboardLayout() {
         </section>
       </div>
     </main>
+  );
+}
+
+function NavLink({ to, label, active }: { to: string; label: string; active: boolean }) {
+  return (
+    <Link
+      to={to}
+      className="block rounded-md px-3 py-2 data-[active=true]:bg-sidebar-accent"
+      data-active={active}
+    >
+      {label}
+    </Link>
   );
 }
