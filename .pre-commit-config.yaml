@@ -1,0 +1,23 @@
+repos:
+  - repo: local
+    hooks:
+      - id: backend-ruff-format
+        name: backend ruff format
+        entry: powershell -NoProfile -Command "Set-Location backend; uv run ruff format --check ."
+        language: system
+        pass_filenames: false
+      - id: backend-ruff-check
+        name: backend ruff check
+        entry: powershell -NoProfile -Command "Set-Location backend; uv run ruff check ."
+        language: system
+        pass_filenames: false
+      - id: frontend-format
+        name: frontend prettier
+        entry: powershell -NoProfile -Command "Set-Location frontend; pnpm format:check"
+        language: system
+        pass_filenames: false
+      - id: frontend-lint
+        name: frontend eslint
+        entry: powershell -NoProfile -Command "Set-Location frontend; pnpm lint"
+        language: system
+        pass_filenames: false

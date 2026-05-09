@@ -1,14 +1,10 @@
-import { Navigate, Route, Routes } from "react-router-dom";
-
-import { LoginPage } from "./features/auth/pages/LoginPage";
-import { SetupPage } from "./features/setup/pages/SetupPage";
+import { AppProviders } from "@/app/providers/AppProviders";
+import { AppRoutes } from "@/app/router";
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/setup" element={<SetupPage />} />
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="*" element={<Navigate to="/login" replace />} />
-    </Routes>
+    <AppProviders>
+      <AppRoutes />
+    </AppProviders>
   );
 }
