@@ -7,14 +7,22 @@ from app.core.database import Scope, transaction
 from app.modules.audit import facade as audit_facade
 from app.modules.audit.schemas import RecordAuditEvent
 from app.modules.auth.schemas import AuthenticatedUser
-from app.modules.keys.errors import ProjectNotFoundError, ProjectProviderAccessNotFoundError
+from app.modules.keys.errors import (
+    ModelAliasAlreadyExistsError,
+    ModelAliasNotFoundError,
+    ProjectNotFoundError,
+    ProjectProviderAccessNotFoundError,
+)
 from app.modules.keys.internal import repository
-from app.modules.keys.internal.models import Project, ProjectProviderAccess
+from app.modules.keys.internal.models import ModelAlias, Project, ProjectProviderAccess
 from app.modules.keys.schemas import (
+    CreateModelAliasRequest,
     CreateProjectRequest,
     GrantProjectProviderAccessRequest,
+    ModelAliasResponse,
     ProjectProviderAccessResponse,
     ProjectResponse,
+    UpdateModelAliasRequest,
     UpdateProjectProviderAccessRequest,
     UpdateProjectRequest,
 )
@@ -302,3 +310,138 @@ async def _get_provider_access_or_raise(
 
 def _access_to_response(access: ProjectProviderAccess) -> ProjectProviderAccessResponse:
     return ProjectProviderAccessResponse.model_validate(access)
+
+
+async def create_model_alias(
+    *,
+    payload: CreateModelAliasRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> ModelAliasResponse:
+    async with transaction(db):
+        await _ensure_alias_name_available(alias=payload.alias, scope=scope, db=db)
+        await providers_facade.get_provider(provider_id=payload.provider_id, scope=scope, db=db)
+        model_alias = await repository.create_model_alias(
+            org_id=scope.org_id,
+            alias=payload.alias,
+            provider_id=payload.provider_id,
+            provider_model=payload.provider_model,
+            db=db,
+        )
+        await audit_facade.record_event(
+            RecordAuditEvent(
+                org_id=scope.org_id,
+                actor_user_id=actor.id,
+                event="model_alias.created",
+                target_type="model_alias",
+                target_id=model_alias.id,
+                event_metadata={
+                    "alias": model_alias.alias,
+                    "provider_id": str(model_alias.provider_id),
+                    "provider_model": model_alias.provider_model,
+                },
+            ),
+            db,
+        )
+
+    logger.info(
+        "model_alias_created",
+        model_alias_id=str(model_alias.id),
+        org_id=str(scope.org_id),
+    )
+    return _model_alias_to_response(model_alias)
+
+
+async def list_model_aliases(*, scope: Scope, db: AsyncSession) -> list[ModelAliasResponse]:
+    model_aliases = await repository.list_model_aliases(org_id=scope.org_id, db=db)
+    return [_model_alias_to_response(model_alias) for model_alias in model_aliases]
+
+
+async def update_model_alias(
+    *,
+    alias_id: UUID,
+    payload: UpdateModelAliasRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> ModelAliasResponse:
+    async with transaction(db):
+        model_alias = await _get_model_alias_or_raise(alias_id=alias_id, scope=scope, db=db)
+        if payload.alias is not None and payload.alias != model_alias.alias:
+            await _ensure_alias_name_available(alias=payload.alias, scope=scope, db=db)
+            model_alias.alias = payload.alias
+        if payload.provider_id is not None:
+            await providers_facade.get_provider(provider_id=payload.provider_id, scope=scope, db=db)
+            model_alias.provider_id = payload.provider_id
+        if payload.provider_model is not None:
+            model_alias.provider_model = payload.provider_model
+        if payload.is_active is not None:
+            model_alias.is_active = payload.is_active
+
+        await db.flush()
+        await audit_facade.record_event(
+            RecordAuditEvent(
+                org_id=scope.org_id,
+                actor_user_id=actor.id,
+                event="model_alias.updated",
+                target_type="model_alias",
+                target_id=model_alias.id,
+            ),
+            db,
+        )
+
+    logger.info(
+        "model_alias_updated",
+        model_alias_id=str(model_alias.id),
+        org_id=str(scope.org_id),
+    )
+    return _model_alias_to_response(model_alias)
+
+
+async def deactivate_model_alias(
+    *,
+    alias_id: UUID,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> None:
+    async with transaction(db):
+        model_alias = await _get_model_alias_or_raise(alias_id=alias_id, scope=scope, db=db)
+        model_alias.is_active = False
+        await db.flush()
+        await audit_facade.record_event(
+            RecordAuditEvent(
+                org_id=scope.org_id,
+                actor_user_id=actor.id,
+                event="model_alias.deactivated",
+                target_type="model_alias",
+                target_id=model_alias.id,
+            ),
+            db,
+        )
+
+    logger.info(
+        "model_alias_deactivated",
+        model_alias_id=str(alias_id),
+        org_id=str(scope.org_id),
+    )
+
+
+async def _ensure_alias_name_available(*, alias: str, scope: Scope, db: AsyncSession) -> None:
+    existing = await repository.get_model_alias_by_name(alias=alias, org_id=scope.org_id, db=db)
+    if existing is not None:
+        raise ModelAliasAlreadyExistsError
+
+
+async def _get_model_alias_or_raise(
+    *, alias_id: UUID, scope: Scope, db: AsyncSession
+) -> ModelAlias:
+    model_alias = await repository.get_model_alias(alias_id=alias_id, org_id=scope.org_id, db=db)
+    if model_alias is None:
+        raise ModelAliasNotFoundError
+    return model_alias
+
+
+def _model_alias_to_response(model_alias: ModelAlias) -> ModelAliasResponse:
+    return ModelAliasResponse.model_validate(model_alias)

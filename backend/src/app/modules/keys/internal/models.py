@@ -58,3 +58,30 @@ class ProjectProviderAccess(Base):
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )
+
+
+class ModelAlias(Base):
+    __tablename__ = "model_aliases"
+    __table_args__ = (UniqueConstraint("org_id", "alias"),)
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        index=True,
+    )
+    alias: Mapped[str] = mapped_column(String(255))
+    provider_id: Mapped[UUID] = mapped_column(
+        ForeignKey("providers.id", ondelete="RESTRICT"),
+        index=True,
+    )
+    provider_model: Mapped[str] = mapped_column(String(255))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )

@@ -11,7 +11,11 @@ from app.core.database import Base, get_db
 from app.main import create_app
 from app.modules.audit.internal.models import AuditLog  # noqa: F401
 from app.modules.auth.internal.models import Organization, RefreshToken, User  # noqa: F401
-from app.modules.keys.internal.models import Project, ProjectProviderAccess  # noqa: F401
+from app.modules.keys.internal.models import (  # noqa: F401
+    ModelAlias,
+    Project,
+    ProjectProviderAccess,
+)
 from app.modules.providers.internal.models import Provider  # noqa: F401
 from app.modules.setup.internal.models import SetupLock  # noqa: F401
 

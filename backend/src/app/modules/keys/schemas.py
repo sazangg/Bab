@@ -64,3 +64,29 @@ class ProjectProviderAccessResponse(BaseModel):
     allowed_models: list[str] | None
     created_at: datetime
     updated_at: datetime
+
+
+class CreateModelAliasRequest(BaseModel):
+    alias: str = Field(min_length=1, max_length=255)
+    provider_id: UUID
+    provider_model: str = Field(min_length=1, max_length=255)
+
+
+class UpdateModelAliasRequest(BaseModel):
+    alias: str | None = Field(default=None, min_length=1, max_length=255)
+    provider_id: UUID | None = None
+    provider_model: str | None = Field(default=None, min_length=1, max_length=255)
+    is_active: bool | None = None
+
+
+class ModelAliasResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    org_id: UUID
+    alias: str
+    provider_id: UUID
+    provider_model: str
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime

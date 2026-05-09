@@ -6,10 +6,13 @@ from app.core.database import Scope
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys.internal import service
 from app.modules.keys.schemas import (
+    CreateModelAliasRequest,
     CreateProjectRequest,
     GrantProjectProviderAccessRequest,
+    ModelAliasResponse,
     ProjectProviderAccessResponse,
     ProjectResponse,
+    UpdateModelAliasRequest,
     UpdateProjectProviderAccessRequest,
     UpdateProjectRequest,
 )
@@ -116,3 +119,44 @@ async def revoke_project_provider_access(
         scope=scope,
         db=db,
     )
+
+
+async def create_model_alias(
+    *,
+    payload: CreateModelAliasRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> ModelAliasResponse:
+    return await service.create_model_alias(payload=payload, actor=actor, scope=scope, db=db)
+
+
+async def list_model_aliases(*, scope: Scope, db: AsyncSession) -> list[ModelAliasResponse]:
+    return await service.list_model_aliases(scope=scope, db=db)
+
+
+async def update_model_alias(
+    *,
+    alias_id: UUID,
+    payload: UpdateModelAliasRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> ModelAliasResponse:
+    return await service.update_model_alias(
+        alias_id=alias_id,
+        payload=payload,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def deactivate_model_alias(
+    *,
+    alias_id: UUID,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> None:
+    await service.deactivate_model_alias(alias_id=alias_id, actor=actor, scope=scope, db=db)

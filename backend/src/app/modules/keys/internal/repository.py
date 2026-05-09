@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.keys.internal.models import Project, ProjectProviderAccess
+from app.modules.keys.internal.models import ModelAlias, Project, ProjectProviderAccess
 
 
 async def create_project(
@@ -88,3 +88,46 @@ async def get_provider_access(
 async def delete_provider_access(*, access: ProjectProviderAccess, db: AsyncSession) -> None:
     await db.delete(access)
     await db.flush()
+
+
+async def create_model_alias(
+    *,
+    org_id: UUID,
+    alias: str,
+    provider_id: UUID,
+    provider_model: str,
+    db: AsyncSession,
+) -> ModelAlias:
+    model_alias = ModelAlias(
+        org_id=org_id,
+        alias=alias,
+        provider_id=provider_id,
+        provider_model=provider_model,
+    )
+    db.add(model_alias)
+    await db.flush()
+    return model_alias
+
+
+async def list_model_aliases(*, org_id: UUID, db: AsyncSession) -> list[ModelAlias]:
+    result = await db.scalars(
+        select(ModelAlias).where(ModelAlias.org_id == org_id).order_by(ModelAlias.alias)
+    )
+    return list(result)
+
+
+async def get_model_alias(*, alias_id: UUID, org_id: UUID, db: AsyncSession) -> ModelAlias | None:
+    return await db.scalar(
+        select(ModelAlias).where(ModelAlias.id == alias_id, ModelAlias.org_id == org_id)
+    )
+
+
+async def get_model_alias_by_name(
+    *,
+    alias: str,
+    org_id: UUID,
+    db: AsyncSession,
+) -> ModelAlias | None:
+    return await db.scalar(
+        select(ModelAlias).where(ModelAlias.alias == alias, ModelAlias.org_id == org_id)
+    )
