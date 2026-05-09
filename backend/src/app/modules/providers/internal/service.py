@@ -1,18 +1,22 @@
 from uuid import UUID
 
+import httpx
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope, transaction
-from app.core.security import encrypt
+from app.core.security import decrypt, encrypt
 from app.modules.audit import facade as audit_facade
 from app.modules.audit.schemas import RecordAuditEvent
 from app.modules.auth.schemas import AuthenticatedUser
-from app.modules.providers.errors import ProviderNotFoundError
+from app.modules.providers.errors import ProviderInactiveError, ProviderNotFoundError
 from app.modules.providers.internal import repository
+from app.modules.providers.internal.adapters import AdapterProvider, default_adapter_registry
 from app.modules.providers.internal.models import Provider
 from app.modules.providers.schemas import (
     CreateProviderRequest,
+    ProviderChatCompletionRequest,
+    ProviderChatCompletionResponse,
     ProviderResponse,
     UpdateProviderRequest,
 )
@@ -135,6 +139,29 @@ async def deactivate_provider(
         )
 
     logger.info("provider_deactivated", provider_id=str(provider_id), org_id=str(scope.org_id))
+
+
+async def create_chat_completion(
+    *,
+    provider_id: UUID,
+    payload: ProviderChatCompletionRequest,
+    scope: Scope,
+    db: AsyncSession,
+    http_client: httpx.AsyncClient,
+) -> ProviderChatCompletionResponse:
+    provider = await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
+    if not provider.is_active:
+        raise ProviderInactiveError
+
+    adapter = default_adapter_registry.get(provider.adapter_type)
+    return await adapter.create_chat_completion(
+        provider=AdapterProvider(
+            base_url=provider.base_url,
+            api_key=decrypt(provider.api_key_encrypted),
+        ),
+        payload=payload,
+        http_client=http_client,
+    )
 
 
 async def _get_provider_or_raise(*, provider_id: UUID, scope: Scope, db: AsyncSession) -> Provider:

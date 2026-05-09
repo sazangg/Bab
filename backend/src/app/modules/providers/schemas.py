@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
@@ -30,3 +31,14 @@ class ProviderResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+
+
+class ProviderChatCompletionRequest(BaseModel):
+    model: str = Field(min_length=1, max_length=255)
+    messages: list[dict[str, Any]] = Field(min_length=1)
+    extra_body: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProviderChatCompletionResponse(BaseModel):
+    status_code: int
+    body: dict[str, Any]

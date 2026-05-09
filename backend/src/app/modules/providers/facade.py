@@ -1,5 +1,6 @@
 from uuid import UUID
 
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope
@@ -7,6 +8,8 @@ from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.providers.internal import service
 from app.modules.providers.schemas import (
     CreateProviderRequest,
+    ProviderChatCompletionRequest,
+    ProviderChatCompletionResponse,
     ProviderResponse,
     UpdateProviderRequest,
 )
@@ -55,3 +58,20 @@ async def deactivate_provider(
     db: AsyncSession,
 ) -> None:
     await service.deactivate_provider(provider_id=provider_id, actor=actor, scope=scope, db=db)
+
+
+async def create_chat_completion(
+    *,
+    provider_id: UUID,
+    payload: ProviderChatCompletionRequest,
+    scope: Scope,
+    db: AsyncSession,
+    http_client: httpx.AsyncClient,
+) -> ProviderChatCompletionResponse:
+    return await service.create_chat_completion(
+        provider_id=provider_id,
+        payload=payload,
+        scope=scope,
+        db=db,
+        http_client=http_client,
+    )

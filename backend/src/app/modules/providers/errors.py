@@ -4,3 +4,18 @@ class ProviderError(RuntimeError):
 
 class ProviderNotFoundError(ProviderError):
     pass
+
+
+class ProviderInactiveError(ProviderError):
+    pass
+
+
+class ProviderAdapterNotFoundError(ProviderError):
+    pass
+
+
+class ProviderUpstreamError(ProviderError):
+    def __init__(self, *, status_code: int, body: dict | list | str | None) -> None:
+        self.status_code = status_code
+        self.body = body
+        super().__init__(f"provider upstream returned {status_code}")
