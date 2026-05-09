@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class CreateProjectRequest(BaseModel):
@@ -23,5 +23,44 @@ class ProjectResponse(BaseModel):
     name: str
     description: str | None
     is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class GrantProjectProviderAccessRequest(BaseModel):
+    provider_id: UUID
+    allowed_models: list[str] | None = None
+
+    @field_validator("allowed_models")
+    @classmethod
+    def reject_empty_model_list(cls, value: list[str] | None) -> list[str] | None:
+        if value == []:
+            raise ValueError(
+                "allowed_models must be null for all models or contain at least one model"
+            )
+        return value
+
+
+class UpdateProjectProviderAccessRequest(BaseModel):
+    allowed_models: list[str] | None = None
+
+    @field_validator("allowed_models")
+    @classmethod
+    def reject_empty_model_list(cls, value: list[str] | None) -> list[str] | None:
+        if value == []:
+            raise ValueError(
+                "allowed_models must be null for all models or contain at least one model"
+            )
+        return value
+
+
+class ProjectProviderAccessResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    org_id: UUID
+    project_id: UUID
+    provider_id: UUID
+    allowed_models: list[str] | None
     created_at: datetime
     updated_at: datetime

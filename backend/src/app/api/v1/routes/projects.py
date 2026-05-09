@@ -4,17 +4,26 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_current_user, get_scope
+from app.api.v1.deps import get_current_user, get_scope, require_role
 from app.core.database import Scope, get_db
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys import facade
-from app.modules.keys.errors import ProjectNotFoundError
-from app.modules.keys.schemas import CreateProjectRequest, ProjectResponse, UpdateProjectRequest
+from app.modules.keys.errors import ProjectNotFoundError, ProjectProviderAccessNotFoundError
+from app.modules.keys.schemas import (
+    CreateProjectRequest,
+    GrantProjectProviderAccessRequest,
+    ProjectProviderAccessResponse,
+    ProjectResponse,
+    UpdateProjectProviderAccessRequest,
+    UpdateProjectRequest,
+)
+from app.modules.providers.errors import ProviderNotFoundError
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RequestScope = Annotated[Scope, Depends(get_scope)]
 CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]
+ProjectAccessAdmin = Annotated[AuthenticatedUser, Depends(require_role("super_admin"))]
 
 
 @router.get("")
@@ -54,6 +63,90 @@ async def update_project(
         )
     except ProjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail="project not found") from exc
+
+
+@router.get("/{project_id}/provider-access")
+async def list_project_provider_access(
+    project_id: UUID,
+    scope: RequestScope,
+    db: DatabaseSession,
+    _: CurrentUser,
+) -> list[ProjectProviderAccessResponse]:
+    try:
+        return await facade.list_project_provider_access(project_id=project_id, scope=scope, db=db)
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+
+
+@router.post("/{project_id}/provider-access", status_code=status.HTTP_201_CREATED)
+async def grant_project_provider_access(
+    project_id: UUID,
+    payload: GrantProjectProviderAccessRequest,
+    actor: ProjectAccessAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> ProjectProviderAccessResponse:
+    try:
+        return await facade.grant_project_provider_access(
+            project_id=project_id,
+            payload=payload,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="provider not found") from exc
+
+
+@router.patch("/{project_id}/provider-access/{provider_id}")
+async def update_project_provider_access(
+    project_id: UUID,
+    provider_id: UUID,
+    payload: UpdateProjectProviderAccessRequest,
+    actor: ProjectAccessAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> ProjectProviderAccessResponse:
+    try:
+        return await facade.update_project_provider_access(
+            project_id=project_id,
+            provider_id=provider_id,
+            payload=payload,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+    except ProjectProviderAccessNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project provider access not found") from exc
+
+
+@router.delete(
+    "/{project_id}/provider-access/{provider_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def revoke_project_provider_access(
+    project_id: UUID,
+    provider_id: UUID,
+    actor: ProjectAccessAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> None:
+    try:
+        await facade.revoke_project_provider_access(
+            project_id=project_id,
+            provider_id=provider_id,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+    except ProjectProviderAccessNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project provider access not found") from exc
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -57,6 +57,11 @@ async def list_providers(*, scope: Scope, db: AsyncSession) -> list[ProviderResp
     return [_to_response(provider) for provider in providers]
 
 
+async def get_provider(*, provider_id: UUID, scope: Scope, db: AsyncSession) -> ProviderResponse:
+    provider = await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
+    return _to_response(provider)
+
+
 async def update_provider(
     *,
     provider_id: UUID,

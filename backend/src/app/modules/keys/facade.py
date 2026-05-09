@@ -5,7 +5,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import Scope
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys.internal import service
-from app.modules.keys.schemas import CreateProjectRequest, ProjectResponse, UpdateProjectRequest
+from app.modules.keys.schemas import (
+    CreateProjectRequest,
+    GrantProjectProviderAccessRequest,
+    ProjectProviderAccessResponse,
+    ProjectResponse,
+    UpdateProjectProviderAccessRequest,
+    UpdateProjectRequest,
+)
 
 
 async def create_project(
@@ -47,3 +54,65 @@ async def deactivate_project(
     db: AsyncSession,
 ) -> None:
     await service.deactivate_project(project_id=project_id, actor=actor, scope=scope, db=db)
+
+
+async def grant_project_provider_access(
+    *,
+    project_id: UUID,
+    payload: GrantProjectProviderAccessRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProjectProviderAccessResponse:
+    return await service.grant_project_provider_access(
+        project_id=project_id,
+        payload=payload,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def list_project_provider_access(
+    *,
+    project_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[ProjectProviderAccessResponse]:
+    return await service.list_project_provider_access(project_id=project_id, scope=scope, db=db)
+
+
+async def update_project_provider_access(
+    *,
+    project_id: UUID,
+    provider_id: UUID,
+    payload: UpdateProjectProviderAccessRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProjectProviderAccessResponse:
+    return await service.update_project_provider_access(
+        project_id=project_id,
+        provider_id=provider_id,
+        payload=payload,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def revoke_project_provider_access(
+    *,
+    project_id: UUID,
+    provider_id: UUID,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> None:
+    await service.revoke_project_provider_access(
+        project_id=project_id,
+        provider_id=provider_id,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )

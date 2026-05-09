@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.keys.internal.models import Project
+from app.modules.keys.internal.models import Project, ProjectProviderAccess
 
 
 async def create_project(
@@ -31,3 +31,60 @@ async def get_project(*, project_id: UUID, org_id: UUID, db: AsyncSession) -> Pr
     return await db.scalar(
         select(Project).where(Project.id == project_id, Project.org_id == org_id)
     )
+
+
+async def grant_provider_access(
+    *,
+    org_id: UUID,
+    project_id: UUID,
+    provider_id: UUID,
+    allowed_models: list[str] | None,
+    db: AsyncSession,
+) -> ProjectProviderAccess:
+    access = ProjectProviderAccess(
+        org_id=org_id,
+        project_id=project_id,
+        provider_id=provider_id,
+        allowed_models=allowed_models,
+    )
+    db.add(access)
+    await db.flush()
+    return access
+
+
+async def list_provider_access(
+    *,
+    org_id: UUID,
+    project_id: UUID,
+    db: AsyncSession,
+) -> list[ProjectProviderAccess]:
+    result = await db.scalars(
+        select(ProjectProviderAccess)
+        .where(
+            ProjectProviderAccess.org_id == org_id,
+            ProjectProviderAccess.project_id == project_id,
+        )
+        .order_by(ProjectProviderAccess.created_at.desc())
+    )
+    return list(result)
+
+
+async def get_provider_access(
+    *,
+    org_id: UUID,
+    project_id: UUID,
+    provider_id: UUID,
+    db: AsyncSession,
+) -> ProjectProviderAccess | None:
+    return await db.scalar(
+        select(ProjectProviderAccess).where(
+            ProjectProviderAccess.org_id == org_id,
+            ProjectProviderAccess.project_id == project_id,
+            ProjectProviderAccess.provider_id == provider_id,
+        )
+    )
+
+
+async def delete_provider_access(*, access: ProjectProviderAccess, db: AsyncSession) -> None:
+    await db.delete(access)
+    await db.flush()

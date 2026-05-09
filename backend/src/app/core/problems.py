@@ -108,7 +108,7 @@ async def validation_exception_handler(
         title=title,
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         detail="Request validation failed",
-        extra={"errors": exc.errors()},
+        extra={"errors": [_sanitize_validation_error(error) for error in exc.errors()]},
     )
 
 
@@ -166,3 +166,13 @@ def _detail_to_string(detail: Any) -> str:
     if isinstance(detail, str):
         return detail
     return "HTTP error"
+
+
+def _sanitize_validation_error(error: dict[str, Any]) -> dict[str, Any]:
+    sanitized = dict(error)
+    if "ctx" in sanitized and isinstance(sanitized["ctx"], dict):
+        sanitized["ctx"] = {
+            key: str(value) if isinstance(value, Exception) else value
+            for key, value in sanitized["ctx"].items()
+        }
+    return sanitized
