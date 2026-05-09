@@ -17,6 +17,10 @@ class Settings(BaseSettings):
         default="development",
         validation_alias="BAB_ENVIRONMENT",
     )
+    proxy_max_body_bytes: int = Field(
+        default=1_000_000,
+        validation_alias="BAB_PROXY_MAX_BODY_BYTES",
+    )
 
 
 @lru_cache
