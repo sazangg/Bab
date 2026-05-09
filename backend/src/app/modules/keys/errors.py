@@ -24,3 +24,7 @@ class InvalidVirtualKeyError(Exception):
 
 class AccessDeniedError(Exception):
     pass
+
+
+class RequestLimitExceededError(Exception):
+    pass

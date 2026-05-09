@@ -19,6 +19,8 @@ async def _create_proxy_graph(
     raw_key: str = "bab-sk-test-key",
     allowed_models: list[str] | None = None,
     key_restrictions: list[dict[str, object]] | None = None,
+    request_limit_per_minute: int | None = None,
+    request_limit_per_day: int | None = None,
 ) -> tuple[Project, Provider]:
     org = Organization(name="Proxy Org", slug="proxy-org")
     db_session.add(org)
@@ -57,6 +59,8 @@ async def _create_proxy_graph(
             key_hash=hash_token(raw_key),
             key_prefix=raw_key[:16],
             restrictions=key_restrictions,
+            request_limit_per_minute=request_limit_per_minute,
+            request_limit_per_day=request_limit_per_day,
         )
     )
     await db_session.commit()
@@ -280,3 +284,43 @@ async def test_proxy_rejects_oversized_request_body(
 
     assert response.status_code == 413
     assert response.headers["content-type"].startswith("application/problem+json")
+
+
+@pytest.mark.asyncio
+async def test_proxy_enforces_request_count_limit(
+    app_client,
+    db_session: AsyncSession,
+) -> None:
+    _, provider = await _create_proxy_graph(
+        db_session,
+        allowed_models=None,
+        request_limit_per_minute=1,
+    )
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"id": "chatcmpl_123"})
+
+    first_response = await _request_with_mock_upstream(
+        app_client,
+        handler,
+        headers={
+            "Authorization": "Bearer bab-sk-test-key",
+            "X-Bab-Provider-Id": str(provider.id),
+        },
+        json_body={"model": "gpt-5.4", "messages": [{"role": "user", "content": "Hi"}]},
+    )
+    second_response = await _request_with_mock_upstream(
+        app_client,
+        handler,
+        headers={
+            "Authorization": "Bearer bab-sk-test-key",
+            "X-Bab-Provider-Id": str(provider.id),
+        },
+        json_body={"model": "gpt-5.4", "messages": [{"role": "user", "content": "Hi"}]},
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 429
+    logs = (await db_session.scalars(select(RequestLog).order_by(RequestLog.created_at))).all()
+    assert [log.http_status for log in logs] == [200, 429]
+    assert logs[-1].error_code == "request_limit_exceeded"

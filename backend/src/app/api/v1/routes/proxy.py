@@ -14,7 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import Scope, get_db
 from app.modules.keys import facade as keys_facade
-from app.modules.keys.errors import AccessDeniedError, InvalidVirtualKeyError
+from app.modules.keys.errors import (
+    AccessDeniedError,
+    InvalidVirtualKeyError,
+    RequestLimitExceededError,
+)
 from app.modules.keys.schemas import ResolveAccessRequest
 from app.modules.providers import facade as providers_facade
 from app.modules.providers.errors import (
@@ -76,6 +80,7 @@ async def create_chat_completion(
             ),
             db=db,
         )
+        await keys_facade.enforce_request_count_limits(resolved=resolved, db=db)
         upstream = await providers_facade.create_chat_completion(
             provider_id=resolved.provider_id,
             payload=ProviderChatCompletionRequest(
@@ -97,6 +102,20 @@ async def create_chat_completion(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="model or provider is not allowed for this key",
+        ) from exc
+    except RequestLimitExceededError as exc:
+        if resolved is not None:
+            await _record_proxy_request(
+                resolved=resolved,
+                http_status=status.HTTP_429_TOO_MANY_REQUESTS,
+                latency_ms=_elapsed_ms(started_at),
+                usage=unknown_usage(),
+                error_code="request_limit_exceeded",
+                db=db,
+            )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="request limit exceeded",
         ) from exc
     except (ProviderInactiveError, ProviderAdapterNotFoundError) as exc:
         if resolved is not None:

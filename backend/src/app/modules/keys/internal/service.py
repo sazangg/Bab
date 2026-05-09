@@ -16,6 +16,7 @@ from app.modules.keys.errors import (
     ModelAliasNotFoundError,
     ProjectNotFoundError,
     ProjectProviderAccessNotFoundError,
+    RequestLimitExceededError,
     VirtualKeyNotFoundError,
 )
 from app.modules.keys.internal import repository
@@ -477,6 +478,8 @@ async def create_virtual_key(
             key_hash=hash_token(raw_key),
             key_prefix=_key_prefix(raw_key),
             restrictions=_restrictions_to_json(payload.restrictions),
+            request_limit_per_minute=payload.request_limit_per_minute,
+            request_limit_per_day=payload.request_limit_per_day,
             expires_at=payload.expires_at,
             db=db,
         )
@@ -561,6 +564,10 @@ async def update_virtual_key(
         if restrictions_changed:
             await _validate_virtual_key_restrictions(payload.restrictions, scope=scope, db=db)
             virtual_key.restrictions = _restrictions_to_json(payload.restrictions)
+        if "request_limit_per_minute" in payload.model_fields_set:
+            virtual_key.request_limit_per_minute = payload.request_limit_per_minute
+        if "request_limit_per_day" in payload.model_fields_set:
+            virtual_key.request_limit_per_day = payload.request_limit_per_day
 
         await db.flush()
         await audit_facade.record_event(
@@ -790,3 +797,53 @@ def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
+
+
+async def enforce_request_count_limits(
+    *,
+    resolved: ResolvedAccess,
+    db: AsyncSession,
+    now: datetime | None = None,
+) -> None:
+    virtual_key = await repository.get_virtual_key(
+        org_id=resolved.org_id,
+        project_id=resolved.project_id,
+        key_id=resolved.virtual_key_id,
+        db=db,
+    )
+    if virtual_key is None:
+        raise InvalidVirtualKeyError
+
+    checked_at = _as_utc(now or datetime.now(UTC))
+    async with transaction(db):
+        if virtual_key.request_limit_per_minute is not None:
+            allowed = await repository.increment_request_counter_if_below_limit(
+                org_id=resolved.org_id,
+                virtual_key_id=resolved.virtual_key_id,
+                window_kind="minute",
+                window_start=_minute_window_start(checked_at),
+                limit=virtual_key.request_limit_per_minute,
+                db=db,
+            )
+            if not allowed:
+                raise RequestLimitExceededError
+
+        if virtual_key.request_limit_per_day is not None:
+            allowed = await repository.increment_request_counter_if_below_limit(
+                org_id=resolved.org_id,
+                virtual_key_id=resolved.virtual_key_id,
+                window_kind="day",
+                window_start=_day_window_start(checked_at),
+                limit=virtual_key.request_limit_per_day,
+                db=db,
+            )
+            if not allowed:
+                raise RequestLimitExceededError
+
+
+def _minute_window_start(value: datetime) -> datetime:
+    return value.replace(second=0, microsecond=0)
+
+
+def _day_window_start(value: datetime) -> datetime:
+    return value.replace(hour=0, minute=0, second=0, microsecond=0)

@@ -1,9 +1,17 @@
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.keys.internal.models import ModelAlias, Project, ProjectProviderAccess, VirtualKey
+from app.modules.keys.internal.models import (
+    ModelAlias,
+    Project,
+    ProjectProviderAccess,
+    VirtualKey,
+    VirtualKeyRequestCounter,
+)
 
 
 async def create_project(
@@ -156,6 +164,8 @@ async def create_virtual_key(
     key_hash: str,
     key_prefix: str,
     restrictions: list[dict[str, object]] | None,
+    request_limit_per_minute: int | None,
+    request_limit_per_day: int | None,
     expires_at,
     db: AsyncSession,
 ) -> VirtualKey:
@@ -166,6 +176,8 @@ async def create_virtual_key(
         key_hash=key_hash,
         key_prefix=key_prefix,
         restrictions=restrictions,
+        request_limit_per_minute=request_limit_per_minute,
+        request_limit_per_day=request_limit_per_day,
         expires_at=expires_at,
     )
     db.add(virtual_key)
@@ -205,3 +217,90 @@ async def get_virtual_key(
 
 async def get_virtual_key_by_hash(*, key_hash: str, db: AsyncSession) -> VirtualKey | None:
     return await db.scalar(select(VirtualKey).where(VirtualKey.key_hash == key_hash))
+
+
+async def increment_request_counter_if_below_limit(
+    *,
+    org_id: UUID,
+    virtual_key_id: UUID,
+    window_kind: str,
+    window_start: datetime,
+    limit: int,
+    db: AsyncSession,
+) -> bool:
+    updated = await _increment_existing_counter_if_below_limit(
+        virtual_key_id=virtual_key_id,
+        window_kind=window_kind,
+        window_start=window_start,
+        limit=limit,
+        db=db,
+    )
+    if updated:
+        return True
+
+    existing = await _get_request_counter(
+        virtual_key_id=virtual_key_id,
+        window_kind=window_kind,
+        window_start=window_start,
+        db=db,
+    )
+    if existing is not None:
+        return False
+
+    counter = VirtualKeyRequestCounter(
+        org_id=org_id,
+        virtual_key_id=virtual_key_id,
+        window_kind=window_kind,
+        window_start=window_start,
+        request_count=1,
+    )
+    try:
+        async with db.begin_nested():
+            db.add(counter)
+            await db.flush()
+        return True
+    except IntegrityError:
+        return await _increment_existing_counter_if_below_limit(
+            virtual_key_id=virtual_key_id,
+            window_kind=window_kind,
+            window_start=window_start,
+            limit=limit,
+            db=db,
+        )
+
+
+async def _increment_existing_counter_if_below_limit(
+    *,
+    virtual_key_id: UUID,
+    window_kind: str,
+    window_start: datetime,
+    limit: int,
+    db: AsyncSession,
+) -> bool:
+    result = await db.execute(
+        update(VirtualKeyRequestCounter)
+        .where(
+            VirtualKeyRequestCounter.virtual_key_id == virtual_key_id,
+            VirtualKeyRequestCounter.window_kind == window_kind,
+            VirtualKeyRequestCounter.window_start == window_start,
+            VirtualKeyRequestCounter.request_count < limit,
+        )
+        .values(request_count=VirtualKeyRequestCounter.request_count + 1)
+    )
+    return result.rowcount == 1
+
+
+async def _get_request_counter(
+    *,
+    virtual_key_id: UUID,
+    window_kind: str,
+    window_start: datetime,
+    db: AsyncSession,
+) -> VirtualKeyRequestCounter | None:
+    return await db.scalar(
+        select(VirtualKeyRequestCounter).where(
+            VirtualKeyRequestCounter.virtual_key_id == virtual_key_id,
+            VirtualKeyRequestCounter.window_kind == window_kind,
+            VirtualKeyRequestCounter.window_start == window_start,
+        )
+    )

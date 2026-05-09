@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -242,3 +243,12 @@ async def revoke_virtual_key(
 
 async def resolve_access(*, payload: ResolveAccessRequest, db: AsyncSession) -> ResolvedAccess:
     return await service.resolve_access(payload=payload, db=db)
+
+
+async def enforce_request_count_limits(
+    *,
+    resolved: ResolvedAccess,
+    db: AsyncSession,
+    now: datetime | None = None,
+) -> None:
+    await service.enforce_request_count_limits(resolved=resolved, db=db, now=now)
