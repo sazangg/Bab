@@ -1,6 +1,7 @@
 import httpx
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.routes.proxy import get_proxy_http_client
@@ -9,6 +10,7 @@ from app.core.security import encrypt, hash_password, hash_token
 from app.modules.auth.internal.models import Organization, User
 from app.modules.keys.internal.models import ModelAlias, Project, ProjectProviderAccess, VirtualKey
 from app.modules.providers.internal.models import Provider
+from app.modules.request_logs.internal.models import RequestLog
 
 
 async def _create_proxy_graph(
@@ -88,7 +90,7 @@ async def test_proxy_forwards_non_streaming_chat_completion(
     app_client,
     db_session: AsyncSession,
 ) -> None:
-    _, provider = await _create_proxy_graph(db_session, allowed_models=["gpt-5.4-mini"])
+    project, provider = await _create_proxy_graph(db_session, allowed_models=["gpt-5.4-mini"])
 
     async def handler(request: httpx.Request) -> httpx.Response:
         assert request.url == "https://api.example.test/v1/chat/completions"
@@ -121,6 +123,16 @@ async def test_proxy_forwards_non_streaming_chat_completion(
 
     assert response.status_code == 200
     assert response.json()["id"] == "chatcmpl_123"
+    request_log = await db_session.scalar(select(RequestLog))
+    assert request_log is not None
+    assert request_log.project_id == project.id
+    assert request_log.provider_id == provider.id
+    assert request_log.requested_model == "gpt-5.4-mini"
+    assert request_log.provider_model == "gpt-5.4-mini"
+    assert request_log.http_status == 200
+    assert request_log.usage_source == "unknown"
+    assert request_log.prompt_tokens is None
+    assert request_log.error_code is None
 
 
 @pytest.mark.asyncio
@@ -207,6 +219,10 @@ async def test_proxy_passes_through_upstream_error(app_client, db_session: Async
     assert response.status_code == 429
     assert response.json() == {"error": {"message": "limited"}}
     assert not response.headers["content-type"].startswith("application/problem+json")
+    request_log = await db_session.scalar(select(RequestLog))
+    assert request_log is not None
+    assert request_log.http_status == 429
+    assert request_log.error_code == "provider_upstream_error"
 
 
 @pytest.mark.asyncio

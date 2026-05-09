@@ -18,6 +18,7 @@ from app.modules.keys.internal.models import (  # noqa: F401
     VirtualKey,
 )
 from app.modules.providers.internal.models import Provider  # noqa: F401
+from app.modules.request_logs.internal.models import RequestLog  # noqa: F401
 from app.modules.setup.internal.models import SetupLock  # noqa: F401
 
 

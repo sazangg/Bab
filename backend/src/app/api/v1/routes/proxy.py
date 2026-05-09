@@ -1,5 +1,6 @@
 import json
 from collections.abc import AsyncGenerator
+from time import perf_counter
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -22,6 +23,8 @@ from app.modules.providers.errors import (
     ProviderUpstreamError,
 )
 from app.modules.providers.schemas import ProviderChatCompletionRequest
+from app.modules.request_logs import facade as request_logs_facade
+from app.modules.request_logs.schemas import RecordRequestLog
 
 router = APIRouter(prefix="/v1", tags=["proxy"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
@@ -45,6 +48,7 @@ async def create_chat_completion(
     authorization: VirtualKeyAuthorization = None,
     provider_id: ProviderIdHeader = None,
 ) -> JSONResponse:
+    started_at = perf_counter()
     _enforce_content_length(request)
     raw_body = await request.body()
     _enforce_body_size(raw_body)
@@ -57,6 +61,7 @@ async def create_chat_completion(
 
     provider_payload = _to_provider_payload(body)
     raw_key = _extract_bearer_token(authorization)
+    resolved = None
     try:
         resolved = await keys_facade.resolve_access(
             payload=ResolveAccessRequest(
@@ -89,13 +94,36 @@ async def create_chat_completion(
             detail="model or provider is not allowed for this key",
         ) from exc
     except (ProviderInactiveError, ProviderAdapterNotFoundError) as exc:
+        if resolved is not None:
+            await _record_proxy_request(
+                resolved=resolved,
+                http_status=status.HTTP_502_BAD_GATEWAY,
+                latency_ms=_elapsed_ms(started_at),
+                error_code="provider_unavailable",
+                db=db,
+            )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="provider is not available",
         ) from exc
     except ProviderUpstreamError as exc:
+        if resolved is not None:
+            await _record_proxy_request(
+                resolved=resolved,
+                http_status=exc.status_code,
+                latency_ms=_elapsed_ms(started_at),
+                error_code="provider_upstream_error",
+                db=db,
+            )
         return JSONResponse(status_code=exc.status_code, content=exc.body)
 
+    await _record_proxy_request(
+        resolved=resolved,
+        http_status=upstream.status_code,
+        latency_ms=_elapsed_ms(started_at),
+        error_code=None,
+        db=db,
+    )
     return JSONResponse(status_code=upstream.status_code, content=upstream.body)
 
 
@@ -156,3 +184,32 @@ def _extract_bearer_token(authorization: str | None) -> str:
             headers={"WWW-Authenticate": "Bearer"},
         )
     return token
+
+
+async def _record_proxy_request(
+    *,
+    resolved,
+    http_status: int,
+    latency_ms: int,
+    error_code: str | None,
+    db: AsyncSession,
+) -> None:
+    await request_logs_facade.record_request_log(
+        payload=RecordRequestLog(
+            org_id=resolved.org_id,
+            project_id=resolved.project_id,
+            virtual_key_id=resolved.virtual_key_id,
+            provider_id=resolved.provider_id,
+            requested_model=resolved.requested_model,
+            provider_model=resolved.provider_model,
+            http_status=http_status,
+            latency_ms=latency_ms,
+            usage_source="unknown",
+            error_code=error_code,
+        ),
+        db=db,
+    )
+
+
+def _elapsed_ms(started_at: float) -> int:
+    return max(0, round((perf_counter() - started_at) * 1000))
