@@ -1,3 +1,6 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from app.api.v1.routes.analytics import router as analytics_router
@@ -9,14 +12,22 @@ from app.api.v1.routes.providers import router as providers_router
 from app.api.v1.routes.proxy import router as proxy_router
 from app.api.v1.routes.request_logs import router as request_logs_router
 from app.api.v1.routes.setup import router as setup_router
+from app.core.bootstrap import create_development_database
 from app.core.config import settings
 from app.core.logging import configure_logging
 from app.core.problems import install_problem_handlers
 
 
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    if settings.environment == "development":
+        await create_development_database()
+    yield
+
+
 def create_app() -> FastAPI:
     configure_logging(environment=settings.environment)
-    app = FastAPI(title="Bab API")
+    app = FastAPI(title="Bab API", lifespan=lifespan)
     install_problem_handlers(app)
     app.include_router(analytics_router, prefix="/api/v1")
     app.include_router(auth_router, prefix="/api/v1")
