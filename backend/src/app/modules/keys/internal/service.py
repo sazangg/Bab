@@ -10,6 +10,8 @@ from app.modules.audit import facade as audit_facade
 from app.modules.audit.schemas import RecordAuditEvent
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys.errors import (
+    AccessDeniedError,
+    InvalidVirtualKeyError,
     ModelAliasAlreadyExistsError,
     ModelAliasNotFoundError,
     ProjectNotFoundError,
@@ -27,6 +29,8 @@ from app.modules.keys.schemas import (
     ModelAliasResponse,
     ProjectProviderAccessResponse,
     ProjectResponse,
+    ResolveAccessRequest,
+    ResolvedAccess,
     UpdateModelAliasRequest,
     UpdateProjectProviderAccessRequest,
     UpdateProjectRequest,
@@ -677,3 +681,112 @@ async def _validate_virtual_key_restrictions(
             scope=scope,
             db=db,
         )
+
+
+async def resolve_access(*, payload: ResolveAccessRequest, db: AsyncSession) -> ResolvedAccess:
+    virtual_key = await repository.get_virtual_key_by_hash(
+        key_hash=hash_token(payload.raw_key),
+        db=db,
+    )
+    if virtual_key is None:
+        raise InvalidVirtualKeyError
+    if virtual_key.revoked_at is not None:
+        raise InvalidVirtualKeyError
+    if virtual_key.expires_at is not None and _as_utc(virtual_key.expires_at) <= datetime.now(UTC):
+        raise InvalidVirtualKeyError
+
+    project = await repository.get_project(
+        project_id=virtual_key.project_id,
+        org_id=virtual_key.org_id,
+        db=db,
+    )
+    if project is None or not project.is_active:
+        raise InvalidVirtualKeyError
+
+    provider_id, provider_model, used_alias = await _resolve_requested_model(
+        requested_model=payload.requested_model,
+        requested_provider_id=payload.provider_id,
+        org_id=virtual_key.org_id,
+        db=db,
+    )
+    provider_access = await repository.get_provider_access(
+        org_id=virtual_key.org_id,
+        project_id=virtual_key.project_id,
+        provider_id=provider_id,
+        db=db,
+    )
+    if provider_access is None:
+        raise AccessDeniedError
+
+    if not _model_allowed(provider_model, provider_access.allowed_models):
+        raise AccessDeniedError
+    if not _key_restrictions_allow(
+        provider_id=provider_id,
+        provider_model=provider_model,
+        restrictions=virtual_key.restrictions,
+    ):
+        raise AccessDeniedError
+
+    return ResolvedAccess(
+        org_id=virtual_key.org_id,
+        project_id=virtual_key.project_id,
+        virtual_key_id=virtual_key.id,
+        provider_id=provider_id,
+        requested_model=payload.requested_model,
+        provider_model=provider_model,
+        used_alias=used_alias,
+    )
+
+
+async def _resolve_requested_model(
+    *,
+    requested_model: str,
+    requested_provider_id: UUID | None,
+    org_id: UUID,
+    db: AsyncSession,
+) -> tuple[UUID, str, bool]:
+    alias = await repository.get_active_model_alias_by_name(
+        alias=requested_model,
+        org_id=org_id,
+        db=db,
+    )
+    if alias is not None:
+        return alias.provider_id, alias.provider_model, True
+
+    if requested_provider_id is None:
+        raise AccessDeniedError
+
+    return requested_provider_id, requested_model, False
+
+
+def _model_allowed(provider_model: str, allowed_models: list[str] | None) -> bool:
+    if allowed_models is None:
+        return True
+    return provider_model in allowed_models
+
+
+def _key_restrictions_allow(
+    *,
+    provider_id: UUID,
+    provider_model: str,
+    restrictions: list[dict[str, object]] | None,
+) -> bool:
+    if restrictions is None:
+        return True
+
+    for restriction in restrictions:
+        if restriction.get("provider_id") != str(provider_id):
+            continue
+        allowed_models = restriction.get("allowed_models")
+        if allowed_models is None:
+            return True
+        if isinstance(allowed_models, list) and provider_model in allowed_models:
+            return True
+
+    return False
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)

@@ -14,6 +14,8 @@ from app.modules.keys.schemas import (
     ModelAliasResponse,
     ProjectProviderAccessResponse,
     ProjectResponse,
+    ResolveAccessRequest,
+    ResolvedAccess,
     UpdateModelAliasRequest,
     UpdateProjectProviderAccessRequest,
     UpdateProjectRequest,
@@ -236,3 +238,7 @@ async def revoke_virtual_key(
         scope=scope,
         db=db,
     )
+
+
+async def resolve_access(*, payload: ResolveAccessRequest, db: AsyncSession) -> ResolvedAccess:
+    return await service.resolve_access(payload=payload, db=db)

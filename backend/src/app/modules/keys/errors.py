@@ -16,3 +16,11 @@ class ModelAliasAlreadyExistsError(Exception):
 
 class VirtualKeyNotFoundError(Exception):
     pass
+
+
+class InvalidVirtualKeyError(Exception):
+    pass
+
+
+class AccessDeniedError(Exception):
+    pass

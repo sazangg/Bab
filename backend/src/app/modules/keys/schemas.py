@@ -135,3 +135,19 @@ class VirtualKeyResponse(BaseModel):
 
 class CreatedVirtualKeyResponse(VirtualKeyResponse):
     key: str
+
+
+class ResolveAccessRequest(BaseModel):
+    raw_key: str = Field(min_length=1)
+    requested_model: str = Field(min_length=1, max_length=255)
+    provider_id: UUID | None = None
+
+
+class ResolvedAccess(BaseModel):
+    org_id: UUID
+    project_id: UUID
+    virtual_key_id: UUID
+    provider_id: UUID
+    requested_model: str
+    provider_model: str
+    used_alias: bool

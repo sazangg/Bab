@@ -133,6 +133,21 @@ async def get_model_alias_by_name(
     )
 
 
+async def get_active_model_alias_by_name(
+    *,
+    alias: str,
+    org_id: UUID,
+    db: AsyncSession,
+) -> ModelAlias | None:
+    return await db.scalar(
+        select(ModelAlias).where(
+            ModelAlias.alias == alias,
+            ModelAlias.org_id == org_id,
+            ModelAlias.is_active.is_(True),
+        )
+    )
+
+
 async def create_virtual_key(
     *,
     org_id: UUID,
@@ -186,3 +201,7 @@ async def get_virtual_key(
             VirtualKey.id == key_id,
         )
     )
+
+
+async def get_virtual_key_by_hash(*, key_hash: str, db: AsyncSession) -> VirtualKey | None:
+    return await db.scalar(select(VirtualKey).where(VirtualKey.key_hash == key_hash))
