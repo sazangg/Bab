@@ -25,6 +25,11 @@ from app.modules.providers.errors import (
 from app.modules.providers.schemas import ProviderChatCompletionRequest
 from app.modules.request_logs import facade as request_logs_facade
 from app.modules.request_logs.schemas import RecordRequestLog
+from app.modules.request_logs.usage import (
+    UsageAccounting,
+    unknown_usage,
+    usage_from_provider_response,
+)
 
 router = APIRouter(prefix="/v1", tags=["proxy"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
@@ -99,6 +104,7 @@ async def create_chat_completion(
                 resolved=resolved,
                 http_status=status.HTTP_502_BAD_GATEWAY,
                 latency_ms=_elapsed_ms(started_at),
+                usage=unknown_usage(),
                 error_code="provider_unavailable",
                 db=db,
             )
@@ -112,6 +118,7 @@ async def create_chat_completion(
                 resolved=resolved,
                 http_status=exc.status_code,
                 latency_ms=_elapsed_ms(started_at),
+                usage=unknown_usage(),
                 error_code="provider_upstream_error",
                 db=db,
             )
@@ -121,6 +128,10 @@ async def create_chat_completion(
         resolved=resolved,
         http_status=upstream.status_code,
         latency_ms=_elapsed_ms(started_at),
+        usage=usage_from_provider_response(
+            request_messages=provider_payload.messages,
+            response_body=upstream.body,
+        ),
         error_code=None,
         db=db,
     )
@@ -191,6 +202,7 @@ async def _record_proxy_request(
     resolved,
     http_status: int,
     latency_ms: int,
+    usage: UsageAccounting,
     error_code: str | None,
     db: AsyncSession,
 ) -> None:
@@ -204,7 +216,10 @@ async def _record_proxy_request(
             provider_model=resolved.provider_model,
             http_status=http_status,
             latency_ms=latency_ms,
-            usage_source="unknown",
+            prompt_tokens=usage.prompt_tokens,
+            completion_tokens=usage.completion_tokens,
+            total_tokens=usage.total_tokens,
+            usage_source=usage.usage_source,
             error_code=error_code,
         ),
         db=db,

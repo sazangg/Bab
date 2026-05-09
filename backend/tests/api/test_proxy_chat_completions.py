@@ -104,6 +104,11 @@ async def test_proxy_forwards_non_streaming_chat_completion(
                 "id": "chatcmpl_123",
                 "object": "chat.completion",
                 "choices": [{"message": {"role": "assistant", "content": "Hello"}}],
+                "usage": {
+                    "prompt_tokens": 9,
+                    "completion_tokens": 4,
+                    "total_tokens": 13,
+                },
             },
         )
 
@@ -130,8 +135,10 @@ async def test_proxy_forwards_non_streaming_chat_completion(
     assert request_log.requested_model == "gpt-5.4-mini"
     assert request_log.provider_model == "gpt-5.4-mini"
     assert request_log.http_status == 200
-    assert request_log.usage_source == "unknown"
-    assert request_log.prompt_tokens is None
+    assert request_log.usage_source == "provider_reported"
+    assert request_log.prompt_tokens == 9
+    assert request_log.completion_tokens == 4
+    assert request_log.total_tokens == 13
     assert request_log.error_code is None
 
 
@@ -164,6 +171,11 @@ async def test_proxy_resolves_model_alias_without_provider_header(
 
     assert response.status_code == 200
     assert response.json()["id"] == "chatcmpl_alias"
+    request_log = await db_session.scalar(select(RequestLog))
+    assert request_log is not None
+    assert request_log.usage_source == "estimated"
+    assert request_log.total_tokens is not None
+    assert request_log.total_tokens > 0
 
 
 @pytest.mark.asyncio
