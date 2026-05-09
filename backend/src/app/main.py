@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from app.api.v1.routes.analytics import router as analytics_router
 from app.api.v1.routes.auth import router as auth_router
 from app.api.v1.routes.health import router as health_router
 from app.api.v1.routes.model_aliases import router as model_aliases_router
@@ -17,6 +18,7 @@ def create_app() -> FastAPI:
     configure_logging(environment=settings.environment)
     app = FastAPI(title="Bab API")
     install_problem_handlers(app)
+    app.include_router(analytics_router, prefix="/api/v1")
     app.include_router(auth_router, prefix="/api/v1")
     app.include_router(health_router, prefix="/api/v1")
     app.include_router(model_aliases_router, prefix="/api/v1")
