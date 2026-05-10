@@ -7,13 +7,20 @@ import { z } from "zod";
 
 import {
   useCreateVirtualKeyApiV1ProjectsProjectIdKeysPost,
+  useGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet,
   useListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet,
   useListProjectsApiV1ProjectsGet,
   useListVirtualKeysApiV1ProjectsProjectIdKeysGet,
   useRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete,
+  useUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch,
 } from "@/shared/api/generated/projects/projects";
 import { useListProvidersApiV1ProvidersGet } from "@/shared/api/generated/providers/providers";
-import type { CreatedVirtualKeyResponse, VirtualKeyResponse } from "@/shared/api/generated/schemas";
+import type {
+  CreatedVirtualKeyResponse,
+  ProjectProviderAccessResponse,
+  ProviderResponse,
+  VirtualKeyResponse,
+} from "@/shared/api/generated/schemas";
 import { Button } from "@/components/ui/button";
 
 const keySchema = z.object({
@@ -28,7 +35,10 @@ type KeyFormValues = z.infer<typeof keySchema>;
 export function KeysPage() {
   const queryClient = useQueryClient();
   const [selectedProjectId, setSelectedProjectId] = useQueryState("project");
+  const [selectedKeyId, setSelectedKeyId] = useQueryState("key");
   const [createdKey, setCreatedKey] = useState<CreatedVirtualKeyResponse | null>(null);
+  const [restrictionProviderId, setRestrictionProviderId] = useState("");
+  const [restrictionModels, setRestrictionModels] = useState("");
   const projectsQuery = useListProjectsApiV1ProjectsGet();
   const providersQuery = useListProvidersApiV1ProvidersGet();
   const projects = useMemo(
@@ -49,8 +59,19 @@ export function KeysPage() {
   const keysQuery = useListVirtualKeysApiV1ProjectsProjectIdKeysGet(effectiveProjectId ?? "", {
     query: { enabled: Boolean(effectiveProjectId) },
   });
+  const keyDetailQuery = useGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet(
+    effectiveProjectId ?? "",
+    selectedKeyId ?? "",
+    {
+      query: { enabled: Boolean(effectiveProjectId && selectedKeyId) },
+    },
+  );
   const projectAccess = accessQuery.data?.status === 200 ? accessQuery.data.data : [];
   const virtualKeys = keysQuery.data?.status === 200 ? keysQuery.data.data : [];
+  const selectedKey =
+    (keyDetailQuery.data?.status === 200 ? keyDetailQuery.data.data : null) ??
+    virtualKeys.find((key) => key.id === selectedKeyId) ??
+    null;
   const form = useForm<KeyFormValues>({
     resolver: zodResolver(keySchema),
     defaultValues: {
@@ -72,6 +93,14 @@ export function KeysPage() {
     },
   });
   const revokeKeyMutation = useRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete({
+    mutation: {
+      onSuccess: async () => {
+        await setSelectedKeyId(null);
+        await queryClient.invalidateQueries();
+      },
+    },
+  });
+  const updateKeyMutation = useUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch({
     mutation: {
       onSuccess: async () => {
         await queryClient.invalidateQueries();
@@ -200,6 +229,14 @@ export function KeysPage() {
               <KeyRow
                 key={key.id}
                 virtualKey={key}
+                providers={providers}
+                isSelected={key.id === selectedKeyId}
+                onSelect={() => {
+                  const firstRestriction = key.restrictions?.[0];
+                  setRestrictionProviderId(firstRestriction?.provider_id ?? "");
+                  setRestrictionModels(firstRestriction?.allowed_models?.join(", ") ?? "");
+                  void setSelectedKeyId(key.id);
+                }}
                 onRevoke={() => {
                   if (effectiveProjectId && window.confirm(`Revoke ${key.name}?`)) {
                     revokeKeyMutation.mutate({ projectId: effectiveProjectId, keyId: key.id });
@@ -217,6 +254,65 @@ export function KeysPage() {
           </tbody>
         </table>
       </section>
+
+      <KeyDetailPanel
+        virtualKey={selectedKey}
+        providers={providers}
+        projectAccess={projectAccess}
+        restrictionProviderId={restrictionProviderId}
+        restrictionModels={restrictionModels}
+        onRestrictionProviderChange={setRestrictionProviderId}
+        onRestrictionModelsChange={setRestrictionModels}
+        onRename={() => {
+          if (!effectiveProjectId || !selectedKey) {
+            return;
+          }
+          const name = window.prompt("Virtual key name", selectedKey.name);
+          if (name?.trim()) {
+            updateKeyMutation.mutate({
+              projectId: effectiveProjectId,
+              keyId: selectedKey.id,
+              data: { name: name.trim() },
+            });
+          }
+        }}
+        onUpdateExpiration={() => {
+          if (!effectiveProjectId || !selectedKey) {
+            return;
+          }
+          const value = window.prompt(
+            "Expiration date/time. Leave blank for no expiration.",
+            selectedKey.expires_at ? toDatetimeLocalValue(selectedKey.expires_at) : "",
+          );
+          if (value !== null) {
+            updateKeyMutation.mutate({
+              projectId: effectiveProjectId,
+              keyId: selectedKey.id,
+              data: { expires_at: value ? new Date(value).toISOString() : null },
+            });
+          }
+        }}
+        onSaveRestrictions={() => {
+          if (!effectiveProjectId || !selectedKey) {
+            return;
+          }
+          updateKeyMutation.mutate({
+            projectId: effectiveProjectId,
+            keyId: selectedKey.id,
+            data: {
+              restrictions: restrictionProviderId
+                ? [
+                    {
+                      provider_id: restrictionProviderId,
+                      allowed_models: parseModelList(restrictionModels),
+                    },
+                  ]
+                : null,
+            },
+          });
+        }}
+        onClose={() => void setSelectedKeyId(null)}
+      />
     </div>
   );
 }
@@ -252,38 +348,154 @@ function CreatedKeyNotice({
 
 function KeyRow({
   virtualKey,
+  providers,
+  isSelected,
+  onSelect,
   onRevoke,
 }: {
   virtualKey: VirtualKeyResponse;
+  providers: ProviderResponse[];
+  isSelected: boolean;
+  onSelect: () => void;
   onRevoke: () => void;
 }) {
   return (
-    <tr className="border-t">
+    <tr className="border-t data-[selected=true]:bg-muted/60" data-selected={isSelected}>
       <td className="px-3 py-2 font-medium">{virtualKey.name}</td>
       <td className="px-3 py-2 font-mono text-xs">{virtualKey.key_prefix}</td>
       <td className="px-3 py-2 text-muted-foreground">
-        {virtualKey.restrictions
-          ?.map(
-            (restriction) =>
-              `${restriction.provider_id}: ${restriction.allowed_models?.join(", ") ?? "all"}`,
-          )
-          .join(" | ") ?? "Project inherited access"}
+        {formatRestrictions(virtualKey, providers)}
       </td>
       <td className="px-3 py-2 text-muted-foreground">
         {virtualKey.expires_at ? new Date(virtualKey.expires_at).toLocaleString() : "Never"}
       </td>
       <td className="px-3 py-2">{virtualKey.revoked_at ? "Revoked" : "Active"}</td>
       <td className="px-3 py-2">
-        <Button
-          type="button"
-          variant="destructive"
-          disabled={Boolean(virtualKey.revoked_at)}
-          onClick={onRevoke}
-        >
-          Revoke
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" onClick={onSelect}>
+            Details
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={Boolean(virtualKey.revoked_at)}
+            onClick={onRevoke}
+          >
+            Revoke
+          </Button>
+        </div>
       </td>
     </tr>
+  );
+}
+
+function KeyDetailPanel({
+  virtualKey,
+  providers,
+  projectAccess,
+  restrictionProviderId,
+  restrictionModels,
+  onRestrictionProviderChange,
+  onRestrictionModelsChange,
+  onRename,
+  onUpdateExpiration,
+  onSaveRestrictions,
+  onClose,
+}: {
+  virtualKey: VirtualKeyResponse | null;
+  providers: ProviderResponse[];
+  projectAccess: ProjectProviderAccessResponse[];
+  restrictionProviderId: string;
+  restrictionModels: string;
+  onRestrictionProviderChange: (value: string) => void;
+  onRestrictionModelsChange: (value: string) => void;
+  onRename: () => void;
+  onUpdateExpiration: () => void;
+  onSaveRestrictions: () => void;
+  onClose: () => void;
+}) {
+  if (!virtualKey) {
+    return null;
+  }
+
+  return (
+    <section className="rounded-lg border bg-card p-5">
+      <div className="mb-5 flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium text-muted-foreground">Virtual key detail</p>
+          <h2 className="mt-1 text-lg font-semibold">{virtualKey.name}</h2>
+        </div>
+        <Button type="button" variant="ghost" onClick={onClose}>
+          Close
+        </Button>
+      </div>
+
+      <dl className="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4">
+        <DetailItem label="ID" value={virtualKey.id} />
+        <DetailItem label="Prefix" value={virtualKey.key_prefix} />
+        <DetailItem label="Created" value={new Date(virtualKey.created_at).toLocaleString()} />
+        <DetailItem label="Updated" value={new Date(virtualKey.updated_at).toLocaleString()} />
+        <DetailItem
+          label="Expires"
+          value={virtualKey.expires_at ? new Date(virtualKey.expires_at).toLocaleString() : "Never"}
+        />
+        <DetailItem
+          label="Revoked"
+          value={virtualKey.revoked_at ? new Date(virtualKey.revoked_at).toLocaleString() : "No"}
+        />
+        <DetailItem label="Restrictions" value={formatRestrictions(virtualKey, providers)} />
+      </dl>
+
+      <div className="mt-5 flex flex-wrap gap-2">
+        <Button type="button" variant="outline" onClick={onRename}>
+          Rename
+        </Button>
+        <Button type="button" variant="outline" onClick={onUpdateExpiration}>
+          Expiration
+        </Button>
+      </div>
+
+      <div className="mt-5 grid gap-3 rounded-md border bg-muted/30 p-3 md:grid-cols-[1fr_1fr_auto]">
+        <label className="block text-sm font-medium">
+          Narrow to provider
+          <select
+            className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+            value={restrictionProviderId}
+            onChange={(event) => onRestrictionProviderChange(event.target.value)}
+          >
+            <option value="">Project inherited access</option>
+            {projectAccess.map((access) => {
+              const provider = providers.find((item) => item.id === access.provider_id);
+              return (
+                <option key={access.provider_id} value={access.provider_id}>
+                  {provider?.name ?? access.provider_id}
+                </option>
+              );
+            })}
+          </select>
+        </label>
+        <Input
+          label="Allowed models"
+          placeholder="gpt-5.4-mini, gpt-5.4"
+          value={restrictionModels}
+          onChange={(event) => onRestrictionModelsChange(event.target.value)}
+        />
+        <div className="flex items-end">
+          <Button type="button" onClick={onSaveRestrictions}>
+            Save restrictions
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function DetailItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-md border bg-muted/30 px-3 py-2">
+      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+      <dd className="mt-1 truncate font-medium">{value}</dd>
+    </div>
   );
 }
 
@@ -306,4 +518,22 @@ function parseModelList(value: string | undefined) {
     .map((model) => model.trim())
     .filter(Boolean);
   return models && models.length > 0 ? models : null;
+}
+
+function formatRestrictions(virtualKey: VirtualKeyResponse, providers: ProviderResponse[]) {
+  return (
+    virtualKey.restrictions
+      ?.map((restriction) => {
+        const provider =
+          providers.find((item) => item.id === restriction.provider_id)?.name ??
+          restriction.provider_id;
+        return `${provider}: ${restriction.allowed_models?.join(", ") ?? "all models"}`;
+      })
+      .join(" | ") ?? "Project inherited access"
+  );
+}
+
+function toDatetimeLocalValue(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 16);
 }

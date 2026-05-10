@@ -8,15 +8,22 @@ import { z } from "zod";
 
 import {
   useCreateProjectApiV1ProjectsPost,
+  useDeactivateProjectApiV1ProjectsProjectIdDelete,
   useGrantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPost,
   useListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet,
   useListProjectsApiV1ProjectsGet,
+  useRevokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDelete,
+  useUpdateProjectApiV1ProjectsProjectIdPatch,
+  useUpdateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatch,
 } from "@/shared/api/generated/projects/projects";
 import {
   useCreateProviderApiV1ProvidersPost,
+  useDeactivateProviderApiV1ProvidersProviderIdDelete,
   useListProvidersApiV1ProvidersGet,
+  useUpdateProviderApiV1ProvidersProviderIdPatch,
 } from "@/shared/api/generated/providers/providers";
 import type {
+  ProjectResponse,
   ProjectProviderAccessResponse,
   ProviderResponse,
 } from "@/shared/api/generated/schemas";
@@ -96,6 +103,20 @@ export function ProvidersProjectsPage() {
       },
     },
   });
+  const updateProviderMutation = useUpdateProviderApiV1ProvidersProviderIdPatch({
+    mutation: {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries();
+      },
+    },
+  });
+  const deactivateProviderMutation = useDeactivateProviderApiV1ProvidersProviderIdDelete({
+    mutation: {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries();
+      },
+    },
+  });
   const createProjectMutation = useCreateProjectApiV1ProjectsPost({
     mutation: {
       onSuccess: async (response) => {
@@ -104,6 +125,20 @@ export function ProvidersProjectsPage() {
           await setSelectedProjectId(response.data.id);
           await queryClient.invalidateQueries();
         }
+      },
+    },
+  });
+  const updateProjectMutation = useUpdateProjectApiV1ProjectsProjectIdPatch({
+    mutation: {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries();
+      },
+    },
+  });
+  const deactivateProjectMutation = useDeactivateProjectApiV1ProjectsProjectIdDelete({
+    mutation: {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries();
       },
     },
   });
@@ -117,6 +152,22 @@ export function ProvidersProjectsPage() {
       },
     },
   );
+  const updateAccessMutation =
+    useUpdateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatch({
+      mutation: {
+        onSuccess: async () => {
+          await queryClient.invalidateQueries();
+        },
+      },
+    });
+  const revokeAccessMutation =
+    useRevokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDelete({
+      mutation: {
+        onSuccess: async () => {
+          await queryClient.invalidateQueries();
+        },
+      },
+    });
 
   useEffect(() => {
     if (!selectedProjectId && projects[0]?.id) {
@@ -164,7 +215,16 @@ export function ProvidersProjectsPage() {
               {createProviderMutation.isPending ? "Creating..." : "Create provider"}
             </Button>
           </form>
-          <ProviderList providers={providers} isLoading={providersQuery.isPending} />
+          <ProviderList
+            providers={providers}
+            isLoading={providersQuery.isPending}
+            onUpdate={(providerId, data) => updateProviderMutation.mutate({ providerId, data })}
+            onDeactivate={(provider) => {
+              if (window.confirm(`Deactivate ${provider.name}?`)) {
+                deactivateProviderMutation.mutate({ providerId: provider.id });
+              }
+            }}
+          />
         </Panel>
 
         <Panel title="Projects" description="Projects own provider and model access.">
@@ -201,23 +261,18 @@ export function ProvidersProjectsPage() {
               <p className="text-sm text-muted-foreground">Loading projects...</p>
             ) : null}
             {projects.map((project) => (
-              <button
+              <ProjectListItem
                 key={project.id}
-                type="button"
-                className="flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm hover:bg-muted"
-                data-active={project.id === effectiveProjectId}
-                onClick={() => void setSelectedProjectId(project.id)}
-              >
-                <span>
-                  <span className="block font-medium">{project.name}</span>
-                  <span className="text-muted-foreground">
-                    {project.description || "No description"}
-                  </span>
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {project.is_active ? "Active" : "Inactive"}
-                </span>
-              </button>
+                project={project}
+                isSelected={project.id === effectiveProjectId}
+                onSelect={() => void setSelectedProjectId(project.id)}
+                onUpdate={(data) => updateProjectMutation.mutate({ projectId: project.id, data })}
+                onDeactivate={() => {
+                  if (window.confirm(`Deactivate ${project.name}?`)) {
+                    deactivateProjectMutation.mutate({ projectId: project.id });
+                  }
+                }}
+              />
             ))}
           </div>
         </Panel>
@@ -281,6 +336,34 @@ export function ProvidersProjectsPage() {
           accessRules={accessQuery.data?.status === 200 ? accessQuery.data.data : []}
           providers={providers}
           isLoading={accessQuery.isPending && Boolean(effectiveProjectId)}
+          onUpdate={(accessRule) => {
+            if (!effectiveProjectId) {
+              return;
+            }
+            const nextModels = promptModelList(accessRule.allowed_models);
+            if (nextModels === undefined) {
+              return;
+            }
+            updateAccessMutation.mutate({
+              projectId: effectiveProjectId,
+              providerId: accessRule.provider_id,
+              data: { allowed_models: nextModels },
+            });
+          }}
+          onRevoke={(accessRule) => {
+            if (!effectiveProjectId) {
+              return;
+            }
+            const providerName =
+              providers.find((provider) => provider.id === accessRule.provider_id)?.name ??
+              accessRule.provider_id;
+            if (window.confirm(`Revoke ${providerName} access from this project?`)) {
+              revokeAccessMutation.mutate({
+                projectId: effectiveProjectId,
+                providerId: accessRule.provider_id,
+              });
+            }
+          }}
         />
       </Panel>
     </div>
@@ -334,9 +417,16 @@ function TextInput({
 function ProviderList({
   providers,
   isLoading,
+  onUpdate,
+  onDeactivate,
 }: {
   providers: ProviderResponse[];
   isLoading: boolean;
+  onUpdate: (
+    providerId: string,
+    data: { name?: string; base_url?: string; api_key?: string; is_active?: boolean },
+  ) => void;
+  onDeactivate: (provider: ProviderResponse) => void;
 }) {
   if (isLoading) {
     return <p className="mt-5 text-sm text-muted-foreground">Loading providers...</p>;
@@ -353,6 +443,54 @@ function ProviderList({
             </span>
           </div>
           <p className="mt-1 truncate text-muted-foreground">{provider.base_url}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                const name = window.prompt("Provider name", provider.name);
+                if (name?.trim()) {
+                  onUpdate(provider.id, { name: name.trim() });
+                }
+              }}
+            >
+              Rename
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                const baseUrl = window.prompt("Provider base URL", provider.base_url);
+                if (baseUrl?.trim()) {
+                  onUpdate(provider.id, { base_url: baseUrl.trim() });
+                }
+              }}
+            >
+              Base URL
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                const apiKey = window.prompt("New provider API key");
+                if (apiKey?.trim()) {
+                  onUpdate(provider.id, { api_key: apiKey.trim() });
+                }
+              }}
+            >
+              Rotate key
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onUpdate(provider.id, { is_active: !provider.is_active })}
+            >
+              {provider.is_active ? "Disable" : "Enable"}
+            </Button>
+            <Button type="button" variant="destructive" onClick={() => onDeactivate(provider)}>
+              Deactivate
+            </Button>
+          </div>
         </div>
       ))}
       {providers.length === 0 ? (
@@ -362,14 +500,87 @@ function ProviderList({
   );
 }
 
+function ProjectListItem({
+  project,
+  isSelected,
+  onSelect,
+  onUpdate,
+  onDeactivate,
+}: {
+  project: ProjectResponse;
+  isSelected: boolean;
+  onSelect: () => void;
+  onUpdate: (data: { name?: string; description?: string | null; is_active?: boolean }) => void;
+  onDeactivate: () => void;
+}) {
+  return (
+    <div
+      className="rounded-md border px-3 py-2 text-sm data-[active=true]:bg-muted"
+      data-active={isSelected}
+    >
+      <button type="button" className="w-full text-left" onClick={onSelect}>
+        <span className="flex items-center justify-between gap-3">
+          <span>
+            <span className="block font-medium">{project.name}</span>
+            <span className="text-muted-foreground">{project.description || "No description"}</span>
+          </span>
+          <span className="text-xs text-muted-foreground">
+            {project.is_active ? "Active" : "Inactive"}
+          </span>
+        </span>
+      </button>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            const name = window.prompt("Project name", project.name);
+            if (name?.trim()) {
+              onUpdate({ name: name.trim() });
+            }
+          }}
+        >
+          Rename
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            const description = window.prompt("Project description", project.description ?? "");
+            if (description !== null) {
+              onUpdate({ description: description.trim() || null });
+            }
+          }}
+        >
+          Description
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => onUpdate({ is_active: !project.is_active })}
+        >
+          {project.is_active ? "Disable" : "Enable"}
+        </Button>
+        <Button type="button" variant="destructive" onClick={onDeactivate}>
+          Deactivate
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function AccessList({
   accessRules,
   providers,
   isLoading,
+  onUpdate,
+  onRevoke,
 }: {
   accessRules: ProjectProviderAccessResponse[];
   providers: ProviderResponse[];
   isLoading: boolean;
+  onUpdate: (accessRule: ProjectProviderAccessResponse) => void;
+  onRevoke: (accessRule: ProjectProviderAccessResponse) => void;
 }) {
   if (isLoading) {
     return <p className="mt-5 text-sm text-muted-foreground">Loading access rules...</p>;
@@ -382,6 +593,7 @@ function AccessList({
           <tr>
             <th className="px-3 py-2 font-medium">Provider</th>
             <th className="px-3 py-2 font-medium">Models</th>
+            <th className="px-3 py-2 font-medium">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -394,11 +606,21 @@ function AccessList({
               <td className="px-3 py-2 text-muted-foreground">
                 {accessRule.allowed_models?.join(", ") ?? "All models"}
               </td>
+              <td className="px-3 py-2">
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" onClick={() => onUpdate(accessRule)}>
+                    Edit models
+                  </Button>
+                  <Button type="button" variant="destructive" onClick={() => onRevoke(accessRule)}>
+                    Revoke
+                  </Button>
+                </div>
+              </td>
             </tr>
           ))}
           {accessRules.length === 0 ? (
             <tr>
-              <td className="px-3 py-3 text-muted-foreground" colSpan={2}>
+              <td className="px-3 py-3 text-muted-foreground" colSpan={3}>
                 No provider access rules for this project.
               </td>
             </tr>
@@ -416,6 +638,15 @@ function parseModelList(value: string | undefined) {
     .filter(Boolean);
 
   return models && models.length > 0 ? models : null;
+}
+
+function promptModelList(currentModels: string[] | null) {
+  const value = window.prompt(
+    "Allowed models, comma-separated. Leave blank for all models.",
+    currentModels?.join(", ") ?? "",
+  );
+
+  return value === null ? undefined : parseModelList(value);
 }
 
 function firstError(errors: Record<string, { message?: string } | undefined>) {
