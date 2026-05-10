@@ -34,18 +34,20 @@ describe("AppRoutes", () => {
   it("renders the login route", () => {
     renderRoute("/login");
 
-    expect(screen.getByRole("heading", { name: "Sign in" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Email")).toBeInTheDocument();
+    expect(screen.getByLabelText("Password")).toBeInTheDocument();
   });
 
   it("renders the setup route", () => {
     renderRoute("/setup");
 
-    expect(screen.getByRole("heading", { name: "Create admin" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Organization name")).toBeInTheDocument();
+    expect(screen.getByLabelText("Admin email")).toBeInTheDocument();
   });
 
   it("redirects unknown routes to login", () => {
     renderRoute("/missing");
 
-    expect(screen.getByRole("heading", { name: "Sign in" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Email")).toBeInTheDocument();
   });
 });

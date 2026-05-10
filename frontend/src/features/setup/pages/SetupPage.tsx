@@ -6,6 +6,9 @@ import { z } from "zod";
 
 import { useCreateFirstAdminApiV1SetupPost } from "@/shared/api/generated/setup/setup";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 const setupSchema = z.object({
   organization_name: z.string().min(1).max(255),
@@ -35,52 +38,49 @@ export function SetupPage() {
     },
   });
 
+  const firstError = Object.values(form.formState.errors)[0]?.message;
+
   return (
-    <section className="w-full max-w-sm rounded-lg border bg-card p-6 text-card-foreground shadow-sm">
-      <p className="text-sm font-medium text-muted-foreground">Bab</p>
-      <h1 className="mt-2 text-2xl font-semibold tracking-normal">Create admin</h1>
-      <form
-        className="mt-6 space-y-4"
-        onSubmit={form.handleSubmit((values) => setupMutation.mutate({ data: values }))}
-      >
-        <label className="block text-sm font-medium">
-          Organization name
-          <input
-            className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-            autoComplete="organization"
-            {...form.register("organization_name")}
-          />
-        </label>
-        <label className="block text-sm font-medium">
-          Admin email
-          <input
-            className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-            type="email"
-            autoComplete="email"
-            {...form.register("email")}
-          />
-        </label>
-        <label className="block text-sm font-medium">
-          Password
-          <input
-            className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-            type="password"
-            autoComplete="new-password"
-            {...form.register("password")}
-          />
-        </label>
-        {Object.values(form.formState.errors)[0]?.message ? (
-          <p className="text-sm text-destructive">
-            {Object.values(form.formState.errors)[0]?.message}
-          </p>
-        ) : null}
-        {setupMutation.isError ? (
-          <p className="text-sm text-destructive">Setup could not be completed.</p>
-        ) : null}
-        <Button type="submit" className="w-full" disabled={setupMutation.isPending}>
-          {setupMutation.isPending ? "Creating admin..." : "Create admin"}
-        </Button>
-      </form>
-    </section>
+    <Card className="w-full max-w-sm">
+      <CardHeader>
+        <CardDescription>Bab</CardDescription>
+        <CardTitle className="text-2xl">Create admin</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form
+          className="grid gap-4"
+          onSubmit={form.handleSubmit((values) => setupMutation.mutate({ data: values }))}
+        >
+          <div className="space-y-1.5">
+            <Label htmlFor="setup-org">Organization name</Label>
+            <Input
+              id="setup-org"
+              autoComplete="organization"
+              {...form.register("organization_name")}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="setup-email">Admin email</Label>
+            <Input id="setup-email" type="email" autoComplete="email" {...form.register("email")} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="setup-password">Password</Label>
+            <Input
+              id="setup-password"
+              type="password"
+              autoComplete="new-password"
+              {...form.register("password")}
+            />
+          </div>
+          {firstError ? <p className="text-sm text-destructive">{firstError}</p> : null}
+          {setupMutation.isError ? (
+            <p className="text-sm text-destructive">Setup could not be completed.</p>
+          ) : null}
+          <Button type="submit" className="w-full" disabled={setupMutation.isPending}>
+            {setupMutation.isPending ? "Creating admin..." : "Create admin"}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }

@@ -21,9 +21,10 @@ export default defineConfig([
     },
   },
   {
-    files: ["src/components/ui/**/*.{ts,tsx}"],
+    files: ["src/components/ui/**/*.{ts,tsx}", "src/hooks/use-mobile.ts"],
     rules: {
       "react-refresh/only-export-components": "off",
+      "react-hooks/set-state-in-effect": "off",
     },
   },
   eslintConfigPrettier,

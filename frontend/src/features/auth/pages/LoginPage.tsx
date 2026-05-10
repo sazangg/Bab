@@ -5,6 +5,9 @@ import { z } from "zod";
 
 import { useLoginApiV1AuthLoginPost } from "@/shared/api/generated/auth/auth";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useAuthStore } from "@/features/auth/model/auth-store";
 
 const loginSchema = z.object({
@@ -43,41 +46,40 @@ export function LoginPage() {
   }
 
   return (
-    <section className="w-full max-w-sm rounded-lg border bg-card p-6 text-card-foreground shadow-sm">
-      <p className="text-sm font-medium text-muted-foreground">Bab</p>
-      <h1 className="mt-2 text-2xl font-semibold tracking-normal">Sign in</h1>
-      <form
-        className="mt-6 space-y-4"
-        onSubmit={form.handleSubmit((values) => loginMutation.mutate({ data: values }))}
-      >
-        <label className="block text-sm font-medium">
-          Email
-          <input
-            className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-            type="email"
-            autoComplete="email"
-            {...form.register("email")}
-          />
-        </label>
-        {form.formState.errors.email ? (
-          <p className="text-sm text-destructive">{form.formState.errors.email.message}</p>
-        ) : null}
-        <label className="block text-sm font-medium">
-          Password
-          <input
-            className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-            type="password"
-            autoComplete="current-password"
-            {...form.register("password")}
-          />
-        </label>
-        {loginMutation.isError ? (
-          <p className="text-sm text-destructive">Invalid email or password.</p>
-        ) : null}
-        <Button type="submit" className="w-full" disabled={loginMutation.isPending}>
-          {loginMutation.isPending ? "Signing in..." : "Sign in"}
-        </Button>
-      </form>
-    </section>
+    <Card className="w-full max-w-sm">
+      <CardHeader>
+        <CardDescription>Bab</CardDescription>
+        <CardTitle className="text-2xl">Sign in</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form
+          className="grid gap-4"
+          onSubmit={form.handleSubmit((values) => loginMutation.mutate({ data: values }))}
+        >
+          <div className="space-y-1.5">
+            <Label htmlFor="login-email">Email</Label>
+            <Input id="login-email" type="email" autoComplete="email" {...form.register("email")} />
+            {form.formState.errors.email ? (
+              <p className="text-xs text-destructive">{form.formState.errors.email.message}</p>
+            ) : null}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="login-password">Password</Label>
+            <Input
+              id="login-password"
+              type="password"
+              autoComplete="current-password"
+              {...form.register("password")}
+            />
+          </div>
+          {loginMutation.isError ? (
+            <p className="text-sm text-destructive">Invalid email or password.</p>
+          ) : null}
+          <Button type="submit" className="w-full" disabled={loginMutation.isPending}>
+            {loginMutation.isPending ? "Signing in..." : "Sign in"}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }

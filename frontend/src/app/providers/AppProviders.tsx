@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { BrowserRouter } from "react-router-dom";
 import { NuqsAdapter } from "nuqs/adapters/react-router/v7";
 
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { queryClient } from "@/shared/config/query-client";
 
 type AppProvidersProps = {
@@ -13,9 +14,11 @@ type AppProvidersProps = {
 export function AppProviders({ children }: AppProvidersProps) {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <NuqsAdapter>{children}</NuqsAdapter>
-      </BrowserRouter>
+      <TooltipProvider>
+        <BrowserRouter>
+          <NuqsAdapter>{children}</NuqsAdapter>
+        </BrowserRouter>
+      </TooltipProvider>
       <ReactQueryDevtools initialIsOpen={false} />
     </QueryClientProvider>
   );
