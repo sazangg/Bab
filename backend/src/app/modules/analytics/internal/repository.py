@@ -22,6 +22,39 @@ async def list_request_logs_since(
     return list(result.all())
 
 
+async def list_request_logs_for_key_since(
+    *,
+    org_id: UUID,
+    virtual_key_id: UUID,
+    since: datetime,
+    db: AsyncSession,
+) -> list[RequestLog]:
+    result = await db.scalars(
+        select(RequestLog)
+        .where(
+            RequestLog.org_id == org_id,
+            RequestLog.virtual_key_id == virtual_key_id,
+            RequestLog.created_at >= since,
+        )
+        .order_by(RequestLog.created_at.desc())
+    )
+    return list(result.all())
+
+
+async def get_virtual_key(
+    *,
+    org_id: UUID,
+    virtual_key_id: UUID,
+    db: AsyncSession,
+) -> VirtualKey | None:
+    return await db.scalar(
+        select(VirtualKey).where(
+            VirtualKey.org_id == org_id,
+            VirtualKey.id == virtual_key_id,
+        )
+    )
+
+
 async def list_virtual_keys_by_id(
     *,
     org_id: UUID,

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import Scope
 from app.modules.analytics.internal import repository
 from app.modules.analytics.schemas import (
+    AnalyticsKeyUsageResponse,
     AnalyticsRecentRequest,
     AnalyticsSummaryResponse,
     AnalyticsTimeSeriesPoint,
@@ -14,6 +15,10 @@ from app.modules.analytics.schemas import (
     AnalyticsTotals,
 )
 from app.modules.request_logs.internal.models import RequestLog
+
+
+class AnalyticsKeyNotFoundError(Exception):
+    pass
 
 
 async def get_summary(
@@ -37,6 +42,40 @@ async def get_summary(
         totals=_build_totals(request_logs),
         recent_requests=_build_recent_requests(request_logs, recent_limit),
         top_keys=_build_top_keys(request_logs, keys_by_id),
+        time_series=_build_time_series(request_logs),
+    )
+
+
+async def get_key_usage(
+    *,
+    scope: Scope,
+    virtual_key_id: UUID,
+    days: int,
+    recent_limit: int,
+    db: AsyncSession,
+) -> AnalyticsKeyUsageResponse:
+    key = await repository.get_virtual_key(
+        org_id=scope.org_id,
+        virtual_key_id=virtual_key_id,
+        db=db,
+    )
+    if key is None:
+        raise AnalyticsKeyNotFoundError
+
+    now = datetime.now(UTC)
+    since = now - timedelta(days=days)
+    request_logs = await repository.list_request_logs_for_key_since(
+        org_id=scope.org_id,
+        virtual_key_id=virtual_key_id,
+        since=since,
+        db=db,
+    )
+
+    return AnalyticsKeyUsageResponse(
+        virtual_key_id=key.id,
+        key_name=key.name,
+        totals=_build_totals(request_logs),
+        recent_requests=_build_recent_requests(request_logs, recent_limit),
         time_series=_build_time_series(request_logs),
     )
 

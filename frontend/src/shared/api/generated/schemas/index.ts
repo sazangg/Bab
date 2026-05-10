@@ -6,6 +6,7 @@
  */
 
 export * from "./analyticsRecentRequest";
+export * from "./analyticsKeyUsageResponse";
 export * from "./analyticsSummaryResponse";
 export * from "./analyticsTimeSeriesPoint";
 export * from "./analyticsTopKey";
@@ -21,6 +22,7 @@ export * from "./createProjectRequest";
 export * from "./createProviderRequest";
 export * from "./createVirtualKeyRequest";
 export * from "./getAnalyticsSummaryApiV1AnalyticsSummaryGetParams";
+export * from "./getKeyUsageApiV1AnalyticsKeysVirtualKeyIdGetParams";
 export * from "./grantProjectProviderAccessRequest";
 export * from "./healthCheckApiV1HealthGet200";
 export * from "./hTTPValidationError";

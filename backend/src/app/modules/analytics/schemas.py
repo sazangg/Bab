@@ -46,3 +46,11 @@ class AnalyticsSummaryResponse(BaseModel):
     recent_requests: list[AnalyticsRecentRequest]
     top_keys: list[AnalyticsTopKey]
     time_series: list[AnalyticsTimeSeriesPoint]
+
+
+class AnalyticsKeyUsageResponse(BaseModel):
+    virtual_key_id: UUID
+    key_name: str
+    totals: AnalyticsTotals
+    recent_requests: list[AnalyticsRecentRequest]
+    time_series: list[AnalyticsTimeSeriesPoint]

@@ -18,8 +18,10 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AnalyticsKeyUsageResponse,
   AnalyticsSummaryResponse,
   GetAnalyticsSummaryApiV1AnalyticsSummaryGetParams,
+  GetKeyUsageApiV1AnalyticsKeysVirtualKeyIdGetParams,
   HTTPValidationError,
 } from "../schemas";
 
@@ -209,6 +211,144 @@ export function useGetAnalyticsSummaryApiV1AnalyticsSummaryGet<
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getGetAnalyticsSummaryApiV1AnalyticsSummaryGetQueryOptions(params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export type getKeyUsageApiV1AnalyticsKeysVirtualKeyIdGetResponse200 = {
+  data: AnalyticsKeyUsageResponse;
+  status: 200;
+};
+
+export type getKeyUsageApiV1AnalyticsKeysVirtualKeyIdGetResponse422 = {
+  data: HTTPValidationError;
+  status: 422;
+};
+
+export type getKeyUsageApiV1AnalyticsKeysVirtualKeyIdGetResponseSuccess =
+  getKeyUsageApiV1AnalyticsKeysVirtualKeyIdGetResponse200 & {
+    headers: Headers;
+  };
+export type getKeyUsageApiV1AnalyticsKeysVirtualKeyIdGetResponseError =
+  getKeyUsageApiV1AnalyticsKeysVirtualKeyIdGetResponse422 & {
+    headers: Headers;
+  };
+
+export type getKeyUsageApiV1AnalyticsKeysVirtualKeyIdGetResponse =
+  | getKeyUsageApiV1AnalyticsKeysVirtualKeyIdGetResponseSuccess
+  | getKeyUsageApiV1AnalyticsKeysVirtualKeyIdGetResponseError;
+
+export const getGetKeyUsageApiV1AnalyticsKeysVirtualKeyIdGetUrl = (
+  virtualKeyId: string,
+  params?: GetKeyUsageApiV1AnalyticsKeysVirtualKeyIdGetParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/analytics/keys/${virtualKeyId}?${stringifiedParams}`
+    : `/api/v1/analytics/keys/${virtualKeyId}`;
+};
+
+/**
+ * @summary Get Key Usage
+ */
+export const getKeyUsageApiV1AnalyticsKeysVirtualKeyIdGet = async (
+  virtualKeyId: string,
+  params?: GetKeyUsageApiV1AnalyticsKeysVirtualKeyIdGetParams,
+  options?: RequestInit,
+): Promise<getKeyUsageApiV1AnalyticsKeysVirtualKeyIdGetResponse> => {
+  return apiMutator<getKeyUsageApiV1AnalyticsKeysVirtualKeyIdGetResponse>(
+    getGetKeyUsageApiV1AnalyticsKeysVirtualKeyIdGetUrl(virtualKeyId, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetKeyUsageApiV1AnalyticsKeysVirtualKeyIdGetQueryKey = (
+  virtualKeyId: string,
+  params?: GetKeyUsageApiV1AnalyticsKeysVirtualKeyIdGetParams,
+) => {
+  return [`/api/v1/analytics/keys/${virtualKeyId}`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetKeyUsageApiV1AnalyticsKeysVirtualKeyIdGetQueryOptions = <
+  TData = Awaited<ReturnType<typeof getKeyUsageApiV1AnalyticsKeysVirtualKeyIdGet>>,
+  TError = HTTPValidationError,
+>(
+  virtualKeyId: string,
+  params?: GetKeyUsageApiV1AnalyticsKeysVirtualKeyIdGetParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getKeyUsageApiV1AnalyticsKeysVirtualKeyIdGet>>,
+        TError,
+        TData
+      >
+    >;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getGetKeyUsageApiV1AnalyticsKeysVirtualKeyIdGetQueryKey(virtualKeyId, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getKeyUsageApiV1AnalyticsKeysVirtualKeyIdGet>>
+  > = ({ signal }) =>
+    getKeyUsageApiV1AnalyticsKeysVirtualKeyIdGet(virtualKeyId, params, { signal });
+
+  return { queryKey, queryFn, enabled: !!virtualKeyId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getKeyUsageApiV1AnalyticsKeysVirtualKeyIdGet>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetKeyUsageApiV1AnalyticsKeysVirtualKeyIdGetQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getKeyUsageApiV1AnalyticsKeysVirtualKeyIdGet>>
+>;
+export type GetKeyUsageApiV1AnalyticsKeysVirtualKeyIdGetQueryError = HTTPValidationError;
+
+/**
+ * @summary Get Key Usage
+ */
+export function useGetKeyUsageApiV1AnalyticsKeysVirtualKeyIdGet<
+  TData = Awaited<ReturnType<typeof getKeyUsageApiV1AnalyticsKeysVirtualKeyIdGet>>,
+  TError = HTTPValidationError,
+>(
+  virtualKeyId: string,
+  params?: GetKeyUsageApiV1AnalyticsKeysVirtualKeyIdGetParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getKeyUsageApiV1AnalyticsKeysVirtualKeyIdGet>>,
+        TError,
+        TData
+      >
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetKeyUsageApiV1AnalyticsKeysVirtualKeyIdGetQueryOptions(
+    virtualKeyId,
+    params,
+    options,
+  );
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

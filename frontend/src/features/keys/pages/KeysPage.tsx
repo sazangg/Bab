@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
+import { useGetKeyUsageApiV1AnalyticsKeysVirtualKeyIdGet } from "@/shared/api/generated/analytics/analytics";
 import {
   useCreateVirtualKeyApiV1ProjectsProjectIdKeysPost,
   useGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet,
@@ -72,6 +73,12 @@ export function KeysPage() {
     (keyDetailQuery.data?.status === 200 ? keyDetailQuery.data.data : null) ??
     virtualKeys.find((key) => key.id === selectedKeyId) ??
     null;
+  const keyUsageQuery = useGetKeyUsageApiV1AnalyticsKeysVirtualKeyIdGet(
+    selectedKeyId ?? "",
+    { days: 7, recent_limit: 5 },
+    { query: { enabled: Boolean(selectedKeyId) } },
+  );
+  const keyUsage = keyUsageQuery.data?.status === 200 ? keyUsageQuery.data.data : null;
   const form = useForm<KeyFormValues>({
     resolver: zodResolver(keySchema),
     defaultValues: {
@@ -257,6 +264,7 @@ export function KeysPage() {
 
       <KeyDetailPanel
         virtualKey={selectedKey}
+        keyUsage={keyUsage}
         providers={providers}
         projectAccess={projectAccess}
         restrictionProviderId={restrictionProviderId}
@@ -391,6 +399,7 @@ function KeyRow({
 
 function KeyDetailPanel({
   virtualKey,
+  keyUsage,
   providers,
   projectAccess,
   restrictionProviderId,
@@ -403,6 +412,22 @@ function KeyDetailPanel({
   onClose,
 }: {
   virtualKey: VirtualKeyResponse | null;
+  keyUsage: {
+    totals: {
+      request_count: number;
+      error_count: number;
+      total_tokens: number;
+      average_latency_ms: number | null;
+    };
+    recent_requests: {
+      id: string;
+      created_at: string;
+      http_status: number;
+      requested_model: string;
+      provider_model: string;
+      total_tokens: number | null;
+    }[];
+  } | null;
   providers: ProviderResponse[];
   projectAccess: ProjectProviderAccessResponse[];
   restrictionProviderId: string;
@@ -453,6 +478,53 @@ function KeyDetailPanel({
         <Button type="button" variant="outline" onClick={onUpdateExpiration}>
           Expiration
         </Button>
+      </div>
+
+      <div className="mt-5 grid gap-3 md:grid-cols-4">
+        <DetailItem label="7d requests" value={(keyUsage?.totals.request_count ?? 0).toString()} />
+        <DetailItem label="7d errors" value={(keyUsage?.totals.error_count ?? 0).toString()} />
+        <DetailItem label="7d tokens" value={(keyUsage?.totals.total_tokens ?? 0).toString()} />
+        <DetailItem
+          label="Avg latency"
+          value={
+            keyUsage?.totals.average_latency_ms === null ||
+            keyUsage?.totals.average_latency_ms === undefined
+              ? "No data"
+              : `${keyUsage.totals.average_latency_ms} ms`
+          }
+        />
+      </div>
+
+      <div className="mt-5 overflow-hidden rounded-md border">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-muted text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2 font-medium">Recent time</th>
+              <th className="px-3 py-2 font-medium">Status</th>
+              <th className="px-3 py-2 font-medium">Model</th>
+              <th className="px-3 py-2 font-medium">Provider model</th>
+              <th className="px-3 py-2 font-medium">Tokens</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(keyUsage?.recent_requests ?? []).map((request) => (
+              <tr key={request.id} className="border-t">
+                <td className="px-3 py-2">{new Date(request.created_at).toLocaleString()}</td>
+                <td className="px-3 py-2">{request.http_status}</td>
+                <td className="px-3 py-2">{request.requested_model}</td>
+                <td className="px-3 py-2">{request.provider_model}</td>
+                <td className="px-3 py-2">{request.total_tokens ?? 0}</td>
+              </tr>
+            ))}
+            {keyUsage?.recent_requests.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-3 py-3 text-muted-foreground">
+                  No recent requests for this key.
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
       </div>
 
       <div className="mt-5 grid gap-3 rounded-md border bg-muted/30 p-3 md:grid-cols-[1fr_1fr_auto]">
