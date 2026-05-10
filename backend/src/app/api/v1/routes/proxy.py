@@ -7,9 +7,10 @@ from uuid import UUID
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.responses import StreamingResponse
 
 from app.core.config import settings
 from app.core.database import Scope, get_db
@@ -36,6 +37,7 @@ from app.modules.request_logs.usage import (
     estimate_request_tokens,
     unknown_usage,
     usage_from_provider_response,
+    usage_from_stream_chunks,
 )
 
 router = APIRouter(prefix="/v1", tags=["proxy"])
@@ -52,24 +54,20 @@ async def get_proxy_http_client() -> AsyncGenerator[httpx.AsyncClient]:
 ProxyHttpClient = Annotated[httpx.AsyncClient, Depends(get_proxy_http_client)]
 
 
-@router.post("/chat/completions")
+@router.post("/chat/completions", response_model=None)
 async def create_chat_completion(
     request: Request,
     db: DatabaseSession,
     http_client: ProxyHttpClient,
     authorization: VirtualKeyAuthorization = None,
     provider_id: ProviderIdHeader = None,
-) -> JSONResponse:
+) -> Response:
     started_at = perf_counter()
     _enforce_content_length(request)
     raw_body = await request.body()
     _enforce_body_size(raw_body)
     body = _decode_json_body(raw_body)
-    if body.get("stream") is True:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="streaming chat completions are not supported yet",
-        )
+    is_streaming = body.get("stream") is True
 
     provider_payload = _to_provider_payload(body)
     raw_key = _extract_bearer_token(authorization)
@@ -97,13 +95,36 @@ async def create_chat_completion(
             estimated_tokens=estimated_tokens,
             db=db,
         )
+        upstream_payload = ProviderChatCompletionRequest(
+            model=resolved.provider_model,
+            messages=provider_payload.messages,
+            extra_body=provider_payload.extra_body,
+        )
+        if is_streaming:
+            upstream_stream = await providers_facade.stream_chat_completion(
+                provider_id=resolved.provider_id,
+                payload=upstream_payload,
+                scope=Scope(org_id=resolved.org_id),
+                db=db,
+                http_client=http_client,
+            )
+            return StreamingResponse(
+                _stream_proxy_response(
+                    upstream=upstream_stream,
+                    resolved=resolved,
+                    provider_payload=provider_payload,
+                    limit_reservations=limit_reservations,
+                    estimated_tokens=estimated_tokens,
+                    started_at=started_at,
+                    db=db,
+                ),
+                status_code=upstream_stream.status_code,
+                media_type=upstream_stream.media_type,
+            )
+
         upstream = await providers_facade.create_chat_completion(
             provider_id=resolved.provider_id,
-            payload=ProviderChatCompletionRequest(
-                model=resolved.provider_model,
-                messages=provider_payload.messages,
-                extra_body=provider_payload.extra_body,
-            ),
+            payload=upstream_payload,
             scope=Scope(org_id=resolved.org_id),
             db=db,
             http_client=http_client,
@@ -180,6 +201,48 @@ async def create_chat_completion(
         db=db,
     )
     return JSONResponse(status_code=upstream.status_code, content=upstream.body)
+
+
+async def _stream_proxy_response(
+    *,
+    upstream,
+    resolved,
+    provider_payload: ProviderChatCompletionRequest,
+    limit_reservations,
+    estimated_tokens: int,
+    started_at: float,
+    db: AsyncSession,
+):
+    chunks: list[bytes] = []
+    error_code: str | None = None
+    try:
+        async for chunk in upstream.chunks:
+            chunks.append(chunk)
+            yield chunk
+    except Exception:
+        error_code = "provider_stream_error"
+        raise
+    finally:
+        await upstream.close()
+        usage = usage_from_stream_chunks(
+            request_messages=provider_payload.messages,
+            chunks=chunks,
+        )
+        if usage.total_tokens is not None:
+            await limits_facade.reconcile_token_limits(
+                reservations=limit_reservations,
+                actual_tokens=usage.total_tokens,
+                estimated_tokens=estimated_tokens,
+                db=db,
+            )
+        await _record_proxy_request(
+            resolved=resolved,
+            http_status=upstream.status_code,
+            latency_ms=_elapsed_ms(started_at),
+            usage=usage,
+            error_code=error_code,
+            db=db,
+        )
 
 
 def _enforce_content_length(request: Request) -> None:

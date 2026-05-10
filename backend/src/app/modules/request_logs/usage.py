@@ -1,3 +1,4 @@
+import json
 from typing import Any
 
 from pydantic import BaseModel
@@ -22,6 +23,20 @@ def usage_from_provider_response(
         return reported
 
     return _estimate_usage(request_messages=request_messages, response_body=response_body)
+
+
+def usage_from_stream_chunks(
+    *,
+    request_messages: list[dict[str, Any]],
+    chunks: list[bytes],
+) -> UsageAccounting:
+    events = _decode_sse_events(chunks)
+    for event in reversed(events):
+        usage = _extract_provider_usage(event)
+        if usage is not None:
+            return usage
+
+    return _estimate_stream_usage(request_messages=request_messages, events=events)
 
 
 def unknown_usage() -> UsageAccounting:
@@ -75,6 +90,55 @@ def _estimate_usage(
         total_tokens=prompt_tokens + completion_tokens,
         usage_source="estimated",
     )
+
+
+def _estimate_stream_usage(
+    *,
+    request_messages: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+) -> UsageAccounting:
+    prompt_tokens = _estimate_tokens(_messages_text(request_messages))
+    completion_tokens = _estimate_tokens(_stream_assistant_text(events))
+    return UsageAccounting(
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=prompt_tokens + completion_tokens,
+        usage_source="estimated",
+    )
+
+
+def _decode_sse_events(chunks: list[bytes]) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    raw = b"".join(chunks).decode(errors="replace")
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line.startswith("data:"):
+            continue
+        data = line.removeprefix("data:").strip()
+        if not data or data == "[DONE]":
+            continue
+        try:
+            event = json.loads(data)
+        except ValueError:
+            continue
+        if isinstance(event, dict):
+            events.append(event)
+    return events
+
+
+def _stream_assistant_text(events: list[dict[str, Any]]) -> str:
+    parts: list[str] = []
+    for event in events:
+        choices = event.get("choices")
+        if not isinstance(choices, list):
+            continue
+        for choice in choices:
+            if not isinstance(choice, dict):
+                continue
+            delta = choice.get("delta")
+            if isinstance(delta, dict):
+                parts.append(_content_to_text(delta.get("content")))
+    return "".join(parts)
 
 
 def _messages_text(messages: list[dict[str, Any]]) -> str:

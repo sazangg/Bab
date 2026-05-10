@@ -10,6 +10,7 @@ from app.modules.providers.schemas import (
     CreateProviderRequest,
     ProviderChatCompletionRequest,
     ProviderChatCompletionResponse,
+    ProviderChatCompletionStream,
     ProviderResponse,
     UpdateProviderRequest,
 )
@@ -69,6 +70,23 @@ async def create_chat_completion(
     http_client: httpx.AsyncClient,
 ) -> ProviderChatCompletionResponse:
     return await service.create_chat_completion(
+        provider_id=provider_id,
+        payload=payload,
+        scope=scope,
+        db=db,
+        http_client=http_client,
+    )
+
+
+async def stream_chat_completion(
+    *,
+    provider_id: UUID,
+    payload: ProviderChatCompletionRequest,
+    scope: Scope,
+    db: AsyncSession,
+    http_client: httpx.AsyncClient,
+) -> ProviderChatCompletionStream:
+    return await service.stream_chat_completion(
         provider_id=provider_id,
         payload=payload,
         scope=scope,

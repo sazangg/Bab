@@ -71,6 +71,51 @@ async def test_openai_compatible_adapter_raises_for_upstream_error() -> None:
     assert exc_info.value.body == {"error": "limited"}
 
 
+@pytest.mark.asyncio
+async def test_openai_compatible_adapter_streams_chat_completion() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url == "https://api.example.test/v1/chat/completions"
+        assert request.headers["authorization"] == "Bearer provider-secret"
+        assert b'"stream":true' in request.read()
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=httpx.ByteStream(
+                b"".join(
+                    [
+                        b'data: {"choices":[{"delta":{"content":"hel"}}]}\n\n',
+                        b'data: {"choices":[{"delta":{"content":"lo"}}]}\n\n',
+                        b"data: [DONE]\n\n",
+                    ]
+                )
+            ),
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        response = await OpenAICompatibleAdapter().stream_chat_completion(
+            provider=AdapterProvider(
+                base_url="https://api.example.test/v1",
+                api_key="provider-secret",
+            ),
+            payload=ProviderChatCompletionRequest(
+                model="gpt-5.4-mini",
+                messages=[{"role": "user", "content": "Hello"}],
+                extra_body={"stream": True},
+            ),
+            http_client=http_client,
+        )
+        chunks = [chunk async for chunk in response.chunks]
+        await response.close()
+
+    assert response.status_code == 200
+    assert response.media_type == "text/event-stream"
+    assert b"".join(chunks) == (
+        b'data: {"choices":[{"delta":{"content":"hel"}}]}\n\n'
+        b'data: {"choices":[{"delta":{"content":"lo"}}]}\n\n'
+        b"data: [DONE]\n\n"
+    )
+
+
 def test_registry_rejects_unknown_adapter_type() -> None:
     with pytest.raises(ProviderAdapterNotFoundError):
         ProviderAdapterRegistry().get("missing")

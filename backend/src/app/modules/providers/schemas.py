@@ -1,3 +1,4 @@
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -42,3 +43,18 @@ class ProviderChatCompletionRequest(BaseModel):
 class ProviderChatCompletionResponse(BaseModel):
     status_code: int
     body: dict[str, Any]
+
+
+class ProviderChatCompletionStream:
+    def __init__(
+        self,
+        *,
+        status_code: int,
+        chunks: AsyncIterator[bytes],
+        close: Callable[[], Awaitable[None]],
+        media_type: str,
+    ) -> None:
+        self.status_code = status_code
+        self.chunks = chunks
+        self.close = close
+        self.media_type = media_type

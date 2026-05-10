@@ -264,12 +264,37 @@ async def test_proxy_passes_through_upstream_error(app_client, db_session: Async
 
 
 @pytest.mark.asyncio
-async def test_proxy_rejects_streaming_requests(app_client, db_session: AsyncSession) -> None:
-    _, provider = await _create_proxy_graph(db_session, allowed_models=None)
+async def test_proxy_streams_chat_completion_and_records_usage(
+    app_client,
+    db_session: AsyncSession,
+) -> None:
+    project, provider = await _create_proxy_graph(db_session, allowed_models=None)
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url == "https://api.example.test/v1/chat/completions"
+        assert request.headers["authorization"] == "Bearer provider-secret"
+        assert b'"stream":true' in request.read()
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=httpx.ByteStream(
+                b"".join(
+                    [
+                        b'data: {"choices":[{"delta":{"content":"Hel"}}]}\n\n',
+                        b'data: {"choices":[{"delta":{"content":"lo"}}]}\n\n',
+                        (
+                            b'data: {"choices":[],"usage":{"prompt_tokens":9,'
+                            b'"completion_tokens":4,"total_tokens":13}}\n\n'
+                        ),
+                        b"data: [DONE]\n\n",
+                    ]
+                )
+            ),
+        )
 
     response = await _request_with_mock_upstream(
         app_client,
-        lambda _: httpx.Response(500),
+        handler,
         headers={
             "Authorization": "Bearer bab-sk-test-key",
             "X-Bab-Provider-Id": str(provider.id),
@@ -281,8 +306,19 @@ async def test_proxy_rejects_streaming_requests(app_client, db_session: AsyncSes
         },
     )
 
-    assert response.status_code == 400
-    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert "Hel" in response.text
+    assert "data: [DONE]" in response.text
+    request_log = await db_session.scalar(select(RequestLog))
+    assert request_log is not None
+    assert request_log.project_id == project.id
+    assert request_log.http_status == 200
+    assert request_log.usage_source == "provider_reported"
+    assert request_log.prompt_tokens == 9
+    assert request_log.completion_tokens == 4
+    assert request_log.total_tokens == 13
+    assert request_log.error_code is None
 
 
 @pytest.mark.asyncio

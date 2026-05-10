@@ -7,6 +7,7 @@ from app.modules.providers.errors import ProviderAdapterNotFoundError, ProviderU
 from app.modules.providers.schemas import (
     ProviderChatCompletionRequest,
     ProviderChatCompletionResponse,
+    ProviderChatCompletionStream,
 )
 
 OPENAI_COMPAT_ADAPTER = "openai_compat"
@@ -26,6 +27,15 @@ class ProviderAdapter(Protocol):
         payload: ProviderChatCompletionRequest,
         http_client: httpx.AsyncClient,
     ) -> ProviderChatCompletionResponse:
+        pass
+
+    async def stream_chat_completion(
+        self,
+        *,
+        provider: AdapterProvider,
+        payload: ProviderChatCompletionRequest,
+        http_client: httpx.AsyncClient,
+    ) -> ProviderChatCompletionStream:
         pass
 
 
@@ -48,6 +58,33 @@ class OpenAICompatibleAdapter:
         if not isinstance(body, dict):
             raise ProviderUpstreamError(status_code=response.status_code, body=body)
         return ProviderChatCompletionResponse(status_code=response.status_code, body=body)
+
+    async def stream_chat_completion(
+        self,
+        *,
+        provider: AdapterProvider,
+        payload: ProviderChatCompletionRequest,
+        http_client: httpx.AsyncClient,
+    ) -> ProviderChatCompletionStream:
+        request = http_client.build_request(
+            "POST",
+            f"{provider.base_url.rstrip('/')}/chat/completions",
+            headers={"Authorization": f"Bearer {provider.api_key}"},
+            json=_to_openai_body(payload),
+        )
+        response = await http_client.send(request, stream=True)
+        if response.is_error:
+            content = await response.aread()
+            await response.aclose()
+            body = _response_body_from_content(response, content)
+            raise ProviderUpstreamError(status_code=response.status_code, body=body)
+
+        return ProviderChatCompletionStream(
+            status_code=response.status_code,
+            chunks=response.aiter_bytes(),
+            close=response.aclose,
+            media_type=response.headers.get("content-type", "text/event-stream"),
+        )
 
 
 class ProviderAdapterRegistry:
@@ -88,3 +125,14 @@ def _response_body(response: httpx.Response) -> dict | list | str | None:
         return response.json()
     except ValueError:
         return response.text
+
+
+def _response_body_from_content(
+    response: httpx.Response, content: bytes
+) -> dict | list | str | None:
+    if not content:
+        return None
+    try:
+        return response.json()
+    except ValueError:
+        return content.decode(errors="replace")

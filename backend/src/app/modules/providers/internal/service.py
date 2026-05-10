@@ -17,6 +17,7 @@ from app.modules.providers.schemas import (
     CreateProviderRequest,
     ProviderChatCompletionRequest,
     ProviderChatCompletionResponse,
+    ProviderChatCompletionStream,
     ProviderResponse,
     UpdateProviderRequest,
 )
@@ -155,6 +156,29 @@ async def create_chat_completion(
 
     adapter = default_adapter_registry.get(provider.adapter_type)
     return await adapter.create_chat_completion(
+        provider=AdapterProvider(
+            base_url=provider.base_url,
+            api_key=decrypt(provider.api_key_encrypted),
+        ),
+        payload=payload,
+        http_client=http_client,
+    )
+
+
+async def stream_chat_completion(
+    *,
+    provider_id: UUID,
+    payload: ProviderChatCompletionRequest,
+    scope: Scope,
+    db: AsyncSession,
+    http_client: httpx.AsyncClient,
+) -> ProviderChatCompletionStream:
+    provider = await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
+    if not provider.is_active:
+        raise ProviderInactiveError
+
+    adapter = default_adapter_registry.get(provider.adapter_type)
+    return await adapter.stream_chat_completion(
         provider=AdapterProvider(
             base_url=provider.base_url,
             api_key=decrypt(provider.api_key_encrypted),
