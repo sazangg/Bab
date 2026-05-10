@@ -21,6 +21,57 @@ class UpdateProviderRequest(BaseModel):
     is_active: bool | None = None
 
 
+class CreateProviderKeyRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    api_key: str = Field(min_length=1)
+    priority: int = Field(default=100, ge=0)
+
+
+class UpdateProviderKeyRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    api_key: str | None = Field(default=None, min_length=1)
+    priority: int | None = Field(default=None, ge=0)
+    is_active: bool | None = None
+
+
+class ProviderKeyResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    org_id: UUID
+    provider_id: UUID
+    name: str
+    key_prefix: str
+    priority: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class CreateProviderModelRequest(BaseModel):
+    provider_model_name: str = Field(min_length=1, max_length=255)
+    alias: str | None = Field(default=None, min_length=1, max_length=255)
+
+
+class UpdateProviderModelRequest(BaseModel):
+    provider_model_name: str | None = Field(default=None, min_length=1, max_length=255)
+    alias: str | None = Field(default=None, min_length=1, max_length=255)
+    is_active: bool | None = None
+
+
+class ProviderModelResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    org_id: UUID
+    provider_id: UUID
+    provider_model_name: str
+    alias: str | None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
 class ProviderResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

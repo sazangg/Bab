@@ -14,10 +14,14 @@ from app.modules.providers.internal import repository
 from app.modules.providers.internal.adapters import AdapterProvider, default_adapter_registry
 from app.modules.providers.internal.models import Provider
 from app.modules.providers.schemas import (
+    CreateProviderKeyRequest,
+    CreateProviderModelRequest,
     CreateProviderRequest,
     ProviderChatCompletionRequest,
     ProviderChatCompletionResponse,
     ProviderChatCompletionStream,
+    ProviderKeyResponse,
+    ProviderModelResponse,
     ProviderResponse,
     UpdateProviderRequest,
 )
@@ -65,6 +69,106 @@ async def list_providers(*, scope: Scope, db: AsyncSession) -> list[ProviderResp
 async def get_provider(*, provider_id: UUID, scope: Scope, db: AsyncSession) -> ProviderResponse:
     provider = await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
     return _to_response(provider)
+
+
+async def create_provider_key(
+    *,
+    provider_id: UUID,
+    payload: CreateProviderKeyRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProviderKeyResponse:
+    async with transaction(db):
+        await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
+        provider_key = await repository.create_provider_key(
+            org_id=scope.org_id,
+            provider_id=provider_id,
+            name=payload.name,
+            key_prefix=_key_prefix(payload.api_key),
+            api_key_encrypted=encrypt(payload.api_key),
+            priority=payload.priority,
+            db=db,
+        )
+        await audit_facade.record_event(
+            RecordAuditEvent(
+                org_id=scope.org_id,
+                actor_user_id=actor.id,
+                event="provider_key.created",
+                target_type="provider_key",
+                target_id=provider_key.id,
+                event_metadata={"provider_id": str(provider_id), "name": provider_key.name},
+            ),
+            db,
+        )
+    return ProviderKeyResponse.model_validate(provider_key)
+
+
+async def list_provider_keys(
+    *,
+    provider_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[ProviderKeyResponse]:
+    await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
+    provider_keys = await repository.list_provider_keys(
+        org_id=scope.org_id,
+        provider_id=provider_id,
+        db=db,
+    )
+    return [ProviderKeyResponse.model_validate(provider_key) for provider_key in provider_keys]
+
+
+async def create_provider_model(
+    *,
+    provider_id: UUID,
+    payload: CreateProviderModelRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProviderModelResponse:
+    async with transaction(db):
+        await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
+        provider_model = await repository.create_provider_model(
+            org_id=scope.org_id,
+            provider_id=provider_id,
+            provider_model_name=payload.provider_model_name,
+            alias=payload.alias,
+            db=db,
+        )
+        await audit_facade.record_event(
+            RecordAuditEvent(
+                org_id=scope.org_id,
+                actor_user_id=actor.id,
+                event="provider_model.created",
+                target_type="provider_model",
+                target_id=provider_model.id,
+                event_metadata={
+                    "provider_id": str(provider_id),
+                    "provider_model_name": provider_model.provider_model_name,
+                    "alias": provider_model.alias,
+                },
+            ),
+            db,
+        )
+    return ProviderModelResponse.model_validate(provider_model)
+
+
+async def list_provider_models(
+    *,
+    provider_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[ProviderModelResponse]:
+    await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
+    provider_models = await repository.list_provider_models(
+        org_id=scope.org_id,
+        provider_id=provider_id,
+        db=db,
+    )
+    return [
+        ProviderModelResponse.model_validate(provider_model) for provider_model in provider_models
+    ]
 
 
 async def update_provider(
@@ -197,3 +301,7 @@ async def _get_provider_or_raise(*, provider_id: UUID, scope: Scope, db: AsyncSe
 
 def _to_response(provider: Provider) -> ProviderResponse:
     return ProviderResponse.model_validate(provider)
+
+
+def _key_prefix(api_key: str) -> str:
+    return f"{api_key[:4]}..."
