@@ -20,6 +20,15 @@ class RecordRequestLog(BaseModel):
     error_code: str | None = Field(default=None, max_length=100)
 
 
+class RequestLogFilters(BaseModel):
+    project_id: UUID | None = None
+    virtual_key_id: UUID | None = None
+    provider_id: UUID | None = None
+    status_code: int | None = None
+    requested_model: str | None = Field(default=None, max_length=255)
+    provider_model: str | None = Field(default=None, max_length=255)
+
+
 class RequestLogResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

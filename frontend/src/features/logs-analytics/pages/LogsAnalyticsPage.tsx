@@ -6,11 +6,37 @@ import { useListRequestLogsApiV1RequestLogsGet } from "@/shared/api/generated/re
 
 export function LogsAnalyticsPage() {
   const [tab, setTab] = useQueryState("tab", { defaultValue: "analytics" });
-  const analyticsQuery = useGetAnalyticsSummaryApiV1AnalyticsSummaryGet({
-    days: 7,
-    recent_limit: 5,
+  const [days, setDays] = useQueryState("days", { defaultValue: "7" });
+  const [recentLimit, setRecentLimit] = useQueryState("recent_limit", { defaultValue: "5" });
+  const [requestLimit, setRequestLimit] = useQueryState("request_limit", { defaultValue: "50" });
+  const [requestOffset, setRequestOffset] = useQueryState("request_offset", {
+    defaultValue: "0",
   });
-  const logsQuery = useListRequestLogsApiV1RequestLogsGet({ limit: 50 });
+  const [statusCode, setStatusCode] = useQueryState("status");
+  const [projectId, setProjectId] = useQueryState("project");
+  const [virtualKeyId, setVirtualKeyId] = useQueryState("key");
+  const [providerId, setProviderId] = useQueryState("provider");
+  const [requestedModel, setRequestedModel] = useQueryState("requested_model");
+  const [providerModel, setProviderModel] = useQueryState("provider_model");
+  const analyticsDays = clampNumber(days, 7, 1, 90);
+  const analyticsRecentLimit = clampNumber(recentLimit, 5, 1, 20);
+  const logsLimit = clampNumber(requestLimit, 50, 1, 100);
+  const logsOffset = clampNumber(requestOffset, 0, 0);
+  const parsedStatusCode = statusCode ? Number(statusCode) : null;
+  const analyticsQuery = useGetAnalyticsSummaryApiV1AnalyticsSummaryGet({
+    days: analyticsDays,
+    recent_limit: analyticsRecentLimit,
+  });
+  const logsQuery = useListRequestLogsApiV1RequestLogsGet({
+    limit: logsLimit,
+    offset: logsOffset,
+    project_id: projectId || null,
+    virtual_key_id: virtualKeyId || null,
+    provider_id: providerId || null,
+    status_code: parsedStatusCode && parsedStatusCode >= 100 ? parsedStatusCode : null,
+    requested_model: requestedModel || null,
+    provider_model: providerModel || null,
+  });
   const auditLogsQuery = useListAuditLogsApiV1AuditLogsGet({ limit: 50 });
   const analytics = analyticsQuery.data?.status === 200 ? analyticsQuery.data.data : null;
   const requestLogs = logsQuery.data?.status === 200 ? logsQuery.data.data : [];
@@ -39,6 +65,25 @@ export function LogsAnalyticsPage() {
 
       {tab === "analytics" ? (
         <section className="space-y-4">
+          <div className="grid gap-3 rounded-lg border bg-card p-4 md:grid-cols-[1fr_1fr_auto]">
+            <NumberInput
+              label="Window days"
+              min={1}
+              max={90}
+              value={analyticsDays}
+              onChange={(value) => void setDays(value)}
+            />
+            <NumberInput
+              label="Recent requests"
+              min={1}
+              max={20}
+              value={analyticsRecentLimit}
+              onChange={(value) => void setRecentLimit(value)}
+            />
+            <div className="flex items-end text-sm text-muted-foreground">
+              Showing the last {analyticsDays} day{analyticsDays === 1 ? "" : "s"}.
+            </div>
+          </div>
           <div className="grid gap-3 md:grid-cols-4">
             <Metric label="Requests" value={analytics?.totals.request_count ?? 0} />
             <Metric label="Errors" value={analytics?.totals.error_count ?? 0} />
@@ -72,6 +117,90 @@ export function LogsAnalyticsPage() {
 
       {tab === "requests" ? (
         <Panel title="Request logs">
+          <div className="mb-4 grid gap-3 lg:grid-cols-4">
+            <NumberInput
+              label="Limit"
+              min={1}
+              max={100}
+              value={logsLimit}
+              onChange={(value) => {
+                void setRequestLimit(value);
+                void setRequestOffset("0");
+              }}
+            />
+            <NumberInput
+              label="Status"
+              min={100}
+              max={599}
+              value={parsedStatusCode && parsedStatusCode >= 100 ? parsedStatusCode : ""}
+              onChange={(value) => {
+                void setStatusCode(value || null);
+                void setRequestOffset("0");
+              }}
+            />
+            <TextInput
+              label="Project ID"
+              value={projectId ?? ""}
+              onChange={(value) => {
+                void setProjectId(value || null);
+                void setRequestOffset("0");
+              }}
+            />
+            <TextInput
+              label="Virtual key ID"
+              value={virtualKeyId ?? ""}
+              onChange={(value) => {
+                void setVirtualKeyId(value || null);
+                void setRequestOffset("0");
+              }}
+            />
+            <TextInput
+              label="Provider ID"
+              value={providerId ?? ""}
+              onChange={(value) => {
+                void setProviderId(value || null);
+                void setRequestOffset("0");
+              }}
+            />
+            <TextInput
+              label="Requested model"
+              value={requestedModel ?? ""}
+              onChange={(value) => {
+                void setRequestedModel(value || null);
+                void setRequestOffset("0");
+              }}
+            />
+            <TextInput
+              label="Provider model"
+              value={providerModel ?? ""}
+              onChange={(value) => {
+                void setProviderModel(value || null);
+                void setRequestOffset("0");
+              }}
+            />
+            <div className="flex items-end gap-2">
+              <button
+                type="button"
+                className="h-9 rounded-md border px-3 text-sm disabled:opacity-50"
+                disabled={logsOffset === 0}
+                onClick={() => void setRequestOffset(String(Math.max(0, logsOffset - logsLimit)))}
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                className="h-9 rounded-md border px-3 text-sm disabled:opacity-50"
+                disabled={requestLogs.length < logsLimit}
+                onClick={() => void setRequestOffset(String(logsOffset + logsLimit))}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+          <p className="mb-3 text-sm text-muted-foreground">
+            Showing {logsOffset + 1}-{logsOffset + requestLogs.length} with a page size of{" "}
+            {logsLimit}.
+          </p>
           <Table
             headers={[
               "Time",
@@ -115,6 +244,55 @@ export function LogsAnalyticsPage() {
   );
 }
 
+function NumberInput({
+  label,
+  min,
+  max,
+  value,
+  onChange,
+}: {
+  label: string;
+  min: number;
+  max: number;
+  value: number | "";
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block text-sm font-medium">
+      {label}
+      <input
+        className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+        min={min}
+        max={max}
+        type="number"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
+  );
+}
+
+function TextInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block text-sm font-medium">
+      {label}
+      <input
+        className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+        value={value}
+        onChange={(event) => onChange(event.target.value.trim())}
+      />
+    </label>
+  );
+}
+
 function Metric({ label, value }: { label: string; value: string | number }) {
   return (
     <section className="rounded-lg border bg-card p-4">
@@ -122,6 +300,14 @@ function Metric({ label, value }: { label: string; value: string | number }) {
       <p className="mt-2 text-2xl font-semibold">{value}</p>
     </section>
   );
+}
+
+function clampNumber(value: string, fallback: number, min: number, max = Number.MAX_SAFE_INTEGER) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, Math.trunc(parsed)));
 }
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
