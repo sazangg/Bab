@@ -22,6 +22,11 @@ export function DashboardLayout() {
           <p className="text-sm font-semibold tracking-normal text-sidebar-foreground">Bab</p>
           <nav className="mt-6 space-y-1 text-sm text-sidebar-foreground">
             <NavLink to="/" label="Providers & projects" active={location.pathname === "/"} />
+            <NavLink
+              to="/model-aliases"
+              label="Model aliases"
+              active={location.pathname === "/model-aliases"}
+            />
             <NavLink to="/keys" label="Virtual keys" active={location.pathname === "/keys"} />
             <NavLink to="/limits" label="Limits" active={location.pathname === "/limits"} />
             <NavLink to="/logs" label="Logs & analytics" active={location.pathname === "/logs"} />

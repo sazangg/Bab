@@ -1,6 +1,7 @@
 import { useQueryState } from "nuqs";
 
 import { useGetAnalyticsSummaryApiV1AnalyticsSummaryGet } from "@/shared/api/generated/analytics/analytics";
+import { useListAuditLogsApiV1AuditLogsGet } from "@/shared/api/generated/audit-logs/audit-logs";
 import { useListRequestLogsApiV1RequestLogsGet } from "@/shared/api/generated/request-logs/request-logs";
 
 export function LogsAnalyticsPage() {
@@ -10,8 +11,10 @@ export function LogsAnalyticsPage() {
     recent_limit: 5,
   });
   const logsQuery = useListRequestLogsApiV1RequestLogsGet({ limit: 50 });
+  const auditLogsQuery = useListAuditLogsApiV1AuditLogsGet({ limit: 50 });
   const analytics = analyticsQuery.data?.status === 200 ? analyticsQuery.data.data : null;
   const requestLogs = logsQuery.data?.status === 200 ? logsQuery.data.data : [];
+  const auditLogs = auditLogsQuery.data?.status === 200 ? auditLogsQuery.data.data : [];
 
   return (
     <div className="space-y-8">
@@ -95,11 +98,17 @@ export function LogsAnalyticsPage() {
 
       {tab === "audit" ? (
         <Panel title="Audit logs">
-          <p className="text-sm text-muted-foreground">
-            Audit logging exists in the backend, but the protected audit-log HTTP endpoint is still
-            deferred. This view is intentionally separate so it can be wired without mixing audit
-            events with request logs.
-          </p>
+          <Table
+            headers={["Time", "Event", "Target", "Actor", "Metadata"]}
+            rows={auditLogs.map((log) => [
+              new Date(log.created_at).toLocaleString(),
+              log.event,
+              [log.target_type, log.target_id].filter(Boolean).join(" / "),
+              log.actor_user_id ?? "",
+              log.event_metadata ? JSON.stringify(log.event_metadata) : "",
+            ])}
+            empty="No audit logs yet."
+          />
         </Panel>
       ) : null}
     </div>

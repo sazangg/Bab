@@ -7,6 +7,7 @@ import { LoginPage } from "@/features/auth/pages/LoginPage";
 import { KeysPage } from "@/features/keys/pages/KeysPage";
 import { LimitsPage } from "@/features/limits/pages/LimitsPage";
 import { LogsAnalyticsPage } from "@/features/logs-analytics/pages/LogsAnalyticsPage";
+import { ModelAliasesPage } from "@/features/model-aliases/pages/ModelAliasesPage";
 import { ProvidersProjectsPage } from "@/features/providers-projects/pages/ProvidersProjectsPage";
 import { SetupRedirect } from "@/features/setup/components/SetupRedirect";
 import { SetupPage } from "@/features/setup/pages/SetupPage";
@@ -28,6 +29,7 @@ export function AppRoutes() {
             <Route path="/" element={<ProvidersProjectsPage />} />
             <Route path="/keys" element={<KeysPage />} />
             <Route path="/limits" element={<LimitsPage />} />
+            <Route path="/model-aliases" element={<ModelAliasesPage />} />
             <Route path="/logs" element={<LogsAnalyticsPage />} />
           </Route>
         </Route>
