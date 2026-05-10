@@ -52,6 +52,11 @@ def test_provider_secret_encryption_round_trip() -> None:
     assert decrypt(encrypted, key=key) == "provider-secret"
 
 
+def test_encrypt_rejects_invalid_key() -> None:
+    with pytest.raises(SecurityError, match="invalid encryption key"):
+        encrypt("provider-secret", key="not-a-fernet-key")
+
+
 def test_decrypt_rejects_invalid_ciphertext() -> None:
     key = Fernet.generate_key().decode()
 

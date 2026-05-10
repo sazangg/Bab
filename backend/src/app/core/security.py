@@ -52,15 +52,20 @@ def _resolve_encryption_key(key: str | None) -> str:
     return resolved_key
 
 
+def _fernet(key: str | None = None) -> Fernet:
+    try:
+        return Fernet(_resolve_encryption_key(key).encode())
+    except ValueError as exc:
+        raise SecurityError("invalid encryption key: expected a Fernet key") from exc
+
+
 def encrypt(value: str, *, key: str | None = None) -> str:
-    fernet = Fernet(_resolve_encryption_key(key).encode())
-    return fernet.encrypt(value.encode()).decode()
+    return _fernet(key).encrypt(value.encode()).decode()
 
 
 def decrypt(value: str, *, key: str | None = None) -> str:
     try:
-        fernet = Fernet(_resolve_encryption_key(key).encode())
-        return fernet.decrypt(value.encode()).decode()
+        return _fernet(key).decrypt(value.encode()).decode()
     except InvalidToken as exc:
         raise SecurityError("encrypted value could not be decrypted") from exc
 

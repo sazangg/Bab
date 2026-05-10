@@ -1,6 +1,7 @@
 from functools import lru_cache
 
-from pydantic import Field
+from cryptography.fernet import Fernet
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,6 +22,19 @@ class Settings(BaseSettings):
         default=1_000_000,
         validation_alias="BAB_PROXY_MAX_BODY_BYTES",
     )
+
+    @field_validator("encryption_key")
+    @classmethod
+    def validate_encryption_key(cls, value: str) -> str:
+        try:
+            Fernet(value.encode())
+        except ValueError as exc:
+            raise ValueError(
+                "BAB_ENCRYPTION_KEY must be a Fernet key. Generate one with: "
+                'uv run python -c "from cryptography.fernet import Fernet; '
+                'print(Fernet.generate_key().decode())"'
+            ) from exc
+        return value
 
 
 @lru_cache
