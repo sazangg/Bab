@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import create_access_token, decrypt, hash_password
 from app.modules.audit.internal.models import AuditLog
 from app.modules.auth.internal.models import Organization, User
-from app.modules.providers.internal.models import Provider
+from app.modules.providers.internal.models import Provider, ProviderKey, ProviderModel
 
 
 async def _create_user(db_session: AsyncSession, *, role: str = "super_admin") -> User:
@@ -189,3 +189,118 @@ async def test_super_admin_can_deactivate_provider(app_client, db_session: Async
 
     assert response.status_code == 204
     assert provider.is_active is False
+
+
+@pytest.mark.asyncio
+async def test_super_admin_can_create_and_list_provider_keys(
+    app_client,
+    db_session: AsyncSession,
+) -> None:
+    user = await _create_user(db_session)
+    provider = Provider(
+        org_id=user.org_id,
+        name="OpenAI",
+        base_url="https://api.openai.com/v1",
+        api_key_encrypted="legacy",
+        adapter_type="openai_compat",
+    )
+    db_session.add(provider)
+    await db_session.commit()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        create_response = await client.post(
+            f"/api/v1/providers/{provider.id}/keys",
+            headers=_auth_headers(user),
+            json={"name": "Production", "api_key": "sk-provider-secret", "priority": 10},
+        )
+        list_response = await client.get(
+            f"/api/v1/providers/{provider.id}/keys",
+            headers=_auth_headers(user),
+        )
+
+    created = create_response.json()
+    stored_key = await db_session.scalar(select(ProviderKey))
+
+    assert create_response.status_code == 201
+    assert created["name"] == "Production"
+    assert created["key_prefix"] == "sk-p..."
+    assert created["priority"] == 10
+    assert "api_key" not in created
+    assert "api_key_encrypted" not in created
+    assert stored_key is not None
+    assert decrypt(stored_key.api_key_encrypted) == "sk-provider-secret"
+    assert list_response.status_code == 200
+    assert [key["id"] for key in list_response.json()] == [created["id"]]
+
+
+@pytest.mark.asyncio
+async def test_non_admin_cannot_create_provider_key(
+    app_client,
+    db_session: AsyncSession,
+) -> None:
+    user = await _create_user(db_session, role="team_manager")
+    provider = Provider(
+        org_id=user.org_id,
+        name="OpenAI",
+        base_url="https://api.openai.com/v1",
+        api_key_encrypted="legacy",
+        adapter_type="openai_compat",
+    )
+    db_session.add(provider)
+    await db_session.commit()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post(
+            f"/api/v1/providers/{provider.id}/keys",
+            headers=_auth_headers(user),
+            json={"name": "Production", "api_key": "sk-provider-secret"},
+        )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_super_admin_can_create_and_list_provider_models(
+    app_client,
+    db_session: AsyncSession,
+) -> None:
+    user = await _create_user(db_session)
+    provider = Provider(
+        org_id=user.org_id,
+        name="OpenAI",
+        base_url="https://api.openai.com/v1",
+        api_key_encrypted="legacy",
+        adapter_type="openai_compat",
+    )
+    db_session.add(provider)
+    await db_session.commit()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        create_response = await client.post(
+            f"/api/v1/providers/{provider.id}/models",
+            headers=_auth_headers(user),
+            json={"provider_model_name": "gpt-5.4-mini", "alias": "fast"},
+        )
+        list_response = await client.get(
+            f"/api/v1/providers/{provider.id}/models",
+            headers=_auth_headers(user),
+        )
+
+    created = create_response.json()
+    stored_model = await db_session.scalar(select(ProviderModel))
+
+    assert create_response.status_code == 201
+    assert created["provider_model_name"] == "gpt-5.4-mini"
+    assert created["alias"] == "fast"
+    assert stored_model is not None
+    assert list_response.status_code == 200
+    assert [model["id"] for model in list_response.json()] == [created["id"]]

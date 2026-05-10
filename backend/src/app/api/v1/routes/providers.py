@@ -10,7 +10,11 @@ from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.providers import facade
 from app.modules.providers.errors import ProviderNotFoundError
 from app.modules.providers.schemas import (
+    CreateProviderKeyRequest,
+    CreateProviderModelRequest,
     CreateProviderRequest,
+    ProviderKeyResponse,
+    ProviderModelResponse,
     ProviderResponse,
     UpdateProviderRequest,
 )
@@ -39,6 +43,72 @@ async def create_provider(
     db: DatabaseSession,
 ) -> ProviderResponse:
     return await facade.create_provider(payload=payload, actor=actor, scope=scope, db=db)
+
+
+@router.get("/{provider_id}/keys")
+async def list_provider_keys(
+    provider_id: UUID,
+    scope: RequestScope,
+    db: DatabaseSession,
+    _: CurrentUser,
+) -> list[ProviderKeyResponse]:
+    try:
+        return await facade.list_provider_keys(provider_id=provider_id, scope=scope, db=db)
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="provider not found") from exc
+
+
+@router.post("/{provider_id}/keys", status_code=status.HTTP_201_CREATED)
+async def create_provider_key(
+    provider_id: UUID,
+    payload: CreateProviderKeyRequest,
+    actor: ProviderAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> ProviderKeyResponse:
+    try:
+        return await facade.create_provider_key(
+            provider_id=provider_id,
+            payload=payload,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="provider not found") from exc
+
+
+@router.get("/{provider_id}/models")
+async def list_provider_models(
+    provider_id: UUID,
+    scope: RequestScope,
+    db: DatabaseSession,
+    _: CurrentUser,
+) -> list[ProviderModelResponse]:
+    try:
+        return await facade.list_provider_models(provider_id=provider_id, scope=scope, db=db)
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="provider not found") from exc
+
+
+@router.post("/{provider_id}/models", status_code=status.HTTP_201_CREATED)
+async def create_provider_model(
+    provider_id: UUID,
+    payload: CreateProviderModelRequest,
+    actor: ProviderAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> ProviderModelResponse:
+    try:
+        return await facade.create_provider_model(
+            provider_id=provider_id,
+            payload=payload,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="provider not found") from exc
 
 
 @router.patch("/{provider_id}")
