@@ -26,3 +26,22 @@ class LimitPolicyResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+
+
+class CreateLimitPolicyRequest(BaseModel):
+    scope_type: str = Field(max_length=50)
+    scope_id: UUID | None = None
+    scope_value: str | None = Field(default=None, max_length=255)
+    metric: str = Field(max_length=50)
+    window: str = Field(max_length=20)
+    limit_value: int = Field(gt=0)
+
+
+class UpdateLimitPolicyRequest(BaseModel):
+    scope_type: str | None = Field(default=None, max_length=50)
+    scope_id: UUID | None = None
+    scope_value: str | None = Field(default=None, max_length=255)
+    metric: str | None = Field(default=None, max_length=50)
+    window: str | None = Field(default=None, max_length=20)
+    limit_value: int | None = Field(default=None, gt=0)
+    is_active: bool | None = None

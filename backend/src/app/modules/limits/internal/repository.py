@@ -6,7 +6,42 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.limits.internal.models import LimitCounter, LimitPolicy
-from app.modules.limits.schemas import LimitEvaluationContext
+from app.modules.limits.schemas import CreateLimitPolicyRequest, LimitEvaluationContext
+
+
+async def create_policy(
+    *,
+    org_id: UUID,
+    payload: CreateLimitPolicyRequest,
+    db: AsyncSession,
+) -> LimitPolicy:
+    policy = LimitPolicy(
+        org_id=org_id,
+        scope_type=payload.scope_type,
+        scope_id=payload.scope_id,
+        scope_value=payload.scope_value,
+        metric=payload.metric,
+        window=payload.window,
+        limit_value=payload.limit_value,
+    )
+    db.add(policy)
+    await db.flush()
+    return policy
+
+
+async def list_policies(*, org_id: UUID, db: AsyncSession) -> list[LimitPolicy]:
+    result = await db.scalars(
+        select(LimitPolicy)
+        .where(LimitPolicy.org_id == org_id)
+        .order_by(LimitPolicy.created_at.desc())
+    )
+    return list(result)
+
+
+async def get_policy(*, policy_id: UUID, org_id: UUID, db: AsyncSession) -> LimitPolicy | None:
+    return await db.scalar(
+        select(LimitPolicy).where(LimitPolicy.id == policy_id, LimitPolicy.org_id == org_id)
+    )
 
 
 async def list_matching_policies(

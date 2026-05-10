@@ -5,6 +5,7 @@ import { DashboardLayout } from "@/app/shell/DashboardLayout";
 import { AuthGate } from "@/features/auth/components/AuthGate";
 import { LoginPage } from "@/features/auth/pages/LoginPage";
 import { KeysPage } from "@/features/keys/pages/KeysPage";
+import { LimitsPage } from "@/features/limits/pages/LimitsPage";
 import { LogsAnalyticsPage } from "@/features/logs-analytics/pages/LogsAnalyticsPage";
 import { ProvidersProjectsPage } from "@/features/providers-projects/pages/ProvidersProjectsPage";
 import { SetupRedirect } from "@/features/setup/components/SetupRedirect";
@@ -26,6 +27,7 @@ export function AppRoutes() {
           <Route element={<DashboardLayout />}>
             <Route path="/" element={<ProvidersProjectsPage />} />
             <Route path="/keys" element={<KeysPage />} />
+            <Route path="/limits" element={<LimitsPage />} />
             <Route path="/logs" element={<LogsAnalyticsPage />} />
           </Route>
         </Route>
