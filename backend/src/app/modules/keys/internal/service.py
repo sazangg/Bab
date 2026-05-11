@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -980,6 +981,14 @@ async def resolve_access(*, payload: ResolveAccessRequest, db: AsyncSession) -> 
     if project is None or not project.is_active:
         raise InvalidVirtualKeyError
 
+    subscription_match = await _resolve_subscription_access(
+        payload=payload,
+        virtual_key=virtual_key,
+        db=db,
+    )
+    if subscription_match is not None:
+        return subscription_match
+
     provider_id, provider_model, used_alias = await _resolve_requested_model(
         requested_model=payload.requested_model,
         requested_provider_id=payload.provider_id,
@@ -1012,6 +1021,121 @@ async def resolve_access(*, payload: ResolveAccessRequest, db: AsyncSession) -> 
         requested_model=payload.requested_model,
         provider_model=provider_model,
         used_alias=used_alias,
+    )
+
+
+@dataclass(frozen=True)
+class _SubscriptionModelMatch:
+    provider_id: UUID
+    provider_model: str
+    used_alias: bool
+    priority: int
+
+
+async def _resolve_subscription_access(
+    *,
+    payload: ResolveAccessRequest,
+    virtual_key: VirtualKey,
+    db: AsyncSession,
+) -> ResolvedAccess | None:
+    scope = Scope(org_id=virtual_key.org_id)
+    matches: list[_SubscriptionModelMatch] = []
+    project_access_rules = await repository.list_project_subscription_access(
+        org_id=virtual_key.org_id,
+        project_id=virtual_key.project_id,
+        db=db,
+    )
+
+    for project_access in project_access_rules:
+        if not project_access.is_active:
+            continue
+        subscription = await repository.get_subscription(
+            org_id=virtual_key.org_id,
+            subscription_id=project_access.subscription_id,
+            db=db,
+        )
+        if subscription is None or not subscription.is_active:
+            continue
+
+        model_access = await repository.list_subscription_model_access(
+            org_id=virtual_key.org_id,
+            subscription_id=subscription.id,
+            db=db,
+        )
+        allowed_provider_model_ids = {
+            item.provider_model_id for item in model_access if item.is_active
+        }
+        provider_key_attachments = await repository.list_subscription_provider_keys(
+            org_id=virtual_key.org_id,
+            subscription_id=subscription.id,
+            db=db,
+        )
+        for attachment in provider_key_attachments:
+            if not attachment.is_active:
+                continue
+            provider_key = await providers_facade.get_provider_key(
+                provider_key_id=attachment.provider_key_id,
+                scope=scope,
+                db=db,
+            )
+            if not provider_key.is_active:
+                continue
+            provider = await providers_facade.get_provider(
+                provider_id=provider_key.provider_id,
+                scope=scope,
+                db=db,
+            )
+            if not provider.is_active:
+                continue
+            if payload.provider_id is not None and provider.id != payload.provider_id:
+                continue
+
+            provider_models = await providers_facade.list_provider_models(
+                provider_id=provider.id,
+                scope=scope,
+                db=db,
+            )
+            for provider_model in provider_models:
+                if not provider_model.is_active:
+                    continue
+                if (
+                    allowed_provider_model_ids
+                    and provider_model.id not in allowed_provider_model_ids
+                ):
+                    continue
+                used_alias = (
+                    provider_model.alias == payload.requested_model
+                    and provider_model.provider_model_name != payload.requested_model
+                )
+                if provider_model.provider_model_name != payload.requested_model and not used_alias:
+                    continue
+                if not _key_restrictions_allow(
+                    provider_id=provider.id,
+                    provider_model=provider_model.provider_model_name,
+                    restrictions=virtual_key.restrictions,
+                ):
+                    continue
+                matches.append(
+                    _SubscriptionModelMatch(
+                        provider_id=provider.id,
+                        provider_model=provider_model.provider_model_name,
+                        used_alias=used_alias,
+                        priority=project_access.priority,
+                    )
+                )
+
+    if not matches:
+        return None
+
+    match = sorted(matches, key=lambda item: item.priority)[0]
+    return ResolvedAccess(
+        org_id=virtual_key.org_id,
+        project_id=virtual_key.project_id,
+        virtual_key_id=virtual_key.id,
+        provider_id=match.provider_id,
+        requested_model=payload.requested_model,
+        provider_model=match.provider_model,
+        used_alias=match.used_alias,
     )
 
 
