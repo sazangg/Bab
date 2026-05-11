@@ -72,6 +72,34 @@ async def test_openai_compatible_adapter_raises_for_upstream_error() -> None:
 
 
 @pytest.mark.asyncio
+async def test_openai_compatible_adapter_lists_models() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url == "https://api.example.test/v1/models"
+        assert request.headers["authorization"] == "Bearer provider-secret"
+        return httpx.Response(
+            200,
+            json={
+                "object": "list",
+                "data": [
+                    {"id": "gpt-5.4-mini", "object": "model"},
+                    {"id": "gpt-5.4", "object": "model"},
+                ],
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        models = await OpenAICompatibleAdapter().list_models(
+            provider=AdapterProvider(
+                base_url="https://api.example.test/v1",
+                api_key="provider-secret",
+            ),
+            http_client=http_client,
+        )
+
+    assert models == ["gpt-5.4-mini", "gpt-5.4"]
+
+
+@pytest.mark.asyncio
 async def test_openai_compatible_adapter_streams_chat_completion() -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         assert request.url == "https://api.example.test/v1/chat/completions"

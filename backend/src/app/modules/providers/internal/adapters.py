@@ -20,6 +20,14 @@ class AdapterProvider:
 
 
 class ProviderAdapter(Protocol):
+    async def list_models(
+        self,
+        *,
+        provider: AdapterProvider,
+        http_client: httpx.AsyncClient,
+    ) -> list[str]:
+        pass
+
     async def create_chat_completion(
         self,
         *,
@@ -40,6 +48,28 @@ class ProviderAdapter(Protocol):
 
 
 class OpenAICompatibleAdapter:
+    async def list_models(
+        self,
+        *,
+        provider: AdapterProvider,
+        http_client: httpx.AsyncClient,
+    ) -> list[str]:
+        response = await http_client.get(
+            f"{provider.base_url.rstrip('/')}/models",
+            headers={"Authorization": f"Bearer {provider.api_key}"},
+        )
+        body = _response_body(response)
+        if response.is_error:
+            raise ProviderUpstreamError(status_code=response.status_code, body=body)
+        if not isinstance(body, dict) or not isinstance(body.get("data"), list):
+            raise ProviderUpstreamError(status_code=response.status_code, body=body)
+
+        model_ids = []
+        for item in body["data"]:
+            if isinstance(item, dict) and isinstance(item.get("id"), str):
+                model_ids.append(item["id"])
+        return model_ids
+
     async def create_chat_completion(
         self,
         *,

@@ -90,6 +90,23 @@ async def create_provider_model(
     )
 
 
+async def sync_provider_models(
+    *,
+    provider_id: UUID,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+    http_client: httpx.AsyncClient,
+) -> list[ProviderModelResponse]:
+    return await service.sync_provider_models(
+        provider_id=provider_id,
+        actor=actor,
+        scope=scope,
+        db=db,
+        http_client=http_client,
+    )
+
+
 async def list_provider_models(
     *,
     provider_id: UUID,

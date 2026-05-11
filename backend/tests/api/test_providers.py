@@ -1,9 +1,10 @@
+import httpx
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import create_access_token, decrypt, hash_password
+from app.core.security import create_access_token, decrypt, encrypt, hash_password
 from app.modules.audit.internal.models import AuditLog
 from app.modules.auth.internal.models import Organization, User
 from app.modules.providers.internal.models import Provider, ProviderKey, ProviderModel
@@ -304,3 +305,61 @@ async def test_super_admin_can_create_and_list_provider_models(
     assert stored_model is not None
     assert list_response.status_code == 200
     assert [model["id"] for model in list_response.json()] == [created["id"]]
+
+
+@pytest.mark.asyncio
+async def test_super_admin_can_sync_provider_models(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = await _create_user(db_session)
+    provider = Provider(
+        org_id=user.org_id,
+        name="OpenAI",
+        base_url="https://api.example.test/v1",
+        api_key_encrypted="legacy",
+        adapter_type="openai_compat",
+    )
+    db_session.add(provider)
+    await db_session.flush()
+    db_session.add(
+        ProviderKey(
+            org_id=user.org_id,
+            provider_id=provider.id,
+            name="Production",
+            key_prefix="sk-p...",
+            api_key_encrypted=encrypt("provider-secret"),
+        )
+    )
+    await db_session.commit()
+
+    real_async_client = httpx.AsyncClient
+
+    def mock_client_factory(**_kwargs):
+        async def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url == "https://api.example.test/v1/models"
+            assert request.headers["authorization"] == "Bearer provider-secret"
+            return httpx.Response(
+                200,
+                json={"data": [{"id": "gpt-5.4-mini"}, {"id": "gpt-5.4"}]},
+            )
+
+        return real_async_client(transport=httpx.MockTransport(handler))
+
+    monkeypatch.setattr("app.api.v1.routes.providers.httpx.AsyncClient", mock_client_factory)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post(
+            f"/api/v1/providers/{provider.id}/models/sync",
+            headers=_auth_headers(user),
+        )
+
+    assert response.status_code == 200
+    assert [model["provider_model_name"] for model in response.json()] == [
+        "gpt-5.4",
+        "gpt-5.4-mini",
+    ]

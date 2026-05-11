@@ -110,6 +110,22 @@ async def create_provider_model(
     return provider_model
 
 
+async def get_provider_model_by_name(
+    *,
+    org_id: UUID,
+    provider_id: UUID,
+    provider_model_name: str,
+    db: AsyncSession,
+) -> ProviderModel | None:
+    return await db.scalar(
+        select(ProviderModel).where(
+            ProviderModel.org_id == org_id,
+            ProviderModel.provider_id == provider_id,
+            ProviderModel.provider_model_name == provider_model_name,
+        )
+    )
+
+
 async def list_provider_models(
     *,
     org_id: UUID,

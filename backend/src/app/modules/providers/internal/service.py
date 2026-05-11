@@ -170,6 +170,75 @@ async def create_provider_model(
     return ProviderModelResponse.model_validate(provider_model)
 
 
+async def sync_provider_models(
+    *,
+    provider_id: UUID,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+    http_client: httpx.AsyncClient,
+) -> list[ProviderModelResponse]:
+    async with transaction(db):
+        provider = await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
+        provider_keys = await repository.list_provider_keys(
+            org_id=scope.org_id,
+            provider_id=provider_id,
+            db=db,
+        )
+        active_key = next((key for key in provider_keys if key.is_active), None)
+        if active_key is None:
+            raise ProviderNotFoundError
+
+        adapter = default_adapter_registry.get(provider.adapter_type)
+        model_names = await adapter.list_models(
+            provider=AdapterProvider(
+                base_url=provider.base_url,
+                api_key=decrypt(active_key.api_key_encrypted),
+            ),
+            http_client=http_client,
+        )
+        synced_models = []
+        for model_name in sorted(set(model_names)):
+            provider_model = await repository.get_provider_model_by_name(
+                org_id=scope.org_id,
+                provider_id=provider_id,
+                provider_model_name=model_name,
+                db=db,
+            )
+            if provider_model is None:
+                provider_model = await repository.create_provider_model(
+                    org_id=scope.org_id,
+                    provider_id=provider_id,
+                    provider_model_name=model_name,
+                    alias=None,
+                    db=db,
+                )
+            else:
+                provider_model.is_active = True
+                await db.flush()
+            synced_models.append(provider_model)
+
+        await audit_facade.record_event(
+            RecordAuditEvent(
+                org_id=scope.org_id,
+                actor_user_id=actor.id,
+                event="provider_models.synced",
+                target_type="provider",
+                target_id=provider.id,
+                event_metadata={"model_count": len(synced_models)},
+            ),
+            db,
+        )
+
+    logger.info(
+        "provider_models_synced",
+        provider_id=str(provider_id),
+        model_count=len(synced_models),
+        org_id=str(scope.org_id),
+    )
+    return [ProviderModelResponse.model_validate(model) for model in synced_models]
+
+
 async def list_provider_models(
     *,
     provider_id: UUID,

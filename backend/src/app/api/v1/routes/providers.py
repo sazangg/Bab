@@ -1,6 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -107,6 +108,26 @@ async def create_provider_model(
             scope=scope,
             db=db,
         )
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="provider not found") from exc
+
+
+@router.post("/{provider_id}/models/sync")
+async def sync_provider_models(
+    provider_id: UUID,
+    actor: ProviderAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> list[ProviderModelResponse]:
+    try:
+        async with httpx.AsyncClient(timeout=30) as http_client:
+            return await facade.sync_provider_models(
+                provider_id=provider_id,
+                actor=actor,
+                scope=scope,
+                db=db,
+                http_client=http_client,
+            )
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc
 

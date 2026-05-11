@@ -1,3 +1,4 @@
+import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -115,3 +116,57 @@ async def test_provider_model_alias_is_unique_per_provider(db_session: AsyncSess
     assert openai_model.alias == "fast"
     assert mistral_model.alias == "fast"
     assert openai_model.provider_id != mistral_model.provider_id
+
+
+async def test_sync_provider_models_upserts_upstream_models(db_session: AsyncSession) -> None:
+    user = await _create_user(db_session)
+    scope = Scope(org_id=user.org_id)
+    provider = await providers_facade.create_provider(
+        payload=CreateProviderRequest(
+            name="OpenAI",
+            base_url="https://api.example.test/v1",
+            api_key="legacy-secret",
+        ),
+        actor=user,
+        scope=scope,
+        db=db_session,
+    )
+    await providers_facade.create_provider_key(
+        provider_id=provider.id,
+        payload=CreateProviderKeyRequest(name="Production", api_key="provider-secret"),
+        actor=user,
+        scope=scope,
+        db=db_session,
+    )
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url == "https://api.example.test/v1/models"
+        assert request.headers["authorization"] == "Bearer provider-secret"
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {"id": "gpt-5.4-mini"},
+                    {"id": "gpt-5.4"},
+                ]
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        synced = await providers_facade.sync_provider_models(
+            provider_id=provider.id,
+            actor=user,
+            scope=scope,
+            db=db_session,
+            http_client=http_client,
+        )
+        synced_again = await providers_facade.sync_provider_models(
+            provider_id=provider.id,
+            actor=user,
+            scope=scope,
+            db=db_session,
+            http_client=http_client,
+        )
+
+    assert [model.provider_model_name for model in synced] == ["gpt-5.4", "gpt-5.4-mini"]
+    assert [model.id for model in synced_again] == [model.id for model in synced]
