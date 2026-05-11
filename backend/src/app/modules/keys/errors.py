@@ -28,3 +28,7 @@ class InvalidVirtualKeyError(Exception):
 
 class AccessDeniedError(Exception):
     pass
+
+
+class AmbiguousModelResolutionError(Exception):
+    pass

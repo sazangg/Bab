@@ -8,7 +8,11 @@ from app.core.database import Scope
 from app.core.security import hash_password, hash_token
 from app.modules.auth.internal.models import Organization, User
 from app.modules.keys import facade as keys_facade
-from app.modules.keys.errors import AccessDeniedError, InvalidVirtualKeyError
+from app.modules.keys.errors import (
+    AccessDeniedError,
+    AmbiguousModelResolutionError,
+    InvalidVirtualKeyError,
+)
 from app.modules.keys.facade import resolve_access
 from app.modules.keys.internal.models import (
     ModelAlias,
@@ -474,6 +478,78 @@ async def test_resolve_access_provider_hint_disambiguates_subscription_alias(
 
     assert resolved.provider_id == openai.id
     assert resolved.provider_model == "gpt-5.4-mini"
+
+
+@pytest.mark.asyncio
+async def test_resolve_access_rejects_same_priority_alias_ambiguity(
+    db_session: AsyncSession,
+) -> None:
+    org, project, _, _ = await _create_subscription_graph(
+        db_session,
+        provider_name="OpenAI",
+        provider_model_name="gpt-5.4-mini",
+        model_alias="fast",
+        subscription_priority=10,
+    )
+    user = await db_session.scalar(select(User).where(User.org_id == org.id))
+    assert user is not None
+    scope = Scope(org_id=org.id)
+    provider = await providers_facade.create_provider(
+        payload=CreateProviderRequest(
+            name="Mistral",
+            base_url="https://api.mistral.example/v1",
+            api_key="legacy-secret",
+        ),
+        actor=user,
+        scope=scope,
+        db=db_session,
+    )
+    provider_key = await providers_facade.create_provider_key(
+        provider_id=provider.id,
+        payload=CreateProviderKeyRequest(name="Production", api_key="sk-mistral"),
+        actor=user,
+        scope=scope,
+        db=db_session,
+    )
+    await providers_facade.create_provider_model(
+        provider_id=provider.id,
+        payload=CreateProviderModelRequest(
+            provider_model_name="mistral-small-latest",
+            alias="fast",
+        ),
+        actor=user,
+        scope=scope,
+        db=db_session,
+    )
+    subscription = await keys_facade.create_subscription(
+        payload=CreateSubscriptionRequest(name="Mistral subscription"),
+        actor=user,
+        scope=scope,
+        db=db_session,
+    )
+    await keys_facade.attach_provider_key_to_subscription(
+        subscription_id=subscription.id,
+        payload=AttachSubscriptionProviderKeyRequest(provider_key_id=provider_key.id),
+        actor=user,
+        scope=scope,
+        db=db_session,
+    )
+    await keys_facade.grant_project_subscription_access(
+        project_id=project.id,
+        payload=GrantProjectSubscriptionAccessRequest(
+            subscription_id=subscription.id,
+            priority=10,
+        ),
+        actor=user,
+        scope=scope,
+        db=db_session,
+    )
+
+    with pytest.raises(AmbiguousModelResolutionError):
+        await resolve_access(
+            payload=ResolveAccessRequest(raw_key="bab-sk-test-key", requested_model="fast"),
+            db=db_session,
+        )
 
 
 @pytest.mark.asyncio

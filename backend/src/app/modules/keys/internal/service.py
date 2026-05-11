@@ -12,6 +12,7 @@ from app.modules.audit.schemas import RecordAuditEvent
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys.errors import (
     AccessDeniedError,
+    AmbiguousModelResolutionError,
     InvalidVirtualKeyError,
     ModelAliasAlreadyExistsError,
     ModelAliasNotFoundError,
@@ -1129,7 +1130,12 @@ async def _resolve_subscription_access(
     if not matches:
         return None
 
-    match = sorted(matches, key=lambda item: item.priority)[0]
+    sorted_matches = sorted(matches, key=lambda item: item.priority)
+    match = sorted_matches[0]
+    best_priority_matches = [item for item in sorted_matches if item.priority == match.priority]
+    if len(best_priority_matches) > 1:
+        raise AmbiguousModelResolutionError
+
     return ResolvedAccess(
         org_id=virtual_key.org_id,
         project_id=virtual_key.project_id,
