@@ -12,7 +12,7 @@ async def create_provider(
     name: str,
     slug: str,
     base_url: str,
-    api_key_encrypted: str,
+    api_key_encrypted: str | None,
     adapter_type: str,
     db: AsyncSession,
 ) -> Provider:

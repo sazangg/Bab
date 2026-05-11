@@ -38,7 +38,6 @@ async def test_provider_key_is_created_as_encrypted_child_resource(
         payload=CreateProviderRequest(
             name="OpenAI",
             base_url="https://api.openai.com/v1",
-            api_key="legacy-secret",
         ),
         actor=user,
         scope=scope,
@@ -69,6 +68,26 @@ async def test_provider_key_is_created_as_encrypted_child_resource(
     assert stored_key.api_key_encrypted != "sk-provider-secret"
     assert decrypt(stored_key.api_key_encrypted) == "sk-provider-secret"
     assert [key.id for key in provider_keys] == [provider_key.id]
+
+
+async def test_provider_can_be_created_without_legacy_credential(
+    db_session: AsyncSession,
+) -> None:
+    user = await _create_user(db_session)
+    scope = Scope(org_id=user.org_id)
+
+    provider = await providers_facade.create_provider(
+        payload=CreateProviderRequest(
+            name="OpenRouter",
+            base_url="https://openrouter.ai/api/v1",
+        ),
+        actor=user,
+        scope=scope,
+        db=db_session,
+    )
+
+    assert provider.name == "OpenRouter"
+    assert provider.slug == "openrouter"
 
 
 async def test_provider_model_alias_is_unique_per_provider(db_session: AsyncSession) -> None:

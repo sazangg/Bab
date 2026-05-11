@@ -19,7 +19,7 @@ class Provider(Base):
     name: Mapped[str] = mapped_column(String(255))
     slug: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     base_url: Mapped[str] = mapped_column(String(500))
-    api_key_encrypted: Mapped[str] = mapped_column(String(1000))
+    api_key_encrypted: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     adapter_type: Mapped[str] = mapped_column(String(100), default="openai_compat")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(

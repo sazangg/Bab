@@ -43,7 +43,7 @@ async def create_provider(
             name=payload.name,
             slug=_slugify(payload.slug or payload.name),
             base_url=str(payload.base_url).rstrip("/"),
-            api_key_encrypted=encrypt(payload.api_key),
+            api_key_encrypted=encrypt(payload.api_key) if payload.api_key is not None else None,
             adapter_type=payload.adapter_type,
             db=db,
         )
@@ -430,6 +430,8 @@ async def _resolve_provider_api_key(
     db: AsyncSession,
 ) -> str:
     if provider_key_id is None:
+        if provider.api_key_encrypted is None:
+            raise ProviderNotFoundError
         return decrypt(provider.api_key_encrypted)
 
     provider_key = await repository.get_provider_key(

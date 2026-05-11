@@ -69,6 +69,37 @@ async def test_super_admin_can_create_provider(app_client, db_session: AsyncSess
 
 
 @pytest.mark.asyncio
+async def test_super_admin_can_create_provider_without_credential(
+    app_client,
+    db_session: AsyncSession,
+) -> None:
+    user = await _create_user(db_session)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post(
+            "/api/v1/providers",
+            headers=_auth_headers(user),
+            json={
+                "name": "OpenRouter",
+                "base_url": "https://openrouter.ai/api/v1",
+            },
+        )
+
+    body = response.json()
+    provider = await db_session.scalar(select(Provider))
+
+    assert response.status_code == 201
+    assert body["name"] == "OpenRouter"
+    assert body["slug"] == "openrouter"
+    assert "api_key" not in body
+    assert provider is not None
+    assert provider.api_key_encrypted is None
+
+
+@pytest.mark.asyncio
 async def test_non_admin_cannot_create_provider(app_client, db_session: AsyncSession) -> None:
     user = await _create_user(db_session, role="team_manager")
 
