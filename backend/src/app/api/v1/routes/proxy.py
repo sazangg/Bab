@@ -79,6 +79,7 @@ async def create_chat_completion(
             payload=ResolveAccessRequest(
                 raw_key=raw_key,
                 requested_model=provider_payload.model,
+                provider=provider_payload.extra_body.pop("provider", None),
                 provider_id=provider_id,
             ),
             db=db,

@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 class CreateProviderRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
+    slug: str | None = Field(default=None, min_length=1, max_length=100)
     base_url: HttpUrl
     api_key: str = Field(min_length=1)
     adapter_type: str = Field(default="openai_compat", max_length=100)
@@ -15,6 +16,7 @@ class CreateProviderRequest(BaseModel):
 
 class UpdateProviderRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
+    slug: str | None = Field(default=None, min_length=1, max_length=100)
     base_url: HttpUrl | None = None
     api_key: str | None = Field(default=None, min_length=1)
     adapter_type: str | None = Field(default=None, max_length=100)
@@ -78,6 +80,7 @@ class ProviderResponse(BaseModel):
     id: UUID
     org_id: UUID
     name: str
+    slug: str | None
     base_url: str
     adapter_type: str
     is_active: bool

@@ -123,6 +123,7 @@ async def test_proxy_forwards_non_streaming_chat_completion(
         assert request.headers["authorization"] == "Bearer provider-secret"
         body = request.read()
         assert b'"model":"gpt-5.4-mini"' in body
+        assert b'"provider"' not in body
         assert b'"temperature":0.2' in body
         return httpx.Response(
             200,
@@ -147,6 +148,7 @@ async def test_proxy_forwards_non_streaming_chat_completion(
         },
         json_body={
             "model": "gpt-5.4-mini",
+            "provider": "openai",
             "messages": [{"role": "user", "content": "Hello"}],
             "temperature": 0.2,
         },

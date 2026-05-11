@@ -57,6 +57,7 @@ async def test_super_admin_can_create_provider(app_client, db_session: AsyncSess
 
     assert response.status_code == 201
     assert body["name"] == "OpenAI"
+    assert body["slug"] == "openai"
     assert body["base_url"] == "https://api.openai.com/v1"
     assert "api_key" not in body
     assert provider is not None

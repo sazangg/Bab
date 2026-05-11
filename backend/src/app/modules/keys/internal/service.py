@@ -1087,6 +1087,8 @@ async def _resolve_subscription_access(
             )
             if not provider.is_active:
                 continue
+            if payload.provider is not None and provider.slug != payload.provider:
+                continue
             if payload.provider_id is not None and provider.id != payload.provider_id:
                 continue
 

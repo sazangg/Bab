@@ -1,3 +1,4 @@
+import re
 from uuid import UUID
 
 import httpx
@@ -40,6 +41,7 @@ async def create_provider(
         provider = await repository.create_provider(
             org_id=scope.org_id,
             name=payload.name,
+            slug=_slugify(payload.slug or payload.name),
             base_url=str(payload.base_url).rstrip("/"),
             api_key_encrypted=encrypt(payload.api_key),
             adapter_type=payload.adapter_type,
@@ -286,6 +288,8 @@ async def update_provider(
 
         if payload.name is not None:
             provider.name = payload.name
+        if payload.slug is not None:
+            provider.slug = _slugify(payload.slug)
         if payload.base_url is not None:
             provider.base_url = str(payload.base_url).rstrip("/")
         if payload.adapter_type is not None:
@@ -406,3 +410,8 @@ def _to_response(provider: Provider) -> ProviderResponse:
 
 def _key_prefix(api_key: str) -> str:
     return f"{api_key[:4]}..."
+
+
+def _slugify(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.strip().lower()).strip("-")
+    return slug or "provider"

@@ -17,6 +17,7 @@ class Provider(Base):
         index=True,
     )
     name: Mapped[str] = mapped_column(String(255))
+    slug: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     base_url: Mapped[str] = mapped_column(String(500))
     api_key_encrypted: Mapped[str] = mapped_column(String(1000))
     adapter_type: Mapped[str] = mapped_column(String(100), default="openai_compat")

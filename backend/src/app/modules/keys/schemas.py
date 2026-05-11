@@ -224,6 +224,7 @@ class CreatedVirtualKeyResponse(VirtualKeyResponse):
 class ResolveAccessRequest(BaseModel):
     raw_key: str = Field(min_length=1)
     requested_model: str = Field(min_length=1, max_length=255)
+    provider: str | None = Field(default=None, min_length=1, max_length=100)
     provider_id: UUID | None = None
 
 

@@ -10,6 +10,7 @@ async def create_provider(
     *,
     org_id: UUID,
     name: str,
+    slug: str,
     base_url: str,
     api_key_encrypted: str,
     adapter_type: str,
@@ -18,6 +19,7 @@ async def create_provider(
     provider = Provider(
         org_id=org_id,
         name=name,
+        slug=slug,
         base_url=base_url,
         api_key_encrypted=api_key_encrypted,
         adapter_type=adapter_type,
