@@ -11,6 +11,7 @@ from app.modules.keys import facade
 from app.modules.keys.errors import (
     ProjectNotFoundError,
     ProjectProviderAccessNotFoundError,
+    SubscriptionNotFoundError,
     VirtualKeyNotFoundError,
 )
 from app.modules.keys.schemas import (
@@ -18,8 +19,10 @@ from app.modules.keys.schemas import (
     CreateProjectRequest,
     CreateVirtualKeyRequest,
     GrantProjectProviderAccessRequest,
+    GrantProjectSubscriptionAccessRequest,
     ProjectProviderAccessResponse,
     ProjectResponse,
+    ProjectSubscriptionAccessResponse,
     UpdateProjectProviderAccessRequest,
     UpdateProjectRequest,
     UpdateVirtualKeyRequest,
@@ -156,6 +159,45 @@ async def revoke_project_provider_access(
         raise HTTPException(status_code=404, detail="project not found") from exc
     except ProjectProviderAccessNotFoundError as exc:
         raise HTTPException(status_code=404, detail="project provider access not found") from exc
+
+
+@router.get("/{project_id}/subscription-access")
+async def list_project_subscription_access(
+    project_id: UUID,
+    scope: RequestScope,
+    db: DatabaseSession,
+    _: CurrentUser,
+) -> list[ProjectSubscriptionAccessResponse]:
+    try:
+        return await facade.list_project_subscription_access(
+            project_id=project_id,
+            scope=scope,
+            db=db,
+        )
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+
+
+@router.post("/{project_id}/subscription-access", status_code=status.HTTP_201_CREATED)
+async def grant_project_subscription_access(
+    project_id: UUID,
+    payload: GrantProjectSubscriptionAccessRequest,
+    actor: ProjectAccessAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> ProjectSubscriptionAccessResponse:
+    try:
+        return await facade.grant_project_subscription_access(
+            project_id=project_id,
+            payload=payload,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+    except SubscriptionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="subscription not found") from exc
 
 
 @router.get("/{project_id}/keys")

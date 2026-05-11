@@ -14,6 +14,7 @@ from app.api.v1.routes.providers import router as providers_router
 from app.api.v1.routes.proxy import router as proxy_router
 from app.api.v1.routes.request_logs import router as request_logs_router
 from app.api.v1.routes.setup import router as setup_router
+from app.api.v1.routes.subscriptions import router as subscriptions_router
 from app.core.bootstrap import create_development_database
 from app.core.config import settings
 from app.core.logging import configure_logging
@@ -41,6 +42,7 @@ def create_app() -> FastAPI:
     app.include_router(projects_router, prefix="/api/v1")
     app.include_router(request_logs_router, prefix="/api/v1")
     app.include_router(setup_router, prefix="/api/v1")
+    app.include_router(subscriptions_router, prefix="/api/v1")
     app.include_router(proxy_router)
     return app
 
