@@ -126,6 +126,20 @@ async def get_provider_model_by_name(
     )
 
 
+async def get_provider_model(
+    *,
+    org_id: UUID,
+    provider_model_id: UUID,
+    db: AsyncSession,
+) -> ProviderModel | None:
+    return await db.scalar(
+        select(ProviderModel).where(
+            ProviderModel.org_id == org_id,
+            ProviderModel.id == provider_model_id,
+        )
+    )
+
+
 async def list_provider_models(
     *,
     org_id: UUID,

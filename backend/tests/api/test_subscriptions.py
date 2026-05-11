@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import create_access_token, hash_password
 from app.modules.auth.internal.models import Organization, User
 from app.modules.keys.internal.models import Project, Subscription
-from app.modules.providers.internal.models import Provider, ProviderKey
+from app.modules.providers.internal.models import Provider, ProviderKey, ProviderModel
 
 
 async def _create_user(db_session: AsyncSession, *, role: str = "super_admin") -> User:
@@ -158,3 +158,48 @@ async def test_super_admin_can_grant_subscription_to_project(
     assert create_response.json()["priority"] == 5
     assert list_response.status_code == 200
     assert [item["id"] for item in list_response.json()] == [create_response.json()["id"]]
+
+
+@pytest.mark.asyncio
+async def test_super_admin_can_set_subscription_model_access(
+    app_client,
+    db_session: AsyncSession,
+) -> None:
+    user = await _create_user(db_session)
+    provider = Provider(
+        org_id=user.org_id,
+        name="OpenAI",
+        base_url="https://api.openai.com/v1",
+        api_key_encrypted="legacy",
+        adapter_type="openai_compat",
+    )
+    db_session.add(provider)
+    await db_session.flush()
+    model = ProviderModel(
+        org_id=user.org_id,
+        provider_id=provider.id,
+        provider_model_name="gpt-5.4-mini",
+        alias="fast",
+    )
+    subscription = Subscription(org_id=user.org_id, name="Default AI")
+    db_session.add_all([model, subscription])
+    await db_session.commit()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        put_response = await client.put(
+            f"/api/v1/subscriptions/{subscription.id}/model-access",
+            headers=_auth_headers(user),
+            json={"provider_model_ids": [str(model.id)]},
+        )
+        list_response = await client.get(
+            f"/api/v1/subscriptions/{subscription.id}/model-access",
+            headers=_auth_headers(user),
+        )
+
+    assert put_response.status_code == 200
+    assert [item["provider_model_id"] for item in put_response.json()] == [str(model.id)]
+    assert list_response.status_code == 200
+    assert [item["id"] for item in list_response.json()] == [put_response.json()[0]["id"]]

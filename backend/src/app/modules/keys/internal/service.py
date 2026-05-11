@@ -26,6 +26,7 @@ from app.modules.keys.internal.models import (
     ProjectProviderAccess,
     ProjectSubscriptionAccess,
     Subscription,
+    SubscriptionModelAccess,
     SubscriptionProviderKey,
     VirtualKey,
 )
@@ -44,6 +45,8 @@ from app.modules.keys.schemas import (
     ProjectSubscriptionAccessResponse,
     ResolveAccessRequest,
     ResolvedAccess,
+    SetSubscriptionModelAccessRequest,
+    SubscriptionModelAccessResponse,
     SubscriptionProviderKeyResponse,
     SubscriptionResponse,
     UpdateModelAliasRequest,
@@ -432,6 +435,78 @@ async def list_subscription_provider_keys(
     return [_subscription_provider_key_to_response(attachment) for attachment in attachments]
 
 
+async def set_subscription_model_access(
+    *,
+    subscription_id: UUID,
+    payload: SetSubscriptionModelAccessRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[SubscriptionModelAccessResponse]:
+    async with transaction(db):
+        subscription = await _get_subscription_or_raise(
+            subscription_id=subscription_id,
+            scope=scope,
+            db=db,
+        )
+        await repository.delete_subscription_model_access(
+            org_id=scope.org_id,
+            subscription_id=subscription.id,
+            db=db,
+        )
+        access_rules: list[SubscriptionModelAccess] = []
+        if payload.provider_model_ids is not None:
+            provider_models = []
+            for provider_model_id in set(payload.provider_model_ids):
+                provider_models.append(
+                    await providers_facade.get_provider_model(
+                        provider_model_id=provider_model_id,
+                        scope=scope,
+                        db=db,
+                    )
+                )
+            for provider_model in sorted(
+                provider_models,
+                key=lambda model: model.provider_model_name,
+            ):
+                access_rules.append(
+                    await repository.add_subscription_model_access(
+                        org_id=scope.org_id,
+                        subscription_id=subscription.id,
+                        provider_model_id=provider_model.id,
+                        db=db,
+                    )
+                )
+        await audit_facade.record_event(
+            RecordAuditEvent(
+                org_id=scope.org_id,
+                actor_user_id=actor.id,
+                event="subscription_model_access.updated",
+                target_type="subscription",
+                target_id=subscription.id,
+                event_metadata={"model_count": len(access_rules)},
+            ),
+            db,
+        )
+
+    return [_subscription_model_access_to_response(access) for access in access_rules]
+
+
+async def list_subscription_model_access(
+    *,
+    subscription_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[SubscriptionModelAccessResponse]:
+    await _get_subscription_or_raise(subscription_id=subscription_id, scope=scope, db=db)
+    access_rules = await repository.list_subscription_model_access(
+        org_id=scope.org_id,
+        subscription_id=subscription_id,
+        db=db,
+    )
+    return [_subscription_model_access_to_response(access) for access in access_rules]
+
+
 async def grant_project_subscription_access(
     *,
     project_id: UUID,
@@ -511,6 +586,12 @@ def _subscription_provider_key_to_response(
     attachment: SubscriptionProviderKey,
 ) -> SubscriptionProviderKeyResponse:
     return SubscriptionProviderKeyResponse.model_validate(attachment)
+
+
+def _subscription_model_access_to_response(
+    access: SubscriptionModelAccess,
+) -> SubscriptionModelAccessResponse:
+    return SubscriptionModelAccessResponse.model_validate(access)
 
 
 def _project_subscription_access_to_response(

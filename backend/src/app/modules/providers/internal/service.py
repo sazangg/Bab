@@ -256,6 +256,22 @@ async def list_provider_models(
     ]
 
 
+async def get_provider_model(
+    *,
+    provider_model_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProviderModelResponse:
+    provider_model = await repository.get_provider_model(
+        org_id=scope.org_id,
+        provider_model_id=provider_model_id,
+        db=db,
+    )
+    if provider_model is None:
+        raise ProviderNotFoundError
+    return ProviderModelResponse.model_validate(provider_model)
+
+
 async def update_provider(
     *,
     provider_id: UUID,

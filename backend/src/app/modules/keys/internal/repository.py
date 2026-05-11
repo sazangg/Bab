@@ -9,6 +9,7 @@ from app.modules.keys.internal.models import (
     ProjectProviderAccess,
     ProjectSubscriptionAccess,
     Subscription,
+    SubscriptionModelAccess,
     SubscriptionProviderKey,
     VirtualKey,
 )
@@ -164,6 +165,56 @@ async def list_subscription_provider_keys(
             SubscriptionProviderKey.subscription_id == subscription_id,
         )
         .order_by(SubscriptionProviderKey.priority.asc(), SubscriptionProviderKey.created_at.asc())
+    )
+    return list(result)
+
+
+async def delete_subscription_model_access(
+    *,
+    org_id: UUID,
+    subscription_id: UUID,
+    db: AsyncSession,
+) -> None:
+    existing_access = await list_subscription_model_access(
+        org_id=org_id,
+        subscription_id=subscription_id,
+        db=db,
+    )
+    for access in existing_access:
+        await db.delete(access)
+    await db.flush()
+
+
+async def add_subscription_model_access(
+    *,
+    org_id: UUID,
+    subscription_id: UUID,
+    provider_model_id: UUID,
+    db: AsyncSession,
+) -> SubscriptionModelAccess:
+    access = SubscriptionModelAccess(
+        org_id=org_id,
+        subscription_id=subscription_id,
+        provider_model_id=provider_model_id,
+    )
+    db.add(access)
+    await db.flush()
+    return access
+
+
+async def list_subscription_model_access(
+    *,
+    org_id: UUID,
+    subscription_id: UUID,
+    db: AsyncSession,
+) -> list[SubscriptionModelAccess]:
+    result = await db.scalars(
+        select(SubscriptionModelAccess)
+        .where(
+            SubscriptionModelAccess.org_id == org_id,
+            SubscriptionModelAccess.subscription_id == subscription_id,
+        )
+        .order_by(SubscriptionModelAccess.created_at.asc())
     )
     return list(result)
 

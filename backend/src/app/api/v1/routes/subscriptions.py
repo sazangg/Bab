@@ -12,6 +12,8 @@ from app.modules.keys.errors import SubscriptionNotFoundError
 from app.modules.keys.schemas import (
     AttachSubscriptionProviderKeyRequest,
     CreateSubscriptionRequest,
+    SetSubscriptionModelAccessRequest,
+    SubscriptionModelAccessResponse,
     SubscriptionProviderKeyResponse,
     SubscriptionResponse,
 )
@@ -80,3 +82,42 @@ async def attach_provider_key_to_subscription(
         raise HTTPException(status_code=404, detail="subscription not found") from exc
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider key not found") from exc
+
+
+@router.get("/{subscription_id}/model-access")
+async def list_subscription_model_access(
+    subscription_id: UUID,
+    scope: RequestScope,
+    db: DatabaseSession,
+    _: CurrentUser,
+) -> list[SubscriptionModelAccessResponse]:
+    try:
+        return await facade.list_subscription_model_access(
+            subscription_id=subscription_id,
+            scope=scope,
+            db=db,
+        )
+    except SubscriptionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="subscription not found") from exc
+
+
+@router.put("/{subscription_id}/model-access")
+async def set_subscription_model_access(
+    subscription_id: UUID,
+    payload: SetSubscriptionModelAccessRequest,
+    actor: SubscriptionAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> list[SubscriptionModelAccessResponse]:
+    try:
+        return await facade.set_subscription_model_access(
+            subscription_id=subscription_id,
+            payload=payload,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
+    except SubscriptionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="subscription not found") from exc
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="provider model not found") from exc

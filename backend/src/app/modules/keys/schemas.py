@@ -107,6 +107,31 @@ class SubscriptionProviderKeyResponse(BaseModel):
     updated_at: datetime
 
 
+class SetSubscriptionModelAccessRequest(BaseModel):
+    provider_model_ids: list[UUID] | None = None
+
+    @field_validator("provider_model_ids")
+    @classmethod
+    def reject_empty_model_list(cls, value: list[UUID] | None) -> list[UUID] | None:
+        if value == []:
+            raise ValueError(
+                "provider_model_ids must be null for all models or contain at least one model"
+            )
+        return value
+
+
+class SubscriptionModelAccessResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    org_id: UUID
+    subscription_id: UUID
+    provider_model_id: UUID
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
 class GrantProjectSubscriptionAccessRequest(BaseModel):
     subscription_id: UUID
     priority: int = Field(default=100, ge=0)

@@ -116,6 +116,19 @@ async def list_provider_models(
     return await service.list_provider_models(provider_id=provider_id, scope=scope, db=db)
 
 
+async def get_provider_model(
+    *,
+    provider_model_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProviderModelResponse:
+    return await service.get_provider_model(
+        provider_model_id=provider_model_id,
+        scope=scope,
+        db=db,
+    )
+
+
 async def update_provider(
     *,
     provider_id: UUID,

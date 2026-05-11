@@ -17,6 +17,7 @@ from app.modules.keys.internal.models import (  # noqa: F401
     ProjectProviderAccess,
     ProjectSubscriptionAccess,
     Subscription,
+    SubscriptionModelAccess,
     SubscriptionProviderKey,
     VirtualKey,
 )

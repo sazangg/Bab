@@ -20,6 +20,8 @@ from app.modules.keys.schemas import (
     ProjectSubscriptionAccessResponse,
     ResolveAccessRequest,
     ResolvedAccess,
+    SetSubscriptionModelAccessRequest,
+    SubscriptionModelAccessResponse,
     SubscriptionProviderKeyResponse,
     SubscriptionResponse,
     UpdateModelAliasRequest,
@@ -171,6 +173,36 @@ async def list_subscription_provider_keys(
     db: AsyncSession,
 ) -> list[SubscriptionProviderKeyResponse]:
     return await service.list_subscription_provider_keys(
+        subscription_id=subscription_id,
+        scope=scope,
+        db=db,
+    )
+
+
+async def set_subscription_model_access(
+    *,
+    subscription_id: UUID,
+    payload: SetSubscriptionModelAccessRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[SubscriptionModelAccessResponse]:
+    return await service.set_subscription_model_access(
+        subscription_id=subscription_id,
+        payload=payload,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def list_subscription_model_access(
+    *,
+    subscription_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[SubscriptionModelAccessResponse]:
+    return await service.list_subscription_model_access(
         subscription_id=subscription_id,
         scope=scope,
         db=db,

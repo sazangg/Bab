@@ -9,9 +9,14 @@ from app.modules.keys.schemas import (
     CreateProjectRequest,
     CreateSubscriptionRequest,
     GrantProjectSubscriptionAccessRequest,
+    SetSubscriptionModelAccessRequest,
 )
 from app.modules.providers import facade as providers_facade
-from app.modules.providers.schemas import CreateProviderKeyRequest, CreateProviderRequest
+from app.modules.providers.schemas import (
+    CreateProviderKeyRequest,
+    CreateProviderModelRequest,
+    CreateProviderRequest,
+)
 
 
 async def _create_user(db_session: AsyncSession) -> User:
@@ -117,3 +122,111 @@ async def test_project_can_be_granted_subscription_access_with_priority(
     assert access.subscription_id == subscription.id
     assert access.priority == 10
     assert [rule.id for rule in access_rules] == [access.id]
+
+
+async def test_subscription_model_access_can_narrow_to_specific_models(
+    db_session: AsyncSession,
+) -> None:
+    user = await _create_user(db_session)
+    scope = Scope(org_id=user.org_id)
+    provider = await providers_facade.create_provider(
+        payload=CreateProviderRequest(
+            name="OpenAI",
+            base_url="https://api.openai.com/v1",
+            api_key="legacy-secret",
+        ),
+        actor=user,
+        scope=scope,
+        db=db_session,
+    )
+    first_model = await providers_facade.create_provider_model(
+        provider_id=provider.id,
+        payload=CreateProviderModelRequest(provider_model_name="gpt-5.4", alias="smart"),
+        actor=user,
+        scope=scope,
+        db=db_session,
+    )
+    second_model = await providers_facade.create_provider_model(
+        provider_id=provider.id,
+        payload=CreateProviderModelRequest(provider_model_name="gpt-5.4-mini", alias="fast"),
+        actor=user,
+        scope=scope,
+        db=db_session,
+    )
+    subscription = await keys_facade.create_subscription(
+        payload=CreateSubscriptionRequest(name="Default AI"),
+        actor=user,
+        scope=scope,
+        db=db_session,
+    )
+
+    access = await keys_facade.set_subscription_model_access(
+        subscription_id=subscription.id,
+        payload=SetSubscriptionModelAccessRequest(
+            provider_model_ids=[second_model.id, first_model.id]
+        ),
+        actor=user,
+        scope=scope,
+        db=db_session,
+    )
+    listed_access = await keys_facade.list_subscription_model_access(
+        subscription_id=subscription.id,
+        scope=scope,
+        db=db_session,
+    )
+
+    assert [item.provider_model_id for item in access] == [first_model.id, second_model.id]
+    assert [item.id for item in listed_access] == [item.id for item in access]
+
+
+async def test_subscription_model_access_can_be_cleared_to_expose_all_models(
+    db_session: AsyncSession,
+) -> None:
+    user = await _create_user(db_session)
+    scope = Scope(org_id=user.org_id)
+    provider = await providers_facade.create_provider(
+        payload=CreateProviderRequest(
+            name="OpenAI",
+            base_url="https://api.openai.com/v1",
+            api_key="legacy-secret",
+        ),
+        actor=user,
+        scope=scope,
+        db=db_session,
+    )
+    model = await providers_facade.create_provider_model(
+        provider_id=provider.id,
+        payload=CreateProviderModelRequest(provider_model_name="gpt-5.4-mini"),
+        actor=user,
+        scope=scope,
+        db=db_session,
+    )
+    subscription = await keys_facade.create_subscription(
+        payload=CreateSubscriptionRequest(name="Default AI"),
+        actor=user,
+        scope=scope,
+        db=db_session,
+    )
+    await keys_facade.set_subscription_model_access(
+        subscription_id=subscription.id,
+        payload=SetSubscriptionModelAccessRequest(provider_model_ids=[model.id]),
+        actor=user,
+        scope=scope,
+        db=db_session,
+    )
+
+    access = await keys_facade.set_subscription_model_access(
+        subscription_id=subscription.id,
+        payload=SetSubscriptionModelAccessRequest(provider_model_ids=None),
+        actor=user,
+        scope=scope,
+        db=db_session,
+    )
+    listed_access = await keys_facade.list_subscription_model_access(
+        subscription_id=subscription.id,
+        scope=scope,
+        db=db_session,
+    )
+
+    assert access == []
+    assert listed_access == []

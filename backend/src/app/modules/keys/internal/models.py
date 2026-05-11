@@ -112,6 +112,35 @@ class SubscriptionProviderKey(Base):
     )
 
 
+class SubscriptionModelAccess(Base):
+    __tablename__ = "subscription_model_access"
+    __table_args__ = (UniqueConstraint("subscription_id", "provider_model_id"),)
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        index=True,
+    )
+    subscription_id: Mapped[UUID] = mapped_column(
+        ForeignKey("subscriptions.id", ondelete="CASCADE"),
+        index=True,
+    )
+    provider_model_id: Mapped[UUID] = mapped_column(
+        ForeignKey("provider_models.id", ondelete="CASCADE"),
+        index=True,
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+
 class ProjectSubscriptionAccess(Base):
     __tablename__ = "project_subscription_access"
     __table_args__ = (UniqueConstraint("project_id", "subscription_id"),)
