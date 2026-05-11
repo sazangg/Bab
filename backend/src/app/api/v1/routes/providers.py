@@ -17,6 +17,7 @@ from app.modules.providers.schemas import (
     ProviderKeyResponse,
     ProviderModelResponse,
     ProviderResponse,
+    UpdateProviderKeyRequest,
     UpdateProviderRequest,
 )
 
@@ -77,6 +78,48 @@ async def create_provider_key(
         )
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc
+
+
+@router.patch("/{provider_id}/keys/{provider_key_id}")
+async def update_provider_key(
+    provider_id: UUID,
+    provider_key_id: UUID,
+    payload: UpdateProviderKeyRequest,
+    actor: ProviderAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> ProviderKeyResponse:
+    try:
+        return await facade.update_provider_key(
+            provider_id=provider_id,
+            provider_key_id=provider_key_id,
+            payload=payload,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="provider key not found") from exc
+
+
+@router.delete("/{provider_id}/keys/{provider_key_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def deactivate_provider_key(
+    provider_id: UUID,
+    provider_key_id: UUID,
+    actor: ProviderAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> None:
+    try:
+        await facade.deactivate_provider_key(
+            provider_id=provider_id,
+            provider_key_id=provider_key_id,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="provider key not found") from exc
 
 
 @router.get("/{provider_id}/models")

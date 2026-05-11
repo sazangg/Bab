@@ -24,6 +24,7 @@ from app.modules.providers.schemas import (
     ProviderKeyResponse,
     ProviderModelResponse,
     ProviderResponse,
+    UpdateProviderKeyRequest,
     UpdateProviderRequest,
 )
 
@@ -135,6 +136,93 @@ async def get_provider_key(
     if provider_key is None:
         raise ProviderNotFoundError
     return ProviderKeyResponse.model_validate(provider_key)
+
+
+async def update_provider_key(
+    *,
+    provider_id: UUID,
+    provider_key_id: UUID,
+    payload: UpdateProviderKeyRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProviderKeyResponse:
+    async with transaction(db):
+        await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
+        provider_key = await _get_provider_key_or_raise(
+            provider_id=provider_id,
+            provider_key_id=provider_key_id,
+            scope=scope,
+            db=db,
+        )
+        credential_changed = payload.api_key is not None
+        if payload.name is not None:
+            provider_key.name = payload.name
+        if payload.api_key is not None:
+            provider_key.key_prefix = _key_prefix(payload.api_key)
+            provider_key.api_key_encrypted = encrypt(payload.api_key)
+        if payload.priority is not None:
+            provider_key.priority = payload.priority
+        if payload.is_active is not None:
+            provider_key.is_active = payload.is_active
+
+        await db.flush()
+        await audit_facade.record_event(
+            RecordAuditEvent(
+                org_id=scope.org_id,
+                actor_user_id=actor.id,
+                event="provider_key.updated",
+                target_type="provider_key",
+                target_id=provider_key.id,
+                event_metadata={"provider_id": str(provider_id)},
+            ),
+            db,
+        )
+        if credential_changed:
+            await audit_facade.record_event(
+                RecordAuditEvent(
+                    org_id=scope.org_id,
+                    actor_user_id=actor.id,
+                    event="provider_key.credential_changed",
+                    target_type="provider_key",
+                    target_id=provider_key.id,
+                    event_metadata={"provider_id": str(provider_id)},
+                ),
+                db,
+            )
+
+    return ProviderKeyResponse.model_validate(provider_key)
+
+
+async def deactivate_provider_key(
+    *,
+    provider_id: UUID,
+    provider_key_id: UUID,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> None:
+    async with transaction(db):
+        await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
+        provider_key = await _get_provider_key_or_raise(
+            provider_id=provider_id,
+            provider_key_id=provider_key_id,
+            scope=scope,
+            db=db,
+        )
+        provider_key.is_active = False
+        await db.flush()
+        await audit_facade.record_event(
+            RecordAuditEvent(
+                org_id=scope.org_id,
+                actor_user_id=actor.id,
+                event="provider_key.deactivated",
+                target_type="provider_key",
+                target_id=provider_key.id,
+                event_metadata={"provider_id": str(provider_id)},
+            ),
+            db,
+        )
 
 
 async def create_provider_model(
@@ -416,6 +504,23 @@ async def _get_provider_or_raise(*, provider_id: UUID, scope: Scope, db: AsyncSe
     if provider is None:
         raise ProviderNotFoundError
     return provider
+
+
+async def _get_provider_key_or_raise(
+    *,
+    provider_id: UUID,
+    provider_key_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+):
+    provider_key = await repository.get_provider_key(
+        org_id=scope.org_id,
+        provider_key_id=provider_key_id,
+        db=db,
+    )
+    if provider_key is None or provider_key.provider_id != provider_id:
+        raise ProviderNotFoundError
+    return provider_key
 
 
 def _to_response(provider: Provider) -> ProviderResponse:

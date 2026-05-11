@@ -270,6 +270,100 @@ async def test_super_admin_can_create_and_list_provider_keys(
 
 
 @pytest.mark.asyncio
+async def test_super_admin_can_update_provider_key(
+    app_client,
+    db_session: AsyncSession,
+) -> None:
+    user = await _create_user(db_session)
+    provider = Provider(
+        org_id=user.org_id,
+        name="OpenAI",
+        base_url="https://api.openai.com/v1",
+        api_key_encrypted=None,
+        adapter_type="openai_compat",
+    )
+    db_session.add(provider)
+    await db_session.flush()
+    provider_key = ProviderKey(
+        org_id=user.org_id,
+        provider_id=provider.id,
+        name="Old key",
+        key_prefix="old...",
+        api_key_encrypted=encrypt("old-secret"),
+        priority=100,
+    )
+    db_session.add(provider_key)
+    await db_session.commit()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.patch(
+            f"/api/v1/providers/{provider.id}/keys/{provider_key.id}",
+            headers=_auth_headers(user),
+            json={
+                "name": "Production",
+                "api_key": "new-secret",
+                "priority": 10,
+            },
+        )
+
+    await db_session.refresh(provider_key)
+    audit_log = await db_session.scalar(
+        select(AuditLog).where(AuditLog.event == "provider_key.credential_changed")
+    )
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "Production"
+    assert response.json()["key_prefix"] == "new-..."
+    assert "api_key" not in response.json()
+    assert provider_key.priority == 10
+    assert decrypt(provider_key.api_key_encrypted) == "new-secret"
+    assert audit_log is not None
+
+
+@pytest.mark.asyncio
+async def test_super_admin_can_deactivate_provider_key(
+    app_client,
+    db_session: AsyncSession,
+) -> None:
+    user = await _create_user(db_session)
+    provider = Provider(
+        org_id=user.org_id,
+        name="OpenAI",
+        base_url="https://api.openai.com/v1",
+        api_key_encrypted=None,
+        adapter_type="openai_compat",
+    )
+    db_session.add(provider)
+    await db_session.flush()
+    provider_key = ProviderKey(
+        org_id=user.org_id,
+        provider_id=provider.id,
+        name="Production",
+        key_prefix="sk-p...",
+        api_key_encrypted=encrypt("sk-provider-secret"),
+    )
+    db_session.add(provider_key)
+    await db_session.commit()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.delete(
+            f"/api/v1/providers/{provider.id}/keys/{provider_key.id}",
+            headers=_auth_headers(user),
+        )
+
+    await db_session.refresh(provider_key)
+
+    assert response.status_code == 204
+    assert provider_key.is_active is False
+
+
+@pytest.mark.asyncio
 async def test_non_admin_cannot_create_provider_key(
     app_client,
     db_session: AsyncSession,
