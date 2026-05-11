@@ -1028,6 +1028,7 @@ async def resolve_access(*, payload: ResolveAccessRequest, db: AsyncSession) -> 
 @dataclass(frozen=True)
 class _SubscriptionModelMatch:
     provider_id: UUID
+    provider_key_id: UUID
     provider_model: str
     used_alias: bool
     priority: int
@@ -1121,6 +1122,7 @@ async def _resolve_subscription_access(
                 matches.append(
                     _SubscriptionModelMatch(
                         provider_id=provider.id,
+                        provider_key_id=provider_key.id,
                         provider_model=provider_model.provider_model_name,
                         used_alias=used_alias,
                         priority=project_access.priority,
@@ -1141,6 +1143,7 @@ async def _resolve_subscription_access(
         project_id=virtual_key.project_id,
         virtual_key_id=virtual_key.id,
         provider_id=match.provider_id,
+        provider_key_id=match.provider_key_id,
         requested_model=payload.requested_model,
         provider_model=match.provider_model,
         used_alias=match.used_alias,

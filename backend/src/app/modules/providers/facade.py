@@ -159,6 +159,7 @@ async def deactivate_provider(
 async def create_chat_completion(
     *,
     provider_id: UUID,
+    provider_key_id: UUID | None = None,
     payload: ProviderChatCompletionRequest,
     scope: Scope,
     db: AsyncSession,
@@ -166,6 +167,7 @@ async def create_chat_completion(
 ) -> ProviderChatCompletionResponse:
     return await service.create_chat_completion(
         provider_id=provider_id,
+        provider_key_id=provider_key_id,
         payload=payload,
         scope=scope,
         db=db,
@@ -176,6 +178,7 @@ async def create_chat_completion(
 async def stream_chat_completion(
     *,
     provider_id: UUID,
+    provider_key_id: UUID | None = None,
     payload: ProviderChatCompletionRequest,
     scope: Scope,
     db: AsyncSession,
@@ -183,6 +186,7 @@ async def stream_chat_completion(
 ) -> ProviderChatCompletionStream:
     return await service.stream_chat_completion(
         provider_id=provider_id,
+        provider_key_id=provider_key_id,
         payload=payload,
         scope=scope,
         db=db,

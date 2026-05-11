@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 import pytest
 from sqlalchemy import select
@@ -96,7 +97,7 @@ async def _create_subscription_graph(
     model_alias: str | None = "fast",
     subscription_priority: int = 100,
     raw_key: str = "bab-sk-test-key",
-) -> tuple[Organization, Project, Provider, VirtualKey]:
+) -> tuple[Organization, Project, Provider, VirtualKey, UUID]:
     org = Organization(name=f"{provider_name} Access Org", slug=f"{provider_name.lower()}-org")
     db_session.add(org)
     await db_session.flush()
@@ -175,7 +176,7 @@ async def _create_subscription_graph(
     )
     db_session.add(virtual_key)
     await db_session.commit()
-    return org, project, provider, virtual_key
+    return org, project, provider, virtual_key, provider_key.id
 
 
 @pytest.mark.asyncio
@@ -314,7 +315,9 @@ async def test_resolve_access_intersects_key_restrictions_with_project_access(
 async def test_resolve_access_uses_subscription_provider_model_alias(
     db_session: AsyncSession,
 ) -> None:
-    _, project, provider, virtual_key = await _create_subscription_graph(db_session)
+    _, project, provider, virtual_key, provider_key_id = await _create_subscription_graph(
+        db_session
+    )
 
     resolved = await resolve_access(
         payload=ResolveAccessRequest(raw_key="bab-sk-test-key", requested_model="fast"),
@@ -324,6 +327,7 @@ async def test_resolve_access_uses_subscription_provider_model_alias(
     assert resolved.project_id == project.id
     assert resolved.virtual_key_id == virtual_key.id
     assert resolved.provider_id == provider.id
+    assert resolved.provider_key_id == provider_key_id
     assert resolved.provider_model == "gpt-5.4-mini"
     assert resolved.used_alias is True
 
@@ -332,7 +336,7 @@ async def test_resolve_access_uses_subscription_provider_model_alias(
 async def test_resolve_access_prefers_lower_priority_subscription_for_alias_conflict(
     db_session: AsyncSession,
 ) -> None:
-    org, project, _, _ = await _create_subscription_graph(
+    org, project, _, _, _ = await _create_subscription_graph(
         db_session,
         provider_name="OpenAI",
         provider_model_name="gpt-5.4-mini",
@@ -406,7 +410,7 @@ async def test_resolve_access_prefers_lower_priority_subscription_for_alias_conf
 async def test_resolve_access_provider_hint_disambiguates_subscription_alias(
     db_session: AsyncSession,
 ) -> None:
-    org, project, openai, _ = await _create_subscription_graph(
+    org, project, openai, _, _ = await _create_subscription_graph(
         db_session,
         provider_name="OpenAI",
         provider_model_name="gpt-5.4-mini",
@@ -484,7 +488,7 @@ async def test_resolve_access_provider_hint_disambiguates_subscription_alias(
 async def test_resolve_access_rejects_same_priority_alias_ambiguity(
     db_session: AsyncSession,
 ) -> None:
-    org, project, _, _ = await _create_subscription_graph(
+    org, project, _, _, _ = await _create_subscription_graph(
         db_session,
         provider_name="OpenAI",
         provider_model_name="gpt-5.4-mini",
@@ -556,7 +560,7 @@ async def test_resolve_access_rejects_same_priority_alias_ambiguity(
 async def test_resolve_access_respects_subscription_model_narrowing(
     db_session: AsyncSession,
 ) -> None:
-    org, project, provider, _ = await _create_subscription_graph(
+    org, project, provider, _, _ = await _create_subscription_graph(
         db_session,
         provider_model_name="gpt-5.4",
         model_alias="smart",

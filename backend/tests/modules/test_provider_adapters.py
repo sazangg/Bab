@@ -16,7 +16,7 @@ from app.modules.providers.internal.adapters import (
     OpenAICompatibleAdapter,
     ProviderAdapterRegistry,
 )
-from app.modules.providers.internal.models import Provider
+from app.modules.providers.internal.models import Provider, ProviderKey
 from app.modules.providers.schemas import ProviderChatCompletionRequest
 
 
@@ -183,6 +183,52 @@ async def test_provider_facade_decrypts_secret_and_uses_adapter(
         )
 
     assert response.body == {"id": "chatcmpl_123"}
+
+
+@pytest.mark.asyncio
+async def test_provider_facade_can_forward_with_provider_key(
+    db_session: AsyncSession,
+) -> None:
+    org = Organization(name="Provider Org", slug="provider-key-adapter-org")
+    db_session.add(org)
+    await db_session.flush()
+    provider = Provider(
+        org_id=org.id,
+        name="OpenAI",
+        base_url="https://api.example.test/v1",
+        api_key_encrypted=encrypt("legacy-provider-secret"),
+        adapter_type="openai_compat",
+    )
+    db_session.add(provider)
+    await db_session.flush()
+    provider_key = ProviderKey(
+        org_id=org.id,
+        provider_id=provider.id,
+        name="Production",
+        key_prefix="sk-s...",
+        api_key_encrypted=encrypt("subscription-key-secret"),
+    )
+    db_session.add(provider_key)
+    await db_session.commit()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["authorization"] == "Bearer subscription-key-secret"
+        return httpx.Response(200, json={"id": "chatcmpl_key"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        response = await create_chat_completion(
+            provider_id=provider.id,
+            provider_key_id=provider_key.id,
+            payload=ProviderChatCompletionRequest(
+                model="gpt-5.4-mini",
+                messages=[{"role": "user", "content": "Hello"}],
+            ),
+            scope=Scope(org_id=org.id),
+            db=db_session,
+            http_client=http_client,
+        )
+
+    assert response.body == {"id": "chatcmpl_key"}
 
 
 @pytest.mark.asyncio

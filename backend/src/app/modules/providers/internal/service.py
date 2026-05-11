@@ -354,6 +354,7 @@ async def deactivate_provider(
 async def create_chat_completion(
     *,
     provider_id: UUID,
+    provider_key_id: UUID | None = None,
     payload: ProviderChatCompletionRequest,
     scope: Scope,
     db: AsyncSession,
@@ -364,10 +365,16 @@ async def create_chat_completion(
         raise ProviderInactiveError
 
     adapter = default_adapter_registry.get(provider.adapter_type)
+    api_key = await _resolve_provider_api_key(
+        provider=provider,
+        provider_key_id=provider_key_id,
+        scope=scope,
+        db=db,
+    )
     return await adapter.create_chat_completion(
         provider=AdapterProvider(
             base_url=provider.base_url,
-            api_key=decrypt(provider.api_key_encrypted),
+            api_key=api_key,
         ),
         payload=payload,
         http_client=http_client,
@@ -377,6 +384,7 @@ async def create_chat_completion(
 async def stream_chat_completion(
     *,
     provider_id: UUID,
+    provider_key_id: UUID | None = None,
     payload: ProviderChatCompletionRequest,
     scope: Scope,
     db: AsyncSession,
@@ -387,10 +395,16 @@ async def stream_chat_completion(
         raise ProviderInactiveError
 
     adapter = default_adapter_registry.get(provider.adapter_type)
+    api_key = await _resolve_provider_api_key(
+        provider=provider,
+        provider_key_id=provider_key_id,
+        scope=scope,
+        db=db,
+    )
     return await adapter.stream_chat_completion(
         provider=AdapterProvider(
             base_url=provider.base_url,
-            api_key=decrypt(provider.api_key_encrypted),
+            api_key=api_key,
         ),
         payload=payload,
         http_client=http_client,
@@ -406,6 +420,31 @@ async def _get_provider_or_raise(*, provider_id: UUID, scope: Scope, db: AsyncSe
 
 def _to_response(provider: Provider) -> ProviderResponse:
     return ProviderResponse.model_validate(provider)
+
+
+async def _resolve_provider_api_key(
+    *,
+    provider: Provider,
+    provider_key_id: UUID | None,
+    scope: Scope,
+    db: AsyncSession,
+) -> str:
+    if provider_key_id is None:
+        return decrypt(provider.api_key_encrypted)
+
+    provider_key = await repository.get_provider_key(
+        org_id=scope.org_id,
+        provider_key_id=provider_key_id,
+        db=db,
+    )
+    if (
+        provider_key is None
+        or provider_key.provider_id != provider.id
+        or not provider_key.is_active
+    ):
+        raise ProviderNotFoundError
+
+    return decrypt(provider_key.api_key_encrypted)
 
 
 def _key_prefix(api_key: str) -> str:

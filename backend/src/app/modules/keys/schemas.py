@@ -233,6 +233,7 @@ class ResolvedAccess(BaseModel):
     project_id: UUID
     virtual_key_id: UUID
     provider_id: UUID
+    provider_key_id: UUID | None = None
     requested_model: str
     provider_model: str
     used_alias: bool

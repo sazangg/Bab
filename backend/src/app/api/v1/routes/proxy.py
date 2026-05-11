@@ -105,6 +105,7 @@ async def create_chat_completion(
         if is_streaming:
             upstream_stream = await providers_facade.stream_chat_completion(
                 provider_id=resolved.provider_id,
+                provider_key_id=resolved.provider_key_id,
                 payload=upstream_payload,
                 scope=Scope(org_id=resolved.org_id),
                 db=db,
@@ -126,6 +127,7 @@ async def create_chat_completion(
 
         upstream = await providers_facade.create_chat_completion(
             provider_id=resolved.provider_id,
+            provider_key_id=resolved.provider_key_id,
             payload=upstream_payload,
             scope=Scope(org_id=resolved.org_id),
             db=db,

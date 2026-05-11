@@ -8,9 +8,17 @@ from app.api.v1.routes.proxy import get_proxy_http_client
 from app.core.config import settings
 from app.core.security import encrypt, hash_password, hash_token
 from app.modules.auth.internal.models import Organization, User
-from app.modules.keys.internal.models import ModelAlias, Project, ProjectProviderAccess, VirtualKey
+from app.modules.keys.internal.models import (
+    ModelAlias,
+    Project,
+    ProjectProviderAccess,
+    ProjectSubscriptionAccess,
+    Subscription,
+    SubscriptionProviderKey,
+    VirtualKey,
+)
 from app.modules.limits.internal.models import LimitCounter, LimitPolicy
-from app.modules.providers.internal.models import Provider
+from app.modules.providers.internal.models import Provider, ProviderKey, ProviderModel
 from app.modules.request_logs.internal.models import RequestLog
 
 
@@ -204,6 +212,96 @@ async def test_proxy_resolves_model_alias_without_provider_header(
     assert request_log.usage_source == "estimated"
     assert request_log.total_tokens is not None
     assert request_log.total_tokens > 0
+
+
+@pytest.mark.asyncio
+async def test_proxy_uses_subscription_provider_key_for_upstream_auth(
+    app_client,
+    db_session: AsyncSession,
+) -> None:
+    org = Organization(name="Proxy Subscription Org", slug="proxy-subscription-org")
+    db_session.add(org)
+    await db_session.flush()
+    user = User(
+        org_id=org.id,
+        email="proxy-subscription@example.com",
+        password_hash=hash_password("correct horse battery staple"),
+        role="super_admin",
+    )
+    db_session.add(user)
+    await db_session.flush()
+    project = Project(org_id=org.id, created_by=user.id, name="Inbox Assistant")
+    provider = Provider(
+        org_id=org.id,
+        name="OpenAI",
+        slug="openai",
+        base_url="https://api.example.test/v1",
+        api_key_encrypted=encrypt("legacy-provider-secret"),
+        adapter_type="openai_compat",
+    )
+    db_session.add_all([project, provider])
+    await db_session.flush()
+    provider_key = ProviderKey(
+        org_id=org.id,
+        provider_id=provider.id,
+        name="Production",
+        key_prefix="sk-s...",
+        api_key_encrypted=encrypt("subscription-key-secret"),
+    )
+    provider_model = ProviderModel(
+        org_id=org.id,
+        provider_id=provider.id,
+        provider_model_name="gpt-5.4-mini",
+        alias="fast",
+    )
+    subscription = Subscription(org_id=org.id, name="Default AI")
+    virtual_key = VirtualKey(
+        org_id=org.id,
+        project_id=project.id,
+        name="Local dev",
+        key_hash=hash_token("bab-sk-subscription-key"),
+        key_prefix="bab-sk-subscript",
+    )
+    db_session.add_all([provider_key, provider_model, subscription, virtual_key])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            SubscriptionProviderKey(
+                org_id=org.id,
+                subscription_id=subscription.id,
+                provider_key_id=provider_key.id,
+            ),
+            ProjectSubscriptionAccess(
+                org_id=org.id,
+                project_id=project.id,
+                subscription_id=subscription.id,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["authorization"] == "Bearer subscription-key-secret"
+        assert b'"model":"gpt-5.4-mini"' in request.read()
+        return httpx.Response(200, json={"id": "chatcmpl_subscription"})
+
+    response = await _request_with_mock_upstream(
+        app_client,
+        handler,
+        headers={"Authorization": "Bearer bab-sk-subscription-key"},
+        json_body={
+            "model": "fast",
+            "provider": "openai",
+            "messages": [{"role": "user", "content": "Hello"}],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "chatcmpl_subscription"
+    request_log = await db_session.scalar(select(RequestLog))
+    assert request_log is not None
+    assert request_log.provider_id == provider.id
+    assert request_log.provider_model == "gpt-5.4-mini"
 
 
 @pytest.mark.asyncio
