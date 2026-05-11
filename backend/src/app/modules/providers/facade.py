@@ -64,6 +64,15 @@ async def list_provider_keys(
     return await service.list_provider_keys(provider_id=provider_id, scope=scope, db=db)
 
 
+async def get_provider_key(
+    *,
+    provider_key_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProviderKeyResponse:
+    return await service.get_provider_key(provider_key_id=provider_key_id, scope=scope, db=db)
+
+
 async def create_provider_model(
     *,
     provider_id: UUID,

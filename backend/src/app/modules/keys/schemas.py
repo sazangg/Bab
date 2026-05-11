@@ -66,6 +66,65 @@ class ProjectProviderAccessResponse(BaseModel):
     updated_at: datetime
 
 
+class CreateSubscriptionRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=1000)
+
+
+class UpdateSubscriptionRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=1000)
+    is_active: bool | None = None
+
+
+class SubscriptionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    org_id: UUID
+    name: str
+    description: str | None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class AttachSubscriptionProviderKeyRequest(BaseModel):
+    provider_key_id: UUID
+    priority: int = Field(default=100, ge=0)
+
+
+class SubscriptionProviderKeyResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    org_id: UUID
+    subscription_id: UUID
+    provider_key_id: UUID
+    priority: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class GrantProjectSubscriptionAccessRequest(BaseModel):
+    subscription_id: UUID
+    priority: int = Field(default=100, ge=0)
+
+
+class ProjectSubscriptionAccessResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    org_id: UUID
+    project_id: UUID
+    subscription_id: UUID
+    priority: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
 class CreateModelAliasRequest(BaseModel):
     alias: str = Field(min_length=1, max_length=255)
     provider_id: UUID

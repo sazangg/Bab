@@ -6,16 +6,22 @@ from app.core.database import Scope
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys.internal import service
 from app.modules.keys.schemas import (
+    AttachSubscriptionProviderKeyRequest,
     CreatedVirtualKeyResponse,
     CreateModelAliasRequest,
     CreateProjectRequest,
+    CreateSubscriptionRequest,
     CreateVirtualKeyRequest,
     GrantProjectProviderAccessRequest,
+    GrantProjectSubscriptionAccessRequest,
     ModelAliasResponse,
     ProjectProviderAccessResponse,
     ProjectResponse,
+    ProjectSubscriptionAccessResponse,
     ResolveAccessRequest,
     ResolvedAccess,
+    SubscriptionProviderKeyResponse,
+    SubscriptionResponse,
     UpdateModelAliasRequest,
     UpdateProjectProviderAccessRequest,
     UpdateProjectRequest,
@@ -122,6 +128,80 @@ async def revoke_project_provider_access(
         project_id=project_id,
         provider_id=provider_id,
         actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def create_subscription(
+    *,
+    payload: CreateSubscriptionRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> SubscriptionResponse:
+    return await service.create_subscription(payload=payload, actor=actor, scope=scope, db=db)
+
+
+async def list_subscriptions(*, scope: Scope, db: AsyncSession) -> list[SubscriptionResponse]:
+    return await service.list_subscriptions(scope=scope, db=db)
+
+
+async def attach_provider_key_to_subscription(
+    *,
+    subscription_id: UUID,
+    payload: AttachSubscriptionProviderKeyRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> SubscriptionProviderKeyResponse:
+    return await service.attach_provider_key_to_subscription(
+        subscription_id=subscription_id,
+        payload=payload,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def list_subscription_provider_keys(
+    *,
+    subscription_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[SubscriptionProviderKeyResponse]:
+    return await service.list_subscription_provider_keys(
+        subscription_id=subscription_id,
+        scope=scope,
+        db=db,
+    )
+
+
+async def grant_project_subscription_access(
+    *,
+    project_id: UUID,
+    payload: GrantProjectSubscriptionAccessRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProjectSubscriptionAccessResponse:
+    return await service.grant_project_subscription_access(
+        project_id=project_id,
+        payload=payload,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def list_project_subscription_access(
+    *,
+    project_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[ProjectSubscriptionAccessResponse]:
+    return await service.list_project_subscription_access(
+        project_id=project_id,
         scope=scope,
         db=db,
     )

@@ -119,6 +119,22 @@ async def list_provider_keys(
     return [ProviderKeyResponse.model_validate(provider_key) for provider_key in provider_keys]
 
 
+async def get_provider_key(
+    *,
+    provider_key_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProviderKeyResponse:
+    provider_key = await repository.get_provider_key(
+        org_id=scope.org_id,
+        provider_key_id=provider_key_id,
+        db=db,
+    )
+    if provider_key is None:
+        raise ProviderNotFoundError
+    return ProviderKeyResponse.model_validate(provider_key)
+
+
 async def create_provider_model(
     *,
     provider_id: UUID,

@@ -16,21 +16,36 @@ from app.modules.keys.errors import (
     ModelAliasNotFoundError,
     ProjectNotFoundError,
     ProjectProviderAccessNotFoundError,
+    SubscriptionNotFoundError,
     VirtualKeyNotFoundError,
 )
 from app.modules.keys.internal import repository
-from app.modules.keys.internal.models import ModelAlias, Project, ProjectProviderAccess, VirtualKey
+from app.modules.keys.internal.models import (
+    ModelAlias,
+    Project,
+    ProjectProviderAccess,
+    ProjectSubscriptionAccess,
+    Subscription,
+    SubscriptionProviderKey,
+    VirtualKey,
+)
 from app.modules.keys.schemas import (
+    AttachSubscriptionProviderKeyRequest,
     CreatedVirtualKeyResponse,
     CreateModelAliasRequest,
     CreateProjectRequest,
+    CreateSubscriptionRequest,
     CreateVirtualKeyRequest,
     GrantProjectProviderAccessRequest,
+    GrantProjectSubscriptionAccessRequest,
     ModelAliasResponse,
     ProjectProviderAccessResponse,
     ProjectResponse,
+    ProjectSubscriptionAccessResponse,
     ResolveAccessRequest,
     ResolvedAccess,
+    SubscriptionProviderKeyResponse,
+    SubscriptionResponse,
     UpdateModelAliasRequest,
     UpdateProjectProviderAccessRequest,
     UpdateProjectRequest,
@@ -321,6 +336,187 @@ async def _get_provider_access_or_raise(
 
 def _access_to_response(access: ProjectProviderAccess) -> ProjectProviderAccessResponse:
     return ProjectProviderAccessResponse.model_validate(access)
+
+
+async def create_subscription(
+    *,
+    payload: CreateSubscriptionRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> SubscriptionResponse:
+    async with transaction(db):
+        subscription = await repository.create_subscription(
+            org_id=scope.org_id,
+            name=payload.name,
+            description=payload.description,
+            db=db,
+        )
+        await audit_facade.record_event(
+            RecordAuditEvent(
+                org_id=scope.org_id,
+                actor_user_id=actor.id,
+                event="subscription.created",
+                target_type="subscription",
+                target_id=subscription.id,
+                event_metadata={"name": subscription.name},
+            ),
+            db,
+        )
+
+    logger.info("subscription_created", subscription_id=str(subscription.id))
+    return _subscription_to_response(subscription)
+
+
+async def list_subscriptions(*, scope: Scope, db: AsyncSession) -> list[SubscriptionResponse]:
+    subscriptions = await repository.list_subscriptions(org_id=scope.org_id, db=db)
+    return [_subscription_to_response(subscription) for subscription in subscriptions]
+
+
+async def attach_provider_key_to_subscription(
+    *,
+    subscription_id: UUID,
+    payload: AttachSubscriptionProviderKeyRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> SubscriptionProviderKeyResponse:
+    async with transaction(db):
+        subscription = await _get_subscription_or_raise(
+            subscription_id=subscription_id,
+            scope=scope,
+            db=db,
+        )
+        await providers_facade.get_provider_key(
+            provider_key_id=payload.provider_key_id,
+            scope=scope,
+            db=db,
+        )
+        attachment = await repository.attach_provider_key_to_subscription(
+            org_id=scope.org_id,
+            subscription_id=subscription.id,
+            provider_key_id=payload.provider_key_id,
+            priority=payload.priority,
+            db=db,
+        )
+        await audit_facade.record_event(
+            RecordAuditEvent(
+                org_id=scope.org_id,
+                actor_user_id=actor.id,
+                event="subscription_provider_key.attached",
+                target_type="subscription_provider_key",
+                target_id=attachment.id,
+                event_metadata={
+                    "subscription_id": str(subscription.id),
+                    "provider_key_id": str(payload.provider_key_id),
+                },
+            ),
+            db,
+        )
+
+    return _subscription_provider_key_to_response(attachment)
+
+
+async def list_subscription_provider_keys(
+    *,
+    subscription_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[SubscriptionProviderKeyResponse]:
+    await _get_subscription_or_raise(subscription_id=subscription_id, scope=scope, db=db)
+    attachments = await repository.list_subscription_provider_keys(
+        org_id=scope.org_id,
+        subscription_id=subscription_id,
+        db=db,
+    )
+    return [_subscription_provider_key_to_response(attachment) for attachment in attachments]
+
+
+async def grant_project_subscription_access(
+    *,
+    project_id: UUID,
+    payload: GrantProjectSubscriptionAccessRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProjectSubscriptionAccessResponse:
+    async with transaction(db):
+        project = await _get_project_or_raise(project_id=project_id, scope=scope, db=db)
+        subscription = await _get_subscription_or_raise(
+            subscription_id=payload.subscription_id,
+            scope=scope,
+            db=db,
+        )
+        access = await repository.grant_project_subscription_access(
+            org_id=scope.org_id,
+            project_id=project.id,
+            subscription_id=subscription.id,
+            priority=payload.priority,
+            db=db,
+        )
+        await audit_facade.record_event(
+            RecordAuditEvent(
+                org_id=scope.org_id,
+                actor_user_id=actor.id,
+                event="project_subscription_access.granted",
+                target_type="project_subscription_access",
+                target_id=access.id,
+                event_metadata={
+                    "project_id": str(project.id),
+                    "subscription_id": str(subscription.id),
+                },
+            ),
+            db,
+        )
+
+    return _project_subscription_access_to_response(access)
+
+
+async def list_project_subscription_access(
+    *,
+    project_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[ProjectSubscriptionAccessResponse]:
+    await _get_project_or_raise(project_id=project_id, scope=scope, db=db)
+    access_rules = await repository.list_project_subscription_access(
+        org_id=scope.org_id,
+        project_id=project_id,
+        db=db,
+    )
+    return [_project_subscription_access_to_response(access) for access in access_rules]
+
+
+async def _get_subscription_or_raise(
+    *,
+    subscription_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> Subscription:
+    subscription = await repository.get_subscription(
+        org_id=scope.org_id,
+        subscription_id=subscription_id,
+        db=db,
+    )
+    if subscription is None:
+        raise SubscriptionNotFoundError
+    return subscription
+
+
+def _subscription_to_response(subscription: Subscription) -> SubscriptionResponse:
+    return SubscriptionResponse.model_validate(subscription)
+
+
+def _subscription_provider_key_to_response(
+    attachment: SubscriptionProviderKey,
+) -> SubscriptionProviderKeyResponse:
+    return SubscriptionProviderKeyResponse.model_validate(attachment)
+
+
+def _project_subscription_access_to_response(
+    access: ProjectSubscriptionAccess,
+) -> ProjectSubscriptionAccessResponse:
+    return ProjectSubscriptionAccessResponse.model_validate(access)
 
 
 async def create_model_alias(

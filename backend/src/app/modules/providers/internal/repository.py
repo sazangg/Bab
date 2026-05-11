@@ -77,6 +77,20 @@ async def list_provider_keys(
     return list(result)
 
 
+async def get_provider_key(
+    *,
+    org_id: UUID,
+    provider_key_id: UUID,
+    db: AsyncSession,
+) -> ProviderKey | None:
+    return await db.scalar(
+        select(ProviderKey).where(
+            ProviderKey.org_id == org_id,
+            ProviderKey.id == provider_key_id,
+        )
+    )
+
+
 async def create_provider_model(
     *,
     org_id: UUID,

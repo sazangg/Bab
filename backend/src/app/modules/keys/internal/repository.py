@@ -7,6 +7,9 @@ from app.modules.keys.internal.models import (
     ModelAlias,
     Project,
     ProjectProviderAccess,
+    ProjectSubscriptionAccess,
+    Subscription,
+    SubscriptionProviderKey,
     VirtualKey,
 )
 
@@ -93,6 +96,112 @@ async def get_provider_access(
 async def delete_provider_access(*, access: ProjectProviderAccess, db: AsyncSession) -> None:
     await db.delete(access)
     await db.flush()
+
+
+async def create_subscription(
+    *,
+    org_id: UUID,
+    name: str,
+    description: str | None,
+    db: AsyncSession,
+) -> Subscription:
+    subscription = Subscription(org_id=org_id, name=name, description=description)
+    db.add(subscription)
+    await db.flush()
+    return subscription
+
+
+async def get_subscription(
+    *,
+    org_id: UUID,
+    subscription_id: UUID,
+    db: AsyncSession,
+) -> Subscription | None:
+    return await db.scalar(
+        select(Subscription).where(
+            Subscription.org_id == org_id,
+            Subscription.id == subscription_id,
+        )
+    )
+
+
+async def list_subscriptions(*, org_id: UUID, db: AsyncSession) -> list[Subscription]:
+    result = await db.scalars(
+        select(Subscription).where(Subscription.org_id == org_id).order_by(Subscription.name)
+    )
+    return list(result)
+
+
+async def attach_provider_key_to_subscription(
+    *,
+    org_id: UUID,
+    subscription_id: UUID,
+    provider_key_id: UUID,
+    priority: int,
+    db: AsyncSession,
+) -> SubscriptionProviderKey:
+    attachment = SubscriptionProviderKey(
+        org_id=org_id,
+        subscription_id=subscription_id,
+        provider_key_id=provider_key_id,
+        priority=priority,
+    )
+    db.add(attachment)
+    await db.flush()
+    return attachment
+
+
+async def list_subscription_provider_keys(
+    *,
+    org_id: UUID,
+    subscription_id: UUID,
+    db: AsyncSession,
+) -> list[SubscriptionProviderKey]:
+    result = await db.scalars(
+        select(SubscriptionProviderKey)
+        .where(
+            SubscriptionProviderKey.org_id == org_id,
+            SubscriptionProviderKey.subscription_id == subscription_id,
+        )
+        .order_by(SubscriptionProviderKey.priority.asc(), SubscriptionProviderKey.created_at.asc())
+    )
+    return list(result)
+
+
+async def grant_project_subscription_access(
+    *,
+    org_id: UUID,
+    project_id: UUID,
+    subscription_id: UUID,
+    priority: int,
+    db: AsyncSession,
+) -> ProjectSubscriptionAccess:
+    access = ProjectSubscriptionAccess(
+        org_id=org_id,
+        project_id=project_id,
+        subscription_id=subscription_id,
+        priority=priority,
+    )
+    db.add(access)
+    await db.flush()
+    return access
+
+
+async def list_project_subscription_access(
+    *,
+    org_id: UUID,
+    project_id: UUID,
+    db: AsyncSession,
+) -> list[ProjectSubscriptionAccess]:
+    result = await db.scalars(
+        select(ProjectSubscriptionAccess)
+        .where(
+            ProjectSubscriptionAccess.org_id == org_id,
+            ProjectSubscriptionAccess.project_id == project_id,
+        )
+        .order_by(ProjectSubscriptionAccess.priority.asc(), ProjectSubscriptionAccess.created_at)
+    )
+    return list(result)
 
 
 async def create_model_alias(
