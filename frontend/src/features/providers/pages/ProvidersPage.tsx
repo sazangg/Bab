@@ -1,7 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  KeyRound,
   MoreHorizontal,
   Pencil,
   Plug,
@@ -9,6 +8,7 @@ import {
   Power,
   RefreshCw,
   RotateCcw,
+  Search,
   Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -17,6 +17,8 @@ import { Link } from "react-router-dom";
 import { z } from "zod";
 
 import {
+  createProviderApiV1ProvidersPost,
+  createProviderKeyApiV1ProvidersProviderIdKeysPost,
   useCreateProviderApiV1ProvidersPost,
   useCreateProviderKeyApiV1ProvidersProviderIdKeysPost,
   useCreateProviderModelApiV1ProvidersProviderIdModelsPost,
@@ -146,41 +148,97 @@ const providerPresets = [
     name: "OpenAI",
     slug: "openai",
     baseUrl: "https://api.openai.com/v1",
+    description: "Official OpenAI API for GPT models.",
   },
   {
     id: "openrouter",
     name: "OpenRouter",
     slug: "openrouter",
     baseUrl: "https://openrouter.ai/api/v1",
+    description: "Multi-provider OpenAI-compatible model router.",
   },
   {
     id: "mistral",
     name: "Mistral AI",
     slug: "mistral",
     baseUrl: "https://api.mistral.ai/v1",
+    description: "Mistral hosted models through their v1 API.",
   },
   {
     id: "groq",
     name: "Groq",
     slug: "groq",
     baseUrl: "https://api.groq.com/openai/v1",
+    description: "Groq OpenAI-compatible inference endpoint.",
   },
   {
     id: "custom",
     name: "Custom OpenAI-compatible",
     slug: "",
     baseUrl: "",
+    description: "Add another compatible upstream manually.",
   },
 ] as const;
+
+type ProviderPreset = (typeof providerPresets)[number];
+
+type ProviderCatalogEntry = {
+  key: string;
+  name: string;
+  slug?: string;
+  baseUrl: string;
+  description: string;
+  provider?: ProviderResponse;
+  preset?: ProviderPreset;
+  isCustom: boolean;
+};
 
 export function ProvidersPage() {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
+  const [addKeyTarget, setAddKeyTarget] = useState<ProviderCatalogEntry | null>(null);
   const [editTarget, setEditTarget] = useState<ProviderResponse | null>(null);
   const [deactivateTarget, setDeactivateTarget] = useState<ProviderResponse | null>(null);
+  const [search, setSearch] = useState("");
 
   const providersQuery = useListProvidersApiV1ProvidersGet();
   const providers = providersQuery.data?.status === 200 ? providersQuery.data.data : [];
+  const knownEntries = providerPresets
+    .filter((preset) => preset.id !== "custom")
+    .map((preset) => {
+      const provider = providers.find((item) => item.slug === preset.slug);
+      return {
+        key: preset.id,
+        name: provider?.name ?? preset.name,
+        slug: preset.slug,
+        baseUrl: provider?.base_url ?? preset.baseUrl,
+        description: preset.description,
+        provider,
+        preset,
+        isCustom: false,
+      } satisfies ProviderCatalogEntry;
+    });
+  const customEntries = providers
+    .filter((provider) => !providerPresets.some((preset) => preset.slug === provider.slug))
+    .map(
+      (provider) =>
+        ({
+          key: provider.id,
+          name: provider.name,
+          slug: provider.slug ?? undefined,
+          baseUrl: provider.base_url,
+          description: "Custom OpenAI-compatible upstream provider.",
+          provider,
+          isCustom: true,
+        }) satisfies ProviderCatalogEntry,
+    );
+  const catalogEntries = [...customEntries, ...knownEntries]
+    .filter((entry) =>
+      `${entry.name} ${entry.slug ?? ""} ${entry.baseUrl}`
+        .toLowerCase()
+        .includes(search.toLowerCase().trim()),
+    )
+    .sort((a, b) => Number(Boolean(b.provider)) - Number(Boolean(a.provider)));
 
   const createMutation = useCreateProviderApiV1ProvidersPost({
     mutation: {
@@ -211,7 +269,7 @@ export function ProvidersPage() {
     <>
       <PageHeader
         title="Providers"
-        description="Manage upstream vendors. API keys and models live on each provider detail page."
+        description="Add API keys to known providers, or register a custom OpenAI-compatible upstream."
         actions={
           <CreateProviderSheet
             open={createOpen}
@@ -235,91 +293,45 @@ export function ProvidersPage() {
 
       {providersQuery.isPending ? (
         <p className="text-sm text-muted-foreground">Loading providers...</p>
-      ) : providers.length === 0 ? (
-        <EmptyState
-          icon={Plug}
-          title="No providers yet"
-          description="Add your first OpenAI-compatible upstream provider."
-          action={<Button onClick={() => setCreateOpen(true)}>Add provider</Button>}
-        />
       ) : (
-        <div className="overflow-hidden rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Slug</TableHead>
-                <TableHead>Base URL</TableHead>
-                <TableHead>Adapter</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-[1%]" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {providers.map((provider) => (
-                <TableRow key={provider.id}>
-                  <TableCell className="font-medium">
-                    <Link className="underline-offset-4 hover:underline" to={`/providers/${provider.id}`}>
-                      {provider.name}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {provider.slug}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {provider.base_url}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{provider.adapter_type}</TableCell>
-                  <TableCell>
-                    <StatusBadge variant={provider.is_active ? "active" : "inactive"}>
-                      {provider.is_active ? "Active" : "Disabled"}
-                    </StatusBadge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon-sm" aria-label="Provider actions">
-                          <MoreHorizontal />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onSelect={() => setEditTarget(provider)}>
-                          <Pencil className="mr-2 size-4" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild>
-                          <Link to={`/providers/${provider.id}`}>
-                          <KeyRound className="mr-2 size-4" />
-                          Manage keys and models
-                          </Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onSelect={() => setDeactivateTarget(provider)}
-                          disabled={!provider.is_active}
-                          variant="destructive"
-                        >
-                          <Power className="mr-2 size-4" />
-                          Deactivate
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onSelect={() =>
-                            updateMutation.mutate({
-                              providerId: provider.id,
-                              data: { is_active: true },
-                            })
-                          }
-                          disabled={provider.is_active || updateMutation.isPending}
-                        >
-                          <RotateCcw className="mr-2 size-4" />
-                          Reactivate
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
+        <div className="space-y-4">
+          <div className="relative max-w-md">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              className="pl-9"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search providers..."
+            />
+          </div>
+          {catalogEntries.length === 0 ? (
+            <EmptyState
+              icon={Plug}
+              title="No providers match"
+              description="Try another search, or add a custom provider."
+              action={<Button onClick={() => setCreateOpen(true)}>Add custom provider</Button>}
+            />
+          ) : (
+            <div className="space-y-3">
+              {catalogEntries.map((entry) => (
+                <ProviderCatalogRow
+                  key={entry.key}
+                  entry={entry}
+                  onAddKey={() => setAddKeyTarget(entry)}
+                  onEdit={() => entry.provider && setEditTarget(entry.provider)}
+                  onDeactivate={() => entry.provider && setDeactivateTarget(entry.provider)}
+                  onReactivate={() =>
+                    entry.provider &&
+                    updateMutation.mutate({
+                      providerId: entry.provider.id,
+                      data: { is_active: true },
+                    })
+                  }
+                  isUpdating={updateMutation.isPending}
+                />
               ))}
-            </TableBody>
-          </Table>
+            </div>
+          )}
         </div>
       )}
 
@@ -339,6 +351,14 @@ export function ProvidersPage() {
           });
         }}
         isPending={updateMutation.isPending}
+      />
+      <AddProviderKeyDialog
+        entry={addKeyTarget}
+        onClose={() => setAddKeyTarget(null)}
+        onCreated={async () => {
+          setAddKeyTarget(null);
+          await queryClient.invalidateQueries();
+        }}
       />
       <Dialog
         open={Boolean(deactivateTarget)}
@@ -374,6 +394,110 @@ export function ProvidersPage() {
 
 export function ProviderResourcesPanel({ provider }: { provider: ProviderResponse }) {
   return <ProviderResourcesContent provider={provider} />;
+}
+
+function ProviderCatalogRow({
+  entry,
+  onAddKey,
+  onEdit,
+  onDeactivate,
+  onReactivate,
+  isUpdating,
+}: {
+  entry: ProviderCatalogEntry;
+  onAddKey: () => void;
+  onEdit: () => void;
+  onDeactivate: () => void;
+  onReactivate: () => void;
+  isUpdating: boolean;
+}) {
+  const providerId = entry.provider?.id ?? "";
+  const keysQuery = useListProviderKeysApiV1ProvidersProviderIdKeysGet(providerId, {
+    query: { enabled: Boolean(providerId) },
+  });
+  const keys = keysQuery.data?.status === 200 ? keysQuery.data.data : [];
+  const activeKeyCount = keys.filter((key) => key.is_active).length;
+
+  return (
+    <div className="rounded-lg border p-4 transition-colors hover:bg-muted/30">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <Link
+          className="min-w-0 flex-1 space-y-2"
+          to={entry.provider ? `/providers/${entry.provider.id}` : "#"}
+          onClick={(event) => {
+            if (!entry.provider) event.preventDefault();
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-md border bg-background text-sm font-semibold">
+              {entry.name.slice(0, 2).toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="font-medium">{entry.name}</h2>
+                {entry.provider ? (
+                  <StatusBadge variant={entry.provider.is_active ? "active" : "inactive"}>
+                    {entry.provider.is_active ? "Configured" : "Disabled"}
+                  </StatusBadge>
+                ) : (
+                  <StatusBadge variant="inactive">Not configured</StatusBadge>
+                )}
+                {activeKeyCount > 0 ? (
+                  <span className="text-xs text-muted-foreground">
+                    {activeKeyCount} active {activeKeyCount === 1 ? "key" : "keys"}
+                  </span>
+                ) : null}
+              </div>
+              <p className="text-sm text-muted-foreground">{entry.description}</p>
+            </div>
+          </div>
+          <p className="truncate font-mono text-xs text-muted-foreground">{entry.baseUrl}</p>
+        </Link>
+
+        <div className="flex shrink-0 items-center gap-2">
+          <Button size="sm" onClick={onAddKey}>
+            <Plus />
+            Add key
+          </Button>
+          {entry.provider ? (
+            <>
+              <Button asChild size="sm" variant="outline">
+                <Link to={`/providers/${entry.provider.id}`}>Open</Link>
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon-sm" aria-label="Provider actions">
+                    <MoreHorizontal />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={onEdit}>
+                    <Pencil className="mr-2 size-4" />
+                    Edit provider
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={onDeactivate}
+                    disabled={!entry.provider.is_active}
+                    variant="destructive"
+                  >
+                    <Power className="mr-2 size-4" />
+                    Deactivate
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={onReactivate}
+                    disabled={entry.provider.is_active || isUpdating}
+                  >
+                    <RotateCcw className="mr-2 size-4" />
+                    Reactivate
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) {
@@ -963,6 +1087,112 @@ function SubscriptionProviderKeysTable({
         })}
       </TableBody>
     </Table>
+  );
+}
+
+function AddProviderKeyDialog({
+  entry,
+  onClose,
+  onCreated,
+}: {
+  entry: ProviderCatalogEntry | null;
+  onClose: () => void;
+  onCreated: () => Promise<void>;
+}) {
+  const [isPending, setIsPending] = useState(false);
+  const [isError, setIsError] = useState(false);
+  const form = useForm<ProviderKeyValues>({
+    resolver: zodResolver(providerKeySchema),
+    defaultValues: { name: "", api_key: "", priority: 100 },
+  });
+
+  useEffect(() => {
+    if (entry) {
+      form.reset({ name: `${entry.name} key`, api_key: "", priority: 100 });
+    }
+  }, [entry, form]);
+
+  const submit = form.handleSubmit(async (values) => {
+    if (!entry) return;
+
+    setIsPending(true);
+    setIsError(false);
+    try {
+      let providerId = entry.provider?.id;
+      if (!providerId) {
+        const response = await createProviderApiV1ProvidersPost({
+          name: entry.name,
+          ...(entry.slug ? { slug: entry.slug } : {}),
+          base_url: entry.baseUrl,
+          adapter_type: "openai_compat",
+        });
+        if (response.status !== 201) {
+          throw new Error("Provider was not created.");
+        }
+        providerId = response.data.id;
+      }
+
+      const keyResponse = await createProviderKeyApiV1ProvidersProviderIdKeysPost(providerId, {
+        name: values.name,
+        api_key: values.api_key,
+        priority: values.priority,
+      });
+      if (keyResponse.status !== 201) {
+        throw new Error("Provider key was not created.");
+      }
+      await onCreated();
+    } catch {
+      setIsError(true);
+    } finally {
+      setIsPending(false);
+    }
+  });
+
+  return (
+    <Dialog open={Boolean(entry)} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add provider key</DialogTitle>
+          <DialogDescription>
+            {entry
+              ? `Add an encrypted upstream API key for ${entry.name}.`
+              : "Add an encrypted upstream API key."}
+          </DialogDescription>
+        </DialogHeader>
+        <form className="space-y-4" onSubmit={submit}>
+          <div className="space-y-1.5">
+            <Label htmlFor="provider-key-name">Name</Label>
+            <Input id="provider-key-name" autoFocus {...form.register("name")} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="provider-key-secret">API key</Label>
+            <Input
+              id="provider-key-secret"
+              type="password"
+              autoComplete="off"
+              {...form.register("api_key")}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="provider-key-priority">Priority</Label>
+            <Input
+              id="provider-key-priority"
+              type="number"
+              {...form.register("priority", { valueAsNumber: true })}
+            />
+          </div>
+          {isError ? <p className="text-sm text-destructive">Provider key was not added.</p> : null}
+        </form>
+        <DialogFooter>
+          <Button disabled={isPending} onClick={submit}>
+            {isPending ? "Adding..." : "Add key"}
+          </Button>
+          <DialogClose asChild>
+            <Button variant="outline">Cancel</Button>
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
