@@ -10,6 +10,10 @@ class ProviderInactiveError(ProviderError):
     pass
 
 
+class ProviderKeyRequiredError(ProviderError):
+    pass
+
+
 class ProviderAdapterNotFoundError(ProviderError):
     pass
 

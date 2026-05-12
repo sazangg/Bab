@@ -575,3 +575,32 @@ async def test_super_admin_can_sync_provider_models(
         "gpt-5.4",
         "gpt-5.4-mini",
     ]
+
+
+@pytest.mark.asyncio
+async def test_sync_provider_models_requires_active_provider_key(
+    app_client,
+    db_session: AsyncSession,
+) -> None:
+    user = await _create_user(db_session)
+    provider = Provider(
+        org_id=user.org_id,
+        name="OpenAI",
+        base_url="https://api.example.test/v1",
+        api_key_encrypted="legacy",
+        adapter_type="openai_compat",
+    )
+    db_session.add(provider)
+    await db_session.commit()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post(
+            f"/api/v1/providers/{provider.id}/models/sync",
+            headers=_auth_headers(user),
+        )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "active provider key required"

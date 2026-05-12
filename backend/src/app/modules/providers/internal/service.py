@@ -10,7 +10,11 @@ from app.core.security import decrypt, encrypt
 from app.modules.audit import facade as audit_facade
 from app.modules.audit.schemas import RecordAuditEvent
 from app.modules.auth.schemas import AuthenticatedUser
-from app.modules.providers.errors import ProviderInactiveError, ProviderNotFoundError
+from app.modules.providers.errors import (
+    ProviderInactiveError,
+    ProviderKeyRequiredError,
+    ProviderNotFoundError,
+)
 from app.modules.providers.internal import repository
 from app.modules.providers.internal.adapters import (
     OPENAI_COMPAT_ADAPTER,
@@ -282,7 +286,7 @@ async def sync_provider_models(
         )
         active_key = next((key for key in provider_keys if key.is_active), None)
         if active_key is None:
-            raise ProviderNotFoundError
+            raise ProviderKeyRequiredError
 
         adapter = default_adapter_registry.get(provider.adapter_type)
         model_names = await adapter.list_models(

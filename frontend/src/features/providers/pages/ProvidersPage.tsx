@@ -543,6 +543,7 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
   const syncModels = useSyncProviderModelsApiV1ProvidersProviderIdModelsSyncPost({
     mutation: { onSuccess: async () => queryClient.invalidateQueries() },
   });
+  const hasActiveKey = keys.some((key) => key.is_active);
 
   return (
     <>
@@ -558,7 +559,7 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
               <div>
                 <h3 className="text-sm font-medium">API keys</h3>
                 <p className="text-xs text-muted-foreground">
-                  Keys are encrypted and can be attached to subscriptions.
+                  Keys are encrypted. Routing priority decides which active key is tried first.
                 </p>
               </div>
             </div>
@@ -579,7 +580,14 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
             >
               <Input placeholder="Production" {...keyForm.register("name")} />
               <Input type="password" placeholder="sk-..." {...keyForm.register("api_key")} />
-              <Input type="number" {...keyForm.register("priority", { valueAsNumber: true })} />
+              <div className="space-y-1">
+                <Input
+                  type="number"
+                  aria-label="Routing priority"
+                  {...keyForm.register("priority", { valueAsNumber: true })}
+                />
+                <p className="text-xs text-muted-foreground">Lower priority is preferred.</p>
+              </div>
               <Button type="submit" disabled={createKey.isPending || !providerId}>
                 <Plus />
                 Add
@@ -612,8 +620,9 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
               <Button
                 size="sm"
                 variant="outline"
-                disabled={!providerId || syncModels.isPending}
+                disabled={!providerId || !hasActiveKey || syncModels.isPending}
                 onClick={() => providerId && syncModels.mutate({ providerId })}
+                title={!hasActiveKey ? "Add an active provider key before syncing models." : undefined}
               >
                 <RefreshCw />
                 Sync
@@ -1163,12 +1172,15 @@ function AddProviderKeyDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="provider-key-priority">Priority</Label>
+            <Label htmlFor="provider-key-priority">Routing priority</Label>
             <Input
               id="provider-key-priority"
               type="number"
               {...form.register("priority", { valueAsNumber: true })}
             />
+            <p className="text-xs text-muted-foreground">
+              Lower numbers are preferred when multiple active keys exist for this provider.
+            </p>
           </div>
           {isError ? <p className="text-sm text-destructive">Provider key was not added.</p> : null}
         </form>
