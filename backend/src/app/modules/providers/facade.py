@@ -17,6 +17,7 @@ from app.modules.providers.schemas import (
     ProviderModelResponse,
     ProviderResponse,
     UpdateProviderKeyRequest,
+    UpdateProviderModelRequest,
     UpdateProviderRequest,
 )
 
@@ -161,6 +162,42 @@ async def get_provider_model(
 ) -> ProviderModelResponse:
     return await service.get_provider_model(
         provider_model_id=provider_model_id,
+        scope=scope,
+        db=db,
+    )
+
+
+async def update_provider_model(
+    *,
+    provider_id: UUID,
+    provider_model_id: UUID,
+    payload: UpdateProviderModelRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProviderModelResponse:
+    return await service.update_provider_model(
+        provider_id=provider_id,
+        provider_model_id=provider_model_id,
+        payload=payload,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def deactivate_provider_model(
+    *,
+    provider_id: UUID,
+    provider_model_id: UUID,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> None:
+    await service.deactivate_provider_model(
+        provider_id=provider_id,
+        provider_model_id=provider_model_id,
+        actor=actor,
         scope=scope,
         db=db,
     )

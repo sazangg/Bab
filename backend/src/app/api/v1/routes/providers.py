@@ -18,6 +18,7 @@ from app.modules.providers.schemas import (
     ProviderModelResponse,
     ProviderResponse,
     UpdateProviderKeyRequest,
+    UpdateProviderModelRequest,
     UpdateProviderRequest,
 )
 
@@ -153,6 +154,51 @@ async def create_provider_model(
         )
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc
+
+
+@router.patch("/{provider_id}/models/{provider_model_id}")
+async def update_provider_model(
+    provider_id: UUID,
+    provider_model_id: UUID,
+    payload: UpdateProviderModelRequest,
+    actor: ProviderAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> ProviderModelResponse:
+    try:
+        return await facade.update_provider_model(
+            provider_id=provider_id,
+            provider_model_id=provider_model_id,
+            payload=payload,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="provider model not found") from exc
+
+
+@router.delete(
+    "/{provider_id}/models/{provider_model_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def deactivate_provider_model(
+    provider_id: UUID,
+    provider_model_id: UUID,
+    actor: ProviderAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> None:
+    try:
+        await facade.deactivate_provider_model(
+            provider_id=provider_id,
+            provider_model_id=provider_model_id,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="provider model not found") from exc
 
 
 @router.post("/{provider_id}/models/sync")

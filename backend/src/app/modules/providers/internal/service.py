@@ -25,6 +25,7 @@ from app.modules.providers.schemas import (
     ProviderModelResponse,
     ProviderResponse,
     UpdateProviderKeyRequest,
+    UpdateProviderModelRequest,
     UpdateProviderRequest,
 )
 
@@ -362,6 +363,77 @@ async def get_provider_model(
     return ProviderModelResponse.model_validate(provider_model)
 
 
+async def update_provider_model(
+    *,
+    provider_id: UUID,
+    provider_model_id: UUID,
+    payload: UpdateProviderModelRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProviderModelResponse:
+    async with transaction(db):
+        await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
+        provider_model = await _get_provider_model_or_raise(
+            provider_id=provider_id,
+            provider_model_id=provider_model_id,
+            scope=scope,
+            db=db,
+        )
+        if payload.provider_model_name is not None:
+            provider_model.provider_model_name = payload.provider_model_name
+        if "alias" in payload.model_fields_set:
+            provider_model.alias = payload.alias
+        if payload.is_active is not None:
+            provider_model.is_active = payload.is_active
+
+        await db.flush()
+        await audit_facade.record_event(
+            RecordAuditEvent(
+                org_id=scope.org_id,
+                actor_user_id=actor.id,
+                event="provider_model.updated",
+                target_type="provider_model",
+                target_id=provider_model.id,
+                event_metadata={"provider_id": str(provider_id)},
+            ),
+            db,
+        )
+
+    return ProviderModelResponse.model_validate(provider_model)
+
+
+async def deactivate_provider_model(
+    *,
+    provider_id: UUID,
+    provider_model_id: UUID,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> None:
+    async with transaction(db):
+        await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
+        provider_model = await _get_provider_model_or_raise(
+            provider_id=provider_id,
+            provider_model_id=provider_model_id,
+            scope=scope,
+            db=db,
+        )
+        provider_model.is_active = False
+        await db.flush()
+        await audit_facade.record_event(
+            RecordAuditEvent(
+                org_id=scope.org_id,
+                actor_user_id=actor.id,
+                event="provider_model.deactivated",
+                target_type="provider_model",
+                target_id=provider_model.id,
+                event_metadata={"provider_id": str(provider_id)},
+            ),
+            db,
+        )
+
+
 async def update_provider(
     *,
     provider_id: UUID,
@@ -521,6 +593,23 @@ async def _get_provider_key_or_raise(
     if provider_key is None or provider_key.provider_id != provider_id:
         raise ProviderNotFoundError
     return provider_key
+
+
+async def _get_provider_model_or_raise(
+    *,
+    provider_id: UUID,
+    provider_model_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+):
+    provider_model = await repository.get_provider_model(
+        org_id=scope.org_id,
+        provider_model_id=provider_model_id,
+        db=db,
+    )
+    if provider_model is None or provider_model.provider_id != provider_id:
+        raise ProviderNotFoundError
+    return provider_model
 
 
 def _to_response(provider: Provider) -> ProviderResponse:

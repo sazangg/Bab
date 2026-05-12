@@ -434,6 +434,92 @@ async def test_super_admin_can_create_and_list_provider_models(
 
 
 @pytest.mark.asyncio
+async def test_super_admin_can_update_provider_model(
+    app_client,
+    db_session: AsyncSession,
+) -> None:
+    user = await _create_user(db_session)
+    provider = Provider(
+        org_id=user.org_id,
+        name="OpenAI",
+        base_url="https://api.openai.com/v1",
+        api_key_encrypted=None,
+        adapter_type="openai_compat",
+    )
+    db_session.add(provider)
+    await db_session.flush()
+    provider_model = ProviderModel(
+        org_id=user.org_id,
+        provider_id=provider.id,
+        provider_model_name="gpt-5.4-mini",
+        alias="fast",
+    )
+    db_session.add(provider_model)
+    await db_session.commit()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.patch(
+            f"/api/v1/providers/{provider.id}/models/{provider_model.id}",
+            headers=_auth_headers(user),
+            json={"alias": "cheap", "is_active": False},
+        )
+
+    await db_session.refresh(provider_model)
+    audit_log = await db_session.scalar(
+        select(AuditLog).where(AuditLog.event == "provider_model.updated")
+    )
+
+    assert response.status_code == 200
+    assert response.json()["alias"] == "cheap"
+    assert response.json()["is_active"] is False
+    assert provider_model.alias == "cheap"
+    assert provider_model.is_active is False
+    assert audit_log is not None
+
+
+@pytest.mark.asyncio
+async def test_super_admin_can_deactivate_provider_model(
+    app_client,
+    db_session: AsyncSession,
+) -> None:
+    user = await _create_user(db_session)
+    provider = Provider(
+        org_id=user.org_id,
+        name="OpenAI",
+        base_url="https://api.openai.com/v1",
+        api_key_encrypted=None,
+        adapter_type="openai_compat",
+    )
+    db_session.add(provider)
+    await db_session.flush()
+    provider_model = ProviderModel(
+        org_id=user.org_id,
+        provider_id=provider.id,
+        provider_model_name="gpt-5.4-mini",
+        alias="fast",
+    )
+    db_session.add(provider_model)
+    await db_session.commit()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.delete(
+            f"/api/v1/providers/{provider.id}/models/{provider_model.id}",
+            headers=_auth_headers(user),
+        )
+
+    await db_session.refresh(provider_model)
+
+    assert response.status_code == 204
+    assert provider_model.is_active is False
+
+
+@pytest.mark.asyncio
 async def test_super_admin_can_sync_provider_models(
     app_client,
     db_session: AsyncSession,
