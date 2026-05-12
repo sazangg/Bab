@@ -304,6 +304,66 @@ async def test_create_provider_key_normalizes_bearer_prefix(
 
 
 @pytest.mark.asyncio
+async def test_list_provider_keys_sorts_active_keys_by_priority(
+    app_client,
+    db_session: AsyncSession,
+) -> None:
+    user = await _create_user(db_session)
+    provider = Provider(
+        org_id=user.org_id,
+        name="OpenAI",
+        base_url="https://api.openai.com/v1",
+        api_key_encrypted="legacy",
+        adapter_type="openai_compat",
+    )
+    db_session.add(provider)
+    await db_session.flush()
+    inactive = ProviderKey(
+        org_id=user.org_id,
+        provider_id=provider.id,
+        name="Inactive low priority",
+        key_prefix="sk-i...",
+        api_key_encrypted=encrypt("inactive"),
+        priority=0,
+        is_active=False,
+    )
+    active_backup = ProviderKey(
+        org_id=user.org_id,
+        provider_id=provider.id,
+        name="Active backup",
+        key_prefix="sk-b...",
+        api_key_encrypted=encrypt("backup"),
+        priority=100,
+    )
+    active_primary = ProviderKey(
+        org_id=user.org_id,
+        provider_id=provider.id,
+        name="Active primary",
+        key_prefix="sk-p...",
+        api_key_encrypted=encrypt("primary"),
+        priority=10,
+    )
+    db_session.add_all([inactive, active_backup, active_primary])
+    await db_session.commit()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get(
+            f"/api/v1/providers/{provider.id}/keys",
+            headers=_auth_headers(user),
+        )
+
+    assert response.status_code == 200
+    assert [key["name"] for key in response.json()] == [
+        "Active primary",
+        "Active backup",
+        "Inactive low priority",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_super_admin_can_update_provider_key(
     app_client,
     db_session: AsyncSession,

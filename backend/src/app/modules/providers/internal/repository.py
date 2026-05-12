@@ -74,7 +74,11 @@ async def list_provider_keys(
     result = await db.scalars(
         select(ProviderKey)
         .where(ProviderKey.org_id == org_id, ProviderKey.provider_id == provider_id)
-        .order_by(ProviderKey.priority.asc(), ProviderKey.created_at.asc())
+        .order_by(
+            ProviderKey.is_active.desc(),
+            ProviderKey.priority.asc(),
+            ProviderKey.created_at.asc(),
+        )
     )
     return list(result)
 

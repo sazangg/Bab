@@ -185,6 +185,13 @@ type ProviderCatalogEntry = {
   isCustom: boolean;
 };
 
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
 export function ProvidersPage() {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
@@ -563,6 +570,13 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
             <ResourceKeyTable
               providerId={providerId}
               keys={keys}
+              onUpdate={(key, values) =>
+                updateKey.mutate({
+                  providerId,
+                  providerKeyId: key.id,
+                  data: values,
+                })
+              }
               onRotate={(key, apiKey) =>
                 updateKey.mutate({
                   providerId,
@@ -657,14 +671,27 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
 function ResourceKeyTable({
   providerId,
   keys,
+  onUpdate,
   onRotate,
   onDeactivate,
 }: {
   providerId: string;
   keys: ProviderKeyResponse[];
+  onUpdate: (
+    key: ProviderKeyResponse,
+    values: { name: string; priority: number },
+  ) => void;
   onRotate: (key: ProviderKeyResponse, apiKey: string) => void;
   onDeactivate: (key: ProviderKeyResponse) => void;
 }) {
+  const sortedKeys = [...keys].sort(
+    (a, b) =>
+      Number(b.is_active) - Number(a.is_active) ||
+      a.priority - b.priority ||
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+  );
+  const syncKey = sortedKeys.find((key) => key.is_active);
+  const [editKey, setEditKey] = useState<ProviderKeyResponse | null>(null);
   const [rotateKey, setRotateKey] = useState<ProviderKeyResponse | null>(null);
   const [apiKey, setApiKey] = useState("");
 
@@ -677,13 +704,20 @@ function ResourceKeyTable({
             <TableHead>Prefix</TableHead>
             <TableHead>Priority</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead>Created</TableHead>
+            <TableHead>Last used</TableHead>
             <TableHead className="w-[1%]" />
           </TableRow>
         </TableHeader>
         <TableBody>
-          {keys.map((key) => (
+          {sortedKeys.map((key) => (
             <TableRow key={key.id}>
-              <TableCell className="font-medium">{key.name}</TableCell>
+              <TableCell className="font-medium">
+                <div>{key.name}</div>
+                {syncKey?.id === key.id ? (
+                  <p className="text-xs text-muted-foreground">Used for model sync</p>
+                ) : null}
+              </TableCell>
               <TableCell className="font-mono text-xs">{key.key_prefix}</TableCell>
               <TableCell>{key.priority}</TableCell>
               <TableCell>
@@ -691,7 +725,14 @@ function ResourceKeyTable({
                   {key.is_active ? "Active" : "Disabled"}
                 </StatusBadge>
               </TableCell>
+              <TableCell className="text-xs text-muted-foreground">
+                {formatDateTime(key.created_at)}
+              </TableCell>
+              <TableCell className="text-xs text-muted-foreground">Not tracked yet</TableCell>
               <TableCell className="flex justify-end gap-1">
+                <Button size="icon-sm" variant="ghost" onClick={() => setEditKey(key)}>
+                  <Pencil />
+                </Button>
                 <Button size="icon-sm" variant="ghost" onClick={() => setRotateKey(key)}>
                   <RefreshCw />
                 </Button>
@@ -708,6 +749,15 @@ function ResourceKeyTable({
           ))}
         </TableBody>
       </Table>
+      <EditProviderKeySheet
+        providerKey={editKey}
+        onClose={() => setEditKey(null)}
+        onSubmit={(values) => {
+          if (!editKey) return;
+          onUpdate(editKey, values);
+          setEditKey(null);
+        }}
+      />
       <Dialog
         open={Boolean(rotateKey)}
         onOpenChange={(open) => {
@@ -745,6 +795,68 @@ function ResourceKeyTable({
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+function EditProviderKeySheet({
+  providerKey,
+  onClose,
+  onSubmit,
+}: {
+  providerKey: ProviderKeyResponse | null;
+  onClose: () => void;
+  onSubmit: (values: { name: string; priority: number }) => void;
+}) {
+  const form = useForm<{ name: string; priority: number }>({
+    resolver: zodResolver(
+      z.object({
+        name: z.string().min(1).max(255),
+        priority: z.number().int().min(0),
+      }),
+    ),
+    defaultValues: { name: "", priority: 100 },
+  });
+
+  useEffect(() => {
+    if (providerKey) {
+      form.reset({ name: providerKey.name, priority: providerKey.priority });
+    }
+  }, [providerKey, form]);
+
+  return (
+    <Sheet open={Boolean(providerKey)} onOpenChange={(open) => !open && onClose()}>
+      <SheetContent>
+        <SheetHeader>
+          <SheetTitle>Edit provider key</SheetTitle>
+          <SheetDescription>
+            Rename this key or change routing priority. Use rotate to replace the secret.
+          </SheetDescription>
+        </SheetHeader>
+        <form className="grid gap-4 px-4" onSubmit={form.handleSubmit(onSubmit)}>
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-provider-key-name">Name</Label>
+            <Input id="edit-provider-key-name" autoFocus {...form.register("name")} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-provider-key-priority">Routing priority</Label>
+            <Input
+              id="edit-provider-key-priority"
+              type="number"
+              {...form.register("priority", { valueAsNumber: true })}
+            />
+            <p className="text-xs text-muted-foreground">
+              Active keys are tried first. Lower numbers win within active keys.
+            </p>
+          </div>
+        </form>
+        <SheetFooter>
+          <Button onClick={form.handleSubmit(onSubmit)}>Save changes</Button>
+          <SheetClose asChild>
+            <Button variant="outline">Cancel</Button>
+          </SheetClose>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }
 
