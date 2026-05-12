@@ -591,6 +591,13 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
               onDeactivate={(key) =>
                 deactivateKey.mutate({ providerId, providerKeyId: key.id })
               }
+              onReactivate={(key) =>
+                updateKey.mutate({
+                  providerId,
+                  providerKeyId: key.id,
+                  data: { is_active: true },
+                })
+              }
             />
           </section>
 
@@ -633,6 +640,13 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
               }
               onDeactivate={(model) =>
                 deactivateModel.mutate({ providerId, providerModelId: model.id })
+              }
+              onReactivate={(model) =>
+                updateModel.mutate({
+                  providerId,
+                  providerModelId: model.id,
+                  data: { is_active: true },
+                })
               }
             />
           </section>
@@ -678,6 +692,7 @@ function ResourceKeyTable({
   onUpdate,
   onRotate,
   onDeactivate,
+  onReactivate,
 }: {
   providerId: string;
   keys: ProviderKeyResponse[];
@@ -687,6 +702,7 @@ function ResourceKeyTable({
   ) => void;
   onRotate: (key: ProviderKeyResponse, apiKey: string) => void;
   onDeactivate: (key: ProviderKeyResponse) => void;
+  onReactivate: (key: ProviderKeyResponse) => void;
 }) {
   const sortedKeys = [...keys].sort(
     (a, b) =>
@@ -746,14 +762,25 @@ function ResourceKeyTable({
                 <Button size="icon-sm" variant="ghost" onClick={() => setRotateKey(key)}>
                   <RefreshCw />
                 </Button>
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  disabled={!providerId || !key.is_active}
-                  onClick={() => onDeactivate(key)}
-                >
-                  <Trash2 />
-                </Button>
+                {key.is_active ? (
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    disabled={!providerId}
+                    onClick={() => onDeactivate(key)}
+                  >
+                    <Trash2 />
+                  </Button>
+                ) : (
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    disabled={!providerId}
+                    onClick={() => onReactivate(key)}
+                  >
+                    <RotateCcw />
+                  </Button>
+                )}
               </TableCell>
             </TableRow>
           ))}
@@ -1004,11 +1031,13 @@ function ResourceModelTable({
   models,
   onAlias,
   onDeactivate,
+  onReactivate,
 }: {
   providerId: string;
   models: ProviderModelResponse[];
   onAlias: (model: ProviderModelResponse, alias: string) => void;
   onDeactivate: (model: ProviderModelResponse) => void;
+  onReactivate: (model: ProviderModelResponse) => void;
 }) {
   const [editModel, setEditModel] = useState<ProviderModelResponse | null>(null);
   const [alias, setAlias] = useState("");
@@ -1045,14 +1074,25 @@ function ResourceModelTable({
                 >
                   <Pencil />
                 </Button>
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  disabled={!providerId || !model.is_active}
-                  onClick={() => onDeactivate(model)}
-                >
-                  <Trash2 />
-                </Button>
+                {model.is_active ? (
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    disabled={!providerId}
+                    onClick={() => onDeactivate(model)}
+                  >
+                    <Trash2 />
+                  </Button>
+                ) : (
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    disabled={!providerId}
+                    onClick={() => onReactivate(model)}
+                  >
+                    <RotateCcw />
+                  </Button>
+                )}
               </TableCell>
             </TableRow>
           ))}
