@@ -8,6 +8,7 @@ import {
   Plug,
   ScrollText,
   Settings,
+  SquareStack,
 } from "lucide-react";
 import { Fragment } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
@@ -52,6 +53,7 @@ const primaryNav = [
   { to: "/", label: "Overview", icon: LayoutDashboard },
   { to: "/projects", label: "Projects", icon: FolderKanban },
   { to: "/providers", label: "Providers", icon: Plug },
+  { to: "/subscriptions", label: "Subscriptions", icon: SquareStack },
 ];
 
 const observabilityNav = [

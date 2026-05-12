@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
+import { Link } from "react-router-dom";
 import { z } from "zod";
 
 import {
@@ -41,7 +42,6 @@ import {
   useAttachProviderKeyToSubscriptionApiV1SubscriptionsSubscriptionIdProviderKeysPost,
   useCreateSubscriptionApiV1SubscriptionsPost,
   useListSubscriptionProviderKeysApiV1SubscriptionsSubscriptionIdProviderKeysGet,
-  useListSubscriptionsApiV1SubscriptionsGet,
 } from "@/shared/api/generated/subscriptions/subscriptions";
 import { Button } from "@/components/ui/button";
 import {
@@ -92,6 +92,7 @@ import { StatusBadge } from "@/shared/components/StatusBadge";
 import { Textarea } from "@/components/ui/textarea";
 
 const createSchema = z.object({
+  provider_preset: z.string().optional(),
   name: z.string().min(1).max(255),
   slug: z.string().optional(),
   base_url: z.url(),
@@ -139,18 +140,47 @@ type SubscriptionProviderKeyValues = z.infer<typeof subscriptionProviderKeySchem
 
 type EditValues = z.infer<typeof editSchema>;
 
+const providerPresets = [
+  {
+    id: "openai",
+    name: "OpenAI",
+    slug: "openai",
+    baseUrl: "https://api.openai.com/v1",
+  },
+  {
+    id: "openrouter",
+    name: "OpenRouter",
+    slug: "openrouter",
+    baseUrl: "https://openrouter.ai/api/v1",
+  },
+  {
+    id: "mistral",
+    name: "Mistral AI",
+    slug: "mistral",
+    baseUrl: "https://api.mistral.ai/v1",
+  },
+  {
+    id: "groq",
+    name: "Groq",
+    slug: "groq",
+    baseUrl: "https://api.groq.com/openai/v1",
+  },
+  {
+    id: "custom",
+    name: "Custom OpenAI-compatible",
+    slug: "",
+    baseUrl: "",
+  },
+] as const;
+
 export function ProvidersPage() {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<ProviderResponse | null>(null);
-  const [manageTarget, setManageTarget] = useState<ProviderResponse | null>(null);
   const [deactivateTarget, setDeactivateTarget] = useState<ProviderResponse | null>(null);
 
   const providersQuery = useListProvidersApiV1ProvidersGet();
-  const subscriptionsQuery = useListSubscriptionsApiV1SubscriptionsGet();
   const providers = providersQuery.data?.status === 200 ? providersQuery.data.data : [];
-  const subscriptions =
-    subscriptionsQuery.data?.status === 200 ? subscriptionsQuery.data.data : [];
 
   const createMutation = useCreateProviderApiV1ProvidersPost({
     mutation: {
@@ -181,7 +211,7 @@ export function ProvidersPage() {
     <>
       <PageHeader
         title="Providers"
-        description="OpenAI-compatible upstream providers. Credentials live in provider keys."
+        description="Manage upstream vendors. API keys and models live on each provider detail page."
         actions={
           <CreateProviderSheet
             open={createOpen}
@@ -228,7 +258,11 @@ export function ProvidersPage() {
             <TableBody>
               {providers.map((provider) => (
                 <TableRow key={provider.id}>
-                  <TableCell className="font-medium">{provider.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <Link className="underline-offset-4 hover:underline" to={`/providers/${provider.id}`}>
+                      {provider.name}
+                    </Link>
+                  </TableCell>
                   <TableCell className="font-mono text-xs text-muted-foreground">
                     {provider.slug}
                   </TableCell>
@@ -253,9 +287,11 @@ export function ProvidersPage() {
                           <Pencil className="mr-2 size-4" />
                           Edit
                         </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => setManageTarget(provider)}>
+                        <DropdownMenuItem asChild>
+                          <Link to={`/providers/${provider.id}`}>
                           <KeyRound className="mr-2 size-4" />
                           Manage keys and models
+                          </Link>
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onSelect={() => setDeactivateTarget(provider)}
@@ -304,9 +340,6 @@ export function ProvidersPage() {
         }}
         isPending={updateMutation.isPending}
       />
-      <ProviderResourcesSheet provider={manageTarget} onClose={() => setManageTarget(null)} />
-      <SubscriptionsPanel providers={providers} subscriptions={subscriptions} />
-
       <Dialog
         open={Boolean(deactivateTarget)}
         onOpenChange={(open) => !open && setDeactivateTarget(null)}
@@ -339,15 +372,13 @@ export function ProvidersPage() {
   );
 }
 
-function ProviderResourcesSheet({
-  provider,
-  onClose,
-}: {
-  provider: ProviderResponse | null;
-  onClose: () => void;
-}) {
+export function ProviderResourcesPanel({ provider }: { provider: ProviderResponse }) {
+  return <ProviderResourcesContent provider={provider} />;
+}
+
+function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) {
   const queryClient = useQueryClient();
-  const providerId = provider?.id ?? "";
+  const providerId = provider.id;
   const keysQuery = useListProviderKeysApiV1ProvidersProviderIdKeysGet(providerId, {
     query: { enabled: Boolean(providerId) },
   });
@@ -400,15 +431,14 @@ function ProviderResourcesSheet({
   });
 
   return (
-    <Sheet open={Boolean(provider)} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent className="sm:max-w-3xl">
-        <SheetHeader>
-          <SheetTitle>{provider?.name ?? "Provider"} resources</SheetTitle>
-          <SheetDescription>
-            Manage provider API keys and the models available through subscriptions.
-          </SheetDescription>
-        </SheetHeader>
-        <div className="space-y-6 overflow-y-auto px-4 pb-6">
+    <>
+      <SheetHeader className="px-0">
+        <SheetTitle>{provider.name} resources</SheetTitle>
+        <SheetDescription>
+          Manage provider API keys and the models available through subscriptions.
+        </SheetDescription>
+      </SheetHeader>
+      <div className="space-y-6 overflow-y-auto pb-6">
           <section className="space-y-3">
             <div className="flex items-center justify-between">
               <div>
@@ -511,9 +541,8 @@ function ProviderResourcesSheet({
               }
             />
           </section>
-        </div>
-      </SheetContent>
-    </Sheet>
+      </div>
+    </>
   );
 }
 
@@ -697,7 +726,7 @@ function ResourceModelTable({
   );
 }
 
-function SubscriptionsPanel({
+export function SubscriptionsPanel({
   providers,
   subscriptions,
 }: {
@@ -952,8 +981,15 @@ function CreateProviderSheet({
 }) {
   const form = useForm<CreateValues>({
     resolver: zodResolver(createSchema),
-    defaultValues: { name: "", slug: "", base_url: "", api_key: "" },
+    defaultValues: {
+      provider_preset: "openai",
+      name: "OpenAI",
+      slug: "openai",
+      base_url: "https://api.openai.com/v1",
+      api_key: "",
+    },
   });
+  const selectedPreset = useWatch({ control: form.control, name: "provider_preset" });
 
   useEffect(() => {
     if (!open) form.reset();
@@ -975,6 +1011,32 @@ function CreateProviderSheet({
           </SheetDescription>
         </SheetHeader>
         <form className="grid gap-4 px-4" onSubmit={form.handleSubmit(onSubmit)}>
+          <div className="space-y-1.5">
+            <Label>Provider type</Label>
+            <Select
+              value={selectedPreset}
+              onValueChange={(value) => {
+                const preset = providerPresets.find((item) => item.id === value);
+                form.setValue("provider_preset", value);
+                if (preset) {
+                  form.setValue("name", preset.name);
+                  form.setValue("slug", preset.slug);
+                  form.setValue("base_url", preset.baseUrl);
+                }
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Choose provider" />
+              </SelectTrigger>
+              <SelectContent>
+                {providerPresets.map((preset) => (
+                  <SelectItem key={preset.id} value={preset.id}>
+                    {preset.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="space-y-1.5">
             <Label htmlFor="provider-name">Name</Label>
             <Input id="provider-name" autoFocus {...form.register("name")} />
