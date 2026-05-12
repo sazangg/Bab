@@ -281,7 +281,6 @@ export function ProvidersPage() {
                   ...(values.slug ? { slug: values.slug } : {}),
                   base_url: values.base_url,
                   ...(values.api_key ? { api_key: values.api_key } : {}),
-                  adapter_type: "openai_compat",
                 },
               })
             }
@@ -1124,7 +1123,6 @@ function AddProviderKeyDialog({
           name: entry.name,
           ...(entry.slug ? { slug: entry.slug } : {}),
           base_url: entry.baseUrl,
-          adapter_type: "openai_compat",
         });
         if (response.status !== 201) {
           throw new Error("Provider was not created.");

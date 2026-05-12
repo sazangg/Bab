@@ -18,6 +18,4 @@ export interface CreateProviderRequest {
      */
   base_url: string;
   api_key?: string | null;
-  /** @maxLength 100 */
-  adapter_type?: string;
 }

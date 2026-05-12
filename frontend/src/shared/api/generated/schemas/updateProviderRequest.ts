@@ -10,6 +10,5 @@ export interface UpdateProviderRequest {
   slug?: string | null;
   base_url?: string | null;
   api_key?: string | null;
-  adapter_type?: string | null;
   is_active?: boolean | null;
 }

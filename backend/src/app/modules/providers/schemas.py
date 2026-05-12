@@ -11,7 +11,6 @@ class CreateProviderRequest(BaseModel):
     slug: str | None = Field(default=None, min_length=1, max_length=100)
     base_url: HttpUrl
     api_key: str | None = Field(default=None, min_length=1)
-    adapter_type: str = Field(default="openai_compat", max_length=100)
 
 
 class UpdateProviderRequest(BaseModel):
@@ -19,7 +18,6 @@ class UpdateProviderRequest(BaseModel):
     slug: str | None = Field(default=None, min_length=1, max_length=100)
     base_url: HttpUrl | None = None
     api_key: str | None = Field(default=None, min_length=1)
-    adapter_type: str | None = Field(default=None, max_length=100)
     is_active: bool | None = None
 
 

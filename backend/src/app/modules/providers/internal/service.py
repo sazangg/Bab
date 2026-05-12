@@ -12,7 +12,11 @@ from app.modules.audit.schemas import RecordAuditEvent
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.providers.errors import ProviderInactiveError, ProviderNotFoundError
 from app.modules.providers.internal import repository
-from app.modules.providers.internal.adapters import AdapterProvider, default_adapter_registry
+from app.modules.providers.internal.adapters import (
+    OPENAI_COMPAT_ADAPTER,
+    AdapterProvider,
+    default_adapter_registry,
+)
 from app.modules.providers.internal.models import Provider
 from app.modules.providers.schemas import (
     CreateProviderKeyRequest,
@@ -46,7 +50,7 @@ async def create_provider(
             slug=_slugify(payload.slug or payload.name),
             base_url=str(payload.base_url).rstrip("/"),
             api_key_encrypted=encrypt(payload.api_key) if payload.api_key is not None else None,
-            adapter_type=payload.adapter_type,
+            adapter_type=OPENAI_COMPAT_ADAPTER,
             db=db,
         )
         await audit_facade.record_event(
@@ -452,8 +456,6 @@ async def update_provider(
             provider.slug = _slugify(payload.slug)
         if payload.base_url is not None:
             provider.base_url = str(payload.base_url).rstrip("/")
-        if payload.adapter_type is not None:
-            provider.adapter_type = payload.adapter_type
         if payload.is_active is not None:
             provider.is_active = payload.is_active
         if payload.api_key is not None:
