@@ -2,7 +2,7 @@ import { defineConfig } from "orval";
 
 export default defineConfig({
   bab: {
-    input: "http://localhost:8000/openapi.json",
+    input: process.env.BAB_OPENAPI_URL ?? "http://localhost:8000/openapi.json",
     output: {
       target: "src/shared/api/generated/bab.ts",
       schemas: "src/shared/api/generated/schemas",

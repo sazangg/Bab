@@ -7,14 +7,14 @@
 
 export interface CreateModelAliasRequest {
   /**
-   * @minLength 1
-   * @maxLength 255
-   */
+     * @minLength 1
+     * @maxLength 255
+     */
   alias: string;
   provider_id: string;
   /**
-   * @minLength 1
-   * @maxLength 255
-   */
+     * @minLength 1
+     * @maxLength 255
+     */
   provider_model: string;
 }

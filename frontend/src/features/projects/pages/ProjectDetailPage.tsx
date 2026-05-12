@@ -5,12 +5,13 @@ import { useNavigate, useParams } from "react-router-dom";
 
 import {
   useDeactivateProjectApiV1ProjectsProjectIdDelete,
-  useListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet,
+  useListProjectSubscriptionAccessApiV1ProjectsProjectIdSubscriptionAccessGet,
   useListProjectsApiV1ProjectsGet,
   useListVirtualKeysApiV1ProjectsProjectIdKeysGet,
   useUpdateProjectApiV1ProjectsProjectIdPatch,
 } from "@/shared/api/generated/projects/projects";
 import { useListProvidersApiV1ProvidersGet } from "@/shared/api/generated/providers/providers";
+import { useListSubscriptionsApiV1SubscriptionsGet } from "@/shared/api/generated/subscriptions/subscriptions";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -45,7 +46,8 @@ export function ProjectDetailPage() {
 
   const projectsQuery = useListProjectsApiV1ProjectsGet();
   const providersQuery = useListProvidersApiV1ProvidersGet();
-  const accessQuery = useListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet(
+  const subscriptionsQuery = useListSubscriptionsApiV1SubscriptionsGet();
+  const accessQuery = useListProjectSubscriptionAccessApiV1ProjectsProjectIdSubscriptionAccessGet(
     projectId,
     { query: { enabled: Boolean(projectId) } },
   );
@@ -58,6 +60,8 @@ export function ProjectDetailPage() {
       ? projectsQuery.data.data.find((p) => p.id === projectId)
       : undefined;
   const providers = providersQuery.data?.status === 200 ? providersQuery.data.data : [];
+  const subscriptions =
+    subscriptionsQuery.data?.status === 200 ? subscriptionsQuery.data.data : [];
   const accessRules = accessQuery.data?.status === 200 ? accessQuery.data.data : [];
   const keys = keysQuery.data?.status === 200 ? keysQuery.data.data : [];
 
@@ -144,7 +148,7 @@ export function ProjectDetailPage() {
             <KeyRound className="size-3.5" />
             Keys ({keys.length})
           </TabsTrigger>
-          <TabsTrigger value="access">Provider access ({accessRules.length})</TabsTrigger>
+          <TabsTrigger value="access">Subscriptions ({accessRules.length})</TabsTrigger>
           <TabsTrigger value="limits">Limits</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
@@ -162,7 +166,7 @@ export function ProjectDetailPage() {
         <TabsContent value="access" className="space-y-4">
           <ProjectAccessSection
             projectId={projectId}
-            providers={providers}
+            subscriptions={subscriptions}
             accessRules={accessRules}
             isLoading={accessQuery.isPending}
           />

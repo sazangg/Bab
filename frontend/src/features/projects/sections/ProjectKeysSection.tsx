@@ -11,8 +11,8 @@ import {
 } from "@/shared/api/generated/projects/projects";
 import type {
   CreatedVirtualKeyResponse,
-  ProjectProviderAccessResponse,
   ProjectResponse,
+  ProjectSubscriptionAccessResponse,
   ProviderResponse,
   VirtualKeyResponse,
 } from "@/shared/api/generated/schemas";
@@ -78,7 +78,7 @@ export function ProjectKeysSection({
   projectId: string;
   project: ProjectResponse;
   providers: ProviderResponse[];
-  accessRules: ProjectProviderAccessResponse[];
+  accessRules: ProjectSubscriptionAccessResponse[];
   keys: VirtualKeyResponse[];
   isLoading: boolean;
   onView: (keyId: string) => void;
@@ -116,9 +116,7 @@ export function ProjectKeysSection({
     },
   });
 
-  const accessibleProviders = accessRules
-    .map((rule) => providers.find((p) => p.id === rule.provider_id))
-    .filter((p): p is ProviderResponse => Boolean(p));
+  const accessibleProviders = providers.filter((provider) => provider.is_active);
 
   const submit = (values: KeyValues) =>
     createMutation.mutate({
@@ -237,7 +235,7 @@ export function ProjectKeysSection({
               title="No virtual keys yet"
               description={
                 accessRules.length === 0
-                  ? "Grant provider access first, then create a key."
+                  ? "Attach a subscription first, then create a key."
                   : "Create a key to issue this project's first credential."
               }
             />

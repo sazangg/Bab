@@ -4,7 +4,7 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { VirtualKeyRestriction } from "./virtualKeyRestriction";
+import type { VirtualKeyRestriction } from './virtualKeyRestriction';
 
 export interface VirtualKeyResponse {
   id: string;

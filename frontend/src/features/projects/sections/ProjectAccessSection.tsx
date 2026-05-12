@@ -1,19 +1,10 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plug, Plus, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Layers3, Plus } from "lucide-react";
+import { useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 
-import {
-  useGrantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPost,
-  useRevokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDelete,
-  useUpdateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatch,
-} from "@/shared/api/generated/projects/projects";
-import type {
-  ProjectProviderAccessResponse,
-  ProviderResponse,
-} from "@/shared/api/generated/schemas";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -43,160 +34,118 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  useGrantProjectSubscriptionAccessApiV1ProjectsProjectIdSubscriptionAccessPost,
+} from "@/shared/api/generated/projects/projects";
+import type {
+  ProjectSubscriptionAccessResponse,
+  SubscriptionResponse,
+} from "@/shared/api/generated/schemas";
 import { EmptyState } from "@/shared/components/EmptyState";
+import { StatusBadge } from "@/shared/components/StatusBadge";
 
 const grantSchema = z.object({
-  provider_id: z.string().min(1, "Pick a provider"),
-  allowed_models: z.string().optional(),
+  subscription_id: z.string().min(1, "Pick a subscription"),
+  priority: z.number().int().min(0),
 });
 
 type GrantValues = z.infer<typeof grantSchema>;
 
 export function ProjectAccessSection({
   projectId,
-  providers,
+  subscriptions,
   accessRules,
   isLoading,
 }: {
   projectId: string;
-  providers: ProviderResponse[];
-  accessRules: ProjectProviderAccessResponse[];
+  subscriptions: SubscriptionResponse[];
+  accessRules: ProjectSubscriptionAccessResponse[];
   isLoading: boolean;
 }) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [editRule, setEditRule] = useState<ProjectProviderAccessResponse | null>(null);
-
-  const grantedProviderIds = new Set(accessRules.map((rule) => rule.provider_id));
-  const availableProviders = providers.filter((p) => !grantedProviderIds.has(p.id) && p.is_active);
+  const grantedSubscriptionIds = new Set(accessRules.map((rule) => rule.subscription_id));
+  const availableSubscriptions = subscriptions.filter(
+    (subscription) => subscription.is_active && !grantedSubscriptionIds.has(subscription.id),
+  );
 
   const form = useForm<GrantValues>({
     resolver: zodResolver(grantSchema),
-    defaultValues: { provider_id: "", allowed_models: "" },
+    defaultValues: { subscription_id: "", priority: 100 },
   });
-  const editForm = useForm<Pick<GrantValues, "allowed_models">>({
-    defaultValues: { allowed_models: "" },
-  });
-  const providerId = useWatch({ control: form.control, name: "provider_id" });
-
-  const grantMutation = useGrantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPost({
+  const subscriptionId = useWatch({ control: form.control, name: "subscription_id" });
+  const grantMutation = useGrantProjectSubscriptionAccessApiV1ProjectsProjectIdSubscriptionAccessPost({
     mutation: {
       onSuccess: async () => {
-        form.reset();
+        form.reset({ subscription_id: "", priority: 100 });
         setOpen(false);
         await queryClient.invalidateQueries();
       },
     },
   });
-  const revokeMutation =
-    useRevokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDelete({
-      mutation: {
-        onSuccess: async () => {
-          await queryClient.invalidateQueries();
-        },
-      },
-    });
-  const updateMutation =
-    useUpdateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatch({
-      mutation: {
-        onSuccess: async () => {
-          setEditRule(null);
-          await queryClient.invalidateQueries();
-        },
-      },
-    });
 
-  useEffect(() => {
-    if (editRule) {
-      editForm.reset({ allowed_models: editRule.allowed_models?.join(", ") ?? "" });
-    }
-  }, [editForm, editRule]);
+  const submit = form.handleSubmit((values) =>
+    grantMutation.mutate({
+      projectId,
+      data: { subscription_id: values.subscription_id, priority: values.priority },
+    }),
+  );
 
   return (
-    <>
-      <Card>
-        <CardHeader>
+    <Card>
+      <CardHeader>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <CardTitle>Provider access</CardTitle>
-            <CardDescription>Which providers and models this project may use.</CardDescription>
+            <CardTitle>Subscription access</CardTitle>
+            <CardDescription>
+              Projects inherit providers, provider keys, and models through subscriptions.
+            </CardDescription>
           </div>
           <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>
-              <Button size="sm" disabled={availableProviders.length === 0}>
+              <Button size="sm" disabled={availableSubscriptions.length === 0}>
                 <Plus />
-                Grant access
+                Attach subscription
               </Button>
             </SheetTrigger>
             <SheetContent>
               <SheetHeader>
-                <SheetTitle>Grant provider access</SheetTitle>
+                <SheetTitle>Attach subscription</SheetTitle>
                 <SheetDescription>
-                  Empty model list means all models the provider supports.
+                  Lower priority wins when the same alias exists across subscriptions.
                 </SheetDescription>
               </SheetHeader>
-              <form
-                className="grid gap-4 px-4"
-                onSubmit={form.handleSubmit((values) =>
-                  grantMutation.mutate({
-                    projectId,
-                    data: {
-                      provider_id: values.provider_id,
-                      allowed_models: parseModels(values.allowed_models),
-                    },
-                  }),
-                )}
-              >
+              <form className="grid gap-4 px-4" onSubmit={submit}>
                 <div className="space-y-1.5">
-                  <Label>Provider</Label>
+                  <Label>Subscription</Label>
                   <Select
-                    value={providerId}
-                    onValueChange={(value) => form.setValue("provider_id", value)}
+                    value={subscriptionId}
+                    onValueChange={(value) => form.setValue("subscription_id", value)}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select provider" />
+                      <SelectValue placeholder="Select subscription" />
                     </SelectTrigger>
                     <SelectContent>
-                      {availableProviders.map((provider) => (
-                        <SelectItem key={provider.id} value={provider.id}>
-                          {provider.name}
+                      {availableSubscriptions.map((subscription) => (
+                        <SelectItem key={subscription.id} value={subscription.id}>
+                          {subscription.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  {form.formState.errors.provider_id ? (
-                    <p className="text-xs text-destructive">
-                      {form.formState.errors.provider_id.message}
-                    </p>
-                  ) : null}
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="grant-models">Allowed models</Label>
+                  <Label htmlFor="subscription-priority">Priority</Label>
                   <Input
-                    id="grant-models"
-                    placeholder="gpt-4o, gpt-4o-mini"
-                    {...form.register("allowed_models")}
+                    id="subscription-priority"
+                    type="number"
+                    {...form.register("priority", { valueAsNumber: true })}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    Comma-separated. Leave blank for all models.
-                  </p>
                 </div>
               </form>
               <SheetFooter>
-                <Button
-                  type="submit"
-                  disabled={grantMutation.isPending}
-                  onClick={form.handleSubmit((values) =>
-                    grantMutation.mutate({
-                      projectId,
-                      data: {
-                        provider_id: values.provider_id,
-                        allowed_models: parseModels(values.allowed_models),
-                      },
-                    }),
-                  )}
-                >
-                  {grantMutation.isPending ? "Granting..." : "Grant access"}
+                <Button disabled={grantMutation.isPending} onClick={submit}>
+                  {grantMutation.isPending ? "Attaching..." : "Attach"}
                 </Button>
                 <SheetClose asChild>
                   <Button variant="outline">Cancel</Button>
@@ -205,59 +154,38 @@ export function ProjectAccessSection({
             </SheetContent>
           </Sheet>
         </div>
-        </CardHeader>
-        <CardContent>
+      </CardHeader>
+      <CardContent>
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading access rules...</p>
+          <p className="text-sm text-muted-foreground">Loading subscription access...</p>
         ) : accessRules.length === 0 ? (
           <EmptyState
-            icon={Plug}
-            title="No provider access yet"
-            description="Grant the project access to at least one provider before issuing keys."
+            icon={Layers3}
+            title="No subscriptions attached"
+            description="Attach a subscription before issuing keys for this project."
           />
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Provider</TableHead>
-                <TableHead>Allowed models</TableHead>
-                <TableHead className="w-[1%]" />
+                <TableHead>Subscription</TableHead>
+                <TableHead>Priority</TableHead>
+                <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {accessRules.map((rule) => {
-                const provider = providers.find((p) => p.id === rule.provider_id);
+                const subscription = subscriptions.find((item) => item.id === rule.subscription_id);
                 return (
                   <TableRow key={rule.id}>
                     <TableCell className="font-medium">
-                      {provider?.name ?? rule.provider_id}
+                      {subscription?.name ?? rule.subscription_id}
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {rule.allowed_models?.join(", ") ?? "All models"}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label="Edit access"
-                        onClick={() => setEditRule(rule)}
-                      >
-                        <Pencil />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label="Revoke"
-                        disabled={revokeMutation.isPending}
-                        onClick={() =>
-                          revokeMutation.mutate({
-                            projectId,
-                            providerId: rule.provider_id,
-                          })
-                        }
-                      >
-                        <Trash2 />
-                      </Button>
+                    <TableCell className="text-muted-foreground">{rule.priority}</TableCell>
+                    <TableCell>
+                      <StatusBadge variant={rule.is_active ? "active" : "inactive"}>
+                        {rule.is_active ? "Active" : "Disabled"}
+                      </StatusBadge>
                     </TableCell>
                   </TableRow>
                 );
@@ -265,75 +193,7 @@ export function ProjectAccessSection({
             </TableBody>
           </Table>
         )}
-        </CardContent>
-      </Card>
-
-      <Sheet open={Boolean(editRule)} onOpenChange={(isOpen) => !isOpen && setEditRule(null)}>
-        <SheetContent>
-          <SheetHeader>
-            <SheetTitle>Edit provider access</SheetTitle>
-            <SheetDescription>Leave models blank to allow all provider models.</SheetDescription>
-          </SheetHeader>
-          <form
-            className="grid gap-4 px-4"
-            onSubmit={editForm.handleSubmit((values) => {
-              if (!editRule) return;
-              updateMutation.mutate({
-                projectId,
-                providerId: editRule.provider_id,
-                data: { allowed_models: parseModels(values.allowed_models) },
-              });
-            })}
-          >
-            <div className="space-y-1.5">
-              <Label>Provider</Label>
-              <Input
-                value={
-                  providers.find((provider) => provider.id === editRule?.provider_id)?.name ??
-                  editRule?.provider_id ??
-                  ""
-                }
-                readOnly
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-access-models">Allowed models</Label>
-              <Input
-                id="edit-access-models"
-                placeholder="gpt-4o, gpt-4o-mini"
-                {...editForm.register("allowed_models")}
-              />
-            </div>
-          </form>
-          <SheetFooter>
-            <Button
-              type="submit"
-              disabled={updateMutation.isPending}
-              onClick={editForm.handleSubmit((values) => {
-                if (!editRule) return;
-                updateMutation.mutate({
-                  projectId,
-                  providerId: editRule.provider_id,
-                  data: { allowed_models: parseModels(values.allowed_models) },
-                });
-              })}
-            >
-              {updateMutation.isPending ? "Saving..." : "Save changes"}
-            </Button>
-            <SheetClose asChild>
-              <Button variant="outline">Cancel</Button>
-            </SheetClose>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
-    </>
+      </CardContent>
+    </Card>
   );
-}
-
-function parseModels(value: string | undefined): string[] | null {
-  const models = value
-    ?.split(",")
-    .map((m) => m.trim())
-    .filter(Boolean);
-  return models && models.length > 0 ? models : null;
 }

@@ -4,7 +4,10 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery
+} from '@tanstack/react-query';
 import type {
   DataTag,
   DefinedInitialDataOptions,
@@ -17,258 +20,219 @@ import type {
   UseMutationOptions,
   UseMutationResult,
   UseQueryOptions,
-  UseQueryResult,
-} from "@tanstack/react-query";
+  UseQueryResult
+} from '@tanstack/react-query';
 
 import type {
   CreateFirstAdminRequest,
   CreateFirstAdminResponse,
   HTTPValidationError,
-  SetupStatusResponse,
-} from "../schemas";
+  SetupStatusResponse
+} from '../schemas';
 
-import { apiMutator } from "../../orval-mutator";
+import { apiMutator } from '../../orval-mutator';
+
+
+
 
 export type getSetupStatusApiV1SetupStatusGetResponse200 = {
-  data: SetupStatusResponse;
-  status: 200;
-};
+  data: SetupStatusResponse
+  status: 200
+}
 
-export type getSetupStatusApiV1SetupStatusGetResponseSuccess =
-  getSetupStatusApiV1SetupStatusGetResponse200 & {
-    headers: Headers;
-  };
-export type getSetupStatusApiV1SetupStatusGetResponse =
-  getSetupStatusApiV1SetupStatusGetResponseSuccess;
+export type getSetupStatusApiV1SetupStatusGetResponseSuccess = (getSetupStatusApiV1SetupStatusGetResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getSetupStatusApiV1SetupStatusGetResponse = (getSetupStatusApiV1SetupStatusGetResponseSuccess)
 
 export const getGetSetupStatusApiV1SetupStatusGetUrl = () => {
-  return `/api/v1/setup/status`;
-};
+
+
+
+
+  return `/api/v1/setup/status`
+}
 
 /**
  * @summary Get Setup Status
  */
-export const getSetupStatusApiV1SetupStatusGet = async (
-  options?: RequestInit,
-): Promise<getSetupStatusApiV1SetupStatusGetResponse> => {
-  return apiMutator<getSetupStatusApiV1SetupStatusGetResponse>(
-    getGetSetupStatusApiV1SetupStatusGetUrl(),
-    {
-      ...options,
-      method: "GET",
-    },
-  );
-};
+export const getSetupStatusApiV1SetupStatusGet = async ( options?: RequestInit): Promise<getSetupStatusApiV1SetupStatusGetResponse> => {
+
+  return apiMutator<getSetupStatusApiV1SetupStatusGetResponse>(getGetSetupStatusApiV1SetupStatusGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
 
 export const getGetSetupStatusApiV1SetupStatusGetQueryKey = () => {
-  return [`/api/v1/setup/status`] as const;
-};
+    return [
+    `/api/v1/setup/status`
+    ] as const;
+    }
 
-export const getGetSetupStatusApiV1SetupStatusGetQueryOptions = <
-  TData = Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>,
-  TError = unknown,
->(options?: {
-  query?: Partial<
-    UseQueryOptions<Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>, TError, TData>
-  >;
-}) => {
-  const { query: queryOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getGetSetupStatusApiV1SetupStatusGetQueryKey();
+export const getGetSetupStatusApiV1SetupStatusGetQueryOptions = <TData = Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>, TError, TData>>, }
+) => {
 
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>> = ({
-    signal,
-  }) => getSetupStatusApiV1SetupStatusGet({ signal });
+const {query: queryOptions} = options ?? {};
 
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>,
-    TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
-};
+  const queryKey =  queryOptions?.queryKey ?? getGetSetupStatusApiV1SetupStatusGetQueryKey();
 
-export type GetSetupStatusApiV1SetupStatusGetQueryResult = NonNullable<
-  Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>
->;
-export type GetSetupStatusApiV1SetupStatusGetQueryError = unknown;
 
-export function useGetSetupStatusApiV1SetupStatusGet<
-  TData = Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>,
-  TError = unknown,
->(
-  options: {
-    query: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>, TError, TData>
-    > &
-      Pick<
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>> = ({ signal }) => getSetupStatusApiV1SetupStatusGet({ signal });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSetupStatusApiV1SetupStatusGetQueryResult = NonNullable<Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>>
+export type GetSetupStatusApiV1SetupStatusGetQueryError = unknown
+
+
+export function useGetSetupStatusApiV1SetupStatusGet<TData = Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>,
           TError,
           Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useGetSetupStatusApiV1SetupStatusGet<
-  TData = Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>,
-  TError = unknown,
->(
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>, TError, TData>
-    > &
-      Pick<
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSetupStatusApiV1SetupStatusGet<TData = Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>,
           TError,
           Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useGetSetupStatusApiV1SetupStatusGet<
-  TData = Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>,
-  TError = unknown,
->(
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>, TError, TData>
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSetupStatusApiV1SetupStatusGet<TData = Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary Get Setup Status
  */
 
-export function useGetSetupStatusApiV1SetupStatusGet<
-  TData = Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>,
-  TError = unknown,
->(
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>, TError, TData>
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getGetSetupStatusApiV1SetupStatusGetQueryOptions(options);
+export function useGetSetupStatusApiV1SetupStatusGet<TData = Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSetupStatusApiV1SetupStatusGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
-    queryKey: DataTag<QueryKey, TData, TError>;
-  };
+  const queryOptions = getGetSetupStatusApiV1SetupStatusGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
+
+
+
+
+
 export type createFirstAdminApiV1SetupPostResponse201 = {
-  data: CreateFirstAdminResponse;
-  status: 201;
-};
+  data: CreateFirstAdminResponse
+  status: 201
+}
 
 export type createFirstAdminApiV1SetupPostResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type createFirstAdminApiV1SetupPostResponseSuccess = (createFirstAdminApiV1SetupPostResponse201) & {
+  headers: Headers;
+};
+export type createFirstAdminApiV1SetupPostResponseError = (createFirstAdminApiV1SetupPostResponse422) & {
+  headers: Headers;
 };
 
-export type createFirstAdminApiV1SetupPostResponseSuccess =
-  createFirstAdminApiV1SetupPostResponse201 & {
-    headers: Headers;
-  };
-export type createFirstAdminApiV1SetupPostResponseError =
-  createFirstAdminApiV1SetupPostResponse422 & {
-    headers: Headers;
-  };
-
-export type createFirstAdminApiV1SetupPostResponse =
-  | createFirstAdminApiV1SetupPostResponseSuccess
-  | createFirstAdminApiV1SetupPostResponseError;
+export type createFirstAdminApiV1SetupPostResponse = (createFirstAdminApiV1SetupPostResponseSuccess | createFirstAdminApiV1SetupPostResponseError)
 
 export const getCreateFirstAdminApiV1SetupPostUrl = () => {
-  return `/api/v1/setup`;
-};
+
+
+
+
+  return `/api/v1/setup`
+}
 
 /**
  * @summary Create First Admin
  */
-export const createFirstAdminApiV1SetupPost = async (
-  createFirstAdminRequest: CreateFirstAdminRequest,
-  options?: RequestInit,
-): Promise<createFirstAdminApiV1SetupPostResponse> => {
-  return apiMutator<createFirstAdminApiV1SetupPostResponse>(
-    getCreateFirstAdminApiV1SetupPostUrl(),
-    {
-      ...options,
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(createFirstAdminRequest),
-    },
-  );
-};
+export const createFirstAdminApiV1SetupPost = async (createFirstAdminRequest: CreateFirstAdminRequest, options?: RequestInit): Promise<createFirstAdminApiV1SetupPostResponse> => {
 
-export const getCreateFirstAdminApiV1SetupPostMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof createFirstAdminApiV1SetupPost>>,
-    TError,
-    { data: CreateFirstAdminRequest },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof createFirstAdminApiV1SetupPost>>,
-  TError,
-  { data: CreateFirstAdminRequest },
-  TContext
-> => {
-  const mutationKey = ["createFirstAdminApiV1SetupPost"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
+  return apiMutator<createFirstAdminApiV1SetupPostResponse>(getCreateFirstAdminApiV1SetupPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      createFirstAdminRequest,)
+  }
+);}
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof createFirstAdminApiV1SetupPost>>,
-    { data: CreateFirstAdminRequest }
-  > = (props) => {
-    const { data } = props ?? {};
 
-    return createFirstAdminApiV1SetupPost(data);
-  };
 
-  return { mutationFn, ...mutationOptions };
-};
 
-export type CreateFirstAdminApiV1SetupPostMutationResult = NonNullable<
-  Awaited<ReturnType<typeof createFirstAdminApiV1SetupPost>>
->;
-export type CreateFirstAdminApiV1SetupPostMutationBody = CreateFirstAdminRequest;
-export type CreateFirstAdminApiV1SetupPostMutationError = HTTPValidationError;
+export const getCreateFirstAdminApiV1SetupPostMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createFirstAdminApiV1SetupPost>>, TError,{data: CreateFirstAdminRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof createFirstAdminApiV1SetupPost>>, TError,{data: CreateFirstAdminRequest}, TContext> => {
 
-/**
+const mutationKey = ['createFirstAdminApiV1SetupPost'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createFirstAdminApiV1SetupPost>>, {data: CreateFirstAdminRequest}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createFirstAdminApiV1SetupPost(data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateFirstAdminApiV1SetupPostMutationResult = NonNullable<Awaited<ReturnType<typeof createFirstAdminApiV1SetupPost>>>
+    export type CreateFirstAdminApiV1SetupPostMutationBody = CreateFirstAdminRequest
+    export type CreateFirstAdminApiV1SetupPostMutationError = HTTPValidationError
+
+    /**
  * @summary Create First Admin
  */
-export const useCreateFirstAdminApiV1SetupPost = <TError = HTTPValidationError, TContext = unknown>(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof createFirstAdminApiV1SetupPost>>,
-      TError,
-      { data: CreateFirstAdminRequest },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof createFirstAdminApiV1SetupPost>>,
-  TError,
-  { data: CreateFirstAdminRequest },
-  TContext
-> => {
-  return useMutation(getCreateFirstAdminApiV1SetupPostMutationOptions(options), queryClient);
-};
+export const useCreateFirstAdminApiV1SetupPost = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createFirstAdminApiV1SetupPost>>, TError,{data: CreateFirstAdminRequest}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createFirstAdminApiV1SetupPost>>,
+        TError,
+        {data: CreateFirstAdminRequest},
+        TContext
+      > => {
+      return useMutation(getCreateFirstAdminApiV1SetupPostMutationOptions(options), queryClient);
+    }

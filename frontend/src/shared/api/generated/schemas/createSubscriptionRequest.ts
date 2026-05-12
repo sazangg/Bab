@@ -5,13 +5,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface CreateFirstAdminRequest {
-  email: string;
-  /** @minLength 12 */
-  password: string;
+export interface CreateSubscriptionRequest {
   /**
      * @minLength 1
      * @maxLength 255
      */
-  organization_name: string;
+  name: string;
+  description?: string | null;
 }

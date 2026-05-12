@@ -4,7 +4,10 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery
+} from '@tanstack/react-query';
 import type {
   DataTag,
   DefinedInitialDataOptions,
@@ -17,502 +20,397 @@ import type {
   UseMutationOptions,
   UseMutationResult,
   UseQueryOptions,
-  UseQueryResult,
-} from "@tanstack/react-query";
+  UseQueryResult
+} from '@tanstack/react-query';
 
 import type {
   CreateModelAliasRequest,
   HTTPValidationError,
   ModelAliasResponse,
-  UpdateModelAliasRequest,
-} from "../schemas";
+  UpdateModelAliasRequest
+} from '../schemas';
 
-import { apiMutator } from "../../orval-mutator";
+import { apiMutator } from '../../orval-mutator';
+
+
+
 
 export type listModelAliasesApiV1ModelAliasesGetResponse200 = {
-  data: ModelAliasResponse[];
-  status: 200;
-};
+  data: ModelAliasResponse[]
+  status: 200
+}
 
-export type listModelAliasesApiV1ModelAliasesGetResponseSuccess =
-  listModelAliasesApiV1ModelAliasesGetResponse200 & {
-    headers: Headers;
-  };
-export type listModelAliasesApiV1ModelAliasesGetResponse =
-  listModelAliasesApiV1ModelAliasesGetResponseSuccess;
+export type listModelAliasesApiV1ModelAliasesGetResponseSuccess = (listModelAliasesApiV1ModelAliasesGetResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listModelAliasesApiV1ModelAliasesGetResponse = (listModelAliasesApiV1ModelAliasesGetResponseSuccess)
 
 export const getListModelAliasesApiV1ModelAliasesGetUrl = () => {
-  return `/api/v1/model-aliases`;
-};
+
+
+
+
+  return `/api/v1/model-aliases`
+}
 
 /**
  * @summary List Model Aliases
  */
-export const listModelAliasesApiV1ModelAliasesGet = async (
-  options?: RequestInit,
-): Promise<listModelAliasesApiV1ModelAliasesGetResponse> => {
-  return apiMutator<listModelAliasesApiV1ModelAliasesGetResponse>(
-    getListModelAliasesApiV1ModelAliasesGetUrl(),
-    {
-      ...options,
-      method: "GET",
-    },
-  );
-};
+export const listModelAliasesApiV1ModelAliasesGet = async ( options?: RequestInit): Promise<listModelAliasesApiV1ModelAliasesGetResponse> => {
+
+  return apiMutator<listModelAliasesApiV1ModelAliasesGetResponse>(getListModelAliasesApiV1ModelAliasesGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
 
 export const getListModelAliasesApiV1ModelAliasesGetQueryKey = () => {
-  return [`/api/v1/model-aliases`] as const;
-};
+    return [
+    `/api/v1/model-aliases`
+    ] as const;
+    }
 
-export const getListModelAliasesApiV1ModelAliasesGetQueryOptions = <
-  TData = Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>,
-  TError = unknown,
->(options?: {
-  query?: Partial<
-    UseQueryOptions<Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>, TError, TData>
-  >;
-}) => {
-  const { query: queryOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getListModelAliasesApiV1ModelAliasesGetQueryKey();
+export const getListModelAliasesApiV1ModelAliasesGetQueryOptions = <TData = Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>, TError, TData>>, }
+) => {
 
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>
-  > = ({ signal }) => listModelAliasesApiV1ModelAliasesGet({ signal });
+const {query: queryOptions} = options ?? {};
 
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>,
-    TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
-};
+  const queryKey =  queryOptions?.queryKey ?? getListModelAliasesApiV1ModelAliasesGetQueryKey();
 
-export type ListModelAliasesApiV1ModelAliasesGetQueryResult = NonNullable<
-  Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>
->;
-export type ListModelAliasesApiV1ModelAliasesGetQueryError = unknown;
 
-export function useListModelAliasesApiV1ModelAliasesGet<
-  TData = Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>,
-  TError = unknown,
->(
-  options: {
-    query: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>> = ({ signal }) => listModelAliasesApiV1ModelAliasesGet({ signal });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListModelAliasesApiV1ModelAliasesGetQueryResult = NonNullable<Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>>
+export type ListModelAliasesApiV1ModelAliasesGetQueryError = unknown
+
+
+export function useListModelAliasesApiV1ModelAliasesGet<TData = Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>,
           TError,
           Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useListModelAliasesApiV1ModelAliasesGet<
-  TData = Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>,
-  TError = unknown,
->(
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListModelAliasesApiV1ModelAliasesGet<TData = Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>,
           TError,
           Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useListModelAliasesApiV1ModelAliasesGet<
-  TData = Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>,
-  TError = unknown,
->(
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>,
-        TError,
-        TData
-      >
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListModelAliasesApiV1ModelAliasesGet<TData = Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary List Model Aliases
  */
 
-export function useListModelAliasesApiV1ModelAliasesGet<
-  TData = Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>,
-  TError = unknown,
->(
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>,
-        TError,
-        TData
-      >
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getListModelAliasesApiV1ModelAliasesGetQueryOptions(options);
+export function useListModelAliasesApiV1ModelAliasesGet<TData = Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listModelAliasesApiV1ModelAliasesGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
-    queryKey: DataTag<QueryKey, TData, TError>;
-  };
+  const queryOptions = getListModelAliasesApiV1ModelAliasesGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
+
+
+
+
+
 export type createModelAliasApiV1ModelAliasesPostResponse201 = {
-  data: ModelAliasResponse;
-  status: 201;
-};
+  data: ModelAliasResponse
+  status: 201
+}
 
 export type createModelAliasApiV1ModelAliasesPostResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type createModelAliasApiV1ModelAliasesPostResponseSuccess = (createModelAliasApiV1ModelAliasesPostResponse201) & {
+  headers: Headers;
+};
+export type createModelAliasApiV1ModelAliasesPostResponseError = (createModelAliasApiV1ModelAliasesPostResponse422) & {
+  headers: Headers;
 };
 
-export type createModelAliasApiV1ModelAliasesPostResponseSuccess =
-  createModelAliasApiV1ModelAliasesPostResponse201 & {
-    headers: Headers;
-  };
-export type createModelAliasApiV1ModelAliasesPostResponseError =
-  createModelAliasApiV1ModelAliasesPostResponse422 & {
-    headers: Headers;
-  };
-
-export type createModelAliasApiV1ModelAliasesPostResponse =
-  | createModelAliasApiV1ModelAliasesPostResponseSuccess
-  | createModelAliasApiV1ModelAliasesPostResponseError;
+export type createModelAliasApiV1ModelAliasesPostResponse = (createModelAliasApiV1ModelAliasesPostResponseSuccess | createModelAliasApiV1ModelAliasesPostResponseError)
 
 export const getCreateModelAliasApiV1ModelAliasesPostUrl = () => {
-  return `/api/v1/model-aliases`;
-};
+
+
+
+
+  return `/api/v1/model-aliases`
+}
 
 /**
  * @summary Create Model Alias
  */
-export const createModelAliasApiV1ModelAliasesPost = async (
-  createModelAliasRequest: CreateModelAliasRequest,
-  options?: RequestInit,
-): Promise<createModelAliasApiV1ModelAliasesPostResponse> => {
-  return apiMutator<createModelAliasApiV1ModelAliasesPostResponse>(
-    getCreateModelAliasApiV1ModelAliasesPostUrl(),
-    {
-      ...options,
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(createModelAliasRequest),
-    },
-  );
-};
+export const createModelAliasApiV1ModelAliasesPost = async (createModelAliasRequest: CreateModelAliasRequest, options?: RequestInit): Promise<createModelAliasApiV1ModelAliasesPostResponse> => {
 
-export const getCreateModelAliasApiV1ModelAliasesPostMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof createModelAliasApiV1ModelAliasesPost>>,
-    TError,
-    { data: CreateModelAliasRequest },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof createModelAliasApiV1ModelAliasesPost>>,
-  TError,
-  { data: CreateModelAliasRequest },
-  TContext
-> => {
-  const mutationKey = ["createModelAliasApiV1ModelAliasesPost"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
+  return apiMutator<createModelAliasApiV1ModelAliasesPostResponse>(getCreateModelAliasApiV1ModelAliasesPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      createModelAliasRequest,)
+  }
+);}
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof createModelAliasApiV1ModelAliasesPost>>,
-    { data: CreateModelAliasRequest }
-  > = (props) => {
-    const { data } = props ?? {};
 
-    return createModelAliasApiV1ModelAliasesPost(data);
-  };
 
-  return { mutationFn, ...mutationOptions };
-};
 
-export type CreateModelAliasApiV1ModelAliasesPostMutationResult = NonNullable<
-  Awaited<ReturnType<typeof createModelAliasApiV1ModelAliasesPost>>
->;
-export type CreateModelAliasApiV1ModelAliasesPostMutationBody = CreateModelAliasRequest;
-export type CreateModelAliasApiV1ModelAliasesPostMutationError = HTTPValidationError;
+export const getCreateModelAliasApiV1ModelAliasesPostMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createModelAliasApiV1ModelAliasesPost>>, TError,{data: CreateModelAliasRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof createModelAliasApiV1ModelAliasesPost>>, TError,{data: CreateModelAliasRequest}, TContext> => {
 
-/**
+const mutationKey = ['createModelAliasApiV1ModelAliasesPost'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createModelAliasApiV1ModelAliasesPost>>, {data: CreateModelAliasRequest}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createModelAliasApiV1ModelAliasesPost(data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateModelAliasApiV1ModelAliasesPostMutationResult = NonNullable<Awaited<ReturnType<typeof createModelAliasApiV1ModelAliasesPost>>>
+    export type CreateModelAliasApiV1ModelAliasesPostMutationBody = CreateModelAliasRequest
+    export type CreateModelAliasApiV1ModelAliasesPostMutationError = HTTPValidationError
+
+    /**
  * @summary Create Model Alias
  */
-export const useCreateModelAliasApiV1ModelAliasesPost = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof createModelAliasApiV1ModelAliasesPost>>,
-      TError,
-      { data: CreateModelAliasRequest },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof createModelAliasApiV1ModelAliasesPost>>,
-  TError,
-  { data: CreateModelAliasRequest },
-  TContext
-> => {
-  return useMutation(getCreateModelAliasApiV1ModelAliasesPostMutationOptions(options), queryClient);
-};
-export type updateModelAliasApiV1ModelAliasesAliasIdPatchResponse200 = {
-  data: ModelAliasResponse;
-  status: 200;
-};
+export const useCreateModelAliasApiV1ModelAliasesPost = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createModelAliasApiV1ModelAliasesPost>>, TError,{data: CreateModelAliasRequest}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createModelAliasApiV1ModelAliasesPost>>,
+        TError,
+        {data: CreateModelAliasRequest},
+        TContext
+      > => {
+      return useMutation(getCreateModelAliasApiV1ModelAliasesPostMutationOptions(options), queryClient);
+    }
+    export type updateModelAliasApiV1ModelAliasesAliasIdPatchResponse200 = {
+  data: ModelAliasResponse
+  status: 200
+}
 
 export type updateModelAliasApiV1ModelAliasesAliasIdPatchResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type updateModelAliasApiV1ModelAliasesAliasIdPatchResponseSuccess = (updateModelAliasApiV1ModelAliasesAliasIdPatchResponse200) & {
+  headers: Headers;
+};
+export type updateModelAliasApiV1ModelAliasesAliasIdPatchResponseError = (updateModelAliasApiV1ModelAliasesAliasIdPatchResponse422) & {
+  headers: Headers;
 };
 
-export type updateModelAliasApiV1ModelAliasesAliasIdPatchResponseSuccess =
-  updateModelAliasApiV1ModelAliasesAliasIdPatchResponse200 & {
-    headers: Headers;
-  };
-export type updateModelAliasApiV1ModelAliasesAliasIdPatchResponseError =
-  updateModelAliasApiV1ModelAliasesAliasIdPatchResponse422 & {
-    headers: Headers;
-  };
+export type updateModelAliasApiV1ModelAliasesAliasIdPatchResponse = (updateModelAliasApiV1ModelAliasesAliasIdPatchResponseSuccess | updateModelAliasApiV1ModelAliasesAliasIdPatchResponseError)
 
-export type updateModelAliasApiV1ModelAliasesAliasIdPatchResponse =
-  | updateModelAliasApiV1ModelAliasesAliasIdPatchResponseSuccess
-  | updateModelAliasApiV1ModelAliasesAliasIdPatchResponseError;
+export const getUpdateModelAliasApiV1ModelAliasesAliasIdPatchUrl = (aliasId: string,) => {
 
-export const getUpdateModelAliasApiV1ModelAliasesAliasIdPatchUrl = (aliasId: string) => {
-  return `/api/v1/model-aliases/${aliasId}`;
-};
+
+
+
+  return `/api/v1/model-aliases/${aliasId}`
+}
 
 /**
  * @summary Update Model Alias
  */
-export const updateModelAliasApiV1ModelAliasesAliasIdPatch = async (
-  aliasId: string,
-  updateModelAliasRequest: UpdateModelAliasRequest,
-  options?: RequestInit,
-): Promise<updateModelAliasApiV1ModelAliasesAliasIdPatchResponse> => {
-  return apiMutator<updateModelAliasApiV1ModelAliasesAliasIdPatchResponse>(
-    getUpdateModelAliasApiV1ModelAliasesAliasIdPatchUrl(aliasId),
-    {
-      ...options,
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(updateModelAliasRequest),
-    },
-  );
-};
+export const updateModelAliasApiV1ModelAliasesAliasIdPatch = async (aliasId: string,
+    updateModelAliasRequest: UpdateModelAliasRequest, options?: RequestInit): Promise<updateModelAliasApiV1ModelAliasesAliasIdPatchResponse> => {
 
-export const getUpdateModelAliasApiV1ModelAliasesAliasIdPatchMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof updateModelAliasApiV1ModelAliasesAliasIdPatch>>,
-    TError,
-    { aliasId: string; data: UpdateModelAliasRequest },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof updateModelAliasApiV1ModelAliasesAliasIdPatch>>,
-  TError,
-  { aliasId: string; data: UpdateModelAliasRequest },
-  TContext
-> => {
-  const mutationKey = ["updateModelAliasApiV1ModelAliasesAliasIdPatch"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
+  return apiMutator<updateModelAliasApiV1ModelAliasesAliasIdPatchResponse>(getUpdateModelAliasApiV1ModelAliasesAliasIdPatchUrl(aliasId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateModelAliasRequest,)
+  }
+);}
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof updateModelAliasApiV1ModelAliasesAliasIdPatch>>,
-    { aliasId: string; data: UpdateModelAliasRequest }
-  > = (props) => {
-    const { aliasId, data } = props ?? {};
 
-    return updateModelAliasApiV1ModelAliasesAliasIdPatch(aliasId, data);
-  };
 
-  return { mutationFn, ...mutationOptions };
-};
 
-export type UpdateModelAliasApiV1ModelAliasesAliasIdPatchMutationResult = NonNullable<
-  Awaited<ReturnType<typeof updateModelAliasApiV1ModelAliasesAliasIdPatch>>
->;
-export type UpdateModelAliasApiV1ModelAliasesAliasIdPatchMutationBody = UpdateModelAliasRequest;
-export type UpdateModelAliasApiV1ModelAliasesAliasIdPatchMutationError = HTTPValidationError;
+export const getUpdateModelAliasApiV1ModelAliasesAliasIdPatchMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateModelAliasApiV1ModelAliasesAliasIdPatch>>, TError,{aliasId: string;data: UpdateModelAliasRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof updateModelAliasApiV1ModelAliasesAliasIdPatch>>, TError,{aliasId: string;data: UpdateModelAliasRequest}, TContext> => {
 
-/**
+const mutationKey = ['updateModelAliasApiV1ModelAliasesAliasIdPatch'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateModelAliasApiV1ModelAliasesAliasIdPatch>>, {aliasId: string;data: UpdateModelAliasRequest}> = (props) => {
+          const {aliasId,data} = props ?? {};
+
+          return  updateModelAliasApiV1ModelAliasesAliasIdPatch(aliasId,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateModelAliasApiV1ModelAliasesAliasIdPatchMutationResult = NonNullable<Awaited<ReturnType<typeof updateModelAliasApiV1ModelAliasesAliasIdPatch>>>
+    export type UpdateModelAliasApiV1ModelAliasesAliasIdPatchMutationBody = UpdateModelAliasRequest
+    export type UpdateModelAliasApiV1ModelAliasesAliasIdPatchMutationError = HTTPValidationError
+
+    /**
  * @summary Update Model Alias
  */
-export const useUpdateModelAliasApiV1ModelAliasesAliasIdPatch = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof updateModelAliasApiV1ModelAliasesAliasIdPatch>>,
-      TError,
-      { aliasId: string; data: UpdateModelAliasRequest },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof updateModelAliasApiV1ModelAliasesAliasIdPatch>>,
-  TError,
-  { aliasId: string; data: UpdateModelAliasRequest },
-  TContext
-> => {
-  return useMutation(
-    getUpdateModelAliasApiV1ModelAliasesAliasIdPatchMutationOptions(options),
-    queryClient,
-  );
-};
-export type deactivateModelAliasApiV1ModelAliasesAliasIdDeleteResponse204 = {
-  data: void;
-  status: 204;
-};
+export const useUpdateModelAliasApiV1ModelAliasesAliasIdPatch = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateModelAliasApiV1ModelAliasesAliasIdPatch>>, TError,{aliasId: string;data: UpdateModelAliasRequest}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateModelAliasApiV1ModelAliasesAliasIdPatch>>,
+        TError,
+        {aliasId: string;data: UpdateModelAliasRequest},
+        TContext
+      > => {
+      return useMutation(getUpdateModelAliasApiV1ModelAliasesAliasIdPatchMutationOptions(options), queryClient);
+    }
+    export type deactivateModelAliasApiV1ModelAliasesAliasIdDeleteResponse204 = {
+  data: void
+  status: 204
+}
 
 export type deactivateModelAliasApiV1ModelAliasesAliasIdDeleteResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type deactivateModelAliasApiV1ModelAliasesAliasIdDeleteResponseSuccess = (deactivateModelAliasApiV1ModelAliasesAliasIdDeleteResponse204) & {
+  headers: Headers;
+};
+export type deactivateModelAliasApiV1ModelAliasesAliasIdDeleteResponseError = (deactivateModelAliasApiV1ModelAliasesAliasIdDeleteResponse422) & {
+  headers: Headers;
 };
 
-export type deactivateModelAliasApiV1ModelAliasesAliasIdDeleteResponseSuccess =
-  deactivateModelAliasApiV1ModelAliasesAliasIdDeleteResponse204 & {
-    headers: Headers;
-  };
-export type deactivateModelAliasApiV1ModelAliasesAliasIdDeleteResponseError =
-  deactivateModelAliasApiV1ModelAliasesAliasIdDeleteResponse422 & {
-    headers: Headers;
-  };
+export type deactivateModelAliasApiV1ModelAliasesAliasIdDeleteResponse = (deactivateModelAliasApiV1ModelAliasesAliasIdDeleteResponseSuccess | deactivateModelAliasApiV1ModelAliasesAliasIdDeleteResponseError)
 
-export type deactivateModelAliasApiV1ModelAliasesAliasIdDeleteResponse =
-  | deactivateModelAliasApiV1ModelAliasesAliasIdDeleteResponseSuccess
-  | deactivateModelAliasApiV1ModelAliasesAliasIdDeleteResponseError;
+export const getDeactivateModelAliasApiV1ModelAliasesAliasIdDeleteUrl = (aliasId: string,) => {
 
-export const getDeactivateModelAliasApiV1ModelAliasesAliasIdDeleteUrl = (aliasId: string) => {
-  return `/api/v1/model-aliases/${aliasId}`;
-};
+
+
+
+  return `/api/v1/model-aliases/${aliasId}`
+}
 
 /**
  * @summary Deactivate Model Alias
  */
-export const deactivateModelAliasApiV1ModelAliasesAliasIdDelete = async (
-  aliasId: string,
-  options?: RequestInit,
-): Promise<deactivateModelAliasApiV1ModelAliasesAliasIdDeleteResponse> => {
-  return apiMutator<deactivateModelAliasApiV1ModelAliasesAliasIdDeleteResponse>(
-    getDeactivateModelAliasApiV1ModelAliasesAliasIdDeleteUrl(aliasId),
-    {
-      ...options,
-      method: "DELETE",
-    },
-  );
-};
+export const deactivateModelAliasApiV1ModelAliasesAliasIdDelete = async (aliasId: string, options?: RequestInit): Promise<deactivateModelAliasApiV1ModelAliasesAliasIdDeleteResponse> => {
 
-export const getDeactivateModelAliasApiV1ModelAliasesAliasIdDeleteMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof deactivateModelAliasApiV1ModelAliasesAliasIdDelete>>,
-    TError,
-    { aliasId: string },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof deactivateModelAliasApiV1ModelAliasesAliasIdDelete>>,
-  TError,
-  { aliasId: string },
-  TContext
-> => {
-  const mutationKey = ["deactivateModelAliasApiV1ModelAliasesAliasIdDelete"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
+  return apiMutator<deactivateModelAliasApiV1ModelAliasesAliasIdDeleteResponse>(getDeactivateModelAliasApiV1ModelAliasesAliasIdDeleteUrl(aliasId),
+  {
+    ...options,
+    method: 'DELETE'
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof deactivateModelAliasApiV1ModelAliasesAliasIdDelete>>,
-    { aliasId: string }
-  > = (props) => {
-    const { aliasId } = props ?? {};
 
-    return deactivateModelAliasApiV1ModelAliasesAliasIdDelete(aliasId);
-  };
+  }
+);}
 
-  return { mutationFn, ...mutationOptions };
-};
 
-export type DeactivateModelAliasApiV1ModelAliasesAliasIdDeleteMutationResult = NonNullable<
-  Awaited<ReturnType<typeof deactivateModelAliasApiV1ModelAliasesAliasIdDelete>>
->;
 
-export type DeactivateModelAliasApiV1ModelAliasesAliasIdDeleteMutationError = HTTPValidationError;
 
-/**
+export const getDeactivateModelAliasApiV1ModelAliasesAliasIdDeleteMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deactivateModelAliasApiV1ModelAliasesAliasIdDelete>>, TError,{aliasId: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof deactivateModelAliasApiV1ModelAliasesAliasIdDelete>>, TError,{aliasId: string}, TContext> => {
+
+const mutationKey = ['deactivateModelAliasApiV1ModelAliasesAliasIdDelete'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deactivateModelAliasApiV1ModelAliasesAliasIdDelete>>, {aliasId: string}> = (props) => {
+          const {aliasId} = props ?? {};
+
+          return  deactivateModelAliasApiV1ModelAliasesAliasIdDelete(aliasId,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeactivateModelAliasApiV1ModelAliasesAliasIdDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof deactivateModelAliasApiV1ModelAliasesAliasIdDelete>>>
+
+    export type DeactivateModelAliasApiV1ModelAliasesAliasIdDeleteMutationError = HTTPValidationError
+
+    /**
  * @summary Deactivate Model Alias
  */
-export const useDeactivateModelAliasApiV1ModelAliasesAliasIdDelete = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof deactivateModelAliasApiV1ModelAliasesAliasIdDelete>>,
-      TError,
-      { aliasId: string },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof deactivateModelAliasApiV1ModelAliasesAliasIdDelete>>,
-  TError,
-  { aliasId: string },
-  TContext
-> => {
-  return useMutation(
-    getDeactivateModelAliasApiV1ModelAliasesAliasIdDeleteMutationOptions(options),
-    queryClient,
-  );
-};
+export const useDeactivateModelAliasApiV1ModelAliasesAliasIdDelete = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deactivateModelAliasApiV1ModelAliasesAliasIdDelete>>, TError,{aliasId: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deactivateModelAliasApiV1ModelAliasesAliasIdDelete>>,
+        TError,
+        {aliasId: string},
+        TContext
+      > => {
+      return useMutation(getDeactivateModelAliasApiV1ModelAliasesAliasIdDeleteMutationOptions(options), queryClient);
+    }

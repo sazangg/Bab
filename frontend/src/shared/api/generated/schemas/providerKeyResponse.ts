@@ -5,13 +5,13 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface ProviderResponse {
+export interface ProviderKeyResponse {
   id: string;
   org_id: string;
+  provider_id: string;
   name: string;
-  slug: string | null;
-  base_url: string;
-  adapter_type: string;
+  key_prefix: string;
+  priority: number;
   is_active: boolean;
   created_at: string;
   updated_at: string;

@@ -5,11 +5,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface UpdateProviderRequest {
+export interface UpdateProviderKeyRequest {
   name?: string | null;
-  slug?: string | null;
-  base_url?: string | null;
   api_key?: string | null;
-  adapter_type?: string | null;
+  priority?: number | null;
   is_active?: boolean | null;
 }

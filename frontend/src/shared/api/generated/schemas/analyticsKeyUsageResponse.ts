@@ -4,9 +4,9 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { AnalyticsRecentRequest } from "./analyticsRecentRequest";
-import type { AnalyticsTimeSeriesPoint } from "./analyticsTimeSeriesPoint";
-import type { AnalyticsTotals } from "./analyticsTotals";
+import type { AnalyticsRecentRequest } from './analyticsRecentRequest';
+import type { AnalyticsTimeSeriesPoint } from './analyticsTimeSeriesPoint';
+import type { AnalyticsTotals } from './analyticsTotals';
 
 export interface AnalyticsKeyUsageResponse {
   virtual_key_id: string;

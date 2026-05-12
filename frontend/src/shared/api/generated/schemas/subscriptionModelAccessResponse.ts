@@ -5,13 +5,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface ProviderResponse {
+export interface SubscriptionModelAccessResponse {
   id: string;
   org_id: string;
-  name: string;
-  slug: string | null;
-  base_url: string;
-  adapter_type: string;
+  subscription_id: string;
+  provider_model_id: string;
   is_active: boolean;
   created_at: string;
   updated_at: string;

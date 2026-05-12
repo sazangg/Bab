@@ -4,7 +4,9 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import { useQuery } from "@tanstack/react-query";
+import {
+  useQuery
+} from '@tanstack/react-query';
 import type {
   DataTag,
   DefinedInitialDataOptions,
@@ -14,184 +16,143 @@ import type {
   QueryKey,
   UndefinedInitialDataOptions,
   UseQueryOptions,
-  UseQueryResult,
-} from "@tanstack/react-query";
+  UseQueryResult
+} from '@tanstack/react-query';
 
 import type {
   HTTPValidationError,
   ListRequestLogsApiV1RequestLogsGetParams,
-  RequestLogResponse,
-} from "../schemas";
+  RequestLogResponse
+} from '../schemas';
 
-import { apiMutator } from "../../orval-mutator";
+import { apiMutator } from '../../orval-mutator';
+
+
+
 
 export type listRequestLogsApiV1RequestLogsGetResponse200 = {
-  data: RequestLogResponse[];
-  status: 200;
-};
+  data: RequestLogResponse[]
+  status: 200
+}
 
 export type listRequestLogsApiV1RequestLogsGetResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type listRequestLogsApiV1RequestLogsGetResponseSuccess = (listRequestLogsApiV1RequestLogsGetResponse200) & {
+  headers: Headers;
+};
+export type listRequestLogsApiV1RequestLogsGetResponseError = (listRequestLogsApiV1RequestLogsGetResponse422) & {
+  headers: Headers;
 };
 
-export type listRequestLogsApiV1RequestLogsGetResponseSuccess =
-  listRequestLogsApiV1RequestLogsGetResponse200 & {
-    headers: Headers;
-  };
-export type listRequestLogsApiV1RequestLogsGetResponseError =
-  listRequestLogsApiV1RequestLogsGetResponse422 & {
-    headers: Headers;
-  };
+export type listRequestLogsApiV1RequestLogsGetResponse = (listRequestLogsApiV1RequestLogsGetResponseSuccess | listRequestLogsApiV1RequestLogsGetResponseError)
 
-export type listRequestLogsApiV1RequestLogsGetResponse =
-  | listRequestLogsApiV1RequestLogsGetResponseSuccess
-  | listRequestLogsApiV1RequestLogsGetResponseError;
-
-export const getListRequestLogsApiV1RequestLogsGetUrl = (
-  params?: ListRequestLogsApiV1RequestLogsGetParams,
-) => {
+export const getListRequestLogsApiV1RequestLogsGetUrl = (params?: ListRequestLogsApiV1RequestLogsGetParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
+
     if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
   });
 
   const stringifiedParams = normalizedParams.toString();
 
-  return stringifiedParams.length > 0
-    ? `/api/v1/request-logs?${stringifiedParams}`
-    : `/api/v1/request-logs`;
-};
+  return stringifiedParams.length > 0 ? `/api/v1/request-logs?${stringifiedParams}` : `/api/v1/request-logs`
+}
 
 /**
  * @summary List Request Logs
  */
-export const listRequestLogsApiV1RequestLogsGet = async (
-  params?: ListRequestLogsApiV1RequestLogsGetParams,
-  options?: RequestInit,
-): Promise<listRequestLogsApiV1RequestLogsGetResponse> => {
-  return apiMutator<listRequestLogsApiV1RequestLogsGetResponse>(
-    getListRequestLogsApiV1RequestLogsGetUrl(params),
-    {
-      ...options,
-      method: "GET",
-    },
-  );
-};
+export const listRequestLogsApiV1RequestLogsGet = async (params?: ListRequestLogsApiV1RequestLogsGetParams, options?: RequestInit): Promise<listRequestLogsApiV1RequestLogsGetResponse> => {
 
-export const getListRequestLogsApiV1RequestLogsGetQueryKey = (
-  params?: ListRequestLogsApiV1RequestLogsGetParams,
+  return apiMutator<listRequestLogsApiV1RequestLogsGetResponse>(getListRequestLogsApiV1RequestLogsGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListRequestLogsApiV1RequestLogsGetQueryKey = (params?: ListRequestLogsApiV1RequestLogsGetParams,) => {
+    return [
+    `/api/v1/request-logs`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListRequestLogsApiV1RequestLogsGetQueryOptions = <TData = Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>, TError = HTTPValidationError>(params?: ListRequestLogsApiV1RequestLogsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>, TError, TData>>, }
 ) => {
-  return [`/api/v1/request-logs`, ...(params ? [params] : [])] as const;
-};
 
-export const getListRequestLogsApiV1RequestLogsGetQueryOptions = <
-  TData = Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>,
-  TError = HTTPValidationError,
->(
-  params?: ListRequestLogsApiV1RequestLogsGetParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>, TError, TData>
-    >;
-  },
-) => {
-  const { query: queryOptions } = options ?? {};
+const {query: queryOptions} = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getListRequestLogsApiV1RequestLogsGetQueryKey(params);
+  const queryKey =  queryOptions?.queryKey ?? getListRequestLogsApiV1RequestLogsGetQueryKey(params);
 
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>> = ({
-    signal,
-  }) => listRequestLogsApiV1RequestLogsGet(params, { signal });
 
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>,
-    TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
-};
 
-export type ListRequestLogsApiV1RequestLogsGetQueryResult = NonNullable<
-  Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>
->;
-export type ListRequestLogsApiV1RequestLogsGetQueryError = HTTPValidationError;
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>> = ({ signal }) => listRequestLogsApiV1RequestLogsGet(params, { signal });
 
-export function useListRequestLogsApiV1RequestLogsGet<
-  TData = Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>,
-  TError = HTTPValidationError,
->(
-  params: undefined | ListRequestLogsApiV1RequestLogsGetParams,
-  options: {
-    query: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>, TError, TData>
-    > &
-      Pick<
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListRequestLogsApiV1RequestLogsGetQueryResult = NonNullable<Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>>
+export type ListRequestLogsApiV1RequestLogsGetQueryError = HTTPValidationError
+
+
+export function useListRequestLogsApiV1RequestLogsGet<TData = Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>, TError = HTTPValidationError>(
+ params: undefined |  ListRequestLogsApiV1RequestLogsGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>,
           TError,
           Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useListRequestLogsApiV1RequestLogsGet<
-  TData = Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>,
-  TError = HTTPValidationError,
->(
-  params?: ListRequestLogsApiV1RequestLogsGetParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>, TError, TData>
-    > &
-      Pick<
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListRequestLogsApiV1RequestLogsGet<TData = Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>, TError = HTTPValidationError>(
+ params?: ListRequestLogsApiV1RequestLogsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>,
           TError,
           Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useListRequestLogsApiV1RequestLogsGet<
-  TData = Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>,
-  TError = HTTPValidationError,
->(
-  params?: ListRequestLogsApiV1RequestLogsGetParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>, TError, TData>
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListRequestLogsApiV1RequestLogsGet<TData = Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>, TError = HTTPValidationError>(
+ params?: ListRequestLogsApiV1RequestLogsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary List Request Logs
  */
 
-export function useListRequestLogsApiV1RequestLogsGet<
-  TData = Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>,
-  TError = HTTPValidationError,
->(
-  params?: ListRequestLogsApiV1RequestLogsGetParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>, TError, TData>
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getListRequestLogsApiV1RequestLogsGetQueryOptions(params, options);
+export function useListRequestLogsApiV1RequestLogsGet<TData = Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>, TError = HTTPValidationError>(
+ params?: ListRequestLogsApiV1RequestLogsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listRequestLogsApiV1RequestLogsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
-    queryKey: DataTag<QueryKey, TData, TError>;
-  };
+  const queryOptions = getListRequestLogsApiV1RequestLogsGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+
+
+
+
+

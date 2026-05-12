@@ -6,19 +6,19 @@
  */
 
 export type ListRequestLogsApiV1RequestLogsGetParams = {
-  /**
-   * @minimum 1
-   * @maximum 100
-   */
-  limit?: number;
-  /**
-   * @minimum 0
-   */
-  offset?: number;
-  project_id?: string | null;
-  virtual_key_id?: string | null;
-  provider_id?: string | null;
-  status_code?: number | null;
-  requested_model?: string | null;
-  provider_model?: string | null;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+/**
+ * @minimum 0
+ */
+offset?: number;
+project_id?: string | null;
+virtual_key_id?: string | null;
+provider_id?: string | null;
+status_code?: number | null;
+requested_model?: string | null;
+provider_model?: string | null;
 };

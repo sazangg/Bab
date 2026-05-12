@@ -7,17 +7,17 @@
 
 export interface CreateProviderRequest {
   /**
-   * @minLength 1
-   * @maxLength 255
-   */
+     * @minLength 1
+     * @maxLength 255
+     */
   name: string;
+  slug?: string | null;
   /**
-   * @minLength 1
-   * @maxLength 2083
-   */
+     * @minLength 1
+     * @maxLength 2083
+     */
   base_url: string;
-  /** @minLength 1 */
-  api_key: string;
+  api_key?: string | null;
   /** @maxLength 100 */
   adapter_type?: string;
 }

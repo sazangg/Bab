@@ -5,10 +5,6 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type ListAuditLogsApiV1AuditLogsGetParams = {
-/**
- * @minimum 1
- * @maximum 100
- */
-limit?: number;
-};
+export interface SetSubscriptionModelAccessRequest {
+  provider_model_ids?: string[] | null;
+}

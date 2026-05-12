@@ -6,14 +6,14 @@
  */
 
 export type GetAnalyticsSummaryApiV1AnalyticsSummaryGetParams = {
-  /**
-   * @minimum 1
-   * @maximum 90
-   */
-  days?: number;
-  /**
-   * @minimum 1
-   * @maximum 20
-   */
-  recent_limit?: number;
+/**
+ * @minimum 1
+ * @maximum 90
+ */
+days?: number;
+/**
+ * @minimum 1
+ * @maximum 20
+ */
+recent_limit?: number;
 };

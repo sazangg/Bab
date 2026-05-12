@@ -1,17 +1,48 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
-import { MoreHorizontal, Pencil, Plug, Plus, Power, RefreshCw, RotateCcw } from "lucide-react";
+import {
+  KeyRound,
+  MoreHorizontal,
+  Pencil,
+  Plug,
+  Plus,
+  Power,
+  RefreshCw,
+  RotateCcw,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 
 import {
   useCreateProviderApiV1ProvidersPost,
+  useCreateProviderKeyApiV1ProvidersProviderIdKeysPost,
+  useCreateProviderModelApiV1ProvidersProviderIdModelsPost,
   useDeactivateProviderApiV1ProvidersProviderIdDelete,
+  useDeactivateProviderKeyApiV1ProvidersProviderIdKeysProviderKeyIdDelete,
+  useDeactivateProviderModelApiV1ProvidersProviderIdModelsProviderModelIdDelete,
+  useListProviderKeysApiV1ProvidersProviderIdKeysGet,
+  useListProviderModelsApiV1ProvidersProviderIdModelsGet,
   useListProvidersApiV1ProvidersGet,
+  useSyncProviderModelsApiV1ProvidersProviderIdModelsSyncPost,
+  useUpdateProviderKeyApiV1ProvidersProviderIdKeysProviderKeyIdPatch,
+  useUpdateProviderModelApiV1ProvidersProviderIdModelsProviderModelIdPatch,
   useUpdateProviderApiV1ProvidersProviderIdPatch,
 } from "@/shared/api/generated/providers/providers";
-import type { ProviderResponse } from "@/shared/api/generated/schemas";
+import type {
+  ProviderKeyResponse,
+  ProviderModelResponse,
+  ProviderResponse,
+  SubscriptionProviderKeyResponse,
+  SubscriptionResponse,
+} from "@/shared/api/generated/schemas";
+import {
+  useAttachProviderKeyToSubscriptionApiV1SubscriptionsSubscriptionIdProviderKeysPost,
+  useCreateSubscriptionApiV1SubscriptionsPost,
+  useListSubscriptionProviderKeysApiV1SubscriptionsSubscriptionIdProviderKeysGet,
+  useListSubscriptionsApiV1SubscriptionsGet,
+} from "@/shared/api/generated/subscriptions/subscriptions";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -30,6 +61,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Sheet,
   SheetClose,
@@ -51,20 +89,53 @@ import {
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
+import { Textarea } from "@/components/ui/textarea";
 
 const createSchema = z.object({
   name: z.string().min(1).max(255),
+  slug: z.string().optional(),
   base_url: z.url(),
-  api_key: z.string().min(1),
+  api_key: z.string().optional(),
 });
 
 type CreateValues = z.infer<typeof createSchema>;
 
 const editSchema = z.object({
   name: z.string().min(1).max(255),
+  slug: z.string().optional(),
   base_url: z.url(),
   api_key: z.string().optional(),
 });
+
+const providerKeySchema = z.object({
+  name: z.string().min(1).max(255),
+  api_key: z.string().min(1),
+  priority: z.number().int().min(0),
+});
+
+type ProviderKeyValues = z.infer<typeof providerKeySchema>;
+
+const providerModelSchema = z.object({
+  provider_model_name: z.string().min(1).max(255),
+  alias: z.string().optional(),
+});
+
+type ProviderModelValues = z.infer<typeof providerModelSchema>;
+
+const subscriptionSchema = z.object({
+  name: z.string().min(1).max(255),
+  description: z.string().optional(),
+});
+
+type SubscriptionValues = z.infer<typeof subscriptionSchema>;
+
+const subscriptionProviderKeySchema = z.object({
+  provider_id: z.string().min(1, "Pick a provider"),
+  provider_key_id: z.string().min(1, "Pick a provider key"),
+  priority: z.number().int().min(0),
+});
+
+type SubscriptionProviderKeyValues = z.infer<typeof subscriptionProviderKeySchema>;
 
 type EditValues = z.infer<typeof editSchema>;
 
@@ -72,10 +143,14 @@ export function ProvidersPage() {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<ProviderResponse | null>(null);
+  const [manageTarget, setManageTarget] = useState<ProviderResponse | null>(null);
   const [deactivateTarget, setDeactivateTarget] = useState<ProviderResponse | null>(null);
 
   const providersQuery = useListProvidersApiV1ProvidersGet();
+  const subscriptionsQuery = useListSubscriptionsApiV1SubscriptionsGet();
   const providers = providersQuery.data?.status === 200 ? providersQuery.data.data : [];
+  const subscriptions =
+    subscriptionsQuery.data?.status === 200 ? subscriptionsQuery.data.data : [];
 
   const createMutation = useCreateProviderApiV1ProvidersPost({
     mutation: {
@@ -106,14 +181,20 @@ export function ProvidersPage() {
     <>
       <PageHeader
         title="Providers"
-        description="LLM provider credentials. Stored encrypted; secrets are write-only."
+        description="OpenAI-compatible upstream providers. Credentials live in provider keys."
         actions={
           <CreateProviderSheet
             open={createOpen}
             onOpenChange={setCreateOpen}
             onSubmit={(values) =>
               createMutation.mutate({
-                data: { ...values, adapter_type: "openai_compat" },
+                data: {
+                  name: values.name,
+                  ...(values.slug ? { slug: values.slug } : {}),
+                  base_url: values.base_url,
+                  ...(values.api_key ? { api_key: values.api_key } : {}),
+                  adapter_type: "openai_compat",
+                },
               })
             }
             isPending={createMutation.isPending}
@@ -128,7 +209,7 @@ export function ProvidersPage() {
         <EmptyState
           icon={Plug}
           title="No providers yet"
-          description="Add your first OpenAI-compatible provider credential."
+          description="Add your first OpenAI-compatible upstream provider."
           action={<Button onClick={() => setCreateOpen(true)}>Add provider</Button>}
         />
       ) : (
@@ -137,6 +218,7 @@ export function ProvidersPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
+                <TableHead>Slug</TableHead>
                 <TableHead>Base URL</TableHead>
                 <TableHead>Adapter</TableHead>
                 <TableHead>Status</TableHead>
@@ -147,6 +229,9 @@ export function ProvidersPage() {
               {providers.map((provider) => (
                 <TableRow key={provider.id}>
                   <TableCell className="font-medium">{provider.name}</TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {provider.slug}
+                  </TableCell>
                   <TableCell className="font-mono text-xs text-muted-foreground">
                     {provider.base_url}
                   </TableCell>
@@ -168,9 +253,9 @@ export function ProvidersPage() {
                           <Pencil className="mr-2 size-4" />
                           Edit
                         </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => setEditTarget(provider)}>
-                          <RefreshCw className="mr-2 size-4" />
-                          Rotate API key
+                        <DropdownMenuItem onSelect={() => setManageTarget(provider)}>
+                          <KeyRound className="mr-2 size-4" />
+                          Manage keys and models
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onSelect={() => setDeactivateTarget(provider)}
@@ -211,6 +296,7 @@ export function ProvidersPage() {
             providerId: editTarget.id,
             data: {
               name: values.name,
+              ...(values.slug ? { slug: values.slug } : {}),
               base_url: values.base_url,
               ...(values.api_key ? { api_key: values.api_key } : {}),
             },
@@ -218,6 +304,8 @@ export function ProvidersPage() {
         }}
         isPending={updateMutation.isPending}
       />
+      <ProviderResourcesSheet provider={manageTarget} onClose={() => setManageTarget(null)} />
+      <SubscriptionsPanel providers={providers} subscriptions={subscriptions} />
 
       <Dialog
         open={Boolean(deactivateTarget)}
@@ -251,6 +339,604 @@ export function ProvidersPage() {
   );
 }
 
+function ProviderResourcesSheet({
+  provider,
+  onClose,
+}: {
+  provider: ProviderResponse | null;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const providerId = provider?.id ?? "";
+  const keysQuery = useListProviderKeysApiV1ProvidersProviderIdKeysGet(providerId, {
+    query: { enabled: Boolean(providerId) },
+  });
+  const modelsQuery = useListProviderModelsApiV1ProvidersProviderIdModelsGet(providerId, {
+    query: { enabled: Boolean(providerId) },
+  });
+  const keys = keysQuery.data?.status === 200 ? keysQuery.data.data : [];
+  const models = modelsQuery.data?.status === 200 ? modelsQuery.data.data : [];
+
+  const keyForm = useForm<ProviderKeyValues>({
+    resolver: zodResolver(providerKeySchema),
+    defaultValues: { name: "", api_key: "", priority: 100 },
+  });
+  const modelForm = useForm<ProviderModelValues>({
+    resolver: zodResolver(providerModelSchema),
+    defaultValues: { provider_model_name: "", alias: "" },
+  });
+
+  const createKey = useCreateProviderKeyApiV1ProvidersProviderIdKeysPost({
+    mutation: {
+      onSuccess: async () => {
+        keyForm.reset({ name: "", api_key: "", priority: 100 });
+        await queryClient.invalidateQueries();
+      },
+    },
+  });
+  const updateKey = useUpdateProviderKeyApiV1ProvidersProviderIdKeysProviderKeyIdPatch({
+    mutation: { onSuccess: async () => queryClient.invalidateQueries() },
+  });
+  const deactivateKey = useDeactivateProviderKeyApiV1ProvidersProviderIdKeysProviderKeyIdDelete({
+    mutation: { onSuccess: async () => queryClient.invalidateQueries() },
+  });
+  const createModel = useCreateProviderModelApiV1ProvidersProviderIdModelsPost({
+    mutation: {
+      onSuccess: async () => {
+        modelForm.reset({ provider_model_name: "", alias: "" });
+        await queryClient.invalidateQueries();
+      },
+    },
+  });
+  const updateModel = useUpdateProviderModelApiV1ProvidersProviderIdModelsProviderModelIdPatch({
+    mutation: { onSuccess: async () => queryClient.invalidateQueries() },
+  });
+  const deactivateModel =
+    useDeactivateProviderModelApiV1ProvidersProviderIdModelsProviderModelIdDelete({
+      mutation: { onSuccess: async () => queryClient.invalidateQueries() },
+    });
+  const syncModels = useSyncProviderModelsApiV1ProvidersProviderIdModelsSyncPost({
+    mutation: { onSuccess: async () => queryClient.invalidateQueries() },
+  });
+
+  return (
+    <Sheet open={Boolean(provider)} onOpenChange={(open) => !open && onClose()}>
+      <SheetContent className="sm:max-w-3xl">
+        <SheetHeader>
+          <SheetTitle>{provider?.name ?? "Provider"} resources</SheetTitle>
+          <SheetDescription>
+            Manage provider API keys and the models available through subscriptions.
+          </SheetDescription>
+        </SheetHeader>
+        <div className="space-y-6 overflow-y-auto px-4 pb-6">
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-medium">API keys</h3>
+                <p className="text-xs text-muted-foreground">
+                  Keys are encrypted and can be attached to subscriptions.
+                </p>
+              </div>
+            </div>
+            <form
+              className="grid gap-2 md:grid-cols-[1fr_1fr_90px_auto]"
+              onSubmit={keyForm.handleSubmit((values) =>
+                providerId
+                  ? createKey.mutate({
+                      providerId,
+                      data: {
+                        name: values.name,
+                        api_key: values.api_key,
+                        priority: values.priority,
+                      },
+                    })
+                  : undefined,
+              )}
+            >
+              <Input placeholder="Production" {...keyForm.register("name")} />
+              <Input type="password" placeholder="sk-..." {...keyForm.register("api_key")} />
+              <Input type="number" {...keyForm.register("priority", { valueAsNumber: true })} />
+              <Button type="submit" disabled={createKey.isPending || !providerId}>
+                <Plus />
+                Add
+              </Button>
+            </form>
+            <ResourceKeyTable
+              providerId={providerId}
+              keys={keys}
+              onRotate={(key, apiKey) =>
+                updateKey.mutate({
+                  providerId,
+                  providerKeyId: key.id,
+                  data: { api_key: apiKey },
+                })
+              }
+              onDeactivate={(key) =>
+                deactivateKey.mutate({ providerId, providerKeyId: key.id })
+              }
+            />
+          </section>
+
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-medium">Models</h3>
+                <p className="text-xs text-muted-foreground">
+                  Alias is optional and scoped to this provider.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!providerId || syncModels.isPending}
+                onClick={() => providerId && syncModels.mutate({ providerId })}
+              >
+                <RefreshCw />
+                Sync
+              </Button>
+            </div>
+            <form
+              className="grid gap-2 md:grid-cols-[1fr_1fr_auto]"
+              onSubmit={modelForm.handleSubmit((values) =>
+                providerId
+                  ? createModel.mutate({
+                      providerId,
+                      data: {
+                        provider_model_name: values.provider_model_name,
+                        ...(values.alias ? { alias: values.alias } : {}),
+                      },
+                    })
+                  : undefined,
+              )}
+            >
+              <Input placeholder="gpt-5.4-mini" {...modelForm.register("provider_model_name")} />
+              <Input placeholder="fast" {...modelForm.register("alias")} />
+              <Button type="submit" disabled={createModel.isPending || !providerId}>
+                <Plus />
+                Add
+              </Button>
+            </form>
+            <ResourceModelTable
+              providerId={providerId}
+              models={models}
+              onAlias={(model, alias) =>
+                updateModel.mutate({
+                  providerId,
+                  providerModelId: model.id,
+                  data: { alias: alias || null },
+                })
+              }
+              onDeactivate={(model) =>
+                deactivateModel.mutate({ providerId, providerModelId: model.id })
+              }
+            />
+          </section>
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function ResourceKeyTable({
+  providerId,
+  keys,
+  onRotate,
+  onDeactivate,
+}: {
+  providerId: string;
+  keys: ProviderKeyResponse[];
+  onRotate: (key: ProviderKeyResponse, apiKey: string) => void;
+  onDeactivate: (key: ProviderKeyResponse) => void;
+}) {
+  const [rotateKey, setRotateKey] = useState<ProviderKeyResponse | null>(null);
+  const [apiKey, setApiKey] = useState("");
+
+  return (
+    <>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Name</TableHead>
+            <TableHead>Prefix</TableHead>
+            <TableHead>Priority</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead className="w-[1%]" />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {keys.map((key) => (
+            <TableRow key={key.id}>
+              <TableCell className="font-medium">{key.name}</TableCell>
+              <TableCell className="font-mono text-xs">{key.key_prefix}</TableCell>
+              <TableCell>{key.priority}</TableCell>
+              <TableCell>
+                <StatusBadge variant={key.is_active ? "active" : "inactive"}>
+                  {key.is_active ? "Active" : "Disabled"}
+                </StatusBadge>
+              </TableCell>
+              <TableCell className="flex justify-end gap-1">
+                <Button size="icon-sm" variant="ghost" onClick={() => setRotateKey(key)}>
+                  <RefreshCw />
+                </Button>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  disabled={!providerId || !key.is_active}
+                  onClick={() => onDeactivate(key)}
+                >
+                  <Trash2 />
+                </Button>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      <Dialog
+        open={Boolean(rotateKey)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRotateKey(null);
+            setApiKey("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rotate provider key</DialogTitle>
+            <DialogDescription>Paste the replacement upstream API key.</DialogDescription>
+          </DialogHeader>
+          <Input
+            type="password"
+            value={apiKey}
+            onChange={(event) => setApiKey(event.target.value)}
+          />
+          <DialogFooter>
+            <Button
+              disabled={!rotateKey || !apiKey}
+              onClick={() => {
+                if (rotateKey) onRotate(rotateKey, apiKey);
+                setRotateKey(null);
+                setApiKey("");
+              }}
+            >
+              Rotate
+            </Button>
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function ResourceModelTable({
+  providerId,
+  models,
+  onAlias,
+  onDeactivate,
+}: {
+  providerId: string;
+  models: ProviderModelResponse[];
+  onAlias: (model: ProviderModelResponse, alias: string) => void;
+  onDeactivate: (model: ProviderModelResponse) => void;
+}) {
+  const [editModel, setEditModel] = useState<ProviderModelResponse | null>(null);
+  const [alias, setAlias] = useState("");
+
+  return (
+    <>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Provider model</TableHead>
+            <TableHead>Alias</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead className="w-[1%]" />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {models.map((model) => (
+            <TableRow key={model.id}>
+              <TableCell className="font-mono text-xs">{model.provider_model_name}</TableCell>
+              <TableCell>{model.alias || "—"}</TableCell>
+              <TableCell>
+                <StatusBadge variant={model.is_active ? "active" : "inactive"}>
+                  {model.is_active ? "Active" : "Disabled"}
+                </StatusBadge>
+              </TableCell>
+              <TableCell className="flex justify-end gap-1">
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setEditModel(model);
+                    setAlias(model.alias ?? "");
+                  }}
+                >
+                  <Pencil />
+                </Button>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  disabled={!providerId || !model.is_active}
+                  onClick={() => onDeactivate(model)}
+                >
+                  <Trash2 />
+                </Button>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      <Dialog open={Boolean(editModel)} onOpenChange={(open) => !open && setEditModel(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit alias</DialogTitle>
+            <DialogDescription>Aliases are unique only within this provider.</DialogDescription>
+          </DialogHeader>
+          <Input value={alias} onChange={(event) => setAlias(event.target.value)} />
+          <DialogFooter>
+            <Button
+              disabled={!editModel}
+              onClick={() => {
+                if (editModel) onAlias(editModel, alias);
+                setEditModel(null);
+              }}
+            >
+              Save
+            </Button>
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function SubscriptionsPanel({
+  providers,
+  subscriptions,
+}: {
+  providers: ProviderResponse[];
+  subscriptions: SubscriptionResponse[];
+}) {
+  const queryClient = useQueryClient();
+  const form = useForm<SubscriptionValues>({
+    resolver: zodResolver(subscriptionSchema),
+    defaultValues: { name: "", description: "" },
+  });
+  const createSubscription = useCreateSubscriptionApiV1SubscriptionsPost({
+    mutation: {
+      onSuccess: async () => {
+        form.reset({ name: "", description: "" });
+        await queryClient.invalidateQueries();
+      },
+    },
+  });
+
+  return (
+    <section className="mt-6 space-y-4">
+      <div>
+        <h2 className="text-base font-semibold">Subscriptions</h2>
+        <p className="text-sm text-muted-foreground">
+          Bundle provider keys, then attach subscriptions to projects.
+        </p>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-[340px_1fr]">
+        <form
+          className="space-y-4 rounded-lg border p-4"
+          onSubmit={form.handleSubmit((values) =>
+            createSubscription.mutate({
+              data: {
+                name: values.name,
+                description: values.description || null,
+              },
+            }),
+          )}
+        >
+          <div className="space-y-1.5">
+            <Label htmlFor="subscription-name">Name</Label>
+            <Input id="subscription-name" {...form.register("name")} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="subscription-description">Description</Label>
+            <Textarea
+              id="subscription-description"
+              rows={3}
+              {...form.register("description")}
+            />
+          </div>
+          <Button type="submit" disabled={createSubscription.isPending}>
+            <Plus />
+            {createSubscription.isPending ? "Creating..." : "Create subscription"}
+          </Button>
+        </form>
+
+        <div className="space-y-3">
+          {subscriptions.length === 0 ? (
+            <div className="rounded-lg border p-4 text-sm text-muted-foreground">
+              No subscriptions yet.
+            </div>
+          ) : (
+            subscriptions.map((subscription) => (
+              <SubscriptionRow
+                key={subscription.id}
+                subscription={subscription}
+                providers={providers}
+              />
+            ))
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SubscriptionRow({
+  subscription,
+  providers,
+}: {
+  subscription: SubscriptionResponse;
+  providers: ProviderResponse[];
+}) {
+  const queryClient = useQueryClient();
+  const form = useForm<SubscriptionProviderKeyValues>({
+    resolver: zodResolver(subscriptionProviderKeySchema),
+    defaultValues: { provider_id: "", provider_key_id: "", priority: 100 },
+  });
+  const selectedProviderId = useWatch({ control: form.control, name: "provider_id" });
+  const selectedProviderKeyId = useWatch({ control: form.control, name: "provider_key_id" });
+  const keysQuery = useListProviderKeysApiV1ProvidersProviderIdKeysGet(selectedProviderId, {
+    query: { enabled: Boolean(selectedProviderId) },
+  });
+  const attachmentsQuery =
+    useListSubscriptionProviderKeysApiV1SubscriptionsSubscriptionIdProviderKeysGet(
+      subscription.id,
+    );
+  const attachProviderKey =
+    useAttachProviderKeyToSubscriptionApiV1SubscriptionsSubscriptionIdProviderKeysPost({
+      mutation: {
+        onSuccess: async () => {
+          form.reset({ provider_id: "", provider_key_id: "", priority: 100 });
+          await queryClient.invalidateQueries();
+        },
+      },
+    });
+  const providerKeys = keysQuery.data?.status === 200 ? keysQuery.data.data : [];
+  const attachments =
+    attachmentsQuery.data?.status === 200 ? attachmentsQuery.data.data : [];
+  const activeProviders = providers.filter((provider) => provider.is_active);
+
+  return (
+    <div className="space-y-3 rounded-lg border p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="font-medium">{subscription.name}</h3>
+          {subscription.description ? (
+            <p className="text-sm text-muted-foreground">{subscription.description}</p>
+          ) : null}
+        </div>
+        <StatusBadge variant={subscription.is_active ? "active" : "inactive"}>
+          {subscription.is_active ? "Active" : "Disabled"}
+        </StatusBadge>
+      </div>
+
+      <form
+        className="grid gap-2 md:grid-cols-[1fr_1fr_90px_auto]"
+        onSubmit={form.handleSubmit((values) =>
+          attachProviderKey.mutate({
+            subscriptionId: subscription.id,
+            data: {
+              provider_key_id: values.provider_key_id,
+              priority: values.priority,
+            },
+          }),
+        )}
+      >
+        <Select
+          value={selectedProviderId}
+          onValueChange={(value) => {
+            form.setValue("provider_id", value);
+            form.setValue("provider_key_id", "");
+          }}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Provider" />
+          </SelectTrigger>
+          <SelectContent>
+            {activeProviders.map((provider) => (
+              <SelectItem key={provider.id} value={provider.id}>
+                {provider.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={selectedProviderKeyId}
+          onValueChange={(value) => form.setValue("provider_key_id", value)}
+          disabled={!selectedProviderId}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Provider key" />
+          </SelectTrigger>
+          <SelectContent>
+            {providerKeys
+              .filter((key) => key.is_active)
+              .map((key) => (
+                <SelectItem key={key.id} value={key.id}>
+                  {key.name}
+                </SelectItem>
+              ))}
+          </SelectContent>
+        </Select>
+        <Input
+          type="number"
+          aria-label="Priority"
+          {...form.register("priority", { valueAsNumber: true })}
+        />
+        <Button type="submit" disabled={attachProviderKey.isPending}>
+          <Plus />
+          Attach
+        </Button>
+      </form>
+
+      <SubscriptionProviderKeysTable attachments={attachments} providerKeys={providerKeys} />
+      <p className="text-xs text-muted-foreground">
+        By default, a subscription exposes all active models for attached provider keys. Model
+        narrowing remains available through the API.
+      </p>
+    </div>
+  );
+}
+
+function SubscriptionProviderKeysTable({
+  attachments,
+  providerKeys,
+}: {
+  attachments: SubscriptionProviderKeyResponse[];
+  providerKeys: ProviderKeyResponse[];
+}) {
+  if (attachments.length === 0) {
+    return <p className="text-sm text-muted-foreground">No provider keys attached.</p>;
+  }
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Provider key</TableHead>
+          <TableHead>Priority</TableHead>
+          <TableHead>Status</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {attachments.map((attachment) => {
+          const providerKey = providerKeys.find(
+            (key) => key.id === attachment.provider_key_id,
+          );
+          return (
+            <TableRow key={attachment.id}>
+              <TableCell className="font-medium">
+                {providerKey?.name ?? attachment.provider_key_id}
+              </TableCell>
+              <TableCell>{attachment.priority}</TableCell>
+              <TableCell>
+                <StatusBadge variant={attachment.is_active ? "active" : "inactive"}>
+                  {attachment.is_active ? "Active" : "Disabled"}
+                </StatusBadge>
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
+  );
+}
+
 function CreateProviderSheet({
   open,
   onOpenChange,
@@ -266,7 +952,7 @@ function CreateProviderSheet({
 }) {
   const form = useForm<CreateValues>({
     resolver: zodResolver(createSchema),
-    defaultValues: { name: "", base_url: "", api_key: "" },
+    defaultValues: { name: "", slug: "", base_url: "", api_key: "" },
   });
 
   useEffect(() => {
@@ -297,6 +983,13 @@ function CreateProviderSheet({
             ) : null}
           </div>
           <div className="space-y-1.5">
+            <Label htmlFor="provider-slug">Slug</Label>
+            <Input id="provider-slug" placeholder="openai" {...form.register("slug")} />
+            <p className="text-xs text-muted-foreground">
+              Optional provider hint for proxy requests.
+            </p>
+          </div>
+          <div className="space-y-1.5">
             <Label htmlFor="provider-base-url">Base URL</Label>
             <Input
               id="provider-base-url"
@@ -315,6 +1008,9 @@ function CreateProviderSheet({
               autoComplete="off"
               {...form.register("api_key")}
             />
+            <p className="text-xs text-muted-foreground">
+              Optional. You can add provider keys after creating the provider.
+            </p>
           </div>
           {isError ? <p className="text-sm text-destructive">Provider was not created.</p> : null}
         </form>
@@ -344,12 +1040,17 @@ function EditProviderSheet({
 }) {
   const form = useForm<EditValues>({
     resolver: zodResolver(editSchema),
-    defaultValues: { name: "", base_url: "", api_key: "" },
+    defaultValues: { name: "", slug: "", base_url: "", api_key: "" },
   });
 
   useEffect(() => {
     if (provider) {
-      form.reset({ name: provider.name, base_url: provider.base_url, api_key: "" });
+      form.reset({
+        name: provider.name,
+        slug: provider.slug ?? "",
+        base_url: provider.base_url,
+        api_key: "",
+      });
     }
   }, [provider, form]);
 
@@ -364,6 +1065,10 @@ function EditProviderSheet({
           <div className="space-y-1.5">
             <Label htmlFor="edit-provider-name">Name</Label>
             <Input id="edit-provider-name" {...form.register("name")} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-provider-slug">Slug</Label>
+            <Input id="edit-provider-slug" {...form.register("slug")} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="edit-provider-base-url">Base URL</Label>
