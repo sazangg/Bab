@@ -493,6 +493,8 @@ function ProviderCatalogRow({
 function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) {
   const queryClient = useQueryClient();
   const providerId = provider.id;
+  const [createKeyOpen, setCreateKeyOpen] = useState(false);
+  const [createModelOpen, setCreateModelOpen] = useState(false);
   const keysQuery = useListProviderKeysApiV1ProvidersProviderIdKeysGet(providerId, {
     query: { enabled: Boolean(providerId) },
   });
@@ -502,19 +504,10 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
   const keys = keysQuery.data?.status === 200 ? keysQuery.data.data : [];
   const models = modelsQuery.data?.status === 200 ? modelsQuery.data.data : [];
 
-  const keyForm = useForm<ProviderKeyValues>({
-    resolver: zodResolver(providerKeySchema),
-    defaultValues: { name: "", api_key: "", priority: 100 },
-  });
-  const modelForm = useForm<ProviderModelValues>({
-    resolver: zodResolver(providerModelSchema),
-    defaultValues: { provider_model_name: "", alias: "" },
-  });
-
   const createKey = useCreateProviderKeyApiV1ProvidersProviderIdKeysPost({
     mutation: {
       onSuccess: async () => {
-        keyForm.reset({ name: "", api_key: "", priority: 100 });
+        setCreateKeyOpen(false);
         await queryClient.invalidateQueries();
       },
     },
@@ -528,7 +521,7 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
   const createModel = useCreateProviderModelApiV1ProvidersProviderIdModelsPost({
     mutation: {
       onSuccess: async () => {
-        modelForm.reset({ provider_model_name: "", alias: "" });
+        setCreateModelOpen(false);
         await queryClient.invalidateQueries();
       },
     },
@@ -562,37 +555,11 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
                   Keys are encrypted. Routing priority decides which active key is tried first.
                 </p>
               </div>
-            </div>
-            <form
-              className="grid gap-2 md:grid-cols-[1fr_1fr_90px_auto]"
-              onSubmit={keyForm.handleSubmit((values) =>
-                providerId
-                  ? createKey.mutate({
-                      providerId,
-                      data: {
-                        name: values.name,
-                        api_key: values.api_key,
-                        priority: values.priority,
-                      },
-                    })
-                  : undefined,
-              )}
-            >
-              <Input placeholder="Production" {...keyForm.register("name")} />
-              <Input type="password" placeholder="sk-..." {...keyForm.register("api_key")} />
-              <div className="space-y-1">
-                <Input
-                  type="number"
-                  aria-label="Routing priority"
-                  {...keyForm.register("priority", { valueAsNumber: true })}
-                />
-                <p className="text-xs text-muted-foreground">Lower priority is preferred.</p>
-              </div>
-              <Button type="submit" disabled={createKey.isPending || !providerId}>
+              <Button size="sm" onClick={() => setCreateKeyOpen(true)}>
                 <Plus />
-                Add
+                Add key
               </Button>
-            </form>
+            </div>
             <ResourceKeyTable
               providerId={providerId}
               keys={keys}
@@ -617,38 +584,25 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
                   Alias is optional and scoped to this provider.
                 </p>
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!providerId || !hasActiveKey || syncModels.isPending}
-                onClick={() => providerId && syncModels.mutate({ providerId })}
-                title={!hasActiveKey ? "Add an active provider key before syncing models." : undefined}
-              >
-                <RefreshCw />
-                Sync
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" onClick={() => setCreateModelOpen(true)}>
+                  <Plus />
+                  Add model
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!providerId || !hasActiveKey || syncModels.isPending}
+                  onClick={() => providerId && syncModels.mutate({ providerId })}
+                  title={
+                    !hasActiveKey ? "Add an active provider key before syncing models." : undefined
+                  }
+                >
+                  <RefreshCw />
+                  Sync
+                </Button>
+              </div>
             </div>
-            <form
-              className="grid gap-2 md:grid-cols-[1fr_1fr_auto]"
-              onSubmit={modelForm.handleSubmit((values) =>
-                providerId
-                  ? createModel.mutate({
-                      providerId,
-                      data: {
-                        provider_model_name: values.provider_model_name,
-                        ...(values.alias ? { alias: values.alias } : {}),
-                      },
-                    })
-                  : undefined,
-              )}
-            >
-              <Input placeholder="gpt-5.4-mini" {...modelForm.register("provider_model_name")} />
-              <Input placeholder="fast" {...modelForm.register("alias")} />
-              <Button type="submit" disabled={createModel.isPending || !providerId}>
-                <Plus />
-                Add
-              </Button>
-            </form>
             <ResourceModelTable
               providerId={providerId}
               models={models}
@@ -665,6 +619,37 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
             />
           </section>
       </div>
+      <CreateProviderKeySheet
+        open={createKeyOpen}
+        onOpenChange={setCreateKeyOpen}
+        providerName={provider.name}
+        onSubmit={(values) =>
+          createKey.mutate({
+            providerId,
+            data: {
+              name: values.name,
+              api_key: values.api_key,
+              priority: values.priority,
+            },
+          })
+        }
+        isPending={createKey.isPending}
+      />
+      <CreateProviderModelSheet
+        open={createModelOpen}
+        onOpenChange={setCreateModelOpen}
+        providerName={provider.name}
+        onSubmit={(values) =>
+          createModel.mutate({
+            providerId,
+            data: {
+              provider_model_name: values.provider_model_name,
+              ...(values.alias ? { alias: values.alias } : {}),
+            },
+          })
+        }
+        isPending={createModel.isPending}
+      />
     </>
   );
 }
@@ -760,6 +745,135 @@ function ResourceKeyTable({
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+function CreateProviderKeySheet({
+  open,
+  onOpenChange,
+  providerName,
+  onSubmit,
+  isPending,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  providerName: string;
+  onSubmit: (values: ProviderKeyValues) => void;
+  isPending: boolean;
+}) {
+  const form = useForm<ProviderKeyValues>({
+    resolver: zodResolver(providerKeySchema),
+    defaultValues: { name: "", api_key: "", priority: 100 },
+  });
+
+  useEffect(() => {
+    if (open) form.reset({ name: `${providerName} key`, api_key: "", priority: 100 });
+  }, [open, providerName, form]);
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent>
+        <SheetHeader>
+          <SheetTitle>Add provider key</SheetTitle>
+          <SheetDescription>
+            Add an encrypted upstream API key for {providerName}. Lower routing priority wins.
+          </SheetDescription>
+        </SheetHeader>
+        <form className="grid gap-4 px-4" onSubmit={form.handleSubmit(onSubmit)}>
+          <div className="space-y-1.5">
+            <Label htmlFor="detail-provider-key-name">Name</Label>
+            <Input id="detail-provider-key-name" autoFocus {...form.register("name")} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="detail-provider-key-secret">API key</Label>
+            <Input
+              id="detail-provider-key-secret"
+              type="password"
+              autoComplete="off"
+              {...form.register("api_key")}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="detail-provider-key-priority">Routing priority</Label>
+            <Input
+              id="detail-provider-key-priority"
+              type="number"
+              {...form.register("priority", { valueAsNumber: true })}
+            />
+            <p className="text-xs text-muted-foreground">
+              Lower numbers are preferred when multiple active keys exist for this provider.
+            </p>
+          </div>
+        </form>
+        <SheetFooter>
+          <Button disabled={isPending} onClick={form.handleSubmit(onSubmit)}>
+            {isPending ? "Adding..." : "Add key"}
+          </Button>
+          <SheetClose asChild>
+            <Button variant="outline">Cancel</Button>
+          </SheetClose>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function CreateProviderModelSheet({
+  open,
+  onOpenChange,
+  providerName,
+  onSubmit,
+  isPending,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  providerName: string;
+  onSubmit: (values: ProviderModelValues) => void;
+  isPending: boolean;
+}) {
+  const form = useForm<ProviderModelValues>({
+    resolver: zodResolver(providerModelSchema),
+    defaultValues: { provider_model_name: "", alias: "" },
+  });
+
+  useEffect(() => {
+    if (open) form.reset({ provider_model_name: "", alias: "" });
+  }, [open, form]);
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent>
+        <SheetHeader>
+          <SheetTitle>Add provider model</SheetTitle>
+          <SheetDescription>
+            Register a model name exposed by {providerName}. Alias is optional and provider-scoped.
+          </SheetDescription>
+        </SheetHeader>
+        <form className="grid gap-4 px-4" onSubmit={form.handleSubmit(onSubmit)}>
+          <div className="space-y-1.5">
+            <Label htmlFor="detail-provider-model-name">Provider model name</Label>
+            <Input
+              id="detail-provider-model-name"
+              autoFocus
+              placeholder="gpt-5.4-mini"
+              {...form.register("provider_model_name")}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="detail-provider-model-alias">Alias</Label>
+            <Input id="detail-provider-model-alias" placeholder="fast" {...form.register("alias")} />
+          </div>
+        </form>
+        <SheetFooter>
+          <Button disabled={isPending} onClick={form.handleSubmit(onSubmit)}>
+            {isPending ? "Adding..." : "Add model"}
+          </Button>
+          <SheetClose asChild>
+            <Button variant="outline">Cancel</Button>
+          </SheetClose>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -1147,17 +1261,17 @@ function AddProviderKeyDialog({
   });
 
   return (
-    <Dialog open={Boolean(entry)} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Add provider key</DialogTitle>
-          <DialogDescription>
+    <Sheet open={Boolean(entry)} onOpenChange={(open) => !open && onClose()}>
+      <SheetContent>
+        <SheetHeader>
+          <SheetTitle>Add provider key</SheetTitle>
+          <SheetDescription>
             {entry
               ? `Add an encrypted upstream API key for ${entry.name}.`
               : "Add an encrypted upstream API key."}
-          </DialogDescription>
-        </DialogHeader>
-        <form className="space-y-4" onSubmit={submit}>
+          </SheetDescription>
+        </SheetHeader>
+        <form className="grid gap-4 px-4" onSubmit={submit}>
           <div className="space-y-1.5">
             <Label htmlFor="provider-key-name">Name</Label>
             <Input id="provider-key-name" autoFocus {...form.register("name")} />
@@ -1184,16 +1298,16 @@ function AddProviderKeyDialog({
           </div>
           {isError ? <p className="text-sm text-destructive">Provider key was not added.</p> : null}
         </form>
-        <DialogFooter>
+        <SheetFooter>
           <Button disabled={isPending} onClick={submit}>
             {isPending ? "Adding..." : "Add key"}
           </Button>
-          <DialogClose asChild>
+          <SheetClose asChild>
             <Button variant="outline">Cancel</Button>
-          </DialogClose>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </SheetClose>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }
 

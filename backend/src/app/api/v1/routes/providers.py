@@ -9,7 +9,11 @@ from app.api.v1.deps import get_current_user, get_scope, require_role
 from app.core.database import Scope, get_db
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.providers import facade
-from app.modules.providers.errors import ProviderKeyRequiredError, ProviderNotFoundError
+from app.modules.providers.errors import (
+    ProviderKeyRequiredError,
+    ProviderNotFoundError,
+    ProviderUpstreamError,
+)
 from app.modules.providers.schemas import (
     CreateProviderKeyRequest,
     CreateProviderModelRequest,
@@ -221,6 +225,11 @@ async def sync_provider_models(
         raise HTTPException(status_code=404, detail="provider not found") from exc
     except ProviderKeyRequiredError as exc:
         raise HTTPException(status_code=400, detail="active provider key required") from exc
+    except ProviderUpstreamError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"provider model sync failed with upstream status {exc.status_code}",
+        ) from exc
 
 
 @router.patch("/{provider_id}")

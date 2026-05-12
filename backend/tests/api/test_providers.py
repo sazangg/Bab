@@ -604,3 +604,54 @@ async def test_sync_provider_models_requires_active_provider_key(
 
     assert response.status_code == 400
     assert response.json()["detail"] == "active provider key required"
+
+
+@pytest.mark.asyncio
+async def test_sync_provider_models_maps_upstream_error(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = await _create_user(db_session)
+    provider = Provider(
+        org_id=user.org_id,
+        name="OpenAI",
+        base_url="https://api.example.test/v1",
+        api_key_encrypted="legacy",
+        adapter_type="openai_compat",
+    )
+    db_session.add(provider)
+    await db_session.flush()
+    db_session.add(
+        ProviderKey(
+            org_id=user.org_id,
+            provider_id=provider.id,
+            name="Production",
+            key_prefix="sk-p...",
+            api_key_encrypted=encrypt("bad-secret"),
+        )
+    )
+    await db_session.commit()
+
+    real_async_client = httpx.AsyncClient
+
+    def mock_client_factory(**_kwargs):
+        async def handler(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(401, json={"error": {"message": "unauthorized"}})
+
+        return real_async_client(transport=httpx.MockTransport(handler))
+
+    monkeypatch.setattr("app.api.v1.routes.providers.httpx.AsyncClient", mock_client_factory)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post(
+            f"/api/v1/providers/{provider.id}/models/sync",
+            headers=_auth_headers(user),
+        )
+
+    assert response.status_code == 502
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json()["detail"] == "provider model sync failed with upstream status 401"
