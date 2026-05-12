@@ -432,12 +432,12 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
 
   return (
     <>
-      <SheetHeader className="px-0">
-        <SheetTitle>{provider.name} resources</SheetTitle>
-        <SheetDescription>
+      <div className="space-y-1">
+        <h2 className="text-base font-semibold">{provider.name} resources</h2>
+        <p className="text-sm text-muted-foreground">
           Manage provider API keys and the models available through subscriptions.
-        </SheetDescription>
-      </SheetHeader>
+        </p>
+      </div>
       <div className="space-y-6 overflow-y-auto pb-6">
           <section className="space-y-3">
             <div className="flex items-center justify-between">
