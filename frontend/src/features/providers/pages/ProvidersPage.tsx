@@ -94,7 +94,6 @@ import { StatusBadge } from "@/shared/components/StatusBadge";
 import { Textarea } from "@/components/ui/textarea";
 
 const createSchema = z.object({
-  provider_preset: z.string().optional(),
   name: z.string().min(1).max(255),
   slug: z.string().optional(),
   base_url: z.url(),
@@ -171,13 +170,6 @@ const providerPresets = [
     baseUrl: "https://api.groq.com/openai/v1",
     description: "Groq OpenAI-compatible inference endpoint.",
   },
-  {
-    id: "custom",
-    name: "Custom OpenAI-compatible",
-    slug: "",
-    baseUrl: "",
-    description: "Add another compatible upstream manually.",
-  },
 ] as const;
 
 type ProviderPreset = (typeof providerPresets)[number];
@@ -204,7 +196,6 @@ export function ProvidersPage() {
   const providersQuery = useListProvidersApiV1ProvidersGet();
   const providers = providersQuery.data?.status === 200 ? providersQuery.data.data : [];
   const knownEntries = providerPresets
-    .filter((preset) => preset.id !== "custom")
     .map((preset) => {
       const provider = providers.find((item) => item.slug === preset.slug);
       return {
@@ -1210,14 +1201,12 @@ function CreateProviderSheet({
   const form = useForm<CreateValues>({
     resolver: zodResolver(createSchema),
     defaultValues: {
-      provider_preset: "openai",
-      name: "OpenAI",
-      slug: "openai",
-      base_url: "https://api.openai.com/v1",
+      name: "",
+      slug: "",
+      base_url: "",
       api_key: "",
     },
   });
-  const selectedPreset = useWatch({ control: form.control, name: "provider_preset" });
 
   useEffect(() => {
     if (!open) form.reset();
@@ -1228,53 +1217,28 @@ function CreateProviderSheet({
       <SheetTrigger asChild>
         <Button>
           <Plus />
-          Add provider
+          Add custom provider
         </Button>
       </SheetTrigger>
       <SheetContent>
         <SheetHeader>
-          <SheetTitle>Add provider</SheetTitle>
+          <SheetTitle>Add custom provider</SheetTitle>
           <SheetDescription>
-            OpenAI-compatible base URL and API key. The key is stored encrypted at rest.
+            Use this only for providers missing from the catalog. Known providers can be
+            configured directly with Add key.
           </SheetDescription>
         </SheetHeader>
         <form className="grid gap-4 px-4" onSubmit={form.handleSubmit(onSubmit)}>
           <div className="space-y-1.5">
-            <Label>Provider type</Label>
-            <Select
-              value={selectedPreset}
-              onValueChange={(value) => {
-                const preset = providerPresets.find((item) => item.id === value);
-                form.setValue("provider_preset", value);
-                if (preset) {
-                  form.setValue("name", preset.name);
-                  form.setValue("slug", preset.slug);
-                  form.setValue("base_url", preset.baseUrl);
-                }
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Choose provider" />
-              </SelectTrigger>
-              <SelectContent>
-                {providerPresets.map((preset) => (
-                  <SelectItem key={preset.id} value={preset.id}>
-                    {preset.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
             <Label htmlFor="provider-name">Name</Label>
-            <Input id="provider-name" autoFocus {...form.register("name")} />
+            <Input id="provider-name" autoFocus placeholder="Acme AI" {...form.register("name")} />
             {form.formState.errors.name ? (
               <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
             ) : null}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="provider-slug">Slug</Label>
-            <Input id="provider-slug" placeholder="openai" {...form.register("slug")} />
+            <Input id="provider-slug" placeholder="acme-ai" {...form.register("slug")} />
             <p className="text-xs text-muted-foreground">
               Optional provider hint for proxy requests.
             </p>
@@ -1283,7 +1247,7 @@ function CreateProviderSheet({
             <Label htmlFor="provider-base-url">Base URL</Label>
             <Input
               id="provider-base-url"
-              placeholder="https://api.openai.com/v1"
+              placeholder="https://api.example.com/v1"
               {...form.register("base_url")}
             />
             {form.formState.errors.base_url ? (
@@ -1306,7 +1270,7 @@ function CreateProviderSheet({
         </form>
         <SheetFooter>
           <Button type="submit" disabled={isPending} onClick={form.handleSubmit(onSubmit)}>
-            {isPending ? "Adding..." : "Add provider"}
+            {isPending ? "Adding..." : "Add custom provider"}
           </Button>
           <SheetClose asChild>
             <Button variant="outline">Cancel</Button>
