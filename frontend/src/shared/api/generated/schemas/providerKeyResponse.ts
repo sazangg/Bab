@@ -9,10 +9,12 @@ export interface ProviderKeyResponse {
   id: string;
   org_id: string;
   provider_id: string;
+  created_by: string | null;
   name: string;
   key_prefix: string;
   priority: number;
   is_active: boolean;
+  last_used_at: string | null;
   created_at: string;
   updated_at: string;
 }

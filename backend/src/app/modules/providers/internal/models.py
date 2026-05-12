@@ -45,11 +45,16 @@ class ProviderKey(Base):
         ForeignKey("providers.id", ondelete="CASCADE"),
         index=True,
     )
+    created_by: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
     name: Mapped[str] = mapped_column(String(255))
     key_prefix: Mapped[str] = mapped_column(String(20))
     api_key_encrypted: Mapped[str] = mapped_column(String(1000))
     priority: Mapped[int] = mapped_column(Integer, default=100)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),

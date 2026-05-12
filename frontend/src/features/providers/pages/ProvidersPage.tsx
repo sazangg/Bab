@@ -192,6 +192,10 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
+function shortId(value: string) {
+  return value.slice(0, 8);
+}
+
 export function ProvidersPage() {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
@@ -705,6 +709,7 @@ function ResourceKeyTable({
             <TableHead>Priority</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Created</TableHead>
+            <TableHead>Created by</TableHead>
             <TableHead>Last used</TableHead>
             <TableHead className="w-[1%]" />
           </TableRow>
@@ -728,7 +733,12 @@ function ResourceKeyTable({
               <TableCell className="text-xs text-muted-foreground">
                 {formatDateTime(key.created_at)}
               </TableCell>
-              <TableCell className="text-xs text-muted-foreground">Not tracked yet</TableCell>
+              <TableCell className="font-mono text-xs text-muted-foreground">
+                {key.created_by ? shortId(key.created_by) : "Unknown"}
+              </TableCell>
+              <TableCell className="text-xs text-muted-foreground">
+                {key.last_used_at ? formatDateTime(key.last_used_at) : "Never"}
+              </TableCell>
               <TableCell className="flex justify-end gap-1">
                 <Button size="icon-sm" variant="ghost" onClick={() => setEditKey(key)}>
                   <Pencil />

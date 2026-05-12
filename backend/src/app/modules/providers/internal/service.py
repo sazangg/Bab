@@ -97,6 +97,7 @@ async def create_provider_key(
         provider_key = await repository.create_provider_key(
             org_id=scope.org_id,
             provider_id=provider_id,
+            created_by=actor.id,
             name=payload.name,
             key_prefix=_key_prefix(api_key),
             api_key_encrypted=encrypt(api_key),
@@ -289,6 +290,7 @@ async def sync_provider_models(
         active_key = next((key for key in provider_keys if key.is_active), None)
         if active_key is None:
             raise ProviderKeyRequiredError
+        await repository.mark_provider_key_used(provider_key=active_key, db=db)
 
         adapter = default_adapter_registry.get(provider.adapter_type)
         model_names = await adapter.list_models(
@@ -648,6 +650,7 @@ async def _resolve_provider_api_key(
     ):
         raise ProviderNotFoundError
 
+    await repository.mark_provider_key_used(provider_key=provider_key, db=db)
     return decrypt(provider_key.api_key_encrypted)
 
 

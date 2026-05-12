@@ -40,10 +40,12 @@ class ProviderKeyResponse(BaseModel):
     id: UUID
     org_id: UUID
     provider_id: UUID
+    created_by: UUID | None
     name: str
     key_prefix: str
     priority: int
     is_active: bool
+    last_used_at: datetime | None
     created_at: datetime
     updated_at: datetime
 

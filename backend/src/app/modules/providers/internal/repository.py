@@ -46,6 +46,7 @@ async def create_provider_key(
     *,
     org_id: UUID,
     provider_id: UUID,
+    created_by: UUID,
     name: str,
     key_prefix: str,
     api_key_encrypted: str,
@@ -55,6 +56,7 @@ async def create_provider_key(
     provider_key = ProviderKey(
         org_id=org_id,
         provider_id=provider_id,
+        created_by=created_by,
         name=name,
         key_prefix=key_prefix,
         api_key_encrypted=api_key_encrypted,
@@ -95,6 +97,11 @@ async def get_provider_key(
             ProviderKey.id == provider_key_id,
         )
     )
+
+
+async def mark_provider_key_used(*, provider_key: ProviderKey, db: AsyncSession) -> None:
+    provider_key.last_used_at = datetime_now()
+    await db.flush()
 
 
 async def create_provider_model(
@@ -155,6 +162,12 @@ async def list_provider_models(
     result = await db.scalars(
         select(ProviderModel)
         .where(ProviderModel.org_id == org_id, ProviderModel.provider_id == provider_id)
-        .order_by(ProviderModel.provider_model_name.asc())
+        .order_by(ProviderModel.is_active.desc(), ProviderModel.provider_model_name.asc())
     )
     return list(result)
+
+
+def datetime_now():
+    from datetime import UTC, datetime
+
+    return datetime.now(UTC)

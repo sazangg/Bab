@@ -261,6 +261,8 @@ async def test_super_admin_can_create_and_list_provider_keys(
     assert created["name"] == "Production"
     assert created["key_prefix"] == "sk-p..."
     assert created["priority"] == 10
+    assert created["created_by"] == str(user.id)
+    assert created["last_used_at"] is None
     assert "api_key" not in created
     assert "api_key_encrypted" not in created
     assert stored_key is not None
@@ -360,6 +362,51 @@ async def test_list_provider_keys_sorts_active_keys_by_priority(
         "Active primary",
         "Active backup",
         "Inactive low priority",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_list_provider_models_sorts_active_models_first(
+    app_client,
+    db_session: AsyncSession,
+) -> None:
+    user = await _create_user(db_session)
+    provider = Provider(
+        org_id=user.org_id,
+        name="OpenAI",
+        base_url="https://api.openai.com/v1",
+        api_key_encrypted="legacy",
+        adapter_type="openai_compat",
+    )
+    db_session.add(provider)
+    await db_session.flush()
+    inactive = ProviderModel(
+        org_id=user.org_id,
+        provider_id=provider.id,
+        provider_model_name="aaa-inactive",
+        is_active=False,
+    )
+    active = ProviderModel(
+        org_id=user.org_id,
+        provider_id=provider.id,
+        provider_model_name="zzz-active",
+    )
+    db_session.add_all([inactive, active])
+    await db_session.commit()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get(
+            f"/api/v1/providers/{provider.id}/models",
+            headers=_auth_headers(user),
+        )
+
+    assert response.status_code == 200
+    assert [model["provider_model_name"] for model in response.json()] == [
+        "zzz-active",
+        "aaa-inactive",
     ]
 
 
@@ -629,15 +676,14 @@ async def test_super_admin_can_sync_provider_models(
     )
     db_session.add(provider)
     await db_session.flush()
-    db_session.add(
-        ProviderKey(
-            org_id=user.org_id,
-            provider_id=provider.id,
-            name="Production",
-            key_prefix="sk-p...",
-            api_key_encrypted=encrypt("provider-secret"),
-        )
+    provider_key = ProviderKey(
+        org_id=user.org_id,
+        provider_id=provider.id,
+        name="Production",
+        key_prefix="sk-p...",
+        api_key_encrypted=encrypt("provider-secret"),
     )
+    db_session.add(provider_key)
     await db_session.commit()
 
     real_async_client = httpx.AsyncClient
@@ -669,6 +715,8 @@ async def test_super_admin_can_sync_provider_models(
         "gpt-5.4",
         "gpt-5.4-mini",
     ]
+    await db_session.refresh(provider_key)
+    assert provider_key.last_used_at is not None
 
 
 @pytest.mark.asyncio
