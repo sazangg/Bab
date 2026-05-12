@@ -270,6 +270,40 @@ async def test_super_admin_can_create_and_list_provider_keys(
 
 
 @pytest.mark.asyncio
+async def test_create_provider_key_normalizes_bearer_prefix(
+    app_client,
+    db_session: AsyncSession,
+) -> None:
+    user = await _create_user(db_session)
+    provider = Provider(
+        org_id=user.org_id,
+        name="OpenAI",
+        base_url="https://api.openai.com/v1",
+        api_key_encrypted="legacy",
+        adapter_type="openai_compat",
+    )
+    db_session.add(provider)
+    await db_session.commit()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post(
+            f"/api/v1/providers/{provider.id}/keys",
+            headers=_auth_headers(user),
+            json={"name": "Production", "api_key": " Bearer sk-provider-secret "},
+        )
+
+    stored_key = await db_session.scalar(select(ProviderKey))
+
+    assert response.status_code == 201
+    assert response.json()["key_prefix"] == "sk-p..."
+    assert stored_key is not None
+    assert decrypt(stored_key.api_key_encrypted) == "sk-provider-secret"
+
+
+@pytest.mark.asyncio
 async def test_super_admin_can_update_provider_key(
     app_client,
     db_session: AsyncSession,
@@ -304,7 +338,7 @@ async def test_super_admin_can_update_provider_key(
             headers=_auth_headers(user),
             json={
                 "name": "Production",
-                "api_key": "new-secret",
+                "api_key": " Bearer new-secret ",
                 "priority": 10,
             },
         )

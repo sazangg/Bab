@@ -93,12 +93,13 @@ async def create_provider_key(
 ) -> ProviderKeyResponse:
     async with transaction(db):
         await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
+        api_key = _normalize_api_key(payload.api_key)
         provider_key = await repository.create_provider_key(
             org_id=scope.org_id,
             provider_id=provider_id,
             name=payload.name,
-            key_prefix=_key_prefix(payload.api_key),
-            api_key_encrypted=encrypt(payload.api_key),
+            key_prefix=_key_prefix(api_key),
+            api_key_encrypted=encrypt(api_key),
             priority=payload.priority,
             db=db,
         )
@@ -168,8 +169,9 @@ async def update_provider_key(
         if payload.name is not None:
             provider_key.name = payload.name
         if payload.api_key is not None:
-            provider_key.key_prefix = _key_prefix(payload.api_key)
-            provider_key.api_key_encrypted = encrypt(payload.api_key)
+            api_key = _normalize_api_key(payload.api_key)
+            provider_key.key_prefix = _key_prefix(api_key)
+            provider_key.api_key_encrypted = encrypt(api_key)
         if payload.priority is not None:
             provider_key.priority = payload.priority
         if payload.is_active is not None:
@@ -651,6 +653,13 @@ async def _resolve_provider_api_key(
 
 def _key_prefix(api_key: str) -> str:
     return f"{api_key[:4]}..."
+
+
+def _normalize_api_key(api_key: str) -> str:
+    normalized = api_key.strip()
+    if normalized.lower().startswith("bearer "):
+        normalized = normalized[7:].strip()
+    return normalized
 
 
 def _slugify(value: str) -> str:
