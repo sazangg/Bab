@@ -22,6 +22,23 @@ class Settings(BaseSettings):
         default=1_000_000,
         validation_alias="BAB_PROXY_MAX_BODY_BYTES",
     )
+    default_organization_name: str = Field(
+        default="Default Organization",
+        validation_alias="BAB_DEFAULT_ORGANIZATION_NAME",
+    )
+    default_team_name: str = Field(
+        default="Default Team",
+        validation_alias="BAB_DEFAULT_TEAM_NAME",
+    )
+    default_admin_email: str = Field(
+        default="admin@example.com",
+        validation_alias="BAB_DEFAULT_ADMIN_EMAIL",
+    )
+    default_admin_password: str = Field(
+        default="admin-password-change-me",
+        min_length=12,
+        validation_alias="BAB_DEFAULT_ADMIN_PASSWORD",
+    )
 
     @field_validator("encryption_key")
     @classmethod

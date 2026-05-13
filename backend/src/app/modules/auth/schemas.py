@@ -16,5 +16,6 @@ class TokenResponse(BaseModel):
 class AuthenticatedUser(BaseModel):
     id: UUID
     org_id: UUID
+    team_id: UUID | None = None
     email: EmailStr
     role: str

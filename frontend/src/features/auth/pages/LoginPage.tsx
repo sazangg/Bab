@@ -17,6 +17,8 @@ const loginSchema = z.object({
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
+const defaultAdminEmail = import.meta.env.VITE_BAB_DEFAULT_ADMIN_EMAIL ?? "";
+
 export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -25,7 +27,7 @@ export function LoginPage() {
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: "",
+      email: defaultAdminEmail,
       password: "",
     },
   });
@@ -35,7 +37,7 @@ export function LoginPage() {
         if (response.status === 200) {
           setSession(response.data.access_token);
           const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
-          navigate(from && from !== "/login" ? from : "/", { replace: true });
+          navigate(from && from !== "/login" ? from : "/providers", { replace: true });
         }
       },
     },
@@ -48,7 +50,7 @@ export function LoginPage() {
   return (
     <Card className="w-full max-w-sm">
       <CardHeader>
-        <CardDescription>Bab</CardDescription>
+        <CardDescription>Default Organization / Default Team</CardDescription>
         <CardTitle className="text-2xl">Sign in</CardTitle>
       </CardHeader>
       <CardContent>

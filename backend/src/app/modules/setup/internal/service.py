@@ -31,8 +31,15 @@ async def create_first_admin(
                 slug=_slugify(payload.organization_name),
                 db=db,
             )
+            team = await repository.create_team(
+                org_id=org.id,
+                name="Default Team",
+                slug="default-team",
+                db=db,
+            )
             user = await repository.create_user(
                 org_id=org.id,
+                team_id=team.id,
                 email=payload.email,
                 password_hash=hash_password(payload.password),
                 role="super_admin",

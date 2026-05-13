@@ -114,7 +114,13 @@ async def verify_access_token(token: str, db: AsyncSession) -> AuthenticatedUser
     if user is None or not user.is_active:
         raise InvalidAccessTokenError
 
-    return AuthenticatedUser(id=user.id, org_id=user.org_id, email=user.email, role=user.role)
+    return AuthenticatedUser(
+        id=user.id,
+        org_id=user.org_id,
+        team_id=user.team_id,
+        email=user.email,
+        role=user.role,
+    )
 
 
 async def _issue_refresh_token(user: User, db: AsyncSession) -> tuple[str, RefreshToken]:

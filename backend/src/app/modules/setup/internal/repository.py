@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.auth.internal.models import Organization, User
+from app.modules.auth.internal.models import Organization, Team, User
 from app.modules.setup.internal.models import SetupLock
 
 
@@ -22,9 +22,17 @@ async def create_organization(*, name: str, slug: str, db: AsyncSession) -> Orga
     return org
 
 
+async def create_team(*, org_id, name: str, slug: str, db: AsyncSession) -> Team:
+    team = Team(org_id=org_id, name=name, slug=slug)
+    db.add(team)
+    await db.flush()
+    return team
+
+
 async def create_user(
     *,
     org_id,
+    team_id=None,
     email: str,
     password_hash: str,
     role: str,
@@ -32,6 +40,7 @@ async def create_user(
 ) -> User:
     user = User(
         org_id=org_id,
+        team_id=team_id,
         email=email,
         password_hash=password_hash,
         role=role,

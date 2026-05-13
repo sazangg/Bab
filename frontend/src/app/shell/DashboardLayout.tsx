@@ -1,14 +1,8 @@
 import {
-  Activity,
   ChevronsUpDown,
-  FolderKanban,
   KeyRound,
-  LayoutDashboard,
   LogOut,
   Plug,
-  ScrollText,
-  Settings,
-  SquareStack,
 } from "lucide-react";
 import { Fragment } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
@@ -49,19 +43,7 @@ import {
 import { useAuthStore } from "@/features/auth/model/auth-store";
 import { useBreadcrumbs } from "@/app/shell/breadcrumbs";
 
-const primaryNav = [
-  { to: "/", label: "Overview", icon: LayoutDashboard },
-  { to: "/projects", label: "Projects", icon: FolderKanban },
-  { to: "/providers", label: "Providers", icon: Plug },
-  { to: "/subscriptions", label: "Subscriptions", icon: SquareStack },
-];
-
-const observabilityNav = [
-  { to: "/logs", label: "Request logs", icon: ScrollText },
-  { to: "/audit", label: "Audit", icon: Activity },
-];
-
-const adminNav = [{ to: "/settings", label: "Settings", icon: Settings }];
+const primaryNav = [{ to: "/providers", label: "Provider keys", icon: Plug }];
 
 export function DashboardLayout() {
   const location = useLocation();
@@ -100,44 +82,10 @@ export function DashboardLayout() {
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
-            <SidebarGroupLabel>Workspace</SidebarGroupLabel>
+            <SidebarGroupLabel>Default Organization / Default Team</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {primaryNav.map((item) => (
-                  <SidebarMenuItem key={item.to}>
-                    <SidebarMenuButton asChild isActive={isActive(item.to)} tooltip={item.label}>
-                      <Link to={item.to}>
-                        <item.icon />
-                        <span>{item.label}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-          <SidebarGroup>
-            <SidebarGroupLabel>Observability</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {observabilityNav.map((item) => (
-                  <SidebarMenuItem key={item.to}>
-                    <SidebarMenuButton asChild isActive={isActive(item.to)} tooltip={item.label}>
-                      <Link to={item.to}>
-                        <item.icon />
-                        <span>{item.label}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-          <SidebarGroup>
-            <SidebarGroupLabel>Admin</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {adminNav.map((item) => (
                   <SidebarMenuItem key={item.to}>
                     <SidebarMenuButton asChild isActive={isActive(item.to)} tooltip={item.label}>
                       <Link to={item.to}>
@@ -162,7 +110,7 @@ export function DashboardLayout() {
                     </div>
                     <div className="flex flex-col items-start leading-none">
                       <span className="text-sm font-medium">Admin</span>
-                      <span className="text-xs text-muted-foreground">Local</span>
+                      <span className="text-xs text-muted-foreground">Default Team</span>
                     </div>
                     <ChevronsUpDown className="ml-auto size-4" />
                   </SidebarMenuButton>

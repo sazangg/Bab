@@ -15,7 +15,7 @@ from app.api.v1.routes.proxy import router as proxy_router
 from app.api.v1.routes.request_logs import router as request_logs_router
 from app.api.v1.routes.setup import router as setup_router
 from app.api.v1.routes.subscriptions import router as subscriptions_router
-from app.core.bootstrap import create_development_database
+from app.core.bootstrap import create_development_database, ensure_default_workspace
 from app.core.config import settings
 from app.core.logging import configure_logging
 from app.core.problems import install_problem_handlers
@@ -25,6 +25,7 @@ from app.core.problems import install_problem_handlers
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     if settings.environment == "development":
         await create_development_database()
+        await ensure_default_workspace()
     yield
 
 
