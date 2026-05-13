@@ -17,8 +17,6 @@ const loginSchema = z.object({
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
-const defaultAdminEmail = import.meta.env.VITE_BAB_DEFAULT_ADMIN_EMAIL ?? "";
-
 export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -27,7 +25,7 @@ export function LoginPage() {
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: defaultAdminEmail,
+      email: "",
       password: "",
     },
   });
@@ -50,17 +48,23 @@ export function LoginPage() {
   return (
     <Card className="w-full max-w-sm">
       <CardHeader>
-        <CardDescription>Default Organization / Default Team</CardDescription>
+        <CardDescription>Bab</CardDescription>
         <CardTitle className="text-2xl">Sign in</CardTitle>
       </CardHeader>
       <CardContent>
         <form
           className="grid gap-4"
+          autoComplete="on"
           onSubmit={form.handleSubmit((values) => loginMutation.mutate({ data: values }))}
         >
           <div className="space-y-1.5">
             <Label htmlFor="login-email">Email</Label>
-            <Input id="login-email" type="email" autoComplete="email" {...form.register("email")} />
+            <Input
+              id="login-email"
+              type="email"
+              autoComplete="username"
+              {...form.register("email")}
+            />
             {form.formState.errors.email ? (
               <p className="text-xs text-destructive">{form.formState.errors.email.message}</p>
             ) : null}

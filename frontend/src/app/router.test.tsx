@@ -40,7 +40,7 @@ describe("AppRoutes", () => {
   it("renders the dashboard summary route", () => {
     renderRoute("/");
 
-    expect(screen.getByText("Bab is running with mock admin access.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Bab" })).toBeInTheDocument();
   });
 
   it("redirects unknown routes to login", () => {

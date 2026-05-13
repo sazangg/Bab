@@ -1,9 +1,15 @@
 import {
-  LayoutDashboard,
+  BarChart3,
   ChevronsUpDown,
+  Gauge,
   KeyRound,
+  Landmark,
+  LayoutDashboard,
   LogOut,
   Plug,
+  ScrollText,
+  ShieldCheck,
+  SquareStack,
 } from "lucide-react";
 import { Fragment } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
@@ -25,7 +31,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Separator } from "@/components/ui/separator";
 import {
   Sidebar,
   SidebarContent,
@@ -46,7 +51,16 @@ import { useBreadcrumbs } from "@/app/shell/breadcrumbs";
 
 const primaryNav = [
   { to: "/", label: "Summary", icon: LayoutDashboard },
-  { to: "/providers", label: "Provider keys", icon: Plug },
+  { to: "/providers", label: "Providers", icon: Plug },
+];
+
+const upcomingNav = [
+  { label: "Subscriptions", icon: SquareStack },
+  { label: "Projects", icon: Landmark },
+  { label: "Usage", icon: BarChart3 },
+  { label: "Limits", icon: Gauge },
+  { label: "Audit logs", icon: ScrollText },
+  { label: "Security", icon: ShieldCheck },
 ];
 
 export function DashboardLayout() {
@@ -82,11 +96,26 @@ export function DashboardLayout() {
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
+            <SidebarMenuItem>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <SidebarMenuButton>
+                    <span>Default Organization</span>
+                    <ChevronsUpDown className="ml-auto size-4" />
+                  </SidebarMenuButton>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-56">
+                  <DropdownMenuLabel>Organization</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem disabled>Default Organization</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </SidebarMenuItem>
           </SidebarMenu>
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
-            <SidebarGroupLabel>Default Organization / Default Team</SidebarGroupLabel>
+            <SidebarGroupLabel>Workspace</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {primaryNav.map((item) => (
@@ -96,6 +125,21 @@ export function DashboardLayout() {
                         <item.icon />
                         <span>{item.label}</span>
                       </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+          <SidebarGroup>
+            <SidebarGroupLabel>Admin</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {upcomingNav.map((item) => (
+                  <SidebarMenuItem key={item.label}>
+                    <SidebarMenuButton disabled tooltip={`${item.label} - not available yet`}>
+                      <item.icon />
+                      <span>{item.label}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
@@ -114,7 +158,7 @@ export function DashboardLayout() {
                     </div>
                     <div className="flex flex-col items-start leading-none">
                       <span className="text-sm font-medium">Admin</span>
-                      <span className="text-xs text-muted-foreground">Default Team</span>
+                      <span className="text-xs text-muted-foreground">Local</span>
                     </div>
                     <ChevronsUpDown className="ml-auto size-4" />
                   </SidebarMenuButton>
@@ -137,8 +181,7 @@ export function DashboardLayout() {
       </Sidebar>
       <SidebarInset>
         <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-          <SidebarTrigger className="-ml-1" />
-          <Separator orientation="vertical" className="mx-2 h-4" />
+          <SidebarTrigger />
           <Breadcrumb>
             <BreadcrumbList>
               {breadcrumbs.map((crumb, index) => {
