@@ -9,7 +9,6 @@ import {
   Plug,
   ScrollText,
   ShieldCheck,
-  SquareStack,
 } from "lucide-react";
 import { Fragment } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
@@ -55,7 +54,7 @@ const primaryNav = [
 ];
 
 const upcomingNav = [
-  { label: "Subscriptions", icon: SquareStack },
+  { label: "Allocations", icon: Landmark },
   { label: "Projects", icon: Landmark },
   { label: "Usage", icon: BarChart3 },
   { label: "Limits", icon: Gauge },

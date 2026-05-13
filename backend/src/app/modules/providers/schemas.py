@@ -76,6 +76,7 @@ class TestProviderCredentialResponse(BaseModel):
     id: UUID
     health_status: str
     last_validation_error: str | None = None
+    last_successful_request_at: datetime | None = None
 
 
 class CreateModelOfferingRequest(BaseModel):

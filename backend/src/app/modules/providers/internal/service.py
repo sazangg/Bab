@@ -251,11 +251,13 @@ async def test_provider_credential(
             provider_key.last_successful_request_at = repository.datetime_now()
             health_status = "valid"
             error = None
+            last_successful_request_at = provider_key.last_successful_request_at
         except Exception as exc:  # noqa: BLE001 - persisted as upstream credential health.
             provider_key.health_status = "invalid"
             provider_key.last_validation_error = str(exc)
             health_status = "invalid"
             error = str(exc)
+            last_successful_request_at = provider_key.last_successful_request_at
         await db.flush()
         await audit_facade.record_event(
             RecordAuditEvent(
@@ -273,6 +275,7 @@ async def test_provider_credential(
         id=provider_key.id,
         health_status=health_status,
         last_validation_error=error,
+        last_successful_request_at=last_successful_request_at,
     )
 
 

@@ -1,6 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
+  Activity,
   MoreHorizontal,
   Pencil,
   Plug,
@@ -16,6 +17,7 @@ import { useForm } from "react-hook-form";
 import { Link } from "react-router-dom";
 import { z } from "zod";
 
+import { apiMutator } from "@/shared/api/orval-mutator";
 import {
   createProviderApiV1ProvidersPost,
   createProviderKeyApiV1ProvidersProviderIdKeysPost,
@@ -82,7 +84,6 @@ const createSchema = z.object({
   name: z.string().min(1).max(255),
   slug: z.string().optional(),
   base_url: z.url(),
-  api_key: z.string().optional(),
 });
 
 type CreateValues = z.infer<typeof createSchema>;
@@ -91,7 +92,6 @@ const editSchema = z.object({
   name: z.string().min(1).max(255),
   slug: z.string().optional(),
   base_url: z.url(),
-  api_key: z.string().optional(),
 });
 
 const providerKeySchema = z.object({
@@ -110,6 +110,24 @@ const providerModelSchema = z.object({
 type ProviderModelValues = z.infer<typeof providerModelSchema>;
 
 type EditValues = z.infer<typeof editSchema>;
+
+type TestProviderCredentialResponse = {
+  health_status: string;
+  last_validation_error: string | null;
+  last_successful_request_at: string | null;
+};
+
+type TestProviderCredentialApiResponse = {
+  status: number;
+  data: TestProviderCredentialResponse;
+};
+
+function testProviderCredential(providerId: string, providerKeyId: string) {
+  return apiMutator<TestProviderCredentialApiResponse>(
+    `/api/v1/providers/${providerId}/keys/${providerKeyId}/test`,
+    { method: "POST" },
+  );
+}
 
 const providerPresets = [
   {
@@ -172,20 +190,19 @@ export function ProvidersPage() {
 
   const providersQuery = useListProvidersApiV1ProvidersGet();
   const providers = providersQuery.data?.status === 200 ? providersQuery.data.data : [];
-  const knownEntries = providerPresets
-    .map((preset) => {
-      const provider = providers.find((item) => item.slug === preset.slug);
-      return {
-        key: preset.id,
-        name: provider?.name ?? preset.name,
-        slug: preset.slug,
-        baseUrl: provider?.base_url ?? preset.baseUrl,
-        description: preset.description,
-        provider,
-        preset,
-        isCustom: false,
-      } satisfies ProviderCatalogEntry;
-    });
+  const knownEntries = providerPresets.map((preset) => {
+    const provider = providers.find((item) => item.slug === preset.slug);
+    return {
+      key: preset.id,
+      name: provider?.name ?? preset.name,
+      slug: preset.slug,
+      baseUrl: provider?.base_url ?? preset.baseUrl,
+      description: preset.description,
+      provider,
+      preset,
+      isCustom: false,
+    } satisfies ProviderCatalogEntry;
+  });
   const customEntries = providers
     .filter((provider) => !providerPresets.some((preset) => preset.slug === provider.slug))
     .map(
@@ -237,7 +254,7 @@ export function ProvidersPage() {
     <>
       <PageHeader
         title="Providers"
-        description="Add API keys to known providers, or register a custom OpenAI-compatible upstream."
+        description="Add credentials to known providers, or register a custom OpenAI-compatible upstream."
         actions={
           <CreateProviderSheet
             open={createOpen}
@@ -248,7 +265,6 @@ export function ProvidersPage() {
                   name: values.name,
                   ...(values.slug ? { slug: values.slug } : {}),
                   base_url: values.base_url,
-                  ...(values.api_key ? { api_key: values.api_key } : {}),
                 },
               })
             }
@@ -313,7 +329,6 @@ export function ProvidersPage() {
               name: values.name,
               ...(values.slug ? { slug: values.slug } : {}),
               base_url: values.base_url,
-              ...(values.api_key ? { api_key: values.api_key } : {}),
             },
           });
         }}
@@ -411,7 +426,7 @@ function ProviderCatalogRow({
                 )}
                 {activeKeyCount > 0 ? (
                   <span className="text-xs text-muted-foreground">
-                    {activeKeyCount} active {activeKeyCount === 1 ? "key" : "keys"}
+                    {activeKeyCount} active {activeKeyCount === 1 ? "credential" : "credentials"}
                   </span>
                 ) : null}
               </div>
@@ -424,7 +439,7 @@ function ProviderCatalogRow({
         <div className="flex shrink-0 items-center gap-2">
           <Button size="sm" onClick={onAddKey}>
             <Plus />
-            Add key
+            Add credential
           </Button>
           {entry.provider ? (
             <>
@@ -463,6 +478,15 @@ function ProviderCatalogRow({
           ) : null}
         </div>
       </div>
+    </div>
+  );
+}
+
+function ProviderFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="truncate text-sm font-medium">{value}</p>
     </div>
   );
 }
@@ -513,103 +537,124 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
   const syncModels = useSyncProviderModelsApiV1ProvidersProviderIdModelsSyncPost({
     mutation: { onSuccess: async () => queryClient.invalidateQueries() },
   });
+  const testCredential = useMutation({
+    mutationFn: (providerKeyId: string) => testProviderCredential(providerId, providerKeyId),
+    onSuccess: async () => queryClient.invalidateQueries(),
+  });
   const hasActiveKey = keys.some((key) => key.is_active);
 
   return (
     <>
       <div className="space-y-6 overflow-y-auto pb-6">
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-medium">API keys</h3>
-                <p className="text-xs text-muted-foreground">
-                  Keys are encrypted. Routing priority decides which active key is tried first.
-                </p>
-              </div>
-              <Button size="sm" onClick={() => setCreateKeyOpen(true)}>
+        <section className="grid gap-3 rounded-lg border p-4 md:grid-cols-4">
+          <ProviderFact label="Integration" value={provider.supported_integration} />
+          <ProviderFact label="Timeout" value={`${provider.request_timeout_seconds ?? 30}s`} />
+          <ProviderFact
+            label="Max body"
+            value={
+              provider.max_body_bytes
+                ? `${Math.round(provider.max_body_bytes / 1024)} KB`
+                : "Default"
+            }
+          />
+          <ProviderFact
+            label="Concurrency"
+            value={provider.max_concurrent_requests?.toString() ?? "Default"}
+          />
+        </section>
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-medium">Credentials</h3>
+              <p className="text-xs text-muted-foreground">
+                Credentials are encrypted. Routing priority decides which active credential is tried
+                first.
+              </p>
+            </div>
+            <Button size="sm" onClick={() => setCreateKeyOpen(true)}>
+              <Plus />
+              Add credential
+            </Button>
+          </div>
+          <ResourceKeyTable
+            providerId={providerId}
+            keys={keys}
+            isTesting={testCredential.isPending}
+            onUpdate={(key, values) =>
+              updateKey.mutate({
+                providerId,
+                providerKeyId: key.id,
+                data: values,
+              })
+            }
+            onRotate={(key, apiKey) =>
+              updateKey.mutate({
+                providerId,
+                providerKeyId: key.id,
+                data: { api_key: apiKey },
+              })
+            }
+            onDeactivate={(key) => deactivateKey.mutate({ providerId, providerKeyId: key.id })}
+            onReactivate={(key) =>
+              updateKey.mutate({
+                providerId,
+                providerKeyId: key.id,
+                data: { is_active: true },
+              })
+            }
+            onTest={(key) => testCredential.mutate(key.id)}
+          />
+        </section>
+
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-medium">Models</h3>
+              <p className="text-xs text-muted-foreground">
+                Alias is optional and scoped to this provider.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={() => setCreateModelOpen(true)}>
                 <Plus />
-                Add key
+                Add offering
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!providerId || !hasActiveKey || syncModels.isPending}
+                onClick={() => providerId && syncModels.mutate({ providerId })}
+                title={
+                  !hasActiveKey ? "Add an active credential before syncing models." : undefined
+                }
+              >
+                <RefreshCw />
+                Sync
               </Button>
             </div>
-            <ResourceKeyTable
-              providerId={providerId}
-              keys={keys}
-              onUpdate={(key, values) =>
-                updateKey.mutate({
-                  providerId,
-                  providerKeyId: key.id,
-                  data: values,
-                })
-              }
-              onRotate={(key, apiKey) =>
-                updateKey.mutate({
-                  providerId,
-                  providerKeyId: key.id,
-                  data: { api_key: apiKey },
-                })
-              }
-              onDeactivate={(key) =>
-                deactivateKey.mutate({ providerId, providerKeyId: key.id })
-              }
-              onReactivate={(key) =>
-                updateKey.mutate({
-                  providerId,
-                  providerKeyId: key.id,
-                  data: { is_active: true },
-                })
-              }
-            />
-          </section>
-
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-medium">Models</h3>
-                <p className="text-xs text-muted-foreground">
-                  Alias is optional and scoped to this provider.
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button size="sm" variant="outline" onClick={() => setCreateModelOpen(true)}>
-                  <Plus />
-                  Add model
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={!providerId || !hasActiveKey || syncModels.isPending}
-                  onClick={() => providerId && syncModels.mutate({ providerId })}
-                  title={
-                    !hasActiveKey ? "Add an active provider key before syncing models." : undefined
-                  }
-                >
-                  <RefreshCw />
-                  Sync
-                </Button>
-              </div>
-            </div>
-            <ResourceModelTable
-              providerId={providerId}
-              models={models}
-              onAlias={(model, alias) =>
-                updateModel.mutate({
-                  providerId,
-                  providerModelId: model.id,
-                  data: { alias: alias || null },
-                })
-              }
-              onDeactivate={(model) =>
-                deactivateModel.mutate({ providerId, providerModelId: model.id })
-              }
-              onReactivate={(model) =>
-                updateModel.mutate({
-                  providerId,
-                  providerModelId: model.id,
-                  data: { is_active: true },
-                })
-              }
-            />
-          </section>
+          </div>
+          <ResourceModelTable
+            providerId={providerId}
+            models={models}
+            onAlias={(model, alias) =>
+              updateModel.mutate({
+                providerId,
+                providerModelId: model.id,
+                data: { alias: alias || null },
+              })
+            }
+            onDeactivate={(model) =>
+              deactivateModel.mutate({ providerId, providerModelId: model.id })
+            }
+            onReactivate={(model) =>
+              updateModel.mutate({
+                providerId,
+                providerModelId: model.id,
+                data: { is_active: true },
+              })
+            }
+          />
+        </section>
       </div>
       <CreateProviderKeySheet
         open={createKeyOpen}
@@ -649,20 +694,21 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
 function ResourceKeyTable({
   providerId,
   keys,
+  isTesting,
   onUpdate,
   onRotate,
   onDeactivate,
   onReactivate,
+  onTest,
 }: {
   providerId: string;
   keys: ProviderKeyResponse[];
-  onUpdate: (
-    key: ProviderKeyResponse,
-    values: { name: string; priority: number },
-  ) => void;
+  isTesting: boolean;
+  onUpdate: (key: ProviderKeyResponse, values: { name: string; priority: number }) => void;
   onRotate: (key: ProviderKeyResponse, apiKey: string) => void;
   onDeactivate: (key: ProviderKeyResponse) => void;
   onReactivate: (key: ProviderKeyResponse) => void;
+  onTest: (key: ProviderKeyResponse) => void;
 }) {
   const sortedKeys = [...keys].sort(
     (a, b) =>
@@ -680,7 +726,7 @@ function ResourceKeyTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Name</TableHead>
+            <TableHead>Credential</TableHead>
             <TableHead>Prefix</TableHead>
             <TableHead>Priority</TableHead>
             <TableHead>Health</TableHead>
@@ -696,7 +742,7 @@ function ResourceKeyTable({
               <TableCell className="font-medium">
                 <div>{key.name}</div>
                 {syncKey?.id === key.id ? (
-                  <p className="text-xs text-muted-foreground">Used for model sync</p>
+                  <p className="text-xs text-muted-foreground">Used first for model sync</p>
                 ) : null}
               </TableCell>
               <TableCell className="font-mono text-xs">{key.key_prefix}</TableCell>
@@ -728,6 +774,15 @@ function ResourceKeyTable({
                   : "Never"}
               </TableCell>
               <TableCell className="flex justify-end gap-1">
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  disabled={!providerId || !key.is_active || isTesting}
+                  onClick={() => onTest(key)}
+                  title="Test credential"
+                >
+                  <Activity />
+                </Button>
                 <Button size="icon-sm" variant="ghost" onClick={() => setEditKey(key)}>
                   <Pencil />
                 </Button>
@@ -778,7 +833,7 @@ function ResourceKeyTable({
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Rotate provider key</DialogTitle>
+            <DialogTitle>Rotate credential</DialogTitle>
             <DialogDescription>Paste the replacement upstream API key.</DialogDescription>
           </DialogHeader>
           <Input
@@ -836,9 +891,9 @@ function EditProviderKeySheet({
     <Sheet open={Boolean(providerKey)} onOpenChange={(open) => !open && onClose()}>
       <SheetContent>
         <SheetHeader>
-          <SheetTitle>Edit provider key</SheetTitle>
+          <SheetTitle>Edit credential</SheetTitle>
           <SheetDescription>
-            Rename this key or change routing priority. Use rotate to replace the secret.
+            Rename this credential or change routing priority. Use rotate to replace the secret.
           </SheetDescription>
         </SheetHeader>
         <form className="grid gap-4 px-4" onSubmit={form.handleSubmit(onSubmit)}>
@@ -854,7 +909,7 @@ function EditProviderKeySheet({
               {...form.register("priority", { valueAsNumber: true })}
             />
             <p className="text-xs text-muted-foreground">
-              Active keys are tried first. Lower numbers win within active keys.
+              Active credentials are tried first. Lower numbers win within active credentials.
             </p>
           </div>
         </form>
@@ -888,14 +943,14 @@ function CreateProviderKeySheet({
   });
 
   useEffect(() => {
-    if (open) form.reset({ name: `${providerName} key`, api_key: "", priority: 100 });
+    if (open) form.reset({ name: `${providerName} credential`, api_key: "", priority: 100 });
   }, [open, providerName, form]);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent>
         <SheetHeader>
-          <SheetTitle>Add provider key</SheetTitle>
+          <SheetTitle>Add credential</SheetTitle>
           <SheetDescription>
             Add an encrypted upstream API key for {providerName}. Lower routing priority wins.
           </SheetDescription>
@@ -910,7 +965,7 @@ function CreateProviderKeySheet({
             <Input
               id="detail-provider-key-secret"
               type="password"
-              autoComplete="off"
+              autoComplete="new-password"
               {...form.register("api_key")}
             />
           </div>
@@ -922,13 +977,13 @@ function CreateProviderKeySheet({
               {...form.register("priority", { valueAsNumber: true })}
             />
             <p className="text-xs text-muted-foreground">
-              Lower numbers are preferred when multiple active keys exist for this provider.
+              Lower numbers are preferred when multiple active credentials exist for this provider.
             </p>
           </div>
         </form>
         <SheetFooter>
           <Button disabled={isPending} onClick={form.handleSubmit(onSubmit)}>
-            {isPending ? "Adding..." : "Add key"}
+            {isPending ? "Adding..." : "Add credential"}
           </Button>
           <SheetClose asChild>
             <Button variant="outline">Cancel</Button>
@@ -982,7 +1037,11 @@ function CreateProviderModelSheet({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="detail-provider-model-alias">Alias</Label>
-            <Input id="detail-provider-model-alias" placeholder="fast" {...form.register("alias")} />
+            <Input
+              id="detail-provider-model-alias"
+              placeholder="fast"
+              {...form.register("alias")}
+            />
           </div>
         </form>
         <SheetFooter>
@@ -1013,6 +1072,11 @@ function ResourceModelTable({
 }) {
   const [editModel, setEditModel] = useState<ProviderModelResponse | null>(null);
   const [alias, setAlias] = useState("");
+  const sortedModels = [...models].sort(
+    (a, b) =>
+      Number(b.is_active) - Number(a.is_active) ||
+      a.provider_model_name.localeCompare(b.provider_model_name),
+  );
 
   return (
     <>
@@ -1021,15 +1085,26 @@ function ResourceModelTable({
           <TableRow>
             <TableHead>Provider model</TableHead>
             <TableHead>Alias</TableHead>
+            <TableHead>Modality</TableHead>
+            <TableHead>Context</TableHead>
             <TableHead>Status</TableHead>
             <TableHead className="w-[1%]" />
           </TableRow>
         </TableHeader>
         <TableBody>
-          {models.map((model) => (
+          {sortedModels.map((model) => (
             <TableRow key={model.id}>
-              <TableCell className="font-mono text-xs">{model.provider_model_name}</TableCell>
+              <TableCell>
+                <div className="font-mono text-xs">{model.provider_model_name}</div>
+                <div className="text-xs text-muted-foreground">
+                  {model.version ?? "Unversioned"}
+                </div>
+              </TableCell>
               <TableCell>{model.alias || "—"}</TableCell>
+              <TableCell>{model.modality}</TableCell>
+              <TableCell>
+                {model.context_window ? model.context_window.toLocaleString() : "—"}
+              </TableCell>
               <TableCell>
                 <StatusBadge variant={model.is_active ? "active" : "inactive"}>
                   {model.is_active ? "Active" : "Disabled"}
@@ -1115,7 +1190,7 @@ function AddProviderKeyDialog({
 
   useEffect(() => {
     if (entry) {
-      form.reset({ name: `${entry.name} key`, api_key: "", priority: 100 });
+      form.reset({ name: `${entry.name} credential`, api_key: "", priority: 100 });
     }
   }, [entry, form]);
 
@@ -1144,7 +1219,7 @@ function AddProviderKeyDialog({
         priority: values.priority,
       });
       if (keyResponse.status !== 201) {
-        throw new Error("Provider key was not created.");
+        throw new Error("Credential was not created.");
       }
       await onCreated();
     } catch {
@@ -1158,7 +1233,7 @@ function AddProviderKeyDialog({
     <Sheet open={Boolean(entry)} onOpenChange={(open) => !open && onClose()}>
       <SheetContent>
         <SheetHeader>
-          <SheetTitle>Add provider key</SheetTitle>
+          <SheetTitle>Add credential</SheetTitle>
           <SheetDescription>
             {entry
               ? `Add an encrypted upstream API key for ${entry.name}.`
@@ -1175,7 +1250,7 @@ function AddProviderKeyDialog({
             <Input
               id="provider-key-secret"
               type="password"
-              autoComplete="off"
+              autoComplete="new-password"
               {...form.register("api_key")}
             />
           </div>
@@ -1187,14 +1262,14 @@ function AddProviderKeyDialog({
               {...form.register("priority", { valueAsNumber: true })}
             />
             <p className="text-xs text-muted-foreground">
-              Lower numbers are preferred when multiple active keys exist for this provider.
+              Lower numbers are preferred when multiple active credentials exist for this provider.
             </p>
           </div>
-          {isError ? <p className="text-sm text-destructive">Provider key was not added.</p> : null}
+          {isError ? <p className="text-sm text-destructive">Credential was not added.</p> : null}
         </form>
         <SheetFooter>
           <Button disabled={isPending} onClick={submit}>
-            {isPending ? "Adding..." : "Add key"}
+            {isPending ? "Adding..." : "Add credential"}
           </Button>
           <SheetClose asChild>
             <Button variant="outline">Cancel</Button>
@@ -1224,12 +1299,11 @@ function CreateProviderSheet({
       name: "",
       slug: "",
       base_url: "",
-      api_key: "",
     },
   });
 
   useEffect(() => {
-    if (!open) form.reset();
+    if (open) form.reset({ name: "", slug: "", base_url: "" });
   }, [open, form]);
 
   return (
@@ -1244,11 +1318,11 @@ function CreateProviderSheet({
         <SheetHeader>
           <SheetTitle>Add custom provider</SheetTitle>
           <SheetDescription>
-            Use this only for providers missing from the catalog. Known providers can be
-            configured directly with Add key.
+            Use this only for providers missing from the catalog. Known providers can be configured
+            directly with Add credential.
           </SheetDescription>
         </SheetHeader>
-        <form className="grid gap-4 px-4" onSubmit={form.handleSubmit(onSubmit)}>
+        <form className="grid gap-4 px-4" autoComplete="off" onSubmit={form.handleSubmit(onSubmit)}>
           <div className="space-y-1.5">
             <Label htmlFor="provider-name">Name</Label>
             <Input id="provider-name" autoFocus placeholder="Acme AI" {...form.register("name")} />
@@ -1267,24 +1341,13 @@ function CreateProviderSheet({
             <Label htmlFor="provider-base-url">Base URL</Label>
             <Input
               id="provider-base-url"
+              autoComplete="off"
               placeholder="https://api.example.com/v1"
               {...form.register("base_url")}
             />
             {form.formState.errors.base_url ? (
               <p className="text-xs text-destructive">{form.formState.errors.base_url.message}</p>
             ) : null}
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="provider-api-key">API key</Label>
-            <Input
-              id="provider-api-key"
-              type="password"
-              autoComplete="off"
-              {...form.register("api_key")}
-            />
-            <p className="text-xs text-muted-foreground">
-              Optional. You can add provider keys after creating the provider.
-            </p>
           </div>
           {isError ? <p className="text-sm text-destructive">Provider was not created.</p> : null}
         </form>
@@ -1314,7 +1377,7 @@ function EditProviderSheet({
 }) {
   const form = useForm<EditValues>({
     resolver: zodResolver(editSchema),
-    defaultValues: { name: "", slug: "", base_url: "", api_key: "" },
+    defaultValues: { name: "", slug: "", base_url: "" },
   });
 
   useEffect(() => {
@@ -1323,7 +1386,6 @@ function EditProviderSheet({
         name: provider.name,
         slug: provider.slug ?? "",
         base_url: provider.base_url,
-        api_key: "",
       });
     }
   }, [provider, form]);
@@ -1333,7 +1395,9 @@ function EditProviderSheet({
       <SheetContent>
         <SheetHeader>
           <SheetTitle>Edit provider</SheetTitle>
-          <SheetDescription>Leave the API key blank to keep the existing one.</SheetDescription>
+          <SheetDescription>
+            Credentials are managed separately on the provider detail page.
+          </SheetDescription>
         </SheetHeader>
         <form className="grid gap-4 px-4" onSubmit={form.handleSubmit(onSubmit)}>
           <div className="space-y-1.5">
@@ -1348,16 +1412,6 @@ function EditProviderSheet({
             <Label htmlFor="edit-provider-base-url">Base URL</Label>
             <Input id="edit-provider-base-url" {...form.register("base_url")} />
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="edit-provider-api-key">New API key</Label>
-            <Input
-              id="edit-provider-api-key"
-              type="password"
-              autoComplete="off"
-              placeholder="Leave blank to keep current"
-              {...form.register("api_key")}
-            />
-          </div>
         </form>
         <SheetFooter>
           <Button type="submit" disabled={isPending} onClick={form.handleSubmit(onSubmit)}>
@@ -1371,4 +1425,3 @@ function EditProviderSheet({
     </Sheet>
   );
 }
-
