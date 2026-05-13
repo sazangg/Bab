@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.core.database import Base, get_db
 from app.main import create_app
 from app.modules.audit.internal.models import AuditLog  # noqa: F401
-from app.modules.auth.internal.models import Organization, RefreshToken, User  # noqa: F401
+from app.modules.auth.internal.models import Organization, RefreshToken, Team, User  # noqa: F401
 from app.modules.keys.internal.models import (  # noqa: F401
     ModelAlias,
     Project,

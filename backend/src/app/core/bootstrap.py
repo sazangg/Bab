@@ -42,34 +42,53 @@ async def create_development_database() -> None:
 
 async def ensure_default_workspace() -> None:
     async with AsyncSessionLocal() as db:
-        async with transaction(db):
-            if await db.scalar(select(User.id).limit(1)) is not None:
-                return
+        await sync_default_workspace(db)
 
-            org = Organization(
-                name=settings.default_organization_name,
-                slug=_slugify(settings.default_organization_name),
-            )
+
+async def sync_default_workspace(db) -> None:
+    async with transaction(db):
+        org_slug = _slugify(settings.default_organization_name)
+        org = await db.scalar(select(Organization).where(Organization.slug == org_slug))
+        if org is None:
+            org = Organization(name=settings.default_organization_name, slug=org_slug)
             db.add(org)
             await db.flush()
 
+        team_slug = _slugify(settings.default_team_name)
+        team = await db.scalar(
+            select(Team).where(
+                Team.org_id == org.id,
+                Team.slug == team_slug,
+            )
+        )
+        if team is None:
             team = Team(
                 org_id=org.id,
                 name=settings.default_team_name,
-                slug=_slugify(settings.default_team_name),
+                slug=team_slug,
             )
             db.add(team)
             await db.flush()
 
+        user = await db.scalar(select(User).where(User.email == settings.default_admin_email))
+        password_hash = hash_password(settings.default_admin_password)
+        if user is None:
             db.add(
                 User(
                     org_id=org.id,
                     team_id=team.id,
                     email=settings.default_admin_email,
-                    password_hash=hash_password(settings.default_admin_password),
+                    password_hash=password_hash,
                     role="super_admin",
                 )
             )
+            return
+
+        user.org_id = org.id
+        user.team_id = team.id
+        user.password_hash = password_hash
+        user.role = "super_admin"
+        user.is_active = True
 
 
 def _slugify(value: str) -> str:
