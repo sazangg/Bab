@@ -93,13 +93,18 @@ def create_access_token(
     return jwt.encode(payload, secret_key or settings.secret_key, algorithm=JWT_ALGORITHM)
 
 
-def decode_access_token(token: str, *, secret_key: str | None = None) -> dict[str, Any]:
+def decode_access_token(
+    token: str,
+    *,
+    secret_key: str | None = None,
+    expected_type: str = "access",
+) -> dict[str, Any]:
     try:
         claims = jwt.decode(token, secret_key or settings.secret_key, algorithms=[JWT_ALGORITHM])
     except JWTError as exc:
         raise SecurityError("invalid access token") from exc
 
-    if claims.get("type") != "access":
-        raise SecurityError("token is not an access token")
+    if claims.get("type") != expected_type:
+        raise SecurityError(f"token is not a {expected_type} token")
 
     return claims

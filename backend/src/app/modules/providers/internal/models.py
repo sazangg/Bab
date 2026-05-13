@@ -45,10 +45,7 @@ class ProviderKey(Base):
         ForeignKey("providers.id", ondelete="CASCADE"),
         index=True,
     )
-    created_by: Mapped[UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="RESTRICT"),
-        nullable=True,
-    )
+    created_by: Mapped[UUID | None] = mapped_column(nullable=True)
     name: Mapped[str] = mapped_column(String(255))
     key_prefix: Mapped[str] = mapped_column(String(20))
     api_key_encrypted: Mapped[str] = mapped_column(String(1000))

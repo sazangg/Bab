@@ -4,30 +4,27 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal, Base, engine, transaction
-from app.core.security import hash_password
 from app.modules.audit.internal.models import AuditLog  # noqa: F401
-from app.modules.auth.internal.models import Organization, RefreshToken, Team, User  # noqa: F401
+from app.modules.auth.internal.models import Organization, Team  # noqa: F401
 from app.modules.keys.internal.models import (  # noqa: F401
     ModelAlias,
     Project,
     ProjectProviderAccess,
+    ProjectSubscriptionAccess,
+    Subscription,
+    SubscriptionModelAccess,
+    SubscriptionProviderKey,
     VirtualKey,
 )
 from app.modules.limits.internal.models import LimitCounter, LimitPolicy  # noqa: F401
-from app.modules.providers.internal.models import Provider  # noqa: F401
+from app.modules.providers.internal.models import Provider, ProviderKey, ProviderModel  # noqa: F401
 from app.modules.request_logs.internal.models import RequestLog  # noqa: F401
-from app.modules.setup.internal.models import SetupLock  # noqa: F401
 
 
 async def create_development_database() -> None:
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
         if engine.url.get_backend_name() == "sqlite":
-            existing_columns = await connection.exec_driver_sql("PRAGMA table_info(users)")
-            user_column_names = {row[1] for row in existing_columns}
-            if "team_id" not in user_column_names:
-                await connection.exec_driver_sql("ALTER TABLE users ADD COLUMN team_id CHAR(32)")
-
             existing_columns = await connection.exec_driver_sql("PRAGMA table_info(provider_keys)")
             column_names = {row[1] for row in existing_columns}
             if "created_by" not in column_names:
@@ -69,26 +66,6 @@ async def sync_default_workspace(db) -> None:
             )
             db.add(team)
             await db.flush()
-
-        user = await db.scalar(select(User).where(User.email == settings.default_admin_email))
-        password_hash = hash_password(settings.default_admin_password)
-        if user is None:
-            db.add(
-                User(
-                    org_id=org.id,
-                    team_id=team.id,
-                    email=settings.default_admin_email,
-                    password_hash=password_hash,
-                    role="super_admin",
-                )
-            )
-            return
-
-        user.org_id = org.id
-        user.team_id = team.id
-        user.password_hash = password_hash
-        user.role = "super_admin"
-        user.is_active = True
 
 
 def _slugify(value: str) -> str:

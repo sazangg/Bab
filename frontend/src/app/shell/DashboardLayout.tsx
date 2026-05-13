@@ -1,4 +1,5 @@
 import {
+  LayoutDashboard,
   ChevronsUpDown,
   KeyRound,
   LogOut,
@@ -43,7 +44,10 @@ import {
 import { useAuthStore } from "@/features/auth/model/auth-store";
 import { useBreadcrumbs } from "@/app/shell/breadcrumbs";
 
-const primaryNav = [{ to: "/providers", label: "Provider keys", icon: Plug }];
+const primaryNav = [
+  { to: "/", label: "Summary", icon: LayoutDashboard },
+  { to: "/providers", label: "Provider keys", icon: Plug },
+];
 
 export function DashboardLayout() {
   const location = useLocation();

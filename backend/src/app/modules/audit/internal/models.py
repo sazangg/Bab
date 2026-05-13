@@ -16,11 +16,7 @@ class AuditLog(Base):
         ForeignKey("organizations.id", ondelete="RESTRICT"),
         index=True,
     )
-    actor_user_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
+    actor_user_id: Mapped[UUID | None] = mapped_column(nullable=True, index=True)
     event: Mapped[str] = mapped_column(String(100), index=True)
     target_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     target_id: Mapped[UUID | None] = mapped_column(index=True, nullable=True)

@@ -4,10 +4,7 @@ import { MemoryRouter, Outlet } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import { AppRoutes } from "@/app/router";
-
-vi.mock("@/features/setup/components/SetupRedirect", () => ({
-  SetupRedirect: () => <Outlet />,
-}));
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 vi.mock("@/features/auth/components/AuthGate", () => ({
   AuthGate: () => <Outlet />,
@@ -23,9 +20,11 @@ function renderRoute(path: string) {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[path]}>
-        <AppRoutes />
-      </MemoryRouter>
+      <TooltipProvider>
+        <MemoryRouter initialEntries={[path]}>
+          <AppRoutes />
+        </MemoryRouter>
+      </TooltipProvider>
     </QueryClientProvider>,
   );
 }
@@ -38,11 +37,10 @@ describe("AppRoutes", () => {
     expect(screen.getByLabelText("Password")).toBeInTheDocument();
   });
 
-  it("renders the setup route", () => {
-    renderRoute("/setup");
+  it("renders the dashboard summary route", () => {
+    renderRoute("/");
 
-    expect(screen.getByLabelText("Organization name")).toBeInTheDocument();
-    expect(screen.getByLabelText("Admin email")).toBeInTheDocument();
+    expect(screen.getByText("Bab is running with mock admin access.")).toBeInTheDocument();
   });
 
   it("redirects unknown routes to login", () => {

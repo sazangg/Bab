@@ -37,7 +37,7 @@ export function LoginPage() {
         if (response.status === 200) {
           setSession(response.data.access_token);
           const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
-          navigate(from && from !== "/login" ? from : "/providers", { replace: true });
+          navigate(from && from !== "/login" ? from : "/", { replace: true });
         }
       },
     },

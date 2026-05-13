@@ -4,29 +4,21 @@ import { AuthLayout } from "@/app/shell/AuthLayout";
 import { DashboardLayout } from "@/app/shell/DashboardLayout";
 import { AuthGate } from "@/features/auth/components/AuthGate";
 import { LoginPage } from "@/features/auth/pages/LoginPage";
+import { OverviewPage } from "@/features/overview/pages/OverviewPage";
 import { ProviderDetailPage } from "@/features/providers/pages/ProviderDetailPage";
 import { ProvidersPage } from "@/features/providers/pages/ProvidersPage";
-import { SetupRedirect } from "@/features/setup/components/SetupRedirect";
-import { SetupPage } from "@/features/setup/pages/SetupPage";
 
 export function AppRoutes() {
   return (
     <Routes>
       <Route element={<AuthLayout />}>
-        <Route element={<SetupRedirect requireSetup />}>
-          <Route path="/setup" element={<SetupPage />} />
-        </Route>
-        <Route element={<SetupRedirect requireSetup={false} />}>
-          <Route path="/login" element={<LoginPage />} />
-        </Route>
+        <Route path="/login" element={<LoginPage />} />
       </Route>
-      <Route element={<SetupRedirect requireSetup={false} />}>
-        <Route element={<AuthGate />}>
-          <Route element={<DashboardLayout />}>
-            <Route path="/" element={<Navigate to="/providers" replace />} />
-            <Route path="/providers" element={<ProvidersPage />} />
-            <Route path="/providers/:providerId" element={<ProviderDetailPage />} />
-          </Route>
+      <Route element={<AuthGate />}>
+        <Route element={<DashboardLayout />}>
+          <Route path="/" element={<OverviewPage />} />
+          <Route path="/providers" element={<ProvidersPage />} />
+          <Route path="/providers/:providerId" element={<ProviderDetailPage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/login" replace />} />

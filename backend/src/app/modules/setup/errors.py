@@ -1,2 +1,0 @@
-class SetupAlreadyCompletedError(RuntimeError):
-    pass
