@@ -25,6 +25,11 @@ async def create_development_database() -> None:
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
         if engine.url.get_backend_name() == "sqlite":
+            if await _sqlite_schema_is_stale(connection):
+                await connection.run_sync(Base.metadata.drop_all)
+                await connection.run_sync(Base.metadata.create_all)
+                return
+
             existing_columns = await connection.exec_driver_sql("PRAGMA table_info(provider_keys)")
             column_names = {row[1] for row in existing_columns}
             if "created_by" not in column_names:
@@ -35,6 +40,24 @@ async def create_development_database() -> None:
                 await connection.exec_driver_sql(
                     "ALTER TABLE provider_keys ADD COLUMN last_used_at DATETIME"
                 )
+
+
+async def _sqlite_schema_is_stale(connection) -> bool:
+    providers_columns = await connection.exec_driver_sql("PRAGMA table_info(providers)")
+    provider_column_names = {row[1] for row in providers_columns}
+    if "display_name" not in provider_column_names:
+        return True
+
+    provider_credentials = await connection.exec_driver_sql(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='provider_credentials'"
+    )
+    if provider_credentials.first() is None:
+        return True
+
+    model_offerings = await connection.exec_driver_sql(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='model_offerings'"
+    )
+    return model_offerings.first() is None
 
 
 async def ensure_default_workspace() -> None:
