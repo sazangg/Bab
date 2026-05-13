@@ -32,6 +32,7 @@ from app.modules.providers.schemas import (
     ProviderKeyResponse,
     ProviderModelResponse,
     ProviderResponse,
+    TestProviderCredentialResponse,
     UpdateProviderKeyRequest,
     UpdateProviderModelRequest,
     UpdateProviderRequest,
@@ -55,6 +56,14 @@ async def create_provider(
             base_url=str(payload.base_url).rstrip("/"),
             api_key_encrypted=encrypt(payload.api_key) if payload.api_key is not None else None,
             adapter_type=OPENAI_COMPAT_ADAPTER,
+            description=payload.description,
+            capabilities=payload.capabilities or _default_capabilities(),
+            request_timeout_seconds=payload.request_timeout_seconds,
+            max_body_bytes=payload.max_body_bytes,
+            retry_policy=payload.retry_policy,
+            fallback_policy=payload.fallback_policy,
+            circuit_breaker_policy=payload.circuit_breaker_policy,
+            max_concurrent_requests=payload.max_concurrent_requests,
             db=db,
         )
         await audit_facade.record_event(
@@ -101,6 +110,7 @@ async def create_provider_key(
             name=payload.name,
             key_prefix=_key_prefix(api_key),
             api_key_encrypted=encrypt(api_key),
+            routing_policy=payload.routing_policy,
             priority=payload.priority,
             db=db,
         )
@@ -173,6 +183,10 @@ async def update_provider_key(
             api_key = _normalize_api_key(payload.api_key)
             provider_key.key_prefix = _key_prefix(api_key)
             provider_key.api_key_encrypted = encrypt(api_key)
+            provider_key.health_status = "unchecked"
+            provider_key.last_validation_error = None
+        if payload.routing_policy is not None:
+            provider_key.routing_policy = payload.routing_policy
         if payload.priority is not None:
             provider_key.priority = payload.priority
         if payload.is_active is not None:
@@ -204,6 +218,62 @@ async def update_provider_key(
             )
 
     return ProviderKeyResponse.model_validate(provider_key)
+
+
+async def test_provider_credential(
+    *,
+    provider_id: UUID,
+    provider_key_id: UUID,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+    http_client: httpx.AsyncClient,
+) -> TestProviderCredentialResponse:
+    async with transaction(db):
+        provider = await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
+        provider_key = await _get_provider_key_or_raise(
+            provider_id=provider_id,
+            provider_key_id=provider_key_id,
+            scope=scope,
+            db=db,
+        )
+        try:
+            adapter = default_adapter_registry.get(provider.adapter_type)
+            await adapter.list_models(
+                provider=AdapterProvider(
+                    base_url=provider.base_url,
+                    api_key=decrypt(provider_key.api_key_encrypted),
+                ),
+                http_client=http_client,
+            )
+            provider_key.health_status = "valid"
+            provider_key.last_validation_error = None
+            provider_key.last_successful_request_at = repository.datetime_now()
+            health_status = "valid"
+            error = None
+        except Exception as exc:  # noqa: BLE001 - persisted as upstream credential health.
+            provider_key.health_status = "invalid"
+            provider_key.last_validation_error = str(exc)
+            health_status = "invalid"
+            error = str(exc)
+        await db.flush()
+        await audit_facade.record_event(
+            RecordAuditEvent(
+                org_id=scope.org_id,
+                actor_user_id=actor.id,
+                event="provider_credential.tested",
+                target_type="provider_credential",
+                target_id=provider_key.id,
+                event_metadata={"provider_id": str(provider_id), "health_status": health_status},
+            ),
+            db,
+        )
+
+    return TestProviderCredentialResponse(
+        id=provider_key.id,
+        health_status=health_status,
+        last_validation_error=error,
+    )
 
 
 async def deactivate_provider_key(
@@ -252,6 +322,14 @@ async def create_provider_model(
             provider_id=provider_id,
             provider_model_name=payload.provider_model_name,
             alias=payload.alias,
+            version=payload.version,
+            modality=payload.modality,
+            capabilities=payload.capabilities,
+            context_window=payload.context_window,
+            input_price_per_million_tokens=payload.input_price_per_million_tokens,
+            output_price_per_million_tokens=payload.output_price_per_million_tokens,
+            cached_input_price_per_million_tokens=payload.cached_input_price_per_million_tokens,
+            rate_limit_hints=payload.rate_limit_hints,
             db=db,
         )
         await audit_facade.record_event(
@@ -314,6 +392,7 @@ async def sync_provider_models(
                     provider_id=provider_id,
                     provider_model_name=model_name,
                     alias=None,
+                    capabilities=_default_model_capabilities(),
                     db=db,
                 )
             else:
@@ -396,6 +475,24 @@ async def update_provider_model(
             provider_model.provider_model_name = payload.provider_model_name
         if "alias" in payload.model_fields_set:
             provider_model.alias = payload.alias
+        if "version" in payload.model_fields_set:
+            provider_model.version = payload.version
+        if payload.modality is not None:
+            provider_model.modality = payload.modality
+        if payload.capabilities is not None:
+            provider_model.capabilities = payload.capabilities
+        if "context_window" in payload.model_fields_set:
+            provider_model.context_window = payload.context_window
+        if "input_price_per_million_tokens" in payload.model_fields_set:
+            provider_model.input_price_per_million_tokens = payload.input_price_per_million_tokens
+        if "output_price_per_million_tokens" in payload.model_fields_set:
+            provider_model.output_price_per_million_tokens = payload.output_price_per_million_tokens
+        if "cached_input_price_per_million_tokens" in payload.model_fields_set:
+            provider_model.cached_input_price_per_million_tokens = (
+                payload.cached_input_price_per_million_tokens
+            )
+        if payload.rate_limit_hints is not None:
+            provider_model.rate_limit_hints = payload.rate_limit_hints
         if payload.is_active is not None:
             provider_model.is_active = payload.is_active
 
@@ -464,6 +561,22 @@ async def update_provider(
             provider.slug = _slugify(payload.slug)
         if payload.base_url is not None:
             provider.base_url = str(payload.base_url).rstrip("/")
+        if "description" in payload.model_fields_set:
+            provider.description = payload.description
+        if payload.capabilities is not None:
+            provider.capabilities = payload.capabilities
+        if payload.request_timeout_seconds is not None:
+            provider.request_timeout_seconds = payload.request_timeout_seconds
+        if "max_body_bytes" in payload.model_fields_set:
+            provider.max_body_bytes = payload.max_body_bytes
+        if payload.retry_policy is not None:
+            provider.retry_policy = payload.retry_policy
+        if payload.fallback_policy is not None:
+            provider.fallback_policy = payload.fallback_policy
+        if payload.circuit_breaker_policy is not None:
+            provider.circuit_breaker_policy = payload.circuit_breaker_policy
+        if "max_concurrent_requests" in payload.model_fields_set:
+            provider.max_concurrent_requests = payload.max_concurrent_requests
         if payload.is_active is not None:
             provider.is_active = payload.is_active
         if payload.api_key is not None:
@@ -668,3 +781,18 @@ def _normalize_api_key(api_key: str) -> str:
 def _slugify(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.strip().lower()).strip("-")
     return slug or "provider"
+
+
+def _default_capabilities() -> dict[str, bool]:
+    return {
+        "chat": True,
+        "embeddings": False,
+        "vision": False,
+        "tools": False,
+        "json_mode": False,
+        "streaming": True,
+    }
+
+
+def _default_model_capabilities() -> dict[str, bool]:
+    return {"chat": True}

@@ -96,7 +96,7 @@ class SubscriptionProviderKey(Base):
         index=True,
     )
     provider_key_id: Mapped[UUID] = mapped_column(
-        ForeignKey("provider_keys.id", ondelete="CASCADE"),
+        ForeignKey("provider_credentials.id", ondelete="CASCADE"),
         index=True,
     )
     priority: Mapped[int] = mapped_column(Integer, default=100)
@@ -126,7 +126,7 @@ class SubscriptionModelAccess(Base):
         index=True,
     )
     provider_model_id: Mapped[UUID] = mapped_column(
-        ForeignKey("provider_models.id", ondelete="CASCADE"),
+        ForeignKey("model_offerings.id", ondelete="CASCADE"),
         index=True,
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

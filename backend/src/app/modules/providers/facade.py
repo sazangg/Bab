@@ -16,6 +16,7 @@ from app.modules.providers.schemas import (
     ProviderKeyResponse,
     ProviderModelResponse,
     ProviderResponse,
+    TestProviderCredentialResponse,
     UpdateProviderKeyRequest,
     UpdateProviderModelRequest,
     UpdateProviderRequest,
@@ -91,6 +92,25 @@ async def update_provider_key(
         actor=actor,
         scope=scope,
         db=db,
+    )
+
+
+async def test_provider_credential(
+    *,
+    provider_id: UUID,
+    provider_key_id: UUID,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+    http_client: httpx.AsyncClient,
+) -> TestProviderCredentialResponse:
+    return await service.test_provider_credential(
+        provider_id=provider_id,
+        provider_key_id=provider_key_id,
+        actor=actor,
+        scope=scope,
+        db=db,
+        http_client=http_client,
     )
 
 

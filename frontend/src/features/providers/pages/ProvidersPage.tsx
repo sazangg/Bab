@@ -12,7 +12,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useForm, useWatch } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { Link } from "react-router-dom";
 import { z } from "zod";
 
@@ -37,14 +37,7 @@ import type {
   ProviderKeyResponse,
   ProviderModelResponse,
   ProviderResponse,
-  SubscriptionProviderKeyResponse,
-  SubscriptionResponse,
 } from "@/shared/api/generated/schemas";
-import {
-  useAttachProviderKeyToSubscriptionApiV1SubscriptionsSubscriptionIdProviderKeysPost,
-  useCreateSubscriptionApiV1SubscriptionsPost,
-  useListSubscriptionProviderKeysApiV1SubscriptionsSubscriptionIdProviderKeysGet,
-} from "@/shared/api/generated/subscriptions/subscriptions";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -63,13 +56,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Sheet,
   SheetClose,
@@ -91,7 +77,6 @@ import {
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
-import { Textarea } from "@/components/ui/textarea";
 
 const createSchema = z.object({
   name: z.string().min(1).max(255),
@@ -123,21 +108,6 @@ const providerModelSchema = z.object({
 });
 
 type ProviderModelValues = z.infer<typeof providerModelSchema>;
-
-const subscriptionSchema = z.object({
-  name: z.string().min(1).max(255),
-  description: z.string().optional(),
-});
-
-type SubscriptionValues = z.infer<typeof subscriptionSchema>;
-
-const subscriptionProviderKeySchema = z.object({
-  provider_id: z.string().min(1, "Pick a provider"),
-  provider_key_id: z.string().min(1, "Pick a provider key"),
-  priority: z.number().int().min(0),
-});
-
-type SubscriptionProviderKeyValues = z.infer<typeof subscriptionProviderKeySchema>;
 
 type EditValues = z.infer<typeof editSchema>;
 
@@ -190,10 +160,6 @@ function formatDateTime(value: string) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
-}
-
-function shortId(value: string) {
-  return value.slice(0, 8);
 }
 
 export function ProvidersPage() {
@@ -551,12 +517,6 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
 
   return (
     <>
-      <div className="space-y-1">
-        <h2 className="text-base font-semibold">{provider.name} resources</h2>
-        <p className="text-sm text-muted-foreground">
-          Manage provider API keys and the models available through subscriptions.
-        </p>
-      </div>
       <div className="space-y-6 overflow-y-auto pb-6">
           <section className="space-y-3">
             <div className="flex items-center justify-between">
@@ -723,10 +683,10 @@ function ResourceKeyTable({
             <TableHead>Name</TableHead>
             <TableHead>Prefix</TableHead>
             <TableHead>Priority</TableHead>
+            <TableHead>Health</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Created</TableHead>
-            <TableHead>Created by</TableHead>
-            <TableHead>Last used</TableHead>
+            <TableHead>Last success</TableHead>
             <TableHead className="w-[1%]" />
           </TableRow>
         </TableHeader>
@@ -742,6 +702,19 @@ function ResourceKeyTable({
               <TableCell className="font-mono text-xs">{key.key_prefix}</TableCell>
               <TableCell>{key.priority}</TableCell>
               <TableCell>
+                <StatusBadge
+                  variant={
+                    key.health_status === "valid"
+                      ? "active"
+                      : key.health_status === "unchecked"
+                        ? "inactive"
+                        : "error"
+                  }
+                >
+                  {key.health_status}
+                </StatusBadge>
+              </TableCell>
+              <TableCell>
                 <StatusBadge variant={key.is_active ? "active" : "inactive"}>
                   {key.is_active ? "Active" : "Disabled"}
                 </StatusBadge>
@@ -750,10 +723,9 @@ function ResourceKeyTable({
                 {formatDateTime(key.created_at)}
               </TableCell>
               <TableCell className="font-mono text-xs text-muted-foreground">
-                {key.created_by ? shortId(key.created_by) : "Unknown"}
-              </TableCell>
-              <TableCell className="text-xs text-muted-foreground">
-                {key.last_used_at ? formatDateTime(key.last_used_at) : "Never"}
+                {key.last_successful_request_at
+                  ? formatDateTime(key.last_successful_request_at)
+                  : "Never"}
               </TableCell>
               <TableCell className="flex justify-end gap-1">
                 <Button size="icon-sm" variant="ghost" onClick={() => setEditKey(key)}>
@@ -1125,246 +1097,6 @@ function ResourceModelTable({
   );
 }
 
-export function SubscriptionsPanel({
-  providers,
-  subscriptions,
-}: {
-  providers: ProviderResponse[];
-  subscriptions: SubscriptionResponse[];
-}) {
-  const queryClient = useQueryClient();
-  const form = useForm<SubscriptionValues>({
-    resolver: zodResolver(subscriptionSchema),
-    defaultValues: { name: "", description: "" },
-  });
-  const createSubscription = useCreateSubscriptionApiV1SubscriptionsPost({
-    mutation: {
-      onSuccess: async () => {
-        form.reset({ name: "", description: "" });
-        await queryClient.invalidateQueries();
-      },
-    },
-  });
-
-  return (
-    <section className="mt-6 space-y-4">
-      <div>
-        <h2 className="text-base font-semibold">Subscriptions</h2>
-        <p className="text-sm text-muted-foreground">
-          Bundle provider keys, then attach subscriptions to projects.
-        </p>
-      </div>
-      <div className="grid gap-4 lg:grid-cols-[340px_1fr]">
-        <form
-          className="space-y-4 rounded-lg border p-4"
-          onSubmit={form.handleSubmit((values) =>
-            createSubscription.mutate({
-              data: {
-                name: values.name,
-                description: values.description || null,
-              },
-            }),
-          )}
-        >
-          <div className="space-y-1.5">
-            <Label htmlFor="subscription-name">Name</Label>
-            <Input id="subscription-name" {...form.register("name")} />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="subscription-description">Description</Label>
-            <Textarea
-              id="subscription-description"
-              rows={3}
-              {...form.register("description")}
-            />
-          </div>
-          <Button type="submit" disabled={createSubscription.isPending}>
-            <Plus />
-            {createSubscription.isPending ? "Creating..." : "Create subscription"}
-          </Button>
-        </form>
-
-        <div className="space-y-3">
-          {subscriptions.length === 0 ? (
-            <div className="rounded-lg border p-4 text-sm text-muted-foreground">
-              No subscriptions yet.
-            </div>
-          ) : (
-            subscriptions.map((subscription) => (
-              <SubscriptionRow
-                key={subscription.id}
-                subscription={subscription}
-                providers={providers}
-              />
-            ))
-          )}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function SubscriptionRow({
-  subscription,
-  providers,
-}: {
-  subscription: SubscriptionResponse;
-  providers: ProviderResponse[];
-}) {
-  const queryClient = useQueryClient();
-  const form = useForm<SubscriptionProviderKeyValues>({
-    resolver: zodResolver(subscriptionProviderKeySchema),
-    defaultValues: { provider_id: "", provider_key_id: "", priority: 100 },
-  });
-  const selectedProviderId = useWatch({ control: form.control, name: "provider_id" });
-  const selectedProviderKeyId = useWatch({ control: form.control, name: "provider_key_id" });
-  const keysQuery = useListProviderKeysApiV1ProvidersProviderIdKeysGet(selectedProviderId, {
-    query: { enabled: Boolean(selectedProviderId) },
-  });
-  const attachmentsQuery =
-    useListSubscriptionProviderKeysApiV1SubscriptionsSubscriptionIdProviderKeysGet(
-      subscription.id,
-    );
-  const attachProviderKey =
-    useAttachProviderKeyToSubscriptionApiV1SubscriptionsSubscriptionIdProviderKeysPost({
-      mutation: {
-        onSuccess: async () => {
-          form.reset({ provider_id: "", provider_key_id: "", priority: 100 });
-          await queryClient.invalidateQueries();
-        },
-      },
-    });
-  const providerKeys = keysQuery.data?.status === 200 ? keysQuery.data.data : [];
-  const attachments =
-    attachmentsQuery.data?.status === 200 ? attachmentsQuery.data.data : [];
-  const activeProviders = providers.filter((provider) => provider.is_active);
-
-  return (
-    <div className="space-y-3 rounded-lg border p-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h3 className="font-medium">{subscription.name}</h3>
-          {subscription.description ? (
-            <p className="text-sm text-muted-foreground">{subscription.description}</p>
-          ) : null}
-        </div>
-        <StatusBadge variant={subscription.is_active ? "active" : "inactive"}>
-          {subscription.is_active ? "Active" : "Disabled"}
-        </StatusBadge>
-      </div>
-
-      <form
-        className="grid gap-2 md:grid-cols-[1fr_1fr_90px_auto]"
-        onSubmit={form.handleSubmit((values) =>
-          attachProviderKey.mutate({
-            subscriptionId: subscription.id,
-            data: {
-              provider_key_id: values.provider_key_id,
-              priority: values.priority,
-            },
-          }),
-        )}
-      >
-        <Select
-          value={selectedProviderId}
-          onValueChange={(value) => {
-            form.setValue("provider_id", value);
-            form.setValue("provider_key_id", "");
-          }}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Provider" />
-          </SelectTrigger>
-          <SelectContent>
-            {activeProviders.map((provider) => (
-              <SelectItem key={provider.id} value={provider.id}>
-                {provider.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={selectedProviderKeyId}
-          onValueChange={(value) => form.setValue("provider_key_id", value)}
-          disabled={!selectedProviderId}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Provider key" />
-          </SelectTrigger>
-          <SelectContent>
-            {providerKeys
-              .filter((key) => key.is_active)
-              .map((key) => (
-                <SelectItem key={key.id} value={key.id}>
-                  {key.name}
-                </SelectItem>
-              ))}
-          </SelectContent>
-        </Select>
-        <Input
-          type="number"
-          aria-label="Priority"
-          {...form.register("priority", { valueAsNumber: true })}
-        />
-        <Button type="submit" disabled={attachProviderKey.isPending}>
-          <Plus />
-          Attach
-        </Button>
-      </form>
-
-      <SubscriptionProviderKeysTable attachments={attachments} providerKeys={providerKeys} />
-      <p className="text-xs text-muted-foreground">
-        By default, a subscription exposes all active models for attached provider keys. Model
-        narrowing remains available through the API.
-      </p>
-    </div>
-  );
-}
-
-function SubscriptionProviderKeysTable({
-  attachments,
-  providerKeys,
-}: {
-  attachments: SubscriptionProviderKeyResponse[];
-  providerKeys: ProviderKeyResponse[];
-}) {
-  if (attachments.length === 0) {
-    return <p className="text-sm text-muted-foreground">No provider keys attached.</p>;
-  }
-
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Provider key</TableHead>
-          <TableHead>Priority</TableHead>
-          <TableHead>Status</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {attachments.map((attachment) => {
-          const providerKey = providerKeys.find(
-            (key) => key.id === attachment.provider_key_id,
-          );
-          return (
-            <TableRow key={attachment.id}>
-              <TableCell className="font-medium">
-                {providerKey?.name ?? attachment.provider_key_id}
-              </TableCell>
-              <TableCell>{attachment.priority}</TableCell>
-              <TableCell>
-                <StatusBadge variant={attachment.is_active ? "active" : "inactive"}>
-                  {attachment.is_active ? "Active" : "Disabled"}
-                </StatusBadge>
-              </TableCell>
-            </TableRow>
-          );
-        })}
-      </TableBody>
-    </Table>
-  );
-}
-
 function AddProviderKeyDialog({
   entry,
   onClose,
@@ -1639,3 +1371,4 @@ function EditProviderSheet({
     </Sheet>
   );
 }
+

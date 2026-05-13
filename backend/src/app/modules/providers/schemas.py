@@ -11,6 +11,14 @@ class CreateProviderRequest(BaseModel):
     slug: str | None = Field(default=None, min_length=1, max_length=100)
     base_url: HttpUrl
     api_key: str | None = Field(default=None, min_length=1)
+    description: str | None = Field(default=None, max_length=1000)
+    capabilities: dict[str, bool] = Field(default_factory=dict)
+    request_timeout_seconds: int = Field(default=30, ge=1, le=300)
+    max_body_bytes: int | None = Field(default=None, ge=1)
+    retry_policy: dict[str, Any] = Field(default_factory=dict)
+    fallback_policy: dict[str, Any] = Field(default_factory=dict)
+    circuit_breaker_policy: dict[str, Any] = Field(default_factory=dict)
+    max_concurrent_requests: int | None = Field(default=None, ge=1)
 
 
 class UpdateProviderRequest(BaseModel):
@@ -18,23 +26,33 @@ class UpdateProviderRequest(BaseModel):
     slug: str | None = Field(default=None, min_length=1, max_length=100)
     base_url: HttpUrl | None = None
     api_key: str | None = Field(default=None, min_length=1)
+    description: str | None = Field(default=None, max_length=1000)
+    capabilities: dict[str, bool] | None = None
+    request_timeout_seconds: int | None = Field(default=None, ge=1, le=300)
+    max_body_bytes: int | None = Field(default=None, ge=1)
+    retry_policy: dict[str, Any] | None = None
+    fallback_policy: dict[str, Any] | None = None
+    circuit_breaker_policy: dict[str, Any] | None = None
+    max_concurrent_requests: int | None = Field(default=None, ge=1)
     is_active: bool | None = None
 
 
-class CreateProviderKeyRequest(BaseModel):
+class CreateProviderCredentialRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     api_key: str = Field(min_length=1)
+    routing_policy: str = Field(default="priority", max_length=100)
     priority: int = Field(default=100, ge=0)
 
 
-class UpdateProviderKeyRequest(BaseModel):
+class UpdateProviderCredentialRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     api_key: str | None = Field(default=None, min_length=1)
+    routing_policy: str | None = Field(default=None, max_length=100)
     priority: int | None = Field(default=None, ge=0)
     is_active: bool | None = None
 
 
-class ProviderKeyResponse(BaseModel):
+class ProviderCredentialResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -43,25 +61,51 @@ class ProviderKeyResponse(BaseModel):
     created_by: UUID | None
     name: str
     key_prefix: str
+    routing_policy: str
     priority: int
+    health_status: str
+    last_validation_error: str | None
+    last_successful_request_at: datetime | None
     is_active: bool
     last_used_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
 
-class CreateProviderModelRequest(BaseModel):
+class TestProviderCredentialResponse(BaseModel):
+    id: UUID
+    health_status: str
+    last_validation_error: str | None = None
+
+
+class CreateModelOfferingRequest(BaseModel):
     provider_model_name: str = Field(min_length=1, max_length=255)
     alias: str | None = Field(default=None, min_length=1, max_length=255)
+    version: str | None = Field(default=None, max_length=100)
+    modality: str = Field(default="text", max_length=100)
+    capabilities: dict[str, bool] = Field(default_factory=dict)
+    context_window: int | None = Field(default=None, ge=1)
+    input_price_per_million_tokens: int | None = Field(default=None, ge=0)
+    output_price_per_million_tokens: int | None = Field(default=None, ge=0)
+    cached_input_price_per_million_tokens: int | None = Field(default=None, ge=0)
+    rate_limit_hints: dict[str, Any] = Field(default_factory=dict)
 
 
-class UpdateProviderModelRequest(BaseModel):
+class UpdateModelOfferingRequest(BaseModel):
     provider_model_name: str | None = Field(default=None, min_length=1, max_length=255)
     alias: str | None = Field(default=None, min_length=1, max_length=255)
+    version: str | None = Field(default=None, max_length=100)
+    modality: str | None = Field(default=None, max_length=100)
+    capabilities: dict[str, bool] | None = None
+    context_window: int | None = Field(default=None, ge=1)
+    input_price_per_million_tokens: int | None = Field(default=None, ge=0)
+    output_price_per_million_tokens: int | None = Field(default=None, ge=0)
+    cached_input_price_per_million_tokens: int | None = Field(default=None, ge=0)
+    rate_limit_hints: dict[str, Any] | None = None
     is_active: bool | None = None
 
 
-class ProviderModelResponse(BaseModel):
+class ModelOfferingResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -69,6 +113,14 @@ class ProviderModelResponse(BaseModel):
     provider_id: UUID
     provider_model_name: str
     alias: str | None
+    version: str | None
+    modality: str
+    capabilities: dict[str, Any]
+    context_window: int | None
+    input_price_per_million_tokens: int | None
+    output_price_per_million_tokens: int | None
+    cached_input_price_per_million_tokens: int | None
+    rate_limit_hints: dict[str, Any]
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -83,9 +135,27 @@ class ProviderResponse(BaseModel):
     slug: str | None
     base_url: str
     adapter_type: str
+    display_name: str | None
+    description: str | None
+    capabilities: dict[str, Any]
+    supported_integration: str
+    request_timeout_seconds: int
+    max_body_bytes: int | None
+    retry_policy: dict[str, Any]
+    fallback_policy: dict[str, Any]
+    circuit_breaker_policy: dict[str, Any]
+    max_concurrent_requests: int | None
     is_active: bool
     created_at: datetime
     updated_at: datetime
+
+
+CreateProviderKeyRequest = CreateProviderCredentialRequest
+UpdateProviderKeyRequest = UpdateProviderCredentialRequest
+ProviderKeyResponse = ProviderCredentialResponse
+CreateProviderModelRequest = CreateModelOfferingRequest
+UpdateProviderModelRequest = UpdateModelOfferingRequest
+ProviderModelResponse = ModelOfferingResponse
 
 
 class ProviderChatCompletionRequest(BaseModel):

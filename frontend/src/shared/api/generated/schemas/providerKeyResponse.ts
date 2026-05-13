@@ -12,7 +12,11 @@ export interface ProviderKeyResponse {
   created_by: string | null;
   name: string;
   key_prefix: string;
+  routing_policy: string;
   priority: number;
+  health_status: string;
+  last_validation_error: string | null;
+  last_successful_request_at: string | null;
   is_active: boolean;
   last_used_at: string | null;
   created_at: string;

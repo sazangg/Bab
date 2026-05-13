@@ -21,6 +21,7 @@ from app.modules.providers.schemas import (
     ProviderKeyResponse,
     ProviderModelResponse,
     ProviderResponse,
+    TestProviderCredentialResponse,
     UpdateProviderKeyRequest,
     UpdateProviderModelRequest,
     UpdateProviderRequest,
@@ -103,6 +104,28 @@ async def update_provider_key(
             scope=scope,
             db=db,
         )
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="provider key not found") from exc
+
+
+@router.post("/{provider_id}/keys/{provider_key_id}/test")
+async def test_provider_credential(
+    provider_id: UUID,
+    provider_key_id: UUID,
+    actor: ProviderAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> TestProviderCredentialResponse:
+    try:
+        async with httpx.AsyncClient(timeout=30) as http_client:
+            return await facade.test_provider_credential(
+                provider_id=provider_id,
+                provider_key_id=provider_key_id,
+                actor=actor,
+                scope=scope,
+                db=db,
+                http_client=http_client,
+            )
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider key not found") from exc
 

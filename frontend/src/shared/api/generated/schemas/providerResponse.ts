@@ -12,6 +12,16 @@ export interface ProviderResponse {
   slug: string | null;
   base_url: string;
   adapter_type: string;
+  display_name: string | null;
+  description: string | null;
+  capabilities: { [key: string]: unknown };
+  supported_integration: string;
+  request_timeout_seconds: number;
+  max_body_bytes: number | null;
+  retry_policy: { [key: string]: unknown };
+  fallback_policy: { [key: string]: unknown };
+  circuit_breaker_policy: { [key: string]: unknown };
+  max_concurrent_requests: number | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
