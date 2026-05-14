@@ -200,7 +200,7 @@ async def list_model_offerings(
     org_id: UUID,
     provider_id: UUID,
     search: str | None,
-    modality: str | None,
+    modalities: list[str] | None,
     is_active: bool | None,
     limit: int,
     offset: int,
@@ -218,8 +218,22 @@ async def list_model_offerings(
                 func.lower(ModelOffering.alias).like(normalized_search),
             )
         )
-    if modality:
-        filters.append(ModelOffering.modality == modality)
+    if modalities:
+        modality_filters = []
+        for modality in modalities:
+            normalized_modality = modality.strip().lower()
+            if not normalized_modality:
+                continue
+            modality_filters.append(
+                or_(
+                    func.lower(ModelOffering.modality) == normalized_modality,
+                    func.lower(ModelOffering.modality).like(f"{normalized_modality}+%"),
+                    func.lower(ModelOffering.modality).like(f"%+{normalized_modality}+%"),
+                    func.lower(ModelOffering.modality).like(f"%+{normalized_modality}"),
+                )
+            )
+        if modality_filters:
+            filters.append(or_(*modality_filters))
     if is_active is not None:
         filters.append(ModelOffering.is_active == is_active)
 

@@ -14,7 +14,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { Link } from "react-router-dom";
 import { z } from "zod";
 
@@ -94,6 +94,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
@@ -121,12 +122,24 @@ const providerCredentialSchema = z.object({
 
 type ProviderCredentialValues = z.infer<typeof providerCredentialSchema>;
 
+const modelModalities = ["text", "text+vision", "embedding", "image", "audio"];
+const modelFilterModalities = ["text", "vision", "embedding", "image", "audio"];
+const modelCapabilityOptions = ["chat", "embeddings", "vision", "tools", "json_mode", "streaming"];
+
 const modelOfferingSchema = z.object({
   provider_model_name: z.string().min(1).max(255),
   alias: z.string().optional(),
+  version: z.string().optional(),
+  modality: z.string().min(1).max(100),
+  context_window: z.preprocess(
+    (value) => (value === "" || value === null || value === undefined ? undefined : Number(value)),
+    z.number().int().min(1).optional(),
+  ),
+  capabilities: z.array(z.string()).default([]),
 });
 
-type ModelOfferingValues = z.infer<typeof modelOfferingSchema>;
+type ModelOfferingFormInput = z.input<typeof modelOfferingSchema>;
+type ModelOfferingValues = z.output<typeof modelOfferingSchema>;
 
 type EditValues = z.infer<typeof editSchema>;
 
@@ -191,6 +204,14 @@ function formatCapability(value: unknown) {
   }
 
   return "Unknown";
+}
+
+function capabilityListToRecord(capabilities: string[]) {
+  return Object.fromEntries(modelCapabilityOptions.map((item) => [item, capabilities.includes(item)]));
+}
+
+function capabilityRecordToList(capabilities: ModelOfferingResponse["capabilities"]) {
+  return modelCapabilityOptions.filter((item) => capabilities?.[item] === true);
 }
 
 function sanitizeCredentialValidationMessage(value?: string | null) {
@@ -724,7 +745,7 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
                 <div className="flex items-center gap-2">
                   <Button size="sm" variant="outline" onClick={() => setCreateModelOpen(true)}>
                     <Plus />
-                    Add offering
+                    Add model
                   </Button>
                   <Button
                     size="sm"
@@ -767,11 +788,18 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
                   void setModelPageParam("1");
                 }}
                 onPageChange={(page) => void setModelPageParam(String(page))}
-                onAlias={(model, alias) =>
+                onUpdate={(model, values) =>
                   updateModel.mutate({
                     providerId,
                     modelOfferingId: model.id,
-                    data: { alias: alias || null },
+                    data: {
+                      provider_model_name: values.provider_model_name,
+                      alias: values.alias || null,
+                      version: values.version || null,
+                      modality: values.modality,
+                      context_window: values.context_window ?? null,
+                      capabilities: capabilityListToRecord(values.capabilities),
+                    },
                   })
                 }
                 onDeactivate={(model) =>
@@ -815,6 +843,10 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
             data: {
               provider_model_name: values.provider_model_name,
               ...(values.alias ? { alias: values.alias } : {}),
+              ...(values.version ? { version: values.version } : {}),
+              modality: values.modality,
+              context_window: values.context_window,
+              capabilities: capabilityListToRecord(values.capabilities),
             },
           })
         }
@@ -1211,22 +1243,40 @@ function CreateModelOfferingSheet({
   onSubmit: (values: ModelOfferingValues) => void;
   isPending: boolean;
 }) {
-  const form = useForm<ModelOfferingValues>({
+  const form = useForm<ModelOfferingFormInput, unknown, ModelOfferingValues>({
     resolver: zodResolver(modelOfferingSchema),
-    defaultValues: { provider_model_name: "", alias: "" },
+    defaultValues: {
+      provider_model_name: "",
+      alias: "",
+      version: "",
+      modality: "text",
+      context_window: undefined,
+      capabilities: ["chat", "streaming"],
+    },
   });
+  const modality = useWatch({ control: form.control, name: "modality" });
+  const capabilities = useWatch({ control: form.control, name: "capabilities" });
 
   useEffect(() => {
-    if (open) form.reset({ provider_model_name: "", alias: "" });
+    if (open) {
+      form.reset({
+        provider_model_name: "",
+        alias: "",
+        version: "",
+        modality: "text",
+        context_window: undefined,
+        capabilities: ["chat", "streaming"],
+      });
+    }
   }, [open, form]);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent>
         <SheetHeader>
-          <SheetTitle>Add model offering</SheetTitle>
+          <SheetTitle>Add model</SheetTitle>
           <SheetDescription>
-            Register a model name exposed by {providerName}. Alias is optional and provider-scoped.
+            Register a model exposed by {providerName}. Alias is optional and provider-scoped.
           </SheetDescription>
         </SheetHeader>
         <form className="grid gap-4 px-4" onSubmit={form.handleSubmit(onSubmit)}>
@@ -1246,6 +1296,60 @@ function CreateModelOfferingSheet({
               placeholder="fast"
               {...form.register("alias")}
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="detail-provider-model-version">Version</Label>
+            <Input
+              id="detail-provider-model-version"
+              placeholder="2025-08-07"
+              {...form.register("version")}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="detail-provider-model-modality">Modality</Label>
+            <Select
+              value={modality}
+              onValueChange={(value) => form.setValue("modality", value)}
+            >
+              <SelectTrigger id="detail-provider-model-modality">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {modelModalities.map((item) => (
+                    <SelectItem key={item} value={item}>
+                      {item}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="detail-provider-model-context">Context window</Label>
+            <Input
+              id="detail-provider-model-context"
+              type="number"
+              min={1}
+              placeholder="128000"
+              {...form.register("context_window")}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Capabilities</Label>
+            <ToggleGroup
+              type="multiple"
+              variant="outline"
+              value={capabilities ?? []}
+              onValueChange={(value) => form.setValue("capabilities", value)}
+              className="flex flex-wrap justify-start"
+            >
+              {modelCapabilityOptions.map((item) => (
+                <ToggleGroupItem key={item} value={item}>
+                  {item}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
           </div>
         </form>
         <SheetFooter>
@@ -1277,7 +1381,7 @@ function ResourceModelTable({
   onModalityChange,
   onStatusChange,
   onPageChange,
-  onAlias,
+  onUpdate,
   onDeactivate,
   onReactivate,
 }: {
@@ -1296,16 +1400,40 @@ function ResourceModelTable({
   onModalityChange: (value: string) => void;
   onStatusChange: (value: string) => void;
   onPageChange: (page: number) => void;
-  onAlias: (model: ModelOfferingResponse, alias: string) => void;
+  onUpdate: (model: ModelOfferingResponse, values: ModelOfferingValues) => void;
   onDeactivate: (model: ModelOfferingResponse) => void;
   onReactivate: (model: ModelOfferingResponse) => void;
 }) {
   const [editModel, setEditModel] = useState<ModelOfferingResponse | null>(null);
-  const [alias, setAlias] = useState("");
-  const modalities = ["text", "chat", "embedding", "image", "audio", "multimodal"];
+  const editForm = useForm<ModelOfferingFormInput, unknown, ModelOfferingValues>({
+    resolver: zodResolver(modelOfferingSchema),
+    defaultValues: {
+      provider_model_name: "",
+      alias: "",
+      version: "",
+      modality: "text",
+      context_window: undefined,
+      capabilities: [],
+    },
+  });
+  const editModality = useWatch({ control: editForm.control, name: "modality" });
+  const editCapabilities = useWatch({ control: editForm.control, name: "capabilities" });
+  const selectedModalities = modality === "all" ? [] : modality.split(",").filter(Boolean);
   const pageCount = Math.max(Math.ceil(total / limit), 1);
   const safePage = Math.min(page, pageCount);
   const hasFilters = Boolean(search.trim()) || modality !== "all" || status !== "all";
+
+  useEffect(() => {
+    if (!editModel) return;
+    editForm.reset({
+      provider_model_name: editModel.provider_model_name,
+      alias: editModel.alias ?? "",
+      version: editModel.version ?? "",
+      modality: editModel.modality,
+      context_window: editModel.context_window ?? undefined,
+      capabilities: capabilityRecordToList(editModel.capabilities),
+    });
+  }, [editModel, editForm]);
 
   return (
     <>
@@ -1316,21 +1444,30 @@ function ResourceModelTable({
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder="Search models or aliases..."
           />
-          <Select value={modality} onValueChange={onModalityChange}>
-            <SelectTrigger>
-              <SelectValue placeholder="Filter by modality" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value="all">All modalities</SelectItem>
-                {modalities.map((item) => (
-                  <SelectItem key={item} value={item}>
-                    {item}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+          <div className="flex flex-wrap gap-1">
+            <Button
+              size="sm"
+              variant={selectedModalities.length === 0 ? "default" : "outline"}
+              onClick={() => onModalityChange("all")}
+            >
+              All modalities
+            </Button>
+            {modelFilterModalities.map((item) => {
+              const next = selectedModalities.includes(item)
+                ? selectedModalities.filter((value) => value !== item)
+                : [...selectedModalities, item];
+              return (
+                <Button
+                  key={item}
+                  size="sm"
+                  variant={selectedModalities.includes(item) ? "default" : "outline"}
+                  onClick={() => onModalityChange(next.length ? next.join(",") : "all")}
+                >
+                  {item}
+                </Button>
+              );
+            })}
+          </div>
           <Select value={status} onValueChange={onStatusChange}>
             <SelectTrigger>
               <SelectValue placeholder="Filter by status" />
@@ -1352,17 +1489,17 @@ function ResourceModelTable({
         ) : null}
         {isError ? (
           <p className="rounded-lg border py-8 text-center text-sm text-destructive">
-            Model offerings could not be loaded.
+            Models could not be loaded.
           </p>
         ) : null}
         {!isLoading && !isError && total === 0 && !hasFilters ? (
           <p className="rounded-lg border py-8 text-center text-sm text-muted-foreground">
-            No model offerings added yet.
+            No models added yet.
           </p>
         ) : null}
         {!isLoading && !isError && total === 0 && hasFilters ? (
           <p className="rounded-lg border py-8 text-center text-sm text-muted-foreground">
-            No model offerings match these filters.
+            No models match these filters.
           </p>
         ) : null}
 
@@ -1401,10 +1538,9 @@ function ResourceModelTable({
                     variant="ghost"
                     onClick={() => {
                       setEditModel(model);
-                      setAlias(model.alias ?? "");
                     }}
-                    title="Edit alias"
-                    aria-label="Edit alias"
+                    title="Edit model"
+                    aria-label="Edit model"
                   >
                     <Pencil />
                   </Button>
@@ -1414,8 +1550,8 @@ function ResourceModelTable({
                       variant="ghost"
                       disabled={!providerId}
                       onClick={() => onDeactivate(model)}
-                      title="Disable model offering"
-                      aria-label="Disable model offering"
+                      title="Disable model"
+                      aria-label="Disable model"
                     >
                       <Trash2 />
                     </Button>
@@ -1425,8 +1561,8 @@ function ResourceModelTable({
                       variant="ghost"
                       disabled={!providerId}
                       onClick={() => onReactivate(model)}
-                      title="Reactivate model offering"
-                      aria-label="Reactivate model offering"
+                      title="Reactivate model"
+                      aria-label="Reactivate model"
                     >
                       <RotateCcw />
                     </Button>
@@ -1467,17 +1603,82 @@ function ResourceModelTable({
       <Dialog open={Boolean(editModel)} onOpenChange={(open) => !open && setEditModel(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit alias</DialogTitle>
-            <DialogDescription>Aliases are unique only within this provider.</DialogDescription>
+            <DialogTitle>Edit model</DialogTitle>
+            <DialogDescription>
+              Update the model metadata Bab uses for display, filtering, and routing decisions.
+            </DialogDescription>
           </DialogHeader>
-          <Input value={alias} onChange={(event) => setAlias(event.target.value)} />
+          <form className="grid gap-4" onSubmit={editForm.handleSubmit((values) => {
+            if (editModel) onUpdate(editModel, values);
+            setEditModel(null);
+          })}>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-provider-model-name">Provider model name</Label>
+              <Input id="edit-provider-model-name" {...editForm.register("provider_model_name")} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-provider-model-alias">Alias</Label>
+              <Input id="edit-provider-model-alias" {...editForm.register("alias")} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-provider-model-version">Version</Label>
+              <Input id="edit-provider-model-version" {...editForm.register("version")} />
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-provider-model-modality">Modality</Label>
+                <Select
+                  value={editModality}
+                  onValueChange={(value) => editForm.setValue("modality", value)}
+                >
+                  <SelectTrigger id="edit-provider-model-modality">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {modelModalities.map((item) => (
+                        <SelectItem key={item} value={item}>
+                          {item}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-provider-model-context">Context window</Label>
+                <Input
+                  id="edit-provider-model-context"
+                  type="number"
+                  min={1}
+                  {...editForm.register("context_window")}
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Capabilities</Label>
+              <ToggleGroup
+                type="multiple"
+                variant="outline"
+                value={editCapabilities ?? []}
+                onValueChange={(value) => editForm.setValue("capabilities", value)}
+                className="flex flex-wrap justify-start"
+              >
+                {modelCapabilityOptions.map((item) => (
+                  <ToggleGroupItem key={item} value={item}>
+                    {item}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </div>
+          </form>
           <DialogFooter>
             <Button
               disabled={!editModel}
-              onClick={() => {
-                if (editModel) onAlias(editModel, alias);
+              onClick={editForm.handleSubmit((values) => {
+                if (editModel) onUpdate(editModel, values);
                 setEditModel(null);
-              }}
+              })}
             >
               Save
             </Button>

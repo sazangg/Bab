@@ -174,7 +174,7 @@ async def list_model_offerings(
     db: DatabaseSession,
     _: CurrentUser,
     search: str | None = Query(default=None, min_length=1, max_length=255),
-    modality: str | None = Query(default=None, min_length=1, max_length=100),
+    modality: str | None = Query(default=None, min_length=1, max_length=255),
     is_active: bool | None = Query(default=None),
     limit: int = Query(default=24, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -183,7 +183,7 @@ async def list_model_offerings(
         return await facade.list_model_offerings(
             provider_id=provider_id,
             search=search,
-            modality=modality,
+            modalities=_parse_modalities(modality),
             is_active=is_active,
             limit=limit,
             offset=offset,
@@ -192,6 +192,13 @@ async def list_model_offerings(
         )
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc
+
+
+def _parse_modalities(value: str | None) -> list[str] | None:
+    if value is None:
+        return None
+    modalities = [item.strip() for item in value.split(",") if item.strip()]
+    return modalities or None
 
 
 @router.post("/{provider_id}/offerings", status_code=status.HTTP_201_CREATED)

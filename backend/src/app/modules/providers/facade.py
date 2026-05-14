@@ -174,7 +174,7 @@ async def list_model_offerings(
     *,
     provider_id: UUID,
     search: str | None,
-    modality: str | None,
+    modalities: list[str] | None,
     is_active: bool | None,
     limit: int,
     offset: int,
@@ -184,7 +184,7 @@ async def list_model_offerings(
     return await service.list_model_offerings(
         provider_id=provider_id,
         search=search,
-        modality=modality,
+        modalities=modalities,
         is_active=is_active,
         limit=limit,
         offset=offset,

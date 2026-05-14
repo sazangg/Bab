@@ -37,7 +37,7 @@ async def test_list_model_offerings_filters_and_paginates(db_session: AsyncSessi
                 provider_id=provider_id,
                 provider_model_name="gpt-5.4-mini",
                 alias="fast",
-                modality="text",
+                modality="text+vision",
                 is_active=True,
             ),
             ModelOffering(
@@ -72,7 +72,7 @@ async def test_list_model_offerings_filters_and_paginates(db_session: AsyncSessi
         org_id=org_id,
         provider_id=provider_id,
         search="gpt",
-        modality="text",
+        modalities=["text"],
         is_active=True,
         limit=1,
         offset=0,
@@ -81,3 +81,61 @@ async def test_list_model_offerings_filters_and_paginates(db_session: AsyncSessi
 
     assert total == 1
     assert [offering.provider_model_name for offering in offerings] == ["gpt-5.4-mini"]
+
+
+async def test_list_model_offerings_filters_multiple_modalities(db_session: AsyncSession):
+    org_id = uuid4()
+    provider_id = uuid4()
+    db_session.add(Organization(id=org_id, name="Default org", slug="default"))
+    db_session.add(
+        Provider(
+            id=provider_id,
+            org_id=org_id,
+            name="OpenAI",
+            slug="openai",
+            base_url="https://api.openai.com/v1",
+        )
+    )
+    db_session.add_all(
+        [
+            ModelOffering(
+                org_id=org_id,
+                provider_id=provider_id,
+                provider_model_name="text-vision-model",
+                modality="text+vision",
+                is_active=True,
+            ),
+            ModelOffering(
+                org_id=org_id,
+                provider_id=provider_id,
+                provider_model_name="embedding-model",
+                modality="embedding",
+                is_active=True,
+            ),
+            ModelOffering(
+                org_id=org_id,
+                provider_id=provider_id,
+                provider_model_name="audio-model",
+                modality="audio",
+                is_active=True,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    offerings, total = await repository.list_model_offerings(
+        org_id=org_id,
+        provider_id=provider_id,
+        search=None,
+        modalities=["text", "embedding"],
+        is_active=True,
+        limit=10,
+        offset=0,
+        db=db_session,
+    )
+
+    assert total == 2
+    assert [offering.provider_model_name for offering in offerings] == [
+        "embedding-model",
+        "text-vision-model",
+    ]
