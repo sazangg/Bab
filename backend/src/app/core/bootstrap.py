@@ -49,7 +49,12 @@ async def _sqlite_schema_is_stale(connection) -> bool:
     model_offerings = await connection.exec_driver_sql(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='model_offerings'"
     )
-    return model_offerings.first() is None
+    if model_offerings.first() is None:
+        return True
+
+    model_offering_columns = await connection.exec_driver_sql("PRAGMA table_info(model_offerings)")
+    model_offering_column_names = {row[1] for row in model_offering_columns}
+    return not {"input_modalities", "output_modalities"}.issubset(model_offering_column_names)
 
 
 async def ensure_default_workspace() -> None:
