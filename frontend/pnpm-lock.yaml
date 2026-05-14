@@ -10,6 +10,9 @@ importers:
       "@fontsource-variable/geist":
         specifier: ^5.2.8
         version: 5.2.8
+      "@fontsource/poppins":
+        specifier: ^5.2.7
+        version: 5.2.7
       "@hookform/resolvers":
         specifier: ^5.2.2
         version: 5.2.2(react-hook-form@7.75.0(react@19.2.6))
@@ -850,6 +853,12 @@ packages:
     resolution:
       {
         integrity: sha512-cJ6m9e+8MQ5dCYJsLylfZrgBh6KkG4bOLckB35Tr9J/EqdkEM6QllH5PxqP1dhTvFup+HtMRPuz9xOjxXJggxw==,
+      }
+
+  "@fontsource/poppins@5.2.7":
+    resolution:
+      {
+        integrity: sha512-6uQyPmseo4FgI97WIhA4yWRlNaoLk4vSDK/PyRwdqqZb5zAEuc+Kunt8JTMcsHYUEGYBtN15SNkMajMdqUSUmg==,
       }
 
   "@gerrit0/mini-shiki@3.23.0":
@@ -6782,6 +6791,8 @@ snapshots:
   "@floating-ui/utils@0.2.11": {}
 
   "@fontsource-variable/geist@5.2.8": {}
+
+  "@fontsource/poppins@5.2.7": {}
 
   "@gerrit0/mini-shiki@3.23.0":
     dependencies:
