@@ -181,6 +181,18 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
+function formatCapability(value: unknown) {
+  if (value === true) {
+    return "Supported";
+  }
+
+  if (value === false) {
+    return "Not declared";
+  }
+
+  return "Unknown";
+}
+
 function sanitizeCredentialValidationMessage(value?: string | null) {
   if (!value) return null;
   if (value.includes("401")) {
@@ -1375,12 +1387,12 @@ function ResourceModelTable({
                   <ModelFact label="Modality" value={model.modality} />
                   <ModelFact
                     label="Context"
-                    value={model.context_window ? model.context_window.toLocaleString() : "—"}
+                    value={model.context_window ? model.context_window.toLocaleString() : "Unknown"}
                   />
-                  <ModelFact label="Version" value={model.version ?? "Unversioned"} />
+                  <ModelFact label="Version" value={model.version ?? "Unknown"} />
                   <ModelFact
                     label="Streaming"
-                    value={model.capabilities?.streaming ? "Supported" : "Unknown"}
+                    value={formatCapability(model.capabilities?.streaming)}
                   />
                 </div>
                 <div className="flex justify-end gap-1">
