@@ -127,15 +127,12 @@ async def test_list_model_offerings_filters_multiple_modalities(db_session: Asyn
         org_id=org_id,
         provider_id=provider_id,
         search=None,
-        modalities=["text", "embedding"],
+        modalities=["text", "vision"],
         is_active=True,
         limit=10,
         offset=0,
         db=db_session,
     )
 
-    assert total == 2
-    assert [offering.provider_model_name for offering in offerings] == [
-        "embedding-model",
-        "text-vision-model",
-    ]
+    assert total == 1
+    assert [offering.provider_model_name for offering in offerings] == ["text-vision-model"]

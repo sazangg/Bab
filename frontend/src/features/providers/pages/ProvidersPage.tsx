@@ -61,7 +61,10 @@ import {
 } from "@/components/ui/dialog";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -94,7 +97,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
@@ -122,15 +125,15 @@ const providerCredentialSchema = z.object({
 
 type ProviderCredentialValues = z.infer<typeof providerCredentialSchema>;
 
-const modelModalities = ["text", "text+vision", "embedding", "image", "audio"];
-const modelFilterModalities = ["text", "vision", "embedding", "image", "audio"];
+const modelModalities = ["text", "vision", "embedding", "image", "audio"];
 const modelCapabilityOptions = ["chat", "embeddings", "vision", "tools", "json_mode", "streaming"];
 
 const modelOfferingSchema = z.object({
   provider_model_name: z.string().min(1).max(255),
   alias: z.string().optional(),
   version: z.string().optional(),
-  modality: z.string().min(1).max(100),
+  input_modalities: z.array(z.string()).min(1),
+  output_modalities: z.array(z.string()).min(1),
   context_window: z.preprocess(
     (value) => (value === "" || value === null || value === undefined ? undefined : Number(value)),
     z.number().int().min(1).optional(),
@@ -212,6 +215,14 @@ function capabilityListToRecord(capabilities: string[]) {
 
 function capabilityRecordToList(capabilities: ModelOfferingResponse["capabilities"]) {
   return modelCapabilityOptions.filter((item) => capabilities?.[item] === true);
+}
+
+function combinedModality(inputModalities: string[], outputModalities: string[]) {
+  return Array.from(new Set([...inputModalities, ...outputModalities])).join("+") || "text";
+}
+
+function formatModalities(modalities: string[]) {
+  return modalities.length ? modalities.join(", ") : "Unknown";
 }
 
 function sanitizeCredentialValidationMessage(value?: string | null) {
@@ -796,7 +807,9 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
                       provider_model_name: values.provider_model_name,
                       alias: values.alias || null,
                       version: values.version || null,
-                      modality: values.modality,
+                      modality: combinedModality(values.input_modalities, values.output_modalities),
+                      input_modalities: values.input_modalities,
+                      output_modalities: values.output_modalities,
                       context_window: values.context_window ?? null,
                       capabilities: capabilityListToRecord(values.capabilities),
                     },
@@ -844,7 +857,9 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
               provider_model_name: values.provider_model_name,
               ...(values.alias ? { alias: values.alias } : {}),
               ...(values.version ? { version: values.version } : {}),
-              modality: values.modality,
+              modality: combinedModality(values.input_modalities, values.output_modalities),
+              input_modalities: values.input_modalities,
+              output_modalities: values.output_modalities,
               context_window: values.context_window,
               capabilities: capabilityListToRecord(values.capabilities),
             },
@@ -1249,12 +1264,14 @@ function CreateModelOfferingSheet({
       provider_model_name: "",
       alias: "",
       version: "",
-      modality: "text",
+      input_modalities: ["text"],
+      output_modalities: ["text"],
       context_window: undefined,
       capabilities: ["chat", "streaming"],
     },
   });
-  const modality = useWatch({ control: form.control, name: "modality" });
+  const inputModalities = useWatch({ control: form.control, name: "input_modalities" });
+  const outputModalities = useWatch({ control: form.control, name: "output_modalities" });
   const capabilities = useWatch({ control: form.control, name: "capabilities" });
 
   useEffect(() => {
@@ -1263,7 +1280,8 @@ function CreateModelOfferingSheet({
         provider_model_name: "",
         alias: "",
         version: "",
-        modality: "text",
+        input_modalities: ["text"],
+        output_modalities: ["text"],
         context_window: undefined,
         capabilities: ["chat", "streaming"],
       });
@@ -1305,26 +1323,16 @@ function CreateModelOfferingSheet({
               {...form.register("version")}
             />
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="detail-provider-model-modality">Modality</Label>
-            <Select
-              value={modality}
-              onValueChange={(value) => form.setValue("modality", value)}
-            >
-              <SelectTrigger id="detail-provider-model-modality">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {modelModalities.map((item) => (
-                    <SelectItem key={item} value={item}>
-                      {item}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
+          <ModalityCheckboxGroup
+            label="Input modalities"
+            values={inputModalities ?? []}
+            onChange={(values) => form.setValue("input_modalities", values)}
+          />
+          <ModalityCheckboxGroup
+            label="Output modalities"
+            values={outputModalities ?? []}
+            onChange={(values) => form.setValue("output_modalities", values)}
+          />
           <div className="space-y-1.5">
             <Label htmlFor="detail-provider-model-context">Context window</Label>
             <Input
@@ -1335,22 +1343,10 @@ function CreateModelOfferingSheet({
               {...form.register("context_window")}
             />
           </div>
-          <div className="space-y-1.5">
-            <Label>Capabilities</Label>
-            <ToggleGroup
-              type="multiple"
-              variant="outline"
-              value={capabilities ?? []}
-              onValueChange={(value) => form.setValue("capabilities", value)}
-              className="flex flex-wrap justify-start"
-            >
-              {modelCapabilityOptions.map((item) => (
-                <ToggleGroupItem key={item} value={item}>
-                  {item}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          </div>
+          <CapabilityCheckboxGroup
+            values={capabilities ?? []}
+            onChange={(values) => form.setValue("capabilities", values)}
+          />
         </form>
         <SheetFooter>
           <Button disabled={isPending} onClick={form.handleSubmit(onSubmit)}>
@@ -1411,12 +1407,14 @@ function ResourceModelTable({
       provider_model_name: "",
       alias: "",
       version: "",
-      modality: "text",
+      input_modalities: ["text"],
+      output_modalities: ["text"],
       context_window: undefined,
       capabilities: [],
     },
   });
-  const editModality = useWatch({ control: editForm.control, name: "modality" });
+  const editInputModalities = useWatch({ control: editForm.control, name: "input_modalities" });
+  const editOutputModalities = useWatch({ control: editForm.control, name: "output_modalities" });
   const editCapabilities = useWatch({ control: editForm.control, name: "capabilities" });
   const selectedModalities = modality === "all" ? [] : modality.split(",").filter(Boolean);
   const pageCount = Math.max(Math.ceil(total / limit), 1);
@@ -1429,7 +1427,10 @@ function ResourceModelTable({
       provider_model_name: editModel.provider_model_name,
       alias: editModel.alias ?? "",
       version: editModel.version ?? "",
-      modality: editModel.modality,
+      input_modalities: editModel.input_modalities?.length
+        ? editModel.input_modalities
+        : editModel.modality.split("+"),
+      output_modalities: editModel.output_modalities?.length ? editModel.output_modalities : ["text"],
       context_window: editModel.context_window ?? undefined,
       capabilities: capabilityRecordToList(editModel.capabilities),
     });
@@ -1444,30 +1445,39 @@ function ResourceModelTable({
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder="Search models or aliases..."
           />
-          <div className="flex flex-wrap gap-1">
-            <Button
-              size="sm"
-              variant={selectedModalities.length === 0 ? "default" : "outline"}
-              onClick={() => onModalityChange("all")}
-            >
-              All modalities
-            </Button>
-            {modelFilterModalities.map((item) => {
-              const next = selectedModalities.includes(item)
-                ? selectedModalities.filter((value) => value !== item)
-                : [...selectedModalities, item];
-              return (
-                <Button
-                  key={item}
-                  size="sm"
-                  variant={selectedModalities.includes(item) ? "default" : "outline"}
-                  onClick={() => onModalityChange(next.length ? next.join(",") : "all")}
-                >
-                  {item}
-                </Button>
-              );
-            })}
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline">
+                {selectedModalities.length
+                  ? `Modalities: ${selectedModalities.join(", ")}`
+                  : "All modalities"}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>Required modalities</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuCheckboxItem
+                checked={selectedModalities.length === 0}
+                onCheckedChange={() => onModalityChange("all")}
+              >
+                All modalities
+              </DropdownMenuCheckboxItem>
+              {modelModalities.map((item) => {
+                const next = selectedModalities.includes(item)
+                  ? selectedModalities.filter((value) => value !== item)
+                  : [...selectedModalities, item];
+                return (
+                  <DropdownMenuCheckboxItem
+                    key={item}
+                    checked={selectedModalities.includes(item)}
+                    onCheckedChange={() => onModalityChange(next.length ? next.join(",") : "all")}
+                  >
+                    {item}
+                  </DropdownMenuCheckboxItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Select value={status} onValueChange={onStatusChange}>
             <SelectTrigger>
               <SelectValue placeholder="Filter by status" />
@@ -1521,7 +1531,8 @@ function ResourceModelTable({
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
                 <div className="grid grid-cols-2 gap-3">
-                  <ModelFact label="Modality" value={model.modality} />
+                  <ModelFact label="Input" value={formatModalities(model.input_modalities)} />
+                  <ModelFact label="Output" value={formatModalities(model.output_modalities)} />
                   <ModelFact
                     label="Context"
                     value={model.context_window ? model.context_window.toLocaleString() : "Unknown"}
@@ -1600,15 +1611,15 @@ function ResourceModelTable({
           </div>
         ) : null}
       </div>
-      <Dialog open={Boolean(editModel)} onOpenChange={(open) => !open && setEditModel(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit model</DialogTitle>
-            <DialogDescription>
+      <Sheet open={Boolean(editModel)} onOpenChange={(open) => !open && setEditModel(null)}>
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>Edit model</SheetTitle>
+            <SheetDescription>
               Update the model metadata Bab uses for display, filtering, and routing decisions.
-            </DialogDescription>
-          </DialogHeader>
-          <form className="grid gap-4" onSubmit={editForm.handleSubmit((values) => {
+            </SheetDescription>
+          </SheetHeader>
+          <form className="grid gap-4 px-4" onSubmit={editForm.handleSubmit((values) => {
             if (editModel) onUpdate(editModel, values);
             setEditModel(null);
           })}>
@@ -1624,55 +1635,31 @@ function ResourceModelTable({
               <Label htmlFor="edit-provider-model-version">Version</Label>
               <Input id="edit-provider-model-version" {...editForm.register("version")} />
             </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="edit-provider-model-modality">Modality</Label>
-                <Select
-                  value={editModality}
-                  onValueChange={(value) => editForm.setValue("modality", value)}
-                >
-                  <SelectTrigger id="edit-provider-model-modality">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {modelModalities.map((item) => (
-                        <SelectItem key={item} value={item}>
-                          {item}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="edit-provider-model-context">Context window</Label>
-                <Input
-                  id="edit-provider-model-context"
-                  type="number"
-                  min={1}
-                  {...editForm.register("context_window")}
-                />
-              </div>
-            </div>
+            <ModalityCheckboxGroup
+              label="Input modalities"
+              values={editInputModalities ?? []}
+              onChange={(values) => editForm.setValue("input_modalities", values)}
+            />
+            <ModalityCheckboxGroup
+              label="Output modalities"
+              values={editOutputModalities ?? []}
+              onChange={(values) => editForm.setValue("output_modalities", values)}
+            />
             <div className="space-y-1.5">
-              <Label>Capabilities</Label>
-              <ToggleGroup
-                type="multiple"
-                variant="outline"
-                value={editCapabilities ?? []}
-                onValueChange={(value) => editForm.setValue("capabilities", value)}
-                className="flex flex-wrap justify-start"
-              >
-                {modelCapabilityOptions.map((item) => (
-                  <ToggleGroupItem key={item} value={item}>
-                    {item}
-                  </ToggleGroupItem>
-                ))}
-              </ToggleGroup>
+              <Label htmlFor="edit-provider-model-context">Context window</Label>
+              <Input
+                id="edit-provider-model-context"
+                type="number"
+                min={1}
+                {...editForm.register("context_window")}
+              />
             </div>
+            <CapabilityCheckboxGroup
+              values={editCapabilities ?? []}
+              onChange={(values) => editForm.setValue("capabilities", values)}
+            />
           </form>
-          <DialogFooter>
+          <SheetFooter>
             <Button
               disabled={!editModel}
               onClick={editForm.handleSubmit((values) => {
@@ -1682,12 +1669,12 @@ function ResourceModelTable({
             >
               Save
             </Button>
-            <DialogClose asChild>
+            <SheetClose asChild>
               <Button variant="outline">Cancel</Button>
-            </DialogClose>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </SheetClose>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </>
   );
 }
@@ -1698,6 +1685,83 @@ function ModelFact({ label, value }: { label: string; value: string }) {
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="truncate text-sm font-medium">{value}</p>
     </div>
+  );
+}
+
+function ModalityCheckboxGroup({
+  label,
+  values,
+  onChange,
+}: {
+  label: string;
+  values: string[];
+  onChange: (values: string[]) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <Label>{label}</Label>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {modelModalities.map((item) => (
+          <CheckboxOption
+            key={item}
+            label={item}
+            checked={values.includes(item)}
+            onCheckedChange={(checked) => {
+              const next = checked
+                ? [...values, item]
+                : values.filter((value) => value !== item);
+              onChange(next.length ? next : ["text"]);
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CapabilityCheckboxGroup({
+  values,
+  onChange,
+}: {
+  values: string[];
+  onChange: (values: string[]) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <Label>Capabilities</Label>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {modelCapabilityOptions.map((item) => (
+          <CheckboxOption
+            key={item}
+            label={item}
+            checked={values.includes(item)}
+            onCheckedChange={(checked) => {
+              const next = checked
+                ? [...values, item]
+                : values.filter((value) => value !== item);
+              onChange(next);
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CheckboxOption({
+  label,
+  checked,
+  onCheckedChange,
+}: {
+  label: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center gap-2 rounded-md border p-2 text-sm">
+      <Checkbox checked={checked} onCheckedChange={(value) => onCheckedChange(value === true)} />
+      <span>{label}</span>
+    </label>
   );
 }
 

@@ -23,7 +23,8 @@ def test_openai_model_metadata_adapter_enriches_known_models() -> None:
 
     assert metadata is not None
     assert metadata.context_window == 1_000_000
-    assert metadata.modality == "text+vision"
+    assert metadata.input_modalities == ["text", "vision"]
+    assert metadata.output_modalities == ["text"]
     assert metadata.capabilities["streaming"] is True
     assert metadata.capabilities["tools"] is True
     assert metadata.pricing.input_price_per_million_tokens is None

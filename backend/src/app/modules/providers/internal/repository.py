@@ -138,6 +138,8 @@ async def create_model_offering(
     alias: str | None,
     version: str | None = None,
     modality: str = "text",
+    input_modalities: list[str] | None = None,
+    output_modalities: list[str] | None = None,
     capabilities: dict | None = None,
     context_window: int | None = None,
     input_price_per_million_tokens: int | None = None,
@@ -153,6 +155,8 @@ async def create_model_offering(
         alias=alias,
         version=version,
         modality=modality,
+        input_modalities=input_modalities or ["text"],
+        output_modalities=output_modalities or ["text"],
         capabilities=capabilities or {},
         context_window=context_window,
         input_price_per_million_tokens=input_price_per_million_tokens,
@@ -219,12 +223,11 @@ async def list_model_offerings(
             )
         )
     if modalities:
-        modality_filters = []
         for modality in modalities:
             normalized_modality = modality.strip().lower()
             if not normalized_modality:
                 continue
-            modality_filters.append(
+            filters.append(
                 or_(
                     func.lower(ModelOffering.modality) == normalized_modality,
                     func.lower(ModelOffering.modality).like(f"{normalized_modality}+%"),
@@ -232,8 +235,6 @@ async def list_model_offerings(
                     func.lower(ModelOffering.modality).like(f"%+{normalized_modality}"),
                 )
             )
-        if modality_filters:
-            filters.append(or_(*modality_filters))
     if is_active is not None:
         filters.append(ModelOffering.is_active == is_active)
 

@@ -15,7 +15,8 @@ class ModelPricingMetadata:
 class ModelMetadata:
     provider_model_name: str
     version: str | None = None
-    modality: str = "text"
+    input_modalities: list[str] = field(default_factory=lambda: ["text"])
+    output_modalities: list[str] = field(default_factory=lambda: ["text"])
     capabilities: dict[str, bool] = field(default_factory=dict)
     context_window: int | None = None
     pricing: ModelPricingMetadata = field(default_factory=ModelPricingMetadata)
@@ -58,7 +59,8 @@ def _frontier_model(
 ) -> ModelMetadata:
     return ModelMetadata(
         provider_model_name=provider_model_name,
-        modality="text+vision",
+        input_modalities=["text", "vision"],
+        output_modalities=["text"],
         context_window=context_window,
         capabilities={
             "chat": True,

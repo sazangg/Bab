@@ -335,6 +335,8 @@ async def create_model_offering(
             alias=payload.alias,
             version=payload.version,
             modality=payload.modality,
+            input_modalities=payload.input_modalities,
+            output_modalities=payload.output_modalities,
             capabilities=payload.capabilities,
             context_window=payload.context_window,
             input_price_per_million_tokens=payload.input_price_per_million_tokens,
@@ -414,7 +416,13 @@ async def sync_model_offerings(
                     provider_model_name=model_name,
                     alias=None,
                     version=metadata.version if metadata else None,
-                    modality=metadata.modality if metadata else "text",
+                    modality=(
+                        _combined_modality(metadata.input_modalities, metadata.output_modalities)
+                        if metadata
+                        else "text"
+                    ),
+                    input_modalities=metadata.input_modalities if metadata else ["text"],
+                    output_modalities=metadata.output_modalities if metadata else ["text"],
                     capabilities=(
                         metadata.capabilities if metadata else _default_model_capabilities()
                     ),
@@ -539,6 +547,15 @@ async def update_model_offering(
             model_offering.version = payload.version
         if payload.modality is not None:
             model_offering.modality = payload.modality
+        if payload.input_modalities is not None:
+            model_offering.input_modalities = payload.input_modalities
+        if payload.output_modalities is not None:
+            model_offering.output_modalities = payload.output_modalities
+        if payload.input_modalities is not None or payload.output_modalities is not None:
+            model_offering.modality = _combined_modality(
+                model_offering.input_modalities,
+                model_offering.output_modalities,
+            )
         if payload.capabilities is not None:
             model_offering.capabilities = payload.capabilities
         if "context_window" in payload.model_fields_set:
@@ -871,8 +888,15 @@ def _enrich_model_offering_from_metadata(
         model_offering.context_window = metadata.context_window
     if model_offering.version is None:
         model_offering.version = metadata.version
-    if model_offering.modality == "text" and metadata.modality != "text":
-        model_offering.modality = metadata.modality
+    if not model_offering.input_modalities:
+        model_offering.input_modalities = metadata.input_modalities
+    if not model_offering.output_modalities:
+        model_offering.output_modalities = metadata.output_modalities
+    if model_offering.modality == "text":
+        model_offering.modality = _combined_modality(
+            model_offering.input_modalities,
+            model_offering.output_modalities,
+        )
     if model_offering.input_price_per_million_tokens is None:
         model_offering.input_price_per_million_tokens = (
             metadata.pricing.input_price_per_million_tokens
@@ -889,4 +913,13 @@ def _enrich_model_offering_from_metadata(
         **metadata.rate_limit_hints,
         **(model_offering.rate_limit_hints or {}),
     }
+
+
+def _combined_modality(input_modalities: list[str], output_modalities: list[str]) -> str:
+    ordered = []
+    for modality in [*input_modalities, *output_modalities]:
+        normalized = modality.strip().lower()
+        if normalized and normalized not in ordered:
+            ordered.append(normalized)
+    return "+".join(ordered) or "text"
 

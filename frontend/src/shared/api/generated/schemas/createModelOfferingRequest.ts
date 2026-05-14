@@ -17,6 +17,8 @@ export interface CreateModelOfferingRequest {
   version?: string | null;
   /** @maxLength 100 */
   modality?: string;
+  input_modalities?: string[];
+  output_modalities?: string[];
   capabilities?: CreateModelOfferingRequestCapabilities;
   context_window?: number | null;
   input_price_per_million_tokens?: number | null;

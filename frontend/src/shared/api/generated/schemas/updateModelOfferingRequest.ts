@@ -12,6 +12,8 @@ export interface UpdateModelOfferingRequest {
   alias?: string | null;
   version?: string | null;
   modality?: string | null;
+  input_modalities?: string[] | null;
+  output_modalities?: string[] | null;
   capabilities?: UpdateModelOfferingRequestCapabilities;
   context_window?: number | null;
   input_price_per_million_tokens?: number | null;

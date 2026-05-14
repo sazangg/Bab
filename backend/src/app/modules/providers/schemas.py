@@ -84,6 +84,8 @@ class CreateModelOfferingRequest(BaseModel):
     alias: str | None = Field(default=None, min_length=1, max_length=255)
     version: str | None = Field(default=None, max_length=100)
     modality: str = Field(default="text", max_length=100)
+    input_modalities: list[str] = Field(default_factory=lambda: ["text"])
+    output_modalities: list[str] = Field(default_factory=lambda: ["text"])
     capabilities: dict[str, bool] = Field(default_factory=dict)
     context_window: int | None = Field(default=None, ge=1)
     input_price_per_million_tokens: int | None = Field(default=None, ge=0)
@@ -97,6 +99,8 @@ class UpdateModelOfferingRequest(BaseModel):
     alias: str | None = Field(default=None, min_length=1, max_length=255)
     version: str | None = Field(default=None, max_length=100)
     modality: str | None = Field(default=None, max_length=100)
+    input_modalities: list[str] | None = None
+    output_modalities: list[str] | None = None
     capabilities: dict[str, bool] | None = None
     context_window: int | None = Field(default=None, ge=1)
     input_price_per_million_tokens: int | None = Field(default=None, ge=0)
@@ -116,6 +120,8 @@ class ModelOfferingResponse(BaseModel):
     alias: str | None
     version: str | None
     modality: str
+    input_modalities: list[str]
+    output_modalities: list[str]
     capabilities: dict[str, Any]
     context_window: int | None
     input_price_per_million_tokens: int | None

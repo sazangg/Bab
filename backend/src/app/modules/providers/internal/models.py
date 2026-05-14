@@ -104,6 +104,8 @@ class ModelOffering(Base):
     alias: Mapped[str | None] = mapped_column(String(255), nullable=True)
     version: Mapped[str | None] = mapped_column(String(100), nullable=True)
     modality: Mapped[str] = mapped_column(String(100), default="text")
+    input_modalities: Mapped[list] = mapped_column(JSON, default=list)
+    output_modalities: Mapped[list] = mapped_column(JSON, default=list)
     capabilities: Mapped[dict] = mapped_column(JSON, default=dict)
     context_window: Mapped[int | None] = mapped_column(Integer, nullable=True)
     input_price_per_million_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)

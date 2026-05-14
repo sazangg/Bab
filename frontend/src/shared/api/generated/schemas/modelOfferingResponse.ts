@@ -15,6 +15,8 @@ export interface ModelOfferingResponse {
   alias: string | null;
   version: string | null;
   modality: string;
+  input_modalities: string[];
+  output_modalities: string[];
   capabilities: ModelOfferingResponseCapabilities;
   context_window: number | null;
   input_price_per_million_tokens: number | null;
