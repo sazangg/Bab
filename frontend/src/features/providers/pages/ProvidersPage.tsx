@@ -11,6 +11,7 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  ChevronDown,
   Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -758,26 +759,50 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
                     <Plus />
                     Add model
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={!providerId || !hasActiveCredential || syncModels.isPending}
-                    onClick={() =>
-                      providerId &&
-                      syncModels.mutate({
-                        providerId,
-                        data: { metadata_mode: "fill_missing" },
-                      })
-                    }
-                    title={
-                      !hasActiveCredential
-                        ? "Add an active credential before syncing models."
-                        : undefined
-                    }
-                  >
-                    <RefreshCw />
-                    Sync
-                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!providerId || !hasActiveCredential || syncModels.isPending}
+                        title={
+                          !hasActiveCredential
+                            ? "Add an active credential before syncing models."
+                            : undefined
+                        }
+                      >
+                        <RefreshCw />
+                        Sync
+                        <ChevronDown />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-72">
+                      <DropdownMenuLabel>Sync models</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onSelect={() =>
+                          providerId &&
+                          syncModels.mutate({
+                            providerId,
+                            data: { metadata_mode: "fill_missing" },
+                          })
+                        }
+                      >
+                        Fill missing metadata
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onSelect={() =>
+                          providerId &&
+                          syncModels.mutate({
+                            providerId,
+                            data: { metadata_mode: "overwrite_catalog" },
+                          })
+                        }
+                      >
+                        Overwrite with catalog metadata
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </div>
               <ResourceModelTable
