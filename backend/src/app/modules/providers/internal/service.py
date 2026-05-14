@@ -21,7 +21,11 @@ from app.modules.providers.internal.adapters import (
     AdapterProvider,
     default_adapter_registry,
 )
-from app.modules.providers.internal.models import Provider
+from app.modules.providers.internal.model_metadata import (
+    ModelMetadata,
+    default_model_metadata_registry,
+)
+from app.modules.providers.internal.models import ModelOffering, Provider
 from app.modules.providers.schemas import (
     CreateModelOfferingRequest,
     CreateProviderCredentialRequest,
@@ -393,6 +397,10 @@ async def sync_model_offerings(
         )
         synced_models = []
         for model_name in sorted(set(model_names)):
+            metadata = default_model_metadata_registry.get(
+                provider=provider,
+                provider_model_name=model_name,
+            )
             model_offering = await repository.get_model_offering_by_name(
                 org_id=scope.org_id,
                 provider_id=provider_id,
@@ -405,11 +413,31 @@ async def sync_model_offerings(
                     provider_id=provider_id,
                     provider_model_name=model_name,
                     alias=None,
-                    capabilities=_default_model_capabilities(),
+                    version=metadata.version if metadata else None,
+                    modality=metadata.modality if metadata else "text",
+                    capabilities=(
+                        metadata.capabilities if metadata else _default_model_capabilities()
+                    ),
+                    context_window=metadata.context_window if metadata else None,
+                    input_price_per_million_tokens=(
+                        metadata.pricing.input_price_per_million_tokens if metadata else None
+                    ),
+                    output_price_per_million_tokens=(
+                        metadata.pricing.output_price_per_million_tokens if metadata else None
+                    ),
+                    cached_input_price_per_million_tokens=(
+                        metadata.pricing.cached_input_price_per_million_tokens if metadata else None
+                    ),
+                    rate_limit_hints=metadata.rate_limit_hints if metadata else {},
                     db=db,
                 )
             else:
                 model_offering.is_active = True
+                if metadata is not None:
+                    _enrich_model_offering_from_metadata(
+                        model_offering=model_offering,
+                        metadata=metadata,
+                    )
                 await db.flush()
             synced_models.append(model_offering)
 
@@ -828,4 +856,37 @@ def _default_capabilities() -> dict[str, bool]:
 
 def _default_model_capabilities() -> dict[str, bool]:
     return {"chat": True}
+
+
+def _enrich_model_offering_from_metadata(
+    *,
+    model_offering: ModelOffering,
+    metadata: ModelMetadata,
+) -> None:
+    model_offering.capabilities = {
+        **metadata.capabilities,
+        **(model_offering.capabilities or {}),
+    }
+    if model_offering.context_window is None:
+        model_offering.context_window = metadata.context_window
+    if model_offering.version is None:
+        model_offering.version = metadata.version
+    if model_offering.modality == "text" and metadata.modality != "text":
+        model_offering.modality = metadata.modality
+    if model_offering.input_price_per_million_tokens is None:
+        model_offering.input_price_per_million_tokens = (
+            metadata.pricing.input_price_per_million_tokens
+        )
+    if model_offering.output_price_per_million_tokens is None:
+        model_offering.output_price_per_million_tokens = (
+            metadata.pricing.output_price_per_million_tokens
+        )
+    if model_offering.cached_input_price_per_million_tokens is None:
+        model_offering.cached_input_price_per_million_tokens = (
+            metadata.pricing.cached_input_price_per_million_tokens
+        )
+    model_offering.rate_limit_hints = {
+        **metadata.rate_limit_hints,
+        **(model_offering.rate_limit_hints or {}),
+    }
 
