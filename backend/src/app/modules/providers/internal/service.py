@@ -1,4 +1,5 @@
 import re
+from datetime import UTC, datetime
 from uuid import UUID
 
 import httpx
@@ -343,6 +344,7 @@ async def create_model_offering(
             output_price_per_million_tokens=payload.output_price_per_million_tokens,
             cached_input_price_per_million_tokens=payload.cached_input_price_per_million_tokens,
             rate_limit_hints=payload.rate_limit_hints,
+            metadata_source="manual",
             db=db,
         )
         await audit_facade.record_event(
@@ -398,6 +400,7 @@ async def sync_model_offerings(
             http_client=http_client,
         )
         synced_models = []
+        synced_at = datetime.now(UTC)
         for model_name in sorted(set(model_names)):
             metadata = default_model_metadata_registry.get(
                 provider=provider,
@@ -437,10 +440,13 @@ async def sync_model_offerings(
                         metadata.pricing.cached_input_price_per_million_tokens if metadata else None
                     ),
                     rate_limit_hints=metadata.rate_limit_hints if metadata else {},
+                    metadata_source="catalog" if metadata else "provider",
                     db=db,
                 )
+                model_offering.metadata_last_synced_at = synced_at
             else:
                 model_offering.is_active = True
+                model_offering.metadata_last_synced_at = synced_at
                 if metadata is not None:
                     _enrich_model_offering_from_metadata(
                         model_offering=model_offering,
@@ -572,6 +578,7 @@ async def update_model_offering(
             model_offering.rate_limit_hints = payload.rate_limit_hints
         if payload.is_active is not None:
             model_offering.is_active = payload.is_active
+        model_offering.metadata_source = "manual"
 
         await db.flush()
         await audit_facade.record_event(

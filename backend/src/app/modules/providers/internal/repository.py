@@ -146,6 +146,7 @@ async def create_model_offering(
     output_price_per_million_tokens: int | None = None,
     cached_input_price_per_million_tokens: int | None = None,
     rate_limit_hints: dict | None = None,
+    metadata_source: str = "manual",
     db: AsyncSession,
 ) -> ModelOffering:
     model_offering = ModelOffering(
@@ -163,6 +164,7 @@ async def create_model_offering(
         output_price_per_million_tokens=output_price_per_million_tokens,
         cached_input_price_per_million_tokens=cached_input_price_per_million_tokens,
         rate_limit_hints=rate_limit_hints or {},
+        metadata_source=metadata_source,
     )
     db.add(model_offering)
     await db.flush()

@@ -23,6 +23,8 @@ export interface ModelOfferingResponse {
   output_price_per_million_tokens: number | null;
   cached_input_price_per_million_tokens: number | null;
   rate_limit_hints: ModelOfferingResponseRateLimitHints;
+  metadata_source: string;
+  metadata_last_synced_at: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;

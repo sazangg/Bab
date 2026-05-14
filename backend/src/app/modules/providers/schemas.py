@@ -128,6 +128,8 @@ class ModelOfferingResponse(BaseModel):
     output_price_per_million_tokens: int | None
     cached_input_price_per_million_tokens: int | None
     rate_limit_hints: dict[str, Any]
+    metadata_source: str
+    metadata_last_synced_at: datetime | None
     is_active: bool
     created_at: datetime
     updated_at: datetime

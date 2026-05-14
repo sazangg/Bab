@@ -115,6 +115,11 @@ class ModelOffering(Base):
         nullable=True,
     )
     rate_limit_hints: Mapped[dict] = mapped_column(JSON, default=dict)
+    metadata_source: Mapped[str] = mapped_column(String(100), default="manual")
+    metadata_last_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
