@@ -5,6 +5,4 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface SetSubscriptionModelAccessRequest {
-  provider_model_ids?: string[] | null;
-}
+export type CreateModelOfferingRequestRateLimitHints = { [key: string]: unknown };

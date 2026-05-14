@@ -5,7 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface ProviderKeyResponse {
+export interface ProviderCredentialResponse {
   id: string;
   org_id: string;
   provider_id: string;

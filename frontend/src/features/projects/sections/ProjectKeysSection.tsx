@@ -12,7 +12,6 @@ import {
 import type {
   CreatedVirtualKeyResponse,
   ProjectResponse,
-  ProjectSubscriptionAccessResponse,
   ProviderResponse,
   VirtualKeyResponse,
 } from "@/shared/api/generated/schemas";
@@ -70,7 +69,6 @@ export function ProjectKeysSection({
   projectId,
   project,
   providers,
-  accessRules,
   keys,
   isLoading,
   onView,
@@ -78,7 +76,6 @@ export function ProjectKeysSection({
   projectId: string;
   project: ProjectResponse;
   providers: ProviderResponse[];
-  accessRules: ProjectSubscriptionAccessResponse[];
   keys: VirtualKeyResponse[];
   isLoading: boolean;
   onView: (keyId: string) => void;
@@ -148,7 +145,7 @@ export function ProjectKeysSection({
             </div>
             <Sheet open={createOpen} onOpenChange={setCreateOpen}>
               <SheetTrigger asChild>
-                <Button size="sm" disabled={!project.is_active || accessRules.length === 0}>
+                <Button size="sm" disabled={!project.is_active}>
                   <Plus />
                   New key
                 </Button>
@@ -233,11 +230,7 @@ export function ProjectKeysSection({
             <EmptyState
               icon={KeyRound}
               title="No virtual keys yet"
-              description={
-                accessRules.length === 0
-                  ? "Attach a subscription first, then create a key."
-                  : "Create a key to issue this project's first credential."
-              }
+              description="Create a key to issue this project's first credential."
             />
           ) : (
             <Table>

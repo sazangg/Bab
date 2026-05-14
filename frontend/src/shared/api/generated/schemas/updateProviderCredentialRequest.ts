@@ -5,9 +5,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface UpdateProviderKeyRequest {
+export interface UpdateProviderCredentialRequest {
   name?: string | null;
   api_key?: string | null;
+  routing_policy?: string | null;
   priority?: number | null;
   is_active?: boolean | null;
 }

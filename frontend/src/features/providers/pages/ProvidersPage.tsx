@@ -20,24 +20,24 @@ import { z } from "zod";
 import { apiMutator } from "@/shared/api/orval-mutator";
 import {
   createProviderApiV1ProvidersPost,
-  createProviderKeyApiV1ProvidersProviderIdKeysPost,
+  createProviderCredentialApiV1ProvidersProviderIdCredentialsPost,
   useCreateProviderApiV1ProvidersPost,
-  useCreateProviderKeyApiV1ProvidersProviderIdKeysPost,
-  useCreateProviderModelApiV1ProvidersProviderIdModelsPost,
+  useCreateProviderCredentialApiV1ProvidersProviderIdCredentialsPost,
+  useCreateModelOfferingApiV1ProvidersProviderIdOfferingsPost,
   useDeactivateProviderApiV1ProvidersProviderIdDelete,
-  useDeactivateProviderKeyApiV1ProvidersProviderIdKeysProviderKeyIdDelete,
-  useDeactivateProviderModelApiV1ProvidersProviderIdModelsProviderModelIdDelete,
-  useListProviderKeysApiV1ProvidersProviderIdKeysGet,
-  useListProviderModelsApiV1ProvidersProviderIdModelsGet,
+  useDeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete,
+  useDeactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDelete,
+  useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet,
+  useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet,
   useListProvidersApiV1ProvidersGet,
-  useSyncProviderModelsApiV1ProvidersProviderIdModelsSyncPost,
-  useUpdateProviderKeyApiV1ProvidersProviderIdKeysProviderKeyIdPatch,
-  useUpdateProviderModelApiV1ProvidersProviderIdModelsProviderModelIdPatch,
+  useSyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost,
+  useUpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch,
+  useUpdateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatch,
   useUpdateProviderApiV1ProvidersProviderIdPatch,
 } from "@/shared/api/generated/providers/providers";
 import type {
-  ProviderKeyResponse,
-  ProviderModelResponse,
+  ProviderCredentialResponse,
+  ModelOfferingResponse,
   ProviderResponse,
 } from "@/shared/api/generated/schemas";
 import { Button } from "@/components/ui/button";
@@ -94,20 +94,20 @@ const editSchema = z.object({
   base_url: z.url(),
 });
 
-const providerKeySchema = z.object({
+const providerCredentialSchema = z.object({
   name: z.string().min(1).max(255),
   api_key: z.string().min(1),
   priority: z.number().int().min(0),
 });
 
-type ProviderKeyValues = z.infer<typeof providerKeySchema>;
+type ProviderCredentialValues = z.infer<typeof providerCredentialSchema>;
 
-const providerModelSchema = z.object({
+const modelOfferingSchema = z.object({
   provider_model_name: z.string().min(1).max(255),
   alias: z.string().optional(),
 });
 
-type ProviderModelValues = z.infer<typeof providerModelSchema>;
+type ModelOfferingValues = z.infer<typeof modelOfferingSchema>;
 
 type EditValues = z.infer<typeof editSchema>;
 
@@ -122,9 +122,9 @@ type TestProviderCredentialApiResponse = {
   data: TestProviderCredentialResponse;
 };
 
-function testProviderCredential(providerId: string, providerKeyId: string) {
+function testProviderCredential(providerId: string, providerCredentialId: string) {
   return apiMutator<TestProviderCredentialApiResponse>(
-    `/api/v1/providers/${providerId}/keys/${providerKeyId}/test`,
+    `/api/v1/providers/${providerId}/credentials/${providerCredentialId}/test`,
     { method: "POST" },
   );
 }
@@ -334,7 +334,7 @@ export function ProvidersPage() {
         }}
         isPending={updateMutation.isPending}
       />
-      <AddProviderKeyDialog
+      <AddProviderCredentialDialog
         entry={addKeyTarget}
         onClose={() => setAddKeyTarget(null)}
         onCreated={async () => {
@@ -394,7 +394,7 @@ function ProviderCatalogRow({
   isUpdating: boolean;
 }) {
   const providerId = entry.provider?.id ?? "";
-  const keysQuery = useListProviderKeysApiV1ProvidersProviderIdKeysGet(providerId, {
+  const keysQuery = useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet(providerId, {
     query: { enabled: Boolean(providerId) },
   });
   const keys = keysQuery.data?.status === 200 ? keysQuery.data.data : [];
@@ -496,16 +496,16 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
   const providerId = provider.id;
   const [createKeyOpen, setCreateKeyOpen] = useState(false);
   const [createModelOpen, setCreateModelOpen] = useState(false);
-  const keysQuery = useListProviderKeysApiV1ProvidersProviderIdKeysGet(providerId, {
+  const keysQuery = useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet(providerId, {
     query: { enabled: Boolean(providerId) },
   });
-  const modelsQuery = useListProviderModelsApiV1ProvidersProviderIdModelsGet(providerId, {
+  const modelsQuery = useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet(providerId, {
     query: { enabled: Boolean(providerId) },
   });
   const keys = keysQuery.data?.status === 200 ? keysQuery.data.data : [];
   const models = modelsQuery.data?.status === 200 ? modelsQuery.data.data : [];
 
-  const createKey = useCreateProviderKeyApiV1ProvidersProviderIdKeysPost({
+  const createKey = useCreateProviderCredentialApiV1ProvidersProviderIdCredentialsPost({
     mutation: {
       onSuccess: async () => {
         setCreateKeyOpen(false);
@@ -513,13 +513,15 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
       },
     },
   });
-  const updateKey = useUpdateProviderKeyApiV1ProvidersProviderIdKeysProviderKeyIdPatch({
-    mutation: { onSuccess: async () => queryClient.invalidateQueries() },
-  });
-  const deactivateKey = useDeactivateProviderKeyApiV1ProvidersProviderIdKeysProviderKeyIdDelete({
-    mutation: { onSuccess: async () => queryClient.invalidateQueries() },
-  });
-  const createModel = useCreateProviderModelApiV1ProvidersProviderIdModelsPost({
+  const updateKey =
+    useUpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch({
+      mutation: { onSuccess: async () => queryClient.invalidateQueries() },
+    });
+  const deactivateKey =
+    useDeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete({
+      mutation: { onSuccess: async () => queryClient.invalidateQueries() },
+    });
+  const createModel = useCreateModelOfferingApiV1ProvidersProviderIdOfferingsPost({
     mutation: {
       onSuccess: async () => {
         setCreateModelOpen(false);
@@ -527,18 +529,19 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
       },
     },
   });
-  const updateModel = useUpdateProviderModelApiV1ProvidersProviderIdModelsProviderModelIdPatch({
+  const updateModel = useUpdateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatch({
     mutation: { onSuccess: async () => queryClient.invalidateQueries() },
   });
   const deactivateModel =
-    useDeactivateProviderModelApiV1ProvidersProviderIdModelsProviderModelIdDelete({
+    useDeactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDelete({
       mutation: { onSuccess: async () => queryClient.invalidateQueries() },
     });
-  const syncModels = useSyncProviderModelsApiV1ProvidersProviderIdModelsSyncPost({
+  const syncModels = useSyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost({
     mutation: { onSuccess: async () => queryClient.invalidateQueries() },
   });
   const testCredential = useMutation({
-    mutationFn: (providerKeyId: string) => testProviderCredential(providerId, providerKeyId),
+    mutationFn: (providerCredentialId: string) =>
+      testProviderCredential(providerId, providerCredentialId),
     onSuccess: async () => queryClient.invalidateQueries(),
   });
   const hasActiveKey = keys.some((key) => key.is_active);
@@ -583,22 +586,24 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
             onUpdate={(key, values) =>
               updateKey.mutate({
                 providerId,
-                providerKeyId: key.id,
+                providerCredentialId: key.id,
                 data: values,
               })
             }
             onRotate={(key, apiKey) =>
               updateKey.mutate({
                 providerId,
-                providerKeyId: key.id,
+                providerCredentialId: key.id,
                 data: { api_key: apiKey },
               })
             }
-            onDeactivate={(key) => deactivateKey.mutate({ providerId, providerKeyId: key.id })}
+            onDeactivate={(key) =>
+              deactivateKey.mutate({ providerId, providerCredentialId: key.id })
+            }
             onReactivate={(key) =>
               updateKey.mutate({
                 providerId,
-                providerKeyId: key.id,
+                providerCredentialId: key.id,
                 data: { is_active: true },
               })
             }
@@ -639,24 +644,24 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
             onAlias={(model, alias) =>
               updateModel.mutate({
                 providerId,
-                providerModelId: model.id,
+                modelOfferingId: model.id,
                 data: { alias: alias || null },
               })
             }
             onDeactivate={(model) =>
-              deactivateModel.mutate({ providerId, providerModelId: model.id })
+              deactivateModel.mutate({ providerId, modelOfferingId: model.id })
             }
             onReactivate={(model) =>
               updateModel.mutate({
                 providerId,
-                providerModelId: model.id,
+                modelOfferingId: model.id,
                 data: { is_active: true },
               })
             }
           />
         </section>
       </div>
-      <CreateProviderKeySheet
+      <CreateProviderCredentialSheet
         open={createKeyOpen}
         onOpenChange={setCreateKeyOpen}
         providerName={provider.name}
@@ -672,7 +677,7 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
         }
         isPending={createKey.isPending}
       />
-      <CreateProviderModelSheet
+      <CreateModelOfferingSheet
         open={createModelOpen}
         onOpenChange={setCreateModelOpen}
         providerName={provider.name}
@@ -702,13 +707,13 @@ function ResourceKeyTable({
   onTest,
 }: {
   providerId: string;
-  keys: ProviderKeyResponse[];
+  keys: ProviderCredentialResponse[];
   isTesting: boolean;
-  onUpdate: (key: ProviderKeyResponse, values: { name: string; priority: number }) => void;
-  onRotate: (key: ProviderKeyResponse, apiKey: string) => void;
-  onDeactivate: (key: ProviderKeyResponse) => void;
-  onReactivate: (key: ProviderKeyResponse) => void;
-  onTest: (key: ProviderKeyResponse) => void;
+  onUpdate: (key: ProviderCredentialResponse, values: { name: string; priority: number }) => void;
+  onRotate: (key: ProviderCredentialResponse, apiKey: string) => void;
+  onDeactivate: (key: ProviderCredentialResponse) => void;
+  onReactivate: (key: ProviderCredentialResponse) => void;
+  onTest: (key: ProviderCredentialResponse) => void;
 }) {
   const sortedKeys = [...keys].sort(
     (a, b) =>
@@ -717,8 +722,8 @@ function ResourceKeyTable({
       new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
   );
   const syncKey = sortedKeys.find((key) => key.is_active);
-  const [editKey, setEditKey] = useState<ProviderKeyResponse | null>(null);
-  const [rotateKey, setRotateKey] = useState<ProviderKeyResponse | null>(null);
+  const [editKey, setEditKey] = useState<ProviderCredentialResponse | null>(null);
+  const [rotateKey, setRotateKey] = useState<ProviderCredentialResponse | null>(null);
   const [apiKey, setApiKey] = useState("");
 
   return (
@@ -813,8 +818,8 @@ function ResourceKeyTable({
           ))}
         </TableBody>
       </Table>
-      <EditProviderKeySheet
-        providerKey={editKey}
+      <EditProviderCredentialSheet
+        providerCredential={editKey}
         onClose={() => setEditKey(null)}
         onSubmit={(values) => {
           if (!editKey) return;
@@ -862,12 +867,12 @@ function ResourceKeyTable({
   );
 }
 
-function EditProviderKeySheet({
-  providerKey,
+function EditProviderCredentialSheet({
+  providerCredential,
   onClose,
   onSubmit,
 }: {
-  providerKey: ProviderKeyResponse | null;
+  providerCredential: ProviderCredentialResponse | null;
   onClose: () => void;
   onSubmit: (values: { name: string; priority: number }) => void;
 }) {
@@ -882,13 +887,13 @@ function EditProviderKeySheet({
   });
 
   useEffect(() => {
-    if (providerKey) {
-      form.reset({ name: providerKey.name, priority: providerKey.priority });
+    if (providerCredential) {
+      form.reset({ name: providerCredential.name, priority: providerCredential.priority });
     }
-  }, [providerKey, form]);
+  }, [providerCredential, form]);
 
   return (
-    <Sheet open={Boolean(providerKey)} onOpenChange={(open) => !open && onClose()}>
+    <Sheet open={Boolean(providerCredential)} onOpenChange={(open) => !open && onClose()}>
       <SheetContent>
         <SheetHeader>
           <SheetTitle>Edit credential</SheetTitle>
@@ -924,7 +929,7 @@ function EditProviderKeySheet({
   );
 }
 
-function CreateProviderKeySheet({
+function CreateProviderCredentialSheet({
   open,
   onOpenChange,
   providerName,
@@ -934,11 +939,11 @@ function CreateProviderKeySheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   providerName: string;
-  onSubmit: (values: ProviderKeyValues) => void;
+  onSubmit: (values: ProviderCredentialValues) => void;
   isPending: boolean;
 }) {
-  const form = useForm<ProviderKeyValues>({
-    resolver: zodResolver(providerKeySchema),
+  const form = useForm<ProviderCredentialValues>({
+    resolver: zodResolver(providerCredentialSchema),
     defaultValues: { name: "", api_key: "", priority: 100 },
   });
 
@@ -994,7 +999,7 @@ function CreateProviderKeySheet({
   );
 }
 
-function CreateProviderModelSheet({
+function CreateModelOfferingSheet({
   open,
   onOpenChange,
   providerName,
@@ -1004,11 +1009,11 @@ function CreateProviderModelSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   providerName: string;
-  onSubmit: (values: ProviderModelValues) => void;
+  onSubmit: (values: ModelOfferingValues) => void;
   isPending: boolean;
 }) {
-  const form = useForm<ProviderModelValues>({
-    resolver: zodResolver(providerModelSchema),
+  const form = useForm<ModelOfferingValues>({
+    resolver: zodResolver(modelOfferingSchema),
     defaultValues: { provider_model_name: "", alias: "" },
   });
 
@@ -1020,7 +1025,7 @@ function CreateProviderModelSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent>
         <SheetHeader>
-          <SheetTitle>Add provider model</SheetTitle>
+          <SheetTitle>Add model offering</SheetTitle>
           <SheetDescription>
             Register a model name exposed by {providerName}. Alias is optional and provider-scoped.
           </SheetDescription>
@@ -1065,12 +1070,12 @@ function ResourceModelTable({
   onReactivate,
 }: {
   providerId: string;
-  models: ProviderModelResponse[];
-  onAlias: (model: ProviderModelResponse, alias: string) => void;
-  onDeactivate: (model: ProviderModelResponse) => void;
-  onReactivate: (model: ProviderModelResponse) => void;
+  models: ModelOfferingResponse[];
+  onAlias: (model: ModelOfferingResponse, alias: string) => void;
+  onDeactivate: (model: ModelOfferingResponse) => void;
+  onReactivate: (model: ModelOfferingResponse) => void;
 }) {
-  const [editModel, setEditModel] = useState<ProviderModelResponse | null>(null);
+  const [editModel, setEditModel] = useState<ModelOfferingResponse | null>(null);
   const [alias, setAlias] = useState("");
   const sortedModels = [...models].sort(
     (a, b) =>
@@ -1172,7 +1177,7 @@ function ResourceModelTable({
   );
 }
 
-function AddProviderKeyDialog({
+function AddProviderCredentialDialog({
   entry,
   onClose,
   onCreated,
@@ -1183,8 +1188,8 @@ function AddProviderKeyDialog({
 }) {
   const [isPending, setIsPending] = useState(false);
   const [isError, setIsError] = useState(false);
-  const form = useForm<ProviderKeyValues>({
-    resolver: zodResolver(providerKeySchema),
+  const form = useForm<ProviderCredentialValues>({
+    resolver: zodResolver(providerCredentialSchema),
     defaultValues: { name: "", api_key: "", priority: 100 },
   });
 
@@ -1213,11 +1218,14 @@ function AddProviderKeyDialog({
         providerId = response.data.id;
       }
 
-      const keyResponse = await createProviderKeyApiV1ProvidersProviderIdKeysPost(providerId, {
-        name: values.name,
-        api_key: values.api_key,
-        priority: values.priority,
-      });
+      const keyResponse = await createProviderCredentialApiV1ProvidersProviderIdCredentialsPost(
+        providerId,
+        {
+          name: values.name,
+          api_key: values.api_key,
+          priority: values.priority,
+        },
+      );
       if (keyResponse.status !== 201) {
         throw new Error("Credential was not created.");
       }

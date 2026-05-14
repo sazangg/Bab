@@ -5,14 +5,16 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface CreateProviderKeyRequest {
+export interface CreateProviderCredentialRequest {
   /**
-     * @minLength 1
-     * @maxLength 255
-     */
+   * @minLength 1
+   * @maxLength 255
+   */
   name: string;
   /** @minLength 1 */
   api_key: string;
+  /** @maxLength 100 */
+  routing_policy?: string;
   /** @minimum 0 */
   priority?: number;
 }

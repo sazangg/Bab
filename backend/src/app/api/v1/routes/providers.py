@@ -15,15 +15,15 @@ from app.modules.providers.errors import (
     ProviderUpstreamError,
 )
 from app.modules.providers.schemas import (
-    CreateProviderKeyRequest,
-    CreateProviderModelRequest,
+    CreateModelOfferingRequest,
+    CreateProviderCredentialRequest,
     CreateProviderRequest,
-    ProviderKeyResponse,
-    ProviderModelResponse,
+    ModelOfferingResponse,
+    ProviderCredentialResponse,
     ProviderResponse,
     TestProviderCredentialResponse,
-    UpdateProviderKeyRequest,
-    UpdateProviderModelRequest,
+    UpdateModelOfferingRequest,
+    UpdateProviderCredentialRequest,
     UpdateProviderRequest,
 )
 
@@ -53,27 +53,27 @@ async def create_provider(
     return await facade.create_provider(payload=payload, actor=actor, scope=scope, db=db)
 
 
-@router.get("/{provider_id}/keys")
-async def list_provider_keys(
+@router.get("/{provider_id}/credentials")
+async def list_provider_credentials(
     provider_id: UUID,
     scope: RequestScope,
     db: DatabaseSession,
     _: CurrentUser,
-) -> list[ProviderKeyResponse]:
+) -> list[ProviderCredentialResponse]:
     try:
         return await facade.list_provider_keys(provider_id=provider_id, scope=scope, db=db)
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc
 
 
-@router.post("/{provider_id}/keys", status_code=status.HTTP_201_CREATED)
-async def create_provider_key(
+@router.post("/{provider_id}/credentials", status_code=status.HTTP_201_CREATED)
+async def create_provider_credential(
     provider_id: UUID,
-    payload: CreateProviderKeyRequest,
+    payload: CreateProviderCredentialRequest,
     actor: ProviderAdmin,
     scope: RequestScope,
     db: DatabaseSession,
-) -> ProviderKeyResponse:
+) -> ProviderCredentialResponse:
     try:
         return await facade.create_provider_key(
             provider_id=provider_id,
@@ -86,32 +86,32 @@ async def create_provider_key(
         raise HTTPException(status_code=404, detail="provider not found") from exc
 
 
-@router.patch("/{provider_id}/keys/{provider_key_id}")
-async def update_provider_key(
+@router.patch("/{provider_id}/credentials/{provider_credential_id}")
+async def update_provider_credential(
     provider_id: UUID,
-    provider_key_id: UUID,
-    payload: UpdateProviderKeyRequest,
+    provider_credential_id: UUID,
+    payload: UpdateProviderCredentialRequest,
     actor: ProviderAdmin,
     scope: RequestScope,
     db: DatabaseSession,
-) -> ProviderKeyResponse:
+) -> ProviderCredentialResponse:
     try:
         return await facade.update_provider_key(
             provider_id=provider_id,
-            provider_key_id=provider_key_id,
+            provider_key_id=provider_credential_id,
             payload=payload,
             actor=actor,
             scope=scope,
             db=db,
         )
     except ProviderNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="provider key not found") from exc
+        raise HTTPException(status_code=404, detail="provider credential not found") from exc
 
 
-@router.post("/{provider_id}/keys/{provider_key_id}/test")
+@router.post("/{provider_id}/credentials/{provider_credential_id}/test")
 async def test_provider_credential(
     provider_id: UUID,
-    provider_key_id: UUID,
+    provider_credential_id: UUID,
     actor: ProviderAdmin,
     scope: RequestScope,
     db: DatabaseSession,
@@ -120,20 +120,23 @@ async def test_provider_credential(
         async with httpx.AsyncClient(timeout=30) as http_client:
             return await facade.test_provider_credential(
                 provider_id=provider_id,
-                provider_key_id=provider_key_id,
+                provider_key_id=provider_credential_id,
                 actor=actor,
                 scope=scope,
                 db=db,
                 http_client=http_client,
             )
     except ProviderNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="provider key not found") from exc
+        raise HTTPException(status_code=404, detail="provider credential not found") from exc
 
 
-@router.delete("/{provider_id}/keys/{provider_key_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def deactivate_provider_key(
+@router.delete(
+    "/{provider_id}/credentials/{provider_credential_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def deactivate_provider_credential(
     provider_id: UUID,
-    provider_key_id: UUID,
+    provider_credential_id: UUID,
     actor: ProviderAdmin,
     scope: RequestScope,
     db: DatabaseSession,
@@ -141,36 +144,36 @@ async def deactivate_provider_key(
     try:
         await facade.deactivate_provider_key(
             provider_id=provider_id,
-            provider_key_id=provider_key_id,
+            provider_key_id=provider_credential_id,
             actor=actor,
             scope=scope,
             db=db,
         )
     except ProviderNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="provider key not found") from exc
+        raise HTTPException(status_code=404, detail="provider credential not found") from exc
 
 
-@router.get("/{provider_id}/models")
-async def list_provider_models(
+@router.get("/{provider_id}/offerings")
+async def list_model_offerings(
     provider_id: UUID,
     scope: RequestScope,
     db: DatabaseSession,
     _: CurrentUser,
-) -> list[ProviderModelResponse]:
+) -> list[ModelOfferingResponse]:
     try:
         return await facade.list_provider_models(provider_id=provider_id, scope=scope, db=db)
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc
 
 
-@router.post("/{provider_id}/models", status_code=status.HTTP_201_CREATED)
-async def create_provider_model(
+@router.post("/{provider_id}/offerings", status_code=status.HTTP_201_CREATED)
+async def create_model_offering(
     provider_id: UUID,
-    payload: CreateProviderModelRequest,
+    payload: CreateModelOfferingRequest,
     actor: ProviderAdmin,
     scope: RequestScope,
     db: DatabaseSession,
-) -> ProviderModelResponse:
+) -> ModelOfferingResponse:
     try:
         return await facade.create_provider_model(
             provider_id=provider_id,
@@ -183,35 +186,35 @@ async def create_provider_model(
         raise HTTPException(status_code=404, detail="provider not found") from exc
 
 
-@router.patch("/{provider_id}/models/{provider_model_id}")
-async def update_provider_model(
+@router.patch("/{provider_id}/offerings/{model_offering_id}")
+async def update_model_offering(
     provider_id: UUID,
-    provider_model_id: UUID,
-    payload: UpdateProviderModelRequest,
+    model_offering_id: UUID,
+    payload: UpdateModelOfferingRequest,
     actor: ProviderAdmin,
     scope: RequestScope,
     db: DatabaseSession,
-) -> ProviderModelResponse:
+) -> ModelOfferingResponse:
     try:
         return await facade.update_provider_model(
             provider_id=provider_id,
-            provider_model_id=provider_model_id,
+            provider_model_id=model_offering_id,
             payload=payload,
             actor=actor,
             scope=scope,
             db=db,
         )
     except ProviderNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="provider model not found") from exc
+        raise HTTPException(status_code=404, detail="model offering not found") from exc
 
 
 @router.delete(
-    "/{provider_id}/models/{provider_model_id}",
+    "/{provider_id}/offerings/{model_offering_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def deactivate_provider_model(
+async def deactivate_model_offering(
     provider_id: UUID,
-    provider_model_id: UUID,
+    model_offering_id: UUID,
     actor: ProviderAdmin,
     scope: RequestScope,
     db: DatabaseSession,
@@ -219,22 +222,22 @@ async def deactivate_provider_model(
     try:
         await facade.deactivate_provider_model(
             provider_id=provider_id,
-            provider_model_id=provider_model_id,
+            provider_model_id=model_offering_id,
             actor=actor,
             scope=scope,
             db=db,
         )
     except ProviderNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="provider model not found") from exc
+        raise HTTPException(status_code=404, detail="model offering not found") from exc
 
 
-@router.post("/{provider_id}/models/sync")
-async def sync_provider_models(
+@router.post("/{provider_id}/offerings/sync")
+async def sync_model_offerings(
     provider_id: UUID,
     actor: ProviderAdmin,
     scope: RequestScope,
     db: DatabaseSession,
-) -> list[ProviderModelResponse]:
+) -> list[ModelOfferingResponse]:
     try:
         async with httpx.AsyncClient(timeout=30) as http_client:
             return await facade.sync_provider_models(
@@ -247,7 +250,7 @@ async def sync_provider_models(
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc
     except ProviderKeyRequiredError as exc:
-        raise HTTPException(status_code=400, detail="active provider key required") from exc
+        raise HTTPException(status_code=400, detail="active provider credential required") from exc
     except ProviderUpstreamError as exc:
         raise HTTPException(
             status_code=502,

@@ -4,8 +4,10 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
+import type { ModelOfferingResponseCapabilities } from "./modelOfferingResponseCapabilities";
+import type { ModelOfferingResponseRateLimitHints } from "./modelOfferingResponseRateLimitHints";
 
-export interface ProviderModelResponse {
+export interface ModelOfferingResponse {
   id: string;
   org_id: string;
   provider_id: string;
@@ -13,12 +15,12 @@ export interface ProviderModelResponse {
   alias: string | null;
   version: string | null;
   modality: string;
-  capabilities: { [key: string]: unknown };
+  capabilities: ModelOfferingResponseCapabilities;
   context_window: number | null;
   input_price_per_million_tokens: number | null;
   output_price_per_million_tokens: number | null;
   cached_input_price_per_million_tokens: number | null;
-  rate_limit_hints: { [key: string]: unknown };
+  rate_limit_hints: ModelOfferingResponseRateLimitHints;
   is_active: boolean;
   created_at: string;
   updated_at: string;

@@ -4,6 +4,10 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
+import type { ProviderResponseCapabilities } from "./providerResponseCapabilities";
+import type { ProviderResponseCircuitBreakerPolicy } from "./providerResponseCircuitBreakerPolicy";
+import type { ProviderResponseFallbackPolicy } from "./providerResponseFallbackPolicy";
+import type { ProviderResponseRetryPolicy } from "./providerResponseRetryPolicy";
 
 export interface ProviderResponse {
   id: string;
@@ -14,13 +18,13 @@ export interface ProviderResponse {
   adapter_type: string;
   display_name: string | null;
   description: string | null;
-  capabilities: { [key: string]: unknown };
+  capabilities: ProviderResponseCapabilities;
   supported_integration: string;
   request_timeout_seconds: number;
   max_body_bytes: number | null;
-  retry_policy: { [key: string]: unknown };
-  fallback_policy: { [key: string]: unknown };
-  circuit_breaker_policy: { [key: string]: unknown };
+  retry_policy: ProviderResponseRetryPolicy;
+  fallback_policy: ProviderResponseFallbackPolicy;
+  circuit_breaker_policy: ProviderResponseCircuitBreakerPolicy;
   max_concurrent_requests: number | null;
   is_active: boolean;
   created_at: string;

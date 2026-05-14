@@ -5,13 +5,11 @@ import { useNavigate, useParams } from "react-router-dom";
 
 import {
   useDeactivateProjectApiV1ProjectsProjectIdDelete,
-  useListProjectSubscriptionAccessApiV1ProjectsProjectIdSubscriptionAccessGet,
   useListProjectsApiV1ProjectsGet,
   useListVirtualKeysApiV1ProjectsProjectIdKeysGet,
   useUpdateProjectApiV1ProjectsProjectIdPatch,
 } from "@/shared/api/generated/projects/projects";
 import { useListProvidersApiV1ProvidersGet } from "@/shared/api/generated/providers/providers";
-import { useListSubscriptionsApiV1SubscriptionsGet } from "@/shared/api/generated/subscriptions/subscriptions";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -46,11 +44,6 @@ export function ProjectDetailPage() {
 
   const projectsQuery = useListProjectsApiV1ProjectsGet();
   const providersQuery = useListProvidersApiV1ProvidersGet();
-  const subscriptionsQuery = useListSubscriptionsApiV1SubscriptionsGet();
-  const accessQuery = useListProjectSubscriptionAccessApiV1ProjectsProjectIdSubscriptionAccessGet(
-    projectId,
-    { query: { enabled: Boolean(projectId) } },
-  );
   const keysQuery = useListVirtualKeysApiV1ProjectsProjectIdKeysGet(projectId, {
     query: { enabled: Boolean(projectId) },
   });
@@ -60,9 +53,6 @@ export function ProjectDetailPage() {
       ? projectsQuery.data.data.find((p) => p.id === projectId)
       : undefined;
   const providers = providersQuery.data?.status === 200 ? providersQuery.data.data : [];
-  const subscriptions =
-    subscriptionsQuery.data?.status === 200 ? subscriptionsQuery.data.data : [];
-  const accessRules = accessQuery.data?.status === 200 ? accessQuery.data.data : [];
   const keys = keysQuery.data?.status === 200 ? keysQuery.data.data : [];
 
   const updateMutation = useUpdateProjectApiV1ProjectsProjectIdPatch({
@@ -148,7 +138,7 @@ export function ProjectDetailPage() {
             <KeyRound className="size-3.5" />
             Keys ({keys.length})
           </TabsTrigger>
-          <TabsTrigger value="access">Subscriptions ({accessRules.length})</TabsTrigger>
+          <TabsTrigger value="access">Allocations</TabsTrigger>
           <TabsTrigger value="limits">Limits</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
@@ -156,7 +146,6 @@ export function ProjectDetailPage() {
           <ProjectKeysSection
             projectId={projectId}
             project={project}
-            accessRules={accessRules}
             providers={providers}
             keys={keys}
             isLoading={keysQuery.isPending}
@@ -164,12 +153,7 @@ export function ProjectDetailPage() {
           />
         </TabsContent>
         <TabsContent value="access" className="space-y-4">
-          <ProjectAccessSection
-            projectId={projectId}
-            subscriptions={subscriptions}
-            accessRules={accessRules}
-            isLoading={accessQuery.isPending}
-          />
+          <ProjectAccessSection />
         </TabsContent>
         <TabsContent value="limits" className="space-y-4">
           <ProjectLimitsSection projectId={projectId} keys={keys} providers={providers} />
