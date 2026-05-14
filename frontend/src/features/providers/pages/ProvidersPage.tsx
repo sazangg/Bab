@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   MoreHorizontal,
@@ -17,7 +17,6 @@ import { useForm } from "react-hook-form";
 import { Link } from "react-router-dom";
 import { z } from "zod";
 
-import { apiMutator } from "@/shared/api/orval-mutator";
 import {
   createProviderApiV1ProvidersPost,
   createProviderCredentialApiV1ProvidersProviderIdCredentialsPost,
@@ -31,6 +30,7 @@ import {
   useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet,
   useListProvidersApiV1ProvidersGet,
   useSyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost,
+  useTestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost,
   useUpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch,
   useUpdateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatch,
   useUpdateProviderApiV1ProvidersProviderIdPatch,
@@ -111,24 +111,6 @@ type ModelOfferingValues = z.infer<typeof modelOfferingSchema>;
 
 type EditValues = z.infer<typeof editSchema>;
 
-type TestProviderCredentialResponse = {
-  health_status: string;
-  last_validation_error: string | null;
-  last_successful_request_at: string | null;
-};
-
-type TestProviderCredentialApiResponse = {
-  status: number;
-  data: TestProviderCredentialResponse;
-};
-
-function testProviderCredential(providerId: string, providerCredentialId: string) {
-  return apiMutator<TestProviderCredentialApiResponse>(
-    `/api/v1/providers/${providerId}/credentials/${providerCredentialId}/test`,
-    { method: "POST" },
-  );
-}
-
 const providerPresets = [
   {
     id: "openai",
@@ -178,6 +160,29 @@ function formatDateTime(value: string) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function sanitizeCredentialValidationMessage(value?: string | null) {
+  if (!value) return null;
+  if (value.includes("401")) {
+    return "The provider rejected this credential. Check the API key and provider account.";
+  }
+  if (value.includes("403")) {
+    return "This credential is not authorized for the provider.";
+  }
+  if (value.includes("404")) {
+    return "The provider models endpoint was not found. Check the provider base URL.";
+  }
+  if (value.includes("429")) {
+    return "The provider rate limit was reached while testing this credential.";
+  }
+  if (value.includes("timeout") || value.includes("timed out")) {
+    return "The provider did not respond before the request timed out.";
+  }
+  if (/\b5\d\d\b/.test(value)) {
+    return "The provider returned a server error while testing this credential.";
+  }
+  return "Credential validation failed. Check the key and provider settings.";
 }
 
 export function ProvidersPage() {
@@ -394,11 +399,14 @@ function ProviderCatalogRow({
   isUpdating: boolean;
 }) {
   const providerId = entry.provider?.id ?? "";
-  const keysQuery = useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet(providerId, {
-    query: { enabled: Boolean(providerId) },
-  });
-  const keys = keysQuery.data?.status === 200 ? keysQuery.data.data : [];
-  const activeKeyCount = keys.filter((key) => key.is_active).length;
+  const credentialsQuery = useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet(
+    providerId,
+    {
+      query: { enabled: Boolean(providerId) },
+    },
+  );
+  const credentials = credentialsQuery.data?.status === 200 ? credentialsQuery.data.data : [];
+  const activeCredentialCount = credentials.filter((credential) => credential.is_active).length;
 
   return (
     <div className="rounded-lg border p-4 transition-colors hover:bg-muted/30">
@@ -424,9 +432,10 @@ function ProviderCatalogRow({
                 ) : (
                   <StatusBadge variant="inactive">Not configured</StatusBadge>
                 )}
-                {activeKeyCount > 0 ? (
+                {activeCredentialCount > 0 ? (
                   <span className="text-xs text-muted-foreground">
-                    {activeKeyCount} active {activeKeyCount === 1 ? "credential" : "credentials"}
+                    {activeCredentialCount} active{" "}
+                    {activeCredentialCount === 1 ? "credential" : "credentials"}
                   </span>
                 ) : null}
               </div>
@@ -494,30 +503,33 @@ function ProviderFact({ label, value }: { label: string; value: string }) {
 function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) {
   const queryClient = useQueryClient();
   const providerId = provider.id;
-  const [createKeyOpen, setCreateKeyOpen] = useState(false);
+  const [createCredentialOpen, setCreateCredentialOpen] = useState(false);
   const [createModelOpen, setCreateModelOpen] = useState(false);
-  const keysQuery = useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet(providerId, {
-    query: { enabled: Boolean(providerId) },
-  });
+  const credentialsQuery = useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet(
+    providerId,
+    {
+      query: { enabled: Boolean(providerId) },
+    },
+  );
   const modelsQuery = useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet(providerId, {
     query: { enabled: Boolean(providerId) },
   });
-  const keys = keysQuery.data?.status === 200 ? keysQuery.data.data : [];
+  const credentials = credentialsQuery.data?.status === 200 ? credentialsQuery.data.data : [];
   const models = modelsQuery.data?.status === 200 ? modelsQuery.data.data : [];
 
-  const createKey = useCreateProviderCredentialApiV1ProvidersProviderIdCredentialsPost({
+  const createCredential = useCreateProviderCredentialApiV1ProvidersProviderIdCredentialsPost({
     mutation: {
       onSuccess: async () => {
-        setCreateKeyOpen(false);
+        setCreateCredentialOpen(false);
         await queryClient.invalidateQueries();
       },
     },
   });
-  const updateKey =
+  const updateCredential =
     useUpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch({
       mutation: { onSuccess: async () => queryClient.invalidateQueries() },
     });
-  const deactivateKey =
+  const deactivateCredential =
     useDeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete({
       mutation: { onSuccess: async () => queryClient.invalidateQueries() },
     });
@@ -539,12 +551,53 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
   const syncModels = useSyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost({
     mutation: { onSuccess: async () => queryClient.invalidateQueries() },
   });
-  const testCredential = useMutation({
-    mutationFn: (providerCredentialId: string) =>
-      testProviderCredential(providerId, providerCredentialId),
-    onSuccess: async () => queryClient.invalidateQueries(),
-  });
-  const hasActiveKey = keys.some((key) => key.is_active);
+  const testCredential =
+    useTestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost({
+      mutation: { onSettled: async () => queryClient.invalidateQueries() },
+    });
+  const [testResult, setTestResult] = useState<{
+    providerCredentialId: string;
+    message: string;
+    status: "valid" | "invalid";
+  } | null>(null);
+  const hasActiveCredential = credentials.some((credential) => credential.is_active);
+
+  function handleTestCredential(providerCredential: ProviderCredentialResponse) {
+    setTestResult(null);
+    testCredential.mutate(
+      { providerId, providerCredentialId: providerCredential.id },
+      {
+        onSuccess: (response) => {
+          if (response.status !== 200) {
+            setTestResult({
+              providerCredentialId: providerCredential.id,
+              message: "Credential validation failed. Check the key and provider settings.",
+              status: "invalid",
+            });
+            return;
+          }
+
+          const message =
+            response.data.health_status === "valid"
+              ? "Credential test succeeded."
+              : (sanitizeCredentialValidationMessage(response.data.last_validation_error) ??
+                "Credential test failed.");
+          setTestResult({
+            providerCredentialId: providerCredential.id,
+            message,
+            status: response.data.health_status === "valid" ? "valid" : "invalid",
+          });
+        },
+        onError: () => {
+          setTestResult({
+            providerCredentialId: providerCredential.id,
+            message: "Credential validation failed. Check the key and provider settings.",
+            status: "invalid",
+          });
+        },
+      },
+    );
+  }
 
   return (
     <>
@@ -574,40 +627,41 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
                 first.
               </p>
             </div>
-            <Button size="sm" onClick={() => setCreateKeyOpen(true)}>
+            <Button size="sm" onClick={() => setCreateCredentialOpen(true)}>
               <Plus />
               Add credential
             </Button>
           </div>
           <ResourceKeyTable
             providerId={providerId}
-            keys={keys}
+            credentials={credentials}
             isTesting={testCredential.isPending}
-            onUpdate={(key, values) =>
-              updateKey.mutate({
+            testResult={testResult}
+            onUpdate={(credential, values) =>
+              updateCredential.mutate({
                 providerId,
-                providerCredentialId: key.id,
+                providerCredentialId: credential.id,
                 data: values,
               })
             }
-            onRotate={(key, apiKey) =>
-              updateKey.mutate({
+            onRotate={(credential, apiKey) =>
+              updateCredential.mutate({
                 providerId,
-                providerCredentialId: key.id,
+                providerCredentialId: credential.id,
                 data: { api_key: apiKey },
               })
             }
-            onDeactivate={(key) =>
-              deactivateKey.mutate({ providerId, providerCredentialId: key.id })
+            onDeactivate={(credential) =>
+              deactivateCredential.mutate({ providerId, providerCredentialId: credential.id })
             }
-            onReactivate={(key) =>
-              updateKey.mutate({
+            onReactivate={(credential) =>
+              updateCredential.mutate({
                 providerId,
-                providerCredentialId: key.id,
+                providerCredentialId: credential.id,
                 data: { is_active: true },
               })
             }
-            onTest={(key) => testCredential.mutate(key.id)}
+            onTest={handleTestCredential}
           />
         </section>
 
@@ -627,10 +681,12 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
               <Button
                 size="sm"
                 variant="outline"
-                disabled={!providerId || !hasActiveKey || syncModels.isPending}
+                disabled={!providerId || !hasActiveCredential || syncModels.isPending}
                 onClick={() => providerId && syncModels.mutate({ providerId })}
                 title={
-                  !hasActiveKey ? "Add an active credential before syncing models." : undefined
+                  !hasActiveCredential
+                    ? "Add an active credential before syncing models."
+                    : undefined
                 }
               >
                 <RefreshCw />
@@ -662,11 +718,11 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
         </section>
       </div>
       <CreateProviderCredentialSheet
-        open={createKeyOpen}
-        onOpenChange={setCreateKeyOpen}
+        open={createCredentialOpen}
+        onOpenChange={setCreateCredentialOpen}
         providerName={provider.name}
         onSubmit={(values) =>
-          createKey.mutate({
+          createCredential.mutate({
             providerId,
             data: {
               name: values.name,
@@ -675,7 +731,7 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
             },
           })
         }
-        isPending={createKey.isPending}
+        isPending={createCredential.isPending}
       />
       <CreateModelOfferingSheet
         open={createModelOpen}
@@ -698,8 +754,9 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
 
 function ResourceKeyTable({
   providerId,
-  keys,
+  credentials,
   isTesting,
+  testResult,
   onUpdate,
   onRotate,
   onDeactivate,
@@ -707,23 +764,31 @@ function ResourceKeyTable({
   onTest,
 }: {
   providerId: string;
-  keys: ProviderCredentialResponse[];
+  credentials: ProviderCredentialResponse[];
   isTesting: boolean;
-  onUpdate: (key: ProviderCredentialResponse, values: { name: string; priority: number }) => void;
-  onRotate: (key: ProviderCredentialResponse, apiKey: string) => void;
-  onDeactivate: (key: ProviderCredentialResponse) => void;
-  onReactivate: (key: ProviderCredentialResponse) => void;
-  onTest: (key: ProviderCredentialResponse) => void;
+  testResult: {
+    providerCredentialId: string;
+    message: string;
+    status: "valid" | "invalid";
+  } | null;
+  onUpdate: (
+    credential: ProviderCredentialResponse,
+    values: { name: string; priority: number },
+  ) => void;
+  onRotate: (credential: ProviderCredentialResponse, apiKey: string) => void;
+  onDeactivate: (credential: ProviderCredentialResponse) => void;
+  onReactivate: (credential: ProviderCredentialResponse) => void;
+  onTest: (credential: ProviderCredentialResponse) => void;
 }) {
-  const sortedKeys = [...keys].sort(
+  const sortedCredentials = [...credentials].sort(
     (a, b) =>
       Number(b.is_active) - Number(a.is_active) ||
       a.priority - b.priority ||
       new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
   );
-  const syncKey = sortedKeys.find((key) => key.is_active);
-  const [editKey, setEditKey] = useState<ProviderCredentialResponse | null>(null);
-  const [rotateKey, setRotateKey] = useState<ProviderCredentialResponse | null>(null);
+  const syncCredential = sortedCredentials.find((credential) => credential.is_active);
+  const [editCredential, setEditCredential] = useState<ProviderCredentialResponse | null>(null);
+  const [rotateCredential, setRotateCredential] = useState<ProviderCredentialResponse | null>(null);
   const [apiKey, setApiKey] = useState("");
 
   return (
@@ -742,64 +807,99 @@ function ResourceKeyTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {sortedKeys.map((key) => (
-            <TableRow key={key.id}>
+          {sortedCredentials.map((credential) => (
+            <TableRow key={credential.id}>
               <TableCell className="font-medium">
-                <div>{key.name}</div>
-                {syncKey?.id === key.id ? (
+                <div>{credential.name}</div>
+                <p className="text-xs text-muted-foreground">
+                  Created by {credential.created_by ?? "system"}
+                </p>
+                {syncCredential?.id === credential.id ? (
                   <p className="text-xs text-muted-foreground">Used first for model sync</p>
                 ) : null}
+                {testResult?.providerCredentialId === credential.id ? (
+                  <p
+                    className={
+                      testResult.status === "valid"
+                        ? "text-xs text-emerald-600"
+                        : "text-xs text-destructive"
+                    }
+                  >
+                    {testResult.message}
+                  </p>
+                ) : credential.last_validation_error ? (
+                  <p className="text-xs text-destructive">
+                    {sanitizeCredentialValidationMessage(credential.last_validation_error)}
+                  </p>
+                ) : null}
               </TableCell>
-              <TableCell className="font-mono text-xs">{key.key_prefix}</TableCell>
-              <TableCell>{key.priority}</TableCell>
+              <TableCell className="font-mono text-xs">{credential.key_prefix}</TableCell>
+              <TableCell>{credential.priority}</TableCell>
               <TableCell>
                 <StatusBadge
                   variant={
-                    key.health_status === "valid"
+                    credential.health_status === "valid"
                       ? "active"
-                      : key.health_status === "unchecked"
+                      : credential.health_status === "unchecked"
                         ? "inactive"
                         : "error"
                   }
                 >
-                  {key.health_status}
+                  {credential.health_status}
                 </StatusBadge>
               </TableCell>
               <TableCell>
-                <StatusBadge variant={key.is_active ? "active" : "inactive"}>
-                  {key.is_active ? "Active" : "Disabled"}
+                <StatusBadge variant={credential.is_active ? "active" : "inactive"}>
+                  {credential.is_active ? "Active" : "Disabled"}
                 </StatusBadge>
               </TableCell>
               <TableCell className="text-xs text-muted-foreground">
-                {formatDateTime(key.created_at)}
+                {formatDateTime(credential.created_at)}
               </TableCell>
               <TableCell className="font-mono text-xs text-muted-foreground">
-                {key.last_successful_request_at
-                  ? formatDateTime(key.last_successful_request_at)
-                  : "Never"}
+                {credential.last_successful_request_at
+                  ? formatDateTime(credential.last_successful_request_at)
+                  : credential.last_used_at
+                    ? formatDateTime(credential.last_used_at)
+                    : "Never"}
               </TableCell>
               <TableCell className="flex justify-end gap-1">
                 <Button
                   size="icon-sm"
                   variant="ghost"
-                  disabled={!providerId || !key.is_active || isTesting}
-                  onClick={() => onTest(key)}
+                  disabled={!providerId || !credential.is_active || isTesting}
+                  onClick={() => onTest(credential)}
                   title="Test credential"
+                  aria-label="Test credential"
                 >
                   <Activity />
                 </Button>
-                <Button size="icon-sm" variant="ghost" onClick={() => setEditKey(key)}>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={() => setEditCredential(credential)}
+                  title="Edit credential"
+                  aria-label="Edit credential"
+                >
                   <Pencil />
                 </Button>
-                <Button size="icon-sm" variant="ghost" onClick={() => setRotateKey(key)}>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={() => setRotateCredential(credential)}
+                  title="Rotate credential secret"
+                  aria-label="Rotate credential secret"
+                >
                   <RefreshCw />
                 </Button>
-                {key.is_active ? (
+                {credential.is_active ? (
                   <Button
                     size="icon-sm"
                     variant="ghost"
                     disabled={!providerId}
-                    onClick={() => onDeactivate(key)}
+                    onClick={() => onDeactivate(credential)}
+                    title="Disable credential"
+                    aria-label="Disable credential"
                   >
                     <Trash2 />
                   </Button>
@@ -808,7 +908,9 @@ function ResourceKeyTable({
                     size="icon-sm"
                     variant="ghost"
                     disabled={!providerId}
-                    onClick={() => onReactivate(key)}
+                    onClick={() => onReactivate(credential)}
+                    title="Reactivate credential"
+                    aria-label="Reactivate credential"
                   >
                     <RotateCcw />
                   </Button>
@@ -819,19 +921,19 @@ function ResourceKeyTable({
         </TableBody>
       </Table>
       <EditProviderCredentialSheet
-        providerCredential={editKey}
-        onClose={() => setEditKey(null)}
+        providerCredential={editCredential}
+        onClose={() => setEditCredential(null)}
         onSubmit={(values) => {
-          if (!editKey) return;
-          onUpdate(editKey, values);
-          setEditKey(null);
+          if (!editCredential) return;
+          onUpdate(editCredential, values);
+          setEditCredential(null);
         }}
       />
       <Dialog
-        open={Boolean(rotateKey)}
+        open={Boolean(rotateCredential)}
         onOpenChange={(open) => {
           if (!open) {
-            setRotateKey(null);
+            setRotateCredential(null);
             setApiKey("");
           }
         }}
@@ -848,10 +950,10 @@ function ResourceKeyTable({
           />
           <DialogFooter>
             <Button
-              disabled={!rotateKey || !apiKey}
+              disabled={!rotateCredential || !apiKey}
               onClick={() => {
-                if (rotateKey) onRotate(rotateKey, apiKey);
-                setRotateKey(null);
+                if (rotateCredential) onRotate(rotateCredential, apiKey);
+                setRotateCredential(null);
                 setApiKey("");
               }}
             >
