@@ -150,15 +150,6 @@ class ProviderResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-
-CreateProviderKeyRequest = CreateProviderCredentialRequest
-UpdateProviderKeyRequest = UpdateProviderCredentialRequest
-ProviderKeyResponse = ProviderCredentialResponse
-CreateProviderModelRequest = CreateModelOfferingRequest
-UpdateProviderModelRequest = UpdateModelOfferingRequest
-ProviderModelResponse = ModelOfferingResponse
-
-
 class ProviderChatCompletionRequest(BaseModel):
     model: str = Field(min_length=1, max_length=255)
     messages: list[dict[str, Any]] = Field(min_length=1)
@@ -183,3 +174,4 @@ class ProviderChatCompletionStream:
         self.chunks = chunks
         self.close = close
         self.media_type = media_type
+

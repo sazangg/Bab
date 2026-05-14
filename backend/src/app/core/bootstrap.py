@@ -17,7 +17,11 @@ from app.modules.keys.internal.models import (  # noqa: F401
     VirtualKey,
 )
 from app.modules.limits.internal.models import LimitCounter, LimitPolicy  # noqa: F401
-from app.modules.providers.internal.models import Provider, ProviderKey, ProviderModel  # noqa: F401
+from app.modules.providers.internal.models import (  # noqa: F401
+    ModelOffering,
+    Provider,
+    ProviderCredential,
+)
 from app.modules.request_logs.internal.models import RequestLog  # noqa: F401
 
 

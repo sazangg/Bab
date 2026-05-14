@@ -123,8 +123,3 @@ class ModelOffering(Base):
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )
-
-
-# Backward-compatible import aliases while the rest of the codebase is refactored slice by slice.
-ProviderKey = ProviderCredential
-ProviderModel = ModelOffering

@@ -7,18 +7,18 @@ from app.core.database import Scope
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.providers.internal import service
 from app.modules.providers.schemas import (
-    CreateProviderKeyRequest,
-    CreateProviderModelRequest,
+    CreateModelOfferingRequest,
+    CreateProviderCredentialRequest,
     CreateProviderRequest,
+    ModelOfferingResponse,
     ProviderChatCompletionRequest,
     ProviderChatCompletionResponse,
     ProviderChatCompletionStream,
-    ProviderKeyResponse,
-    ProviderModelResponse,
+    ProviderCredentialResponse,
     ProviderResponse,
     TestProviderCredentialResponse,
-    UpdateProviderKeyRequest,
-    UpdateProviderModelRequest,
+    UpdateModelOfferingRequest,
+    UpdateProviderCredentialRequest,
     UpdateProviderRequest,
 )
 
@@ -41,15 +41,15 @@ async def get_provider(*, provider_id: UUID, scope: Scope, db: AsyncSession) -> 
     return await service.get_provider(provider_id=provider_id, scope=scope, db=db)
 
 
-async def create_provider_key(
+async def create_provider_credential(
     *,
     provider_id: UUID,
-    payload: CreateProviderKeyRequest,
+    payload: CreateProviderCredentialRequest,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
-) -> ProviderKeyResponse:
-    return await service.create_provider_key(
+) -> ProviderCredentialResponse:
+    return await service.create_provider_credential(
         provider_id=provider_id,
         payload=payload,
         actor=actor,
@@ -58,36 +58,40 @@ async def create_provider_key(
     )
 
 
-async def list_provider_keys(
+async def list_provider_credentials(
     *,
     provider_id: UUID,
     scope: Scope,
     db: AsyncSession,
-) -> list[ProviderKeyResponse]:
-    return await service.list_provider_keys(provider_id=provider_id, scope=scope, db=db)
+) -> list[ProviderCredentialResponse]:
+    return await service.list_provider_credentials(provider_id=provider_id, scope=scope, db=db)
 
 
-async def get_provider_key(
+async def get_provider_credential(
     *,
-    provider_key_id: UUID,
+    provider_credential_id: UUID,
     scope: Scope,
     db: AsyncSession,
-) -> ProviderKeyResponse:
-    return await service.get_provider_key(provider_key_id=provider_key_id, scope=scope, db=db)
+) -> ProviderCredentialResponse:
+    return await service.get_provider_credential(
+        provider_credential_id=provider_credential_id,
+        scope=scope,
+        db=db,
+    )
 
 
-async def update_provider_key(
+async def update_provider_credential(
     *,
     provider_id: UUID,
-    provider_key_id: UUID,
-    payload: UpdateProviderKeyRequest,
+    provider_credential_id: UUID,
+    payload: UpdateProviderCredentialRequest,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
-) -> ProviderKeyResponse:
-    return await service.update_provider_key(
+) -> ProviderCredentialResponse:
+    return await service.update_provider_credential(
         provider_id=provider_id,
-        provider_key_id=provider_key_id,
+        provider_credential_id=provider_credential_id,
         payload=payload,
         actor=actor,
         scope=scope,
@@ -98,7 +102,7 @@ async def update_provider_key(
 async def test_provider_credential(
     *,
     provider_id: UUID,
-    provider_key_id: UUID,
+    provider_credential_id: UUID,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
@@ -106,7 +110,7 @@ async def test_provider_credential(
 ) -> TestProviderCredentialResponse:
     return await service.test_provider_credential(
         provider_id=provider_id,
-        provider_key_id=provider_key_id,
+        provider_credential_id=provider_credential_id,
         actor=actor,
         scope=scope,
         db=db,
@@ -114,32 +118,32 @@ async def test_provider_credential(
     )
 
 
-async def deactivate_provider_key(
+async def deactivate_provider_credential(
     *,
     provider_id: UUID,
-    provider_key_id: UUID,
+    provider_credential_id: UUID,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
 ) -> None:
-    await service.deactivate_provider_key(
+    await service.deactivate_provider_credential(
         provider_id=provider_id,
-        provider_key_id=provider_key_id,
+        provider_credential_id=provider_credential_id,
         actor=actor,
         scope=scope,
         db=db,
     )
 
 
-async def create_provider_model(
+async def create_model_offering(
     *,
     provider_id: UUID,
-    payload: CreateProviderModelRequest,
+    payload: CreateModelOfferingRequest,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
-) -> ProviderModelResponse:
-    return await service.create_provider_model(
+) -> ModelOfferingResponse:
+    return await service.create_model_offering(
         provider_id=provider_id,
         payload=payload,
         actor=actor,
@@ -148,15 +152,15 @@ async def create_provider_model(
     )
 
 
-async def sync_provider_models(
+async def sync_model_offerings(
     *,
     provider_id: UUID,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
     http_client: httpx.AsyncClient,
-) -> list[ProviderModelResponse]:
-    return await service.sync_provider_models(
+) -> list[ModelOfferingResponse]:
+    return await service.sync_model_offerings(
         provider_id=provider_id,
         actor=actor,
         scope=scope,
@@ -165,40 +169,40 @@ async def sync_provider_models(
     )
 
 
-async def list_provider_models(
+async def list_model_offerings(
     *,
     provider_id: UUID,
     scope: Scope,
     db: AsyncSession,
-) -> list[ProviderModelResponse]:
-    return await service.list_provider_models(provider_id=provider_id, scope=scope, db=db)
+) -> list[ModelOfferingResponse]:
+    return await service.list_model_offerings(provider_id=provider_id, scope=scope, db=db)
 
 
-async def get_provider_model(
+async def get_model_offering(
     *,
-    provider_model_id: UUID,
+    model_offering_id: UUID,
     scope: Scope,
     db: AsyncSession,
-) -> ProviderModelResponse:
-    return await service.get_provider_model(
-        provider_model_id=provider_model_id,
+) -> ModelOfferingResponse:
+    return await service.get_model_offering(
+        model_offering_id=model_offering_id,
         scope=scope,
         db=db,
     )
 
 
-async def update_provider_model(
+async def update_model_offering(
     *,
     provider_id: UUID,
-    provider_model_id: UUID,
-    payload: UpdateProviderModelRequest,
+    model_offering_id: UUID,
+    payload: UpdateModelOfferingRequest,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
-) -> ProviderModelResponse:
-    return await service.update_provider_model(
+) -> ModelOfferingResponse:
+    return await service.update_model_offering(
         provider_id=provider_id,
-        provider_model_id=provider_model_id,
+        model_offering_id=model_offering_id,
         payload=payload,
         actor=actor,
         scope=scope,
@@ -206,17 +210,17 @@ async def update_provider_model(
     )
 
 
-async def deactivate_provider_model(
+async def deactivate_model_offering(
     *,
     provider_id: UUID,
-    provider_model_id: UUID,
+    model_offering_id: UUID,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
 ) -> None:
-    await service.deactivate_provider_model(
+    await service.deactivate_model_offering(
         provider_id=provider_id,
-        provider_model_id=provider_model_id,
+        model_offering_id=model_offering_id,
         actor=actor,
         scope=scope,
         db=db,
@@ -253,7 +257,7 @@ async def deactivate_provider(
 async def create_chat_completion(
     *,
     provider_id: UUID,
-    provider_key_id: UUID | None = None,
+    provider_credential_id: UUID | None = None,
     payload: ProviderChatCompletionRequest,
     scope: Scope,
     db: AsyncSession,
@@ -261,7 +265,7 @@ async def create_chat_completion(
 ) -> ProviderChatCompletionResponse:
     return await service.create_chat_completion(
         provider_id=provider_id,
-        provider_key_id=provider_key_id,
+        provider_credential_id=provider_credential_id,
         payload=payload,
         scope=scope,
         db=db,
@@ -272,7 +276,7 @@ async def create_chat_completion(
 async def stream_chat_completion(
     *,
     provider_id: UUID,
-    provider_key_id: UUID | None = None,
+    provider_credential_id: UUID | None = None,
     payload: ProviderChatCompletionRequest,
     scope: Scope,
     db: AsyncSession,
@@ -280,9 +284,10 @@ async def stream_chat_completion(
 ) -> ProviderChatCompletionStream:
     return await service.stream_chat_completion(
         provider_id=provider_id,
-        provider_key_id=provider_key_id,
+        provider_credential_id=provider_credential_id,
         payload=payload,
         scope=scope,
         db=db,
         http_client=http_client,
     )
+

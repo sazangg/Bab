@@ -10,7 +10,7 @@ class ProviderInactiveError(ProviderError):
     pass
 
 
-class ProviderKeyRequiredError(ProviderError):
+class ProviderCredentialRequiredError(ProviderError):
     pass
 
 
@@ -23,3 +23,4 @@ class ProviderUpstreamError(ProviderError):
         self.status_code = status_code
         self.body = body
         super().__init__(f"provider upstream returned {status_code}")
+

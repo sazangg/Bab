@@ -11,8 +11,8 @@ from app.modules.audit import facade as audit_facade
 from app.modules.audit.schemas import RecordAuditEvent
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.providers.errors import (
+    ProviderCredentialRequiredError,
     ProviderInactiveError,
-    ProviderKeyRequiredError,
     ProviderNotFoundError,
 )
 from app.modules.providers.internal import repository
@@ -23,18 +23,18 @@ from app.modules.providers.internal.adapters import (
 )
 from app.modules.providers.internal.models import Provider
 from app.modules.providers.schemas import (
-    CreateProviderKeyRequest,
-    CreateProviderModelRequest,
+    CreateModelOfferingRequest,
+    CreateProviderCredentialRequest,
     CreateProviderRequest,
+    ModelOfferingResponse,
     ProviderChatCompletionRequest,
     ProviderChatCompletionResponse,
     ProviderChatCompletionStream,
-    ProviderKeyResponse,
-    ProviderModelResponse,
+    ProviderCredentialResponse,
     ProviderResponse,
     TestProviderCredentialResponse,
-    UpdateProviderKeyRequest,
-    UpdateProviderModelRequest,
+    UpdateModelOfferingRequest,
+    UpdateProviderCredentialRequest,
     UpdateProviderRequest,
 )
 
@@ -92,18 +92,18 @@ async def get_provider(*, provider_id: UUID, scope: Scope, db: AsyncSession) -> 
     return _to_response(provider)
 
 
-async def create_provider_key(
+async def create_provider_credential(
     *,
     provider_id: UUID,
-    payload: CreateProviderKeyRequest,
+    payload: CreateProviderCredentialRequest,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
-) -> ProviderKeyResponse:
+) -> ProviderCredentialResponse:
     async with transaction(db):
         await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
         api_key = _normalize_api_key(payload.api_key)
-        provider_key = await repository.create_provider_key(
+        provider_credential = await repository.create_provider_credential(
             org_id=scope.org_id,
             provider_id=provider_id,
             created_by=actor.id,
@@ -118,88 +118,91 @@ async def create_provider_key(
             RecordAuditEvent(
                 org_id=scope.org_id,
                 actor_user_id=actor.id,
-                event="provider_key.created",
-                target_type="provider_key",
-                target_id=provider_key.id,
-                event_metadata={"provider_id": str(provider_id), "name": provider_key.name},
+                event="provider_credential.created",
+                target_type="provider_credential",
+                target_id=provider_credential.id,
+                event_metadata={"provider_id": str(provider_id), "name": provider_credential.name},
             ),
             db,
         )
-    return ProviderKeyResponse.model_validate(provider_key)
+    return ProviderCredentialResponse.model_validate(provider_credential)
 
 
-async def list_provider_keys(
+async def list_provider_credentials(
     *,
     provider_id: UUID,
     scope: Scope,
     db: AsyncSession,
-) -> list[ProviderKeyResponse]:
+) -> list[ProviderCredentialResponse]:
     await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
-    provider_keys = await repository.list_provider_keys(
+    provider_credentials = await repository.list_provider_credentials(
         org_id=scope.org_id,
         provider_id=provider_id,
         db=db,
     )
-    return [ProviderKeyResponse.model_validate(provider_key) for provider_key in provider_keys]
+    return [
+        ProviderCredentialResponse.model_validate(provider_credential)
+        for provider_credential in provider_credentials
+    ]
 
 
-async def get_provider_key(
+async def get_provider_credential(
     *,
-    provider_key_id: UUID,
+    provider_credential_id: UUID,
     scope: Scope,
     db: AsyncSession,
-) -> ProviderKeyResponse:
-    provider_key = await repository.get_provider_key(
+) -> ProviderCredentialResponse:
+    provider_credential = await repository.get_provider_credential(
         org_id=scope.org_id,
-        provider_key_id=provider_key_id,
+        provider_credential_id=provider_credential_id,
         db=db,
     )
-    if provider_key is None:
+    if provider_credential is None:
         raise ProviderNotFoundError
-    return ProviderKeyResponse.model_validate(provider_key)
+    return ProviderCredentialResponse.model_validate(provider_credential)
 
 
-async def update_provider_key(
+async def update_provider_credential(
     *,
     provider_id: UUID,
-    provider_key_id: UUID,
-    payload: UpdateProviderKeyRequest,
+    provider_credential_id: UUID,
+    payload: UpdateProviderCredentialRequest,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
-) -> ProviderKeyResponse:
+) -> ProviderCredentialResponse:
     async with transaction(db):
         await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
-        provider_key = await _get_provider_key_or_raise(
+        provider_credential = await _get_provider_credential_or_raise(
             provider_id=provider_id,
-            provider_key_id=provider_key_id,
+            provider_credential_id=provider_credential_id,
             scope=scope,
             db=db,
         )
         credential_changed = payload.api_key is not None
         if payload.name is not None:
-            provider_key.name = payload.name
+            provider_credential.name = payload.name
         if payload.api_key is not None:
             api_key = _normalize_api_key(payload.api_key)
-            provider_key.key_prefix = _key_prefix(api_key)
-            provider_key.api_key_encrypted = encrypt(api_key)
-            provider_key.health_status = "unchecked"
-            provider_key.last_validation_error = None
+            provider_credential.key_prefix = _key_prefix(api_key)
+            provider_credential.api_key_encrypted = encrypt(api_key)
+            provider_credential.health_status = "unchecked"
+            provider_credential.last_validation_error = None
         if payload.routing_policy is not None:
-            provider_key.routing_policy = payload.routing_policy
+            provider_credential.routing_policy = payload.routing_policy
         if payload.priority is not None:
-            provider_key.priority = payload.priority
+            provider_credential.priority = payload.priority
         if payload.is_active is not None:
-            provider_key.is_active = payload.is_active
+            provider_credential.is_active = payload.is_active
 
         await db.flush()
         await audit_facade.record_event(
             RecordAuditEvent(
                 org_id=scope.org_id,
                 actor_user_id=actor.id,
-                event="provider_key.updated",
-                target_type="provider_key",
-                target_id=provider_key.id,
+                event="provider_credential.updated",
+                target_type="provider_credential",
+                target_id=provider_credential.id,
                 event_metadata={"provider_id": str(provider_id)},
             ),
             db,
@@ -209,21 +212,21 @@ async def update_provider_key(
                 RecordAuditEvent(
                     org_id=scope.org_id,
                     actor_user_id=actor.id,
-                    event="provider_key.credential_changed",
-                    target_type="provider_key",
-                    target_id=provider_key.id,
+                    event="provider_credential.secret_changed",
+                    target_type="provider_credential",
+                    target_id=provider_credential.id,
                     event_metadata={"provider_id": str(provider_id)},
                 ),
                 db,
             )
 
-    return ProviderKeyResponse.model_validate(provider_key)
+    return ProviderCredentialResponse.model_validate(provider_credential)
 
 
 async def test_provider_credential(
     *,
     provider_id: UUID,
-    provider_key_id: UUID,
+    provider_credential_id: UUID,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
@@ -231,9 +234,9 @@ async def test_provider_credential(
 ) -> TestProviderCredentialResponse:
     async with transaction(db):
         provider = await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
-        provider_key = await _get_provider_key_or_raise(
+        provider_credential = await _get_provider_credential_or_raise(
             provider_id=provider_id,
-            provider_key_id=provider_key_id,
+            provider_credential_id=provider_credential_id,
             scope=scope,
             db=db,
         )
@@ -242,22 +245,22 @@ async def test_provider_credential(
             await adapter.list_models(
                 provider=AdapterProvider(
                     base_url=provider.base_url,
-                    api_key=decrypt(provider_key.api_key_encrypted),
+                    api_key=decrypt(provider_credential.api_key_encrypted),
                 ),
                 http_client=http_client,
             )
-            provider_key.health_status = "valid"
-            provider_key.last_validation_error = None
-            provider_key.last_successful_request_at = repository.datetime_now()
+            provider_credential.health_status = "valid"
+            provider_credential.last_validation_error = None
+            provider_credential.last_successful_request_at = repository.datetime_now()
             health_status = "valid"
             error = None
-            last_successful_request_at = provider_key.last_successful_request_at
+            last_successful_request_at = provider_credential.last_successful_request_at
         except Exception as exc:  # noqa: BLE001 - persisted as upstream credential health.
-            provider_key.health_status = "invalid"
-            provider_key.last_validation_error = str(exc)
+            provider_credential.health_status = "invalid"
+            provider_credential.last_validation_error = str(exc)
             health_status = "invalid"
             error = str(exc)
-            last_successful_request_at = provider_key.last_successful_request_at
+            last_successful_request_at = provider_credential.last_successful_request_at
         await db.flush()
         await audit_facade.record_event(
             RecordAuditEvent(
@@ -265,62 +268,62 @@ async def test_provider_credential(
                 actor_user_id=actor.id,
                 event="provider_credential.tested",
                 target_type="provider_credential",
-                target_id=provider_key.id,
+                target_id=provider_credential.id,
                 event_metadata={"provider_id": str(provider_id), "health_status": health_status},
             ),
             db,
         )
 
     return TestProviderCredentialResponse(
-        id=provider_key.id,
+        id=provider_credential.id,
         health_status=health_status,
         last_validation_error=error,
         last_successful_request_at=last_successful_request_at,
     )
 
 
-async def deactivate_provider_key(
+async def deactivate_provider_credential(
     *,
     provider_id: UUID,
-    provider_key_id: UUID,
+    provider_credential_id: UUID,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
 ) -> None:
     async with transaction(db):
         await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
-        provider_key = await _get_provider_key_or_raise(
+        provider_credential = await _get_provider_credential_or_raise(
             provider_id=provider_id,
-            provider_key_id=provider_key_id,
+            provider_credential_id=provider_credential_id,
             scope=scope,
             db=db,
         )
-        provider_key.is_active = False
+        provider_credential.is_active = False
         await db.flush()
         await audit_facade.record_event(
             RecordAuditEvent(
                 org_id=scope.org_id,
                 actor_user_id=actor.id,
-                event="provider_key.deactivated",
-                target_type="provider_key",
-                target_id=provider_key.id,
+                event="provider_credential.deactivated",
+                target_type="provider_credential",
+                target_id=provider_credential.id,
                 event_metadata={"provider_id": str(provider_id)},
             ),
             db,
         )
 
 
-async def create_provider_model(
+async def create_model_offering(
     *,
     provider_id: UUID,
-    payload: CreateProviderModelRequest,
+    payload: CreateModelOfferingRequest,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
-) -> ProviderModelResponse:
+) -> ModelOfferingResponse:
     async with transaction(db):
         await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
-        provider_model = await repository.create_provider_model(
+        model_offering = await repository.create_model_offering(
             org_id=scope.org_id,
             provider_id=provider_id,
             provider_model_name=payload.provider_model_name,
@@ -339,58 +342,64 @@ async def create_provider_model(
             RecordAuditEvent(
                 org_id=scope.org_id,
                 actor_user_id=actor.id,
-                event="provider_model.created",
-                target_type="provider_model",
-                target_id=provider_model.id,
+                event="model_offering.created",
+                target_type="model_offering",
+                target_id=model_offering.id,
                 event_metadata={
                     "provider_id": str(provider_id),
-                    "provider_model_name": provider_model.provider_model_name,
-                    "alias": provider_model.alias,
+                    "provider_model_name": model_offering.provider_model_name,
+                    "alias": model_offering.alias,
                 },
             ),
             db,
         )
-    return ProviderModelResponse.model_validate(provider_model)
+    return ModelOfferingResponse.model_validate(model_offering)
 
 
-async def sync_provider_models(
+async def sync_model_offerings(
     *,
     provider_id: UUID,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
     http_client: httpx.AsyncClient,
-) -> list[ProviderModelResponse]:
+) -> list[ModelOfferingResponse]:
     async with transaction(db):
         provider = await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
-        provider_keys = await repository.list_provider_keys(
+        provider_credentials = await repository.list_provider_credentials(
             org_id=scope.org_id,
             provider_id=provider_id,
             db=db,
         )
-        active_key = next((key for key in provider_keys if key.is_active), None)
-        if active_key is None:
-            raise ProviderKeyRequiredError
-        await repository.mark_provider_key_used(provider_key=active_key, db=db)
+        active_credential = next(
+            (credential for credential in provider_credentials if credential.is_active),
+            None,
+        )
+        if active_credential is None:
+            raise ProviderCredentialRequiredError
+        await repository.mark_provider_credential_used(
+            provider_credential=active_credential,
+            db=db,
+        )
 
         adapter = default_adapter_registry.get(provider.adapter_type)
         model_names = await adapter.list_models(
             provider=AdapterProvider(
                 base_url=provider.base_url,
-                api_key=decrypt(active_key.api_key_encrypted),
+                api_key=decrypt(active_credential.api_key_encrypted),
             ),
             http_client=http_client,
         )
         synced_models = []
         for model_name in sorted(set(model_names)):
-            provider_model = await repository.get_provider_model_by_name(
+            model_offering = await repository.get_model_offering_by_name(
                 org_id=scope.org_id,
                 provider_id=provider_id,
                 provider_model_name=model_name,
                 db=db,
             )
-            if provider_model is None:
-                provider_model = await repository.create_provider_model(
+            if model_offering is None:
+                model_offering = await repository.create_model_offering(
                     org_id=scope.org_id,
                     provider_id=provider_id,
                     provider_model_name=model_name,
@@ -399,15 +408,15 @@ async def sync_provider_models(
                     db=db,
                 )
             else:
-                provider_model.is_active = True
+                model_offering.is_active = True
                 await db.flush()
-            synced_models.append(provider_model)
+            synced_models.append(model_offering)
 
         await audit_facade.record_event(
             RecordAuditEvent(
                 org_id=scope.org_id,
                 actor_user_id=actor.id,
-                event="provider_models.synced",
+                event="model_offerings.synced",
                 target_type="provider",
                 target_id=provider.id,
                 event_metadata={"model_count": len(synced_models)},
@@ -416,130 +425,133 @@ async def sync_provider_models(
         )
 
     logger.info(
-        "provider_models_synced",
+        "model_offerings_synced",
         provider_id=str(provider_id),
         model_count=len(synced_models),
         org_id=str(scope.org_id),
     )
-    return [ProviderModelResponse.model_validate(model) for model in synced_models]
+    return [
+        ModelOfferingResponse.model_validate(model_offering)
+        for model_offering in synced_models
+    ]
 
 
-async def list_provider_models(
+async def list_model_offerings(
     *,
     provider_id: UUID,
     scope: Scope,
     db: AsyncSession,
-) -> list[ProviderModelResponse]:
+) -> list[ModelOfferingResponse]:
     await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
-    provider_models = await repository.list_provider_models(
+    model_offerings = await repository.list_model_offerings(
         org_id=scope.org_id,
         provider_id=provider_id,
         db=db,
     )
     return [
-        ProviderModelResponse.model_validate(provider_model) for provider_model in provider_models
+        ModelOfferingResponse.model_validate(model_offering) for model_offering in model_offerings
     ]
 
 
-async def get_provider_model(
+async def get_model_offering(
     *,
-    provider_model_id: UUID,
+    model_offering_id: UUID,
     scope: Scope,
     db: AsyncSession,
-) -> ProviderModelResponse:
-    provider_model = await repository.get_provider_model(
+) -> ModelOfferingResponse:
+    model_offering = await repository.get_model_offering(
         org_id=scope.org_id,
-        provider_model_id=provider_model_id,
+        model_offering_id=model_offering_id,
         db=db,
     )
-    if provider_model is None:
+    if model_offering is None:
         raise ProviderNotFoundError
-    return ProviderModelResponse.model_validate(provider_model)
+    return ModelOfferingResponse.model_validate(model_offering)
 
 
-async def update_provider_model(
+async def update_model_offering(
     *,
     provider_id: UUID,
-    provider_model_id: UUID,
-    payload: UpdateProviderModelRequest,
+    model_offering_id: UUID,
+    payload: UpdateModelOfferingRequest,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
-) -> ProviderModelResponse:
+) -> ModelOfferingResponse:
     async with transaction(db):
         await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
-        provider_model = await _get_provider_model_or_raise(
+        model_offering = await _get_model_offering_or_raise(
             provider_id=provider_id,
-            provider_model_id=provider_model_id,
+            model_offering_id=model_offering_id,
             scope=scope,
             db=db,
         )
         if payload.provider_model_name is not None:
-            provider_model.provider_model_name = payload.provider_model_name
+            model_offering.provider_model_name = payload.provider_model_name
         if "alias" in payload.model_fields_set:
-            provider_model.alias = payload.alias
+            model_offering.alias = payload.alias
         if "version" in payload.model_fields_set:
-            provider_model.version = payload.version
+            model_offering.version = payload.version
         if payload.modality is not None:
-            provider_model.modality = payload.modality
+            model_offering.modality = payload.modality
         if payload.capabilities is not None:
-            provider_model.capabilities = payload.capabilities
+            model_offering.capabilities = payload.capabilities
         if "context_window" in payload.model_fields_set:
-            provider_model.context_window = payload.context_window
+            model_offering.context_window = payload.context_window
         if "input_price_per_million_tokens" in payload.model_fields_set:
-            provider_model.input_price_per_million_tokens = payload.input_price_per_million_tokens
+            model_offering.input_price_per_million_tokens = payload.input_price_per_million_tokens
         if "output_price_per_million_tokens" in payload.model_fields_set:
-            provider_model.output_price_per_million_tokens = payload.output_price_per_million_tokens
+            model_offering.output_price_per_million_tokens = payload.output_price_per_million_tokens
         if "cached_input_price_per_million_tokens" in payload.model_fields_set:
-            provider_model.cached_input_price_per_million_tokens = (
+            model_offering.cached_input_price_per_million_tokens = (
                 payload.cached_input_price_per_million_tokens
             )
         if payload.rate_limit_hints is not None:
-            provider_model.rate_limit_hints = payload.rate_limit_hints
+            model_offering.rate_limit_hints = payload.rate_limit_hints
         if payload.is_active is not None:
-            provider_model.is_active = payload.is_active
+            model_offering.is_active = payload.is_active
 
         await db.flush()
         await audit_facade.record_event(
             RecordAuditEvent(
                 org_id=scope.org_id,
                 actor_user_id=actor.id,
-                event="provider_model.updated",
-                target_type="provider_model",
-                target_id=provider_model.id,
+                event="model_offering.updated",
+                target_type="model_offering",
+                target_id=model_offering.id,
                 event_metadata={"provider_id": str(provider_id)},
             ),
             db,
         )
 
-    return ProviderModelResponse.model_validate(provider_model)
+    return ModelOfferingResponse.model_validate(model_offering)
 
 
-async def deactivate_provider_model(
+async def deactivate_model_offering(
     *,
     provider_id: UUID,
-    provider_model_id: UUID,
+    model_offering_id: UUID,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
 ) -> None:
     async with transaction(db):
         await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
-        provider_model = await _get_provider_model_or_raise(
+        model_offering = await _get_model_offering_or_raise(
             provider_id=provider_id,
-            provider_model_id=provider_model_id,
+            model_offering_id=model_offering_id,
             scope=scope,
             db=db,
         )
-        provider_model.is_active = False
+        model_offering.is_active = False
         await db.flush()
         await audit_facade.record_event(
             RecordAuditEvent(
                 org_id=scope.org_id,
                 actor_user_id=actor.id,
-                event="provider_model.deactivated",
-                target_type="provider_model",
-                target_id=provider_model.id,
+                event="model_offering.deactivated",
+                target_type="model_offering",
+                target_id=model_offering.id,
                 event_metadata={"provider_id": str(provider_id)},
             ),
             db,
@@ -640,7 +652,7 @@ async def deactivate_provider(
 async def create_chat_completion(
     *,
     provider_id: UUID,
-    provider_key_id: UUID | None = None,
+    provider_credential_id: UUID | None = None,
     payload: ProviderChatCompletionRequest,
     scope: Scope,
     db: AsyncSession,
@@ -653,7 +665,7 @@ async def create_chat_completion(
     adapter = default_adapter_registry.get(provider.adapter_type)
     api_key = await _resolve_provider_api_key(
         provider=provider,
-        provider_key_id=provider_key_id,
+        provider_credential_id=provider_credential_id,
         scope=scope,
         db=db,
     )
@@ -670,7 +682,7 @@ async def create_chat_completion(
 async def stream_chat_completion(
     *,
     provider_id: UUID,
-    provider_key_id: UUID | None = None,
+    provider_credential_id: UUID | None = None,
     payload: ProviderChatCompletionRequest,
     scope: Scope,
     db: AsyncSession,
@@ -683,7 +695,7 @@ async def stream_chat_completion(
     adapter = default_adapter_registry.get(provider.adapter_type)
     api_key = await _resolve_provider_api_key(
         provider=provider,
-        provider_key_id=provider_key_id,
+        provider_credential_id=provider_credential_id,
         scope=scope,
         db=db,
     )
@@ -704,38 +716,38 @@ async def _get_provider_or_raise(*, provider_id: UUID, scope: Scope, db: AsyncSe
     return provider
 
 
-async def _get_provider_key_or_raise(
+async def _get_provider_credential_or_raise(
     *,
     provider_id: UUID,
-    provider_key_id: UUID,
+    provider_credential_id: UUID,
     scope: Scope,
     db: AsyncSession,
 ):
-    provider_key = await repository.get_provider_key(
+    provider_credential = await repository.get_provider_credential(
         org_id=scope.org_id,
-        provider_key_id=provider_key_id,
+        provider_credential_id=provider_credential_id,
         db=db,
     )
-    if provider_key is None or provider_key.provider_id != provider_id:
+    if provider_credential is None or provider_credential.provider_id != provider_id:
         raise ProviderNotFoundError
-    return provider_key
+    return provider_credential
 
 
-async def _get_provider_model_or_raise(
+async def _get_model_offering_or_raise(
     *,
     provider_id: UUID,
-    provider_model_id: UUID,
+    model_offering_id: UUID,
     scope: Scope,
     db: AsyncSession,
 ):
-    provider_model = await repository.get_provider_model(
+    model_offering = await repository.get_model_offering(
         org_id=scope.org_id,
-        provider_model_id=provider_model_id,
+        model_offering_id=model_offering_id,
         db=db,
     )
-    if provider_model is None or provider_model.provider_id != provider_id:
+    if model_offering is None or model_offering.provider_id != provider_id:
         raise ProviderNotFoundError
-    return provider_model
+    return model_offering
 
 
 def _to_response(provider: Provider) -> ProviderResponse:
@@ -745,29 +757,29 @@ def _to_response(provider: Provider) -> ProviderResponse:
 async def _resolve_provider_api_key(
     *,
     provider: Provider,
-    provider_key_id: UUID | None,
+    provider_credential_id: UUID | None,
     scope: Scope,
     db: AsyncSession,
 ) -> str:
-    if provider_key_id is None:
+    if provider_credential_id is None:
         if provider.api_key_encrypted is None:
             raise ProviderNotFoundError
         return decrypt(provider.api_key_encrypted)
 
-    provider_key = await repository.get_provider_key(
+    provider_credential = await repository.get_provider_credential(
         org_id=scope.org_id,
-        provider_key_id=provider_key_id,
+        provider_credential_id=provider_credential_id,
         db=db,
     )
     if (
-        provider_key is None
-        or provider_key.provider_id != provider.id
-        or not provider_key.is_active
+        provider_credential is None
+        or provider_credential.provider_id != provider.id
+        or not provider_credential.is_active
     ):
         raise ProviderNotFoundError
 
-    await repository.mark_provider_key_used(provider_key=provider_key, db=db)
-    return decrypt(provider_key.api_key_encrypted)
+    await repository.mark_provider_credential_used(provider_credential=provider_credential, db=db)
+    return decrypt(provider_credential.api_key_encrypted)
 
 
 def _key_prefix(api_key: str) -> str:
@@ -799,3 +811,4 @@ def _default_capabilities() -> dict[str, bool]:
 
 def _default_model_capabilities() -> dict[str, bool]:
     return {"chat": True}
+

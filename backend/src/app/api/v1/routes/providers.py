@@ -10,7 +10,7 @@ from app.core.database import Scope, get_db
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.providers import facade
 from app.modules.providers.errors import (
-    ProviderKeyRequiredError,
+    ProviderCredentialRequiredError,
     ProviderNotFoundError,
     ProviderUpstreamError,
 )
@@ -61,7 +61,7 @@ async def list_provider_credentials(
     _: CurrentUser,
 ) -> list[ProviderCredentialResponse]:
     try:
-        return await facade.list_provider_keys(provider_id=provider_id, scope=scope, db=db)
+        return await facade.list_provider_credentials(provider_id=provider_id, scope=scope, db=db)
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc
 
@@ -75,7 +75,7 @@ async def create_provider_credential(
     db: DatabaseSession,
 ) -> ProviderCredentialResponse:
     try:
-        return await facade.create_provider_key(
+        return await facade.create_provider_credential(
             provider_id=provider_id,
             payload=payload,
             actor=actor,
@@ -96,9 +96,9 @@ async def update_provider_credential(
     db: DatabaseSession,
 ) -> ProviderCredentialResponse:
     try:
-        return await facade.update_provider_key(
+        return await facade.update_provider_credential(
             provider_id=provider_id,
-            provider_key_id=provider_credential_id,
+            provider_credential_id=provider_credential_id,
             payload=payload,
             actor=actor,
             scope=scope,
@@ -120,7 +120,7 @@ async def test_provider_credential(
         async with httpx.AsyncClient(timeout=30) as http_client:
             return await facade.test_provider_credential(
                 provider_id=provider_id,
-                provider_key_id=provider_credential_id,
+                provider_credential_id=provider_credential_id,
                 actor=actor,
                 scope=scope,
                 db=db,
@@ -142,9 +142,9 @@ async def deactivate_provider_credential(
     db: DatabaseSession,
 ) -> None:
     try:
-        await facade.deactivate_provider_key(
+        await facade.deactivate_provider_credential(
             provider_id=provider_id,
-            provider_key_id=provider_credential_id,
+            provider_credential_id=provider_credential_id,
             actor=actor,
             scope=scope,
             db=db,
@@ -161,7 +161,7 @@ async def list_model_offerings(
     _: CurrentUser,
 ) -> list[ModelOfferingResponse]:
     try:
-        return await facade.list_provider_models(provider_id=provider_id, scope=scope, db=db)
+        return await facade.list_model_offerings(provider_id=provider_id, scope=scope, db=db)
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc
 
@@ -175,7 +175,7 @@ async def create_model_offering(
     db: DatabaseSession,
 ) -> ModelOfferingResponse:
     try:
-        return await facade.create_provider_model(
+        return await facade.create_model_offering(
             provider_id=provider_id,
             payload=payload,
             actor=actor,
@@ -196,9 +196,9 @@ async def update_model_offering(
     db: DatabaseSession,
 ) -> ModelOfferingResponse:
     try:
-        return await facade.update_provider_model(
+        return await facade.update_model_offering(
             provider_id=provider_id,
-            provider_model_id=model_offering_id,
+            model_offering_id=model_offering_id,
             payload=payload,
             actor=actor,
             scope=scope,
@@ -220,9 +220,9 @@ async def deactivate_model_offering(
     db: DatabaseSession,
 ) -> None:
     try:
-        await facade.deactivate_provider_model(
+        await facade.deactivate_model_offering(
             provider_id=provider_id,
-            provider_model_id=model_offering_id,
+            model_offering_id=model_offering_id,
             actor=actor,
             scope=scope,
             db=db,
@@ -240,7 +240,7 @@ async def sync_model_offerings(
 ) -> list[ModelOfferingResponse]:
     try:
         async with httpx.AsyncClient(timeout=30) as http_client:
-            return await facade.sync_provider_models(
+            return await facade.sync_model_offerings(
                 provider_id=provider_id,
                 actor=actor,
                 scope=scope,
@@ -249,12 +249,12 @@ async def sync_model_offerings(
             )
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc
-    except ProviderKeyRequiredError as exc:
+    except ProviderCredentialRequiredError as exc:
         raise HTTPException(status_code=400, detail="active provider credential required") from exc
     except ProviderUpstreamError as exc:
         raise HTTPException(
             status_code=502,
-            detail=f"provider model sync failed with upstream status {exc.status_code}",
+            detail=f"model offering sync failed with upstream status {exc.status_code}",
         ) from exc
 
 
@@ -289,3 +289,4 @@ async def deactivate_provider(
         await facade.deactivate_provider(provider_id=provider_id, actor=actor, scope=scope, db=db)
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc
+

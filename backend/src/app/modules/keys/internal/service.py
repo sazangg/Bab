@@ -392,8 +392,8 @@ async def attach_provider_key_to_subscription(
             scope=scope,
             db=db,
         )
-        await providers_facade.get_provider_key(
-            provider_key_id=payload.provider_key_id,
+        await providers_facade.get_provider_credential(
+            provider_credential_id=payload.provider_key_id,
             scope=scope,
             db=db,
         )
@@ -461,8 +461,8 @@ async def set_subscription_model_access(
             provider_models = []
             for provider_model_id in set(payload.provider_model_ids):
                 provider_models.append(
-                    await providers_facade.get_provider_model(
-                        provider_model_id=provider_model_id,
+                    await providers_facade.get_model_offering(
+                        model_offering_id=provider_model_id,
                         scope=scope,
                         db=db,
                     )
@@ -1075,8 +1075,8 @@ async def _resolve_subscription_access(
         for attachment in provider_key_attachments:
             if not attachment.is_active:
                 continue
-            provider_key = await providers_facade.get_provider_key(
-                provider_key_id=attachment.provider_key_id,
+            provider_key = await providers_facade.get_provider_credential(
+                provider_credential_id=attachment.provider_key_id,
                 scope=scope,
                 db=db,
             )
@@ -1094,7 +1094,7 @@ async def _resolve_subscription_access(
             if payload.provider_id is not None and provider.id != payload.provider_id:
                 continue
 
-            provider_models = await providers_facade.list_provider_models(
+            provider_models = await providers_facade.list_model_offerings(
                 provider_id=provider.id,
                 scope=scope,
                 db=db,

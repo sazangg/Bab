@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.providers.internal.models import Provider, ProviderKey, ProviderModel
+from app.modules.providers.internal.models import ModelOffering, Provider, ProviderCredential
 
 
 async def create_provider(
@@ -59,7 +59,7 @@ async def get_provider(*, provider_id: UUID, org_id: UUID, db: AsyncSession) -> 
     )
 
 
-async def create_provider_key(
+async def create_provider_credential(
     *,
     org_id: UUID,
     provider_id: UUID,
@@ -70,8 +70,8 @@ async def create_provider_key(
     routing_policy: str,
     priority: int,
     db: AsyncSession,
-) -> ProviderKey:
-    provider_key = ProviderKey(
+) -> ProviderCredential:
+    provider_credential = ProviderCredential(
         org_id=org_id,
         provider_id=provider_id,
         created_by=created_by,
@@ -81,52 +81,56 @@ async def create_provider_key(
         routing_policy=routing_policy,
         priority=priority,
     )
-    db.add(provider_key)
+    db.add(provider_credential)
     await db.flush()
-    return provider_key
+    return provider_credential
 
 
-async def list_provider_keys(
+async def list_provider_credentials(
     *,
     org_id: UUID,
     provider_id: UUID,
     db: AsyncSession,
-) -> list[ProviderKey]:
+) -> list[ProviderCredential]:
     result = await db.scalars(
-        select(ProviderKey)
-        .where(ProviderKey.org_id == org_id, ProviderKey.provider_id == provider_id)
+        select(ProviderCredential)
+        .where(ProviderCredential.org_id == org_id, ProviderCredential.provider_id == provider_id)
         .order_by(
-            ProviderKey.is_active.desc(),
-            ProviderKey.priority.asc(),
-            ProviderKey.created_at.asc(),
+            ProviderCredential.is_active.desc(),
+            ProviderCredential.priority.asc(),
+            ProviderCredential.created_at.asc(),
         )
     )
     return list(result)
 
 
-async def get_provider_key(
+async def get_provider_credential(
     *,
     org_id: UUID,
-    provider_key_id: UUID,
+    provider_credential_id: UUID,
     db: AsyncSession,
-) -> ProviderKey | None:
+) -> ProviderCredential | None:
     return await db.scalar(
-        select(ProviderKey).where(
-            ProviderKey.org_id == org_id,
-            ProviderKey.id == provider_key_id,
+        select(ProviderCredential).where(
+            ProviderCredential.org_id == org_id,
+            ProviderCredential.id == provider_credential_id,
         )
     )
 
 
-async def mark_provider_key_used(*, provider_key: ProviderKey, db: AsyncSession) -> None:
-    provider_key.last_used_at = datetime_now()
-    provider_key.last_successful_request_at = datetime_now()
-    provider_key.health_status = "valid"
-    provider_key.last_validation_error = None
+async def mark_provider_credential_used(
+    *,
+    provider_credential: ProviderCredential,
+    db: AsyncSession,
+) -> None:
+    provider_credential.last_used_at = datetime_now()
+    provider_credential.last_successful_request_at = datetime_now()
+    provider_credential.health_status = "valid"
+    provider_credential.last_validation_error = None
     await db.flush()
 
 
-async def create_provider_model(
+async def create_model_offering(
     *,
     org_id: UUID,
     provider_id: UUID,
@@ -141,8 +145,8 @@ async def create_provider_model(
     cached_input_price_per_million_tokens: int | None = None,
     rate_limit_hints: dict | None = None,
     db: AsyncSession,
-) -> ProviderModel:
-    provider_model = ProviderModel(
+) -> ModelOffering:
+    model_offering = ModelOffering(
         org_id=org_id,
         provider_id=provider_id,
         provider_model_name=provider_model_name,
@@ -156,51 +160,51 @@ async def create_provider_model(
         cached_input_price_per_million_tokens=cached_input_price_per_million_tokens,
         rate_limit_hints=rate_limit_hints or {},
     )
-    db.add(provider_model)
+    db.add(model_offering)
     await db.flush()
-    return provider_model
+    return model_offering
 
 
-async def get_provider_model_by_name(
+async def get_model_offering_by_name(
     *,
     org_id: UUID,
     provider_id: UUID,
     provider_model_name: str,
     db: AsyncSession,
-) -> ProviderModel | None:
+) -> ModelOffering | None:
     return await db.scalar(
-        select(ProviderModel).where(
-            ProviderModel.org_id == org_id,
-            ProviderModel.provider_id == provider_id,
-            ProviderModel.provider_model_name == provider_model_name,
+        select(ModelOffering).where(
+            ModelOffering.org_id == org_id,
+            ModelOffering.provider_id == provider_id,
+            ModelOffering.provider_model_name == provider_model_name,
         )
     )
 
 
-async def get_provider_model(
+async def get_model_offering(
     *,
     org_id: UUID,
-    provider_model_id: UUID,
+    model_offering_id: UUID,
     db: AsyncSession,
-) -> ProviderModel | None:
+) -> ModelOffering | None:
     return await db.scalar(
-        select(ProviderModel).where(
-            ProviderModel.org_id == org_id,
-            ProviderModel.id == provider_model_id,
+        select(ModelOffering).where(
+            ModelOffering.org_id == org_id,
+            ModelOffering.id == model_offering_id,
         )
     )
 
 
-async def list_provider_models(
+async def list_model_offerings(
     *,
     org_id: UUID,
     provider_id: UUID,
     db: AsyncSession,
-) -> list[ProviderModel]:
+) -> list[ModelOffering]:
     result = await db.scalars(
-        select(ProviderModel)
-        .where(ProviderModel.org_id == org_id, ProviderModel.provider_id == provider_id)
-        .order_by(ProviderModel.is_active.desc(), ProviderModel.provider_model_name.asc())
+        select(ModelOffering)
+        .where(ModelOffering.org_id == org_id, ModelOffering.provider_id == provider_id)
+        .order_by(ModelOffering.is_active.desc(), ModelOffering.provider_model_name.asc())
     )
     return list(result)
 
@@ -209,3 +213,4 @@ def datetime_now():
     from datetime import UTC, datetime
 
     return datetime.now(UTC)
+
