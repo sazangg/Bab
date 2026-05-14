@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.providers.internal.models import ModelOffering, Provider, ProviderCredential
@@ -199,14 +199,39 @@ async def list_model_offerings(
     *,
     org_id: UUID,
     provider_id: UUID,
+    search: str | None,
+    modality: str | None,
+    is_active: bool | None,
+    limit: int,
+    offset: int,
     db: AsyncSession,
-) -> list[ModelOffering]:
+) -> tuple[list[ModelOffering], int]:
+    filters = [
+        ModelOffering.org_id == org_id,
+        ModelOffering.provider_id == provider_id,
+    ]
+    if search:
+        normalized_search = f"%{search.strip().lower()}%"
+        filters.append(
+            or_(
+                func.lower(ModelOffering.provider_model_name).like(normalized_search),
+                func.lower(ModelOffering.alias).like(normalized_search),
+            )
+        )
+    if modality:
+        filters.append(ModelOffering.modality == modality)
+    if is_active is not None:
+        filters.append(ModelOffering.is_active == is_active)
+
+    total = await db.scalar(select(func.count()).select_from(ModelOffering).where(*filters))
     result = await db.scalars(
         select(ModelOffering)
-        .where(ModelOffering.org_id == org_id, ModelOffering.provider_id == provider_id)
+        .where(*filters)
         .order_by(ModelOffering.is_active.desc(), ModelOffering.provider_model_name.asc())
+        .limit(limit)
+        .offset(offset)
     )
-    return list(result)
+    return list(result), int(total or 0)
 
 
 def datetime_now():

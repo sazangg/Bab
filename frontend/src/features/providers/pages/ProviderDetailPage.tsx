@@ -2,10 +2,18 @@ import { ArrowLeft } from "lucide-react";
 import { Link, Navigate, useParams } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { useGetProviderApiV1ProvidersProviderIdGet } from "@/shared/api/generated/providers/providers";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
+import { StatusBadge } from "@/shared/components/StatusBadge";
 import { ProviderResourcesPanel } from "@/features/providers/pages/ProvidersPage";
 
 export function ProviderDetailPage() {
@@ -52,7 +60,7 @@ export function ProviderDetailPage() {
   }
 
   return (
-    <>
+    <div className="flex flex-col gap-6">
       <PageHeader
         title={provider.name}
         description="Manage upstream credentials and model names for this provider."
@@ -69,13 +77,25 @@ export function ProviderDetailPage() {
         <CardHeader>
           <CardTitle>Provider summary</CardTitle>
           <CardDescription>{provider.base_url}</CardDescription>
+          <CardAction>
+            <StatusBadge variant={provider.is_active ? "active" : "inactive"}>
+              {provider.is_active ? "Active" : "Disabled"}
+            </StatusBadge>
+          </CardAction>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-4">
-          <ProviderSummaryFact label="Status" value={provider.is_active ? "Active" : "Disabled"} />
+        <CardContent className="grid gap-4 md:grid-cols-4">
           <ProviderSummaryFact label="Integration" value={provider.supported_integration} />
           <ProviderSummaryFact
             label="Request timeout"
             value={`${provider.request_timeout_seconds ?? 30}s`}
+          />
+          <ProviderSummaryFact
+            label="Max body"
+            value={
+              provider.max_body_bytes
+                ? `${Math.round(provider.max_body_bytes / 1024)} KB`
+                : "Default"
+            }
           />
           <ProviderSummaryFact
             label="Concurrency"
@@ -84,7 +104,7 @@ export function ProviderDetailPage() {
         </CardContent>
       </Card>
       <ProviderResourcesPanel provider={provider} />
-    </>
+    </div>
   );
 }
 

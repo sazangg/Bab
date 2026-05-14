@@ -25,6 +25,8 @@ import type {
   CreateProviderCredentialRequest,
   CreateProviderRequest,
   HTTPValidationError,
+  ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams,
+  ModelOfferingPageResponse,
   ModelOfferingResponse,
   ProviderCredentialResponse,
   ProviderResponse,
@@ -1151,7 +1153,7 @@ export const useTestProviderCredentialApiV1ProvidersProviderIdCredentialsProvide
     );
   };
 export type listModelOfferingsApiV1ProvidersProviderIdOfferingsGetResponse200 = {
-  data: ModelOfferingResponse[];
+  data: ModelOfferingPageResponse;
   status: 200;
 };
 
@@ -1175,8 +1177,20 @@ export type listModelOfferingsApiV1ProvidersProviderIdOfferingsGetResponse =
 
 export const getListModelOfferingsApiV1ProvidersProviderIdOfferingsGetUrl = (
   providerId: string,
+  params?: ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams,
 ) => {
-  return `/api/v1/providers/${providerId}/offerings`;
+  const normalizedParams = new URLSearchParams();
+
+  if (params?.search) normalizedParams.append("search", params.search);
+  if (params?.modality) normalizedParams.append("modality", params.modality);
+  if (params?.is_active !== undefined && params.is_active !== null) {
+    normalizedParams.append("is_active", String(params.is_active));
+  }
+  if (params?.limit !== undefined) normalizedParams.append("limit", String(params.limit));
+  if (params?.offset !== undefined) normalizedParams.append("offset", String(params.offset));
+
+  const queryString = normalizedParams.toString();
+  return `/api/v1/providers/${providerId}/offerings${queryString ? `?${queryString}` : ""}`;
 };
 
 /**
@@ -1184,10 +1198,11 @@ export const getListModelOfferingsApiV1ProvidersProviderIdOfferingsGetUrl = (
  */
 export const listModelOfferingsApiV1ProvidersProviderIdOfferingsGet = async (
   providerId: string,
+  params?: ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams,
   options?: RequestInit,
 ): Promise<listModelOfferingsApiV1ProvidersProviderIdOfferingsGetResponse> => {
   return apiMutator<listModelOfferingsApiV1ProvidersProviderIdOfferingsGetResponse>(
-    getListModelOfferingsApiV1ProvidersProviderIdOfferingsGetUrl(providerId),
+    getListModelOfferingsApiV1ProvidersProviderIdOfferingsGetUrl(providerId, params),
     {
       ...options,
       method: "GET",
@@ -1197,8 +1212,9 @@ export const listModelOfferingsApiV1ProvidersProviderIdOfferingsGet = async (
 
 export const getListModelOfferingsApiV1ProvidersProviderIdOfferingsGetQueryKey = (
   providerId: string,
+  params?: ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams,
 ) => {
-  return [`/api/v1/providers/${providerId}/offerings`] as const;
+  return [`/api/v1/providers/${providerId}/offerings`, ...(params ? [params] : [])] as const;
 };
 
 export const getListModelOfferingsApiV1ProvidersProviderIdOfferingsGetQueryOptions = <
@@ -1206,6 +1222,7 @@ export const getListModelOfferingsApiV1ProvidersProviderIdOfferingsGetQueryOptio
   TError = HTTPValidationError,
 >(
   providerId: string,
+  params?: ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams,
   options?: {
     query?: Partial<
       UseQueryOptions<
@@ -1220,12 +1237,12 @@ export const getListModelOfferingsApiV1ProvidersProviderIdOfferingsGetQueryOptio
 
   const queryKey =
     queryOptions?.queryKey ??
-    getListModelOfferingsApiV1ProvidersProviderIdOfferingsGetQueryKey(providerId);
+    getListModelOfferingsApiV1ProvidersProviderIdOfferingsGetQueryKey(providerId, params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>
   > = ({ signal }) =>
-    listModelOfferingsApiV1ProvidersProviderIdOfferingsGet(providerId, { signal });
+    listModelOfferingsApiV1ProvidersProviderIdOfferingsGet(providerId, params, { signal });
 
   return { queryKey, queryFn, enabled: !!providerId, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>,
@@ -1244,6 +1261,7 @@ export function useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet<
   TError = HTTPValidationError,
 >(
   providerId: string,
+  params: ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams | undefined,
   options: {
     query: Partial<
       UseQueryOptions<
@@ -1268,6 +1286,7 @@ export function useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet<
   TError = HTTPValidationError,
 >(
   providerId: string,
+  params?: ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams,
   options?: {
     query?: Partial<
       UseQueryOptions<
@@ -1292,6 +1311,7 @@ export function useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet<
   TError = HTTPValidationError,
 >(
   providerId: string,
+  params?: ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams,
   options?: {
     query?: Partial<
       UseQueryOptions<
@@ -1312,6 +1332,7 @@ export function useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet<
   TError = HTTPValidationError,
 >(
   providerId: string,
+  params?: ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams,
   options?: {
     query?: Partial<
       UseQueryOptions<
@@ -1325,6 +1346,7 @@ export function useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getListModelOfferingsApiV1ProvidersProviderIdOfferingsGetQueryOptions(
     providerId,
+    params,
     options,
   );
 

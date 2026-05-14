@@ -26,6 +26,7 @@ from app.modules.providers.schemas import (
     CreateModelOfferingRequest,
     CreateProviderCredentialRequest,
     CreateProviderRequest,
+    ModelOfferingPageResponse,
     ModelOfferingResponse,
     ProviderChatCompletionRequest,
     ProviderChatCompletionResponse,
@@ -439,18 +440,34 @@ async def sync_model_offerings(
 async def list_model_offerings(
     *,
     provider_id: UUID,
+    search: str | None,
+    modality: str | None,
+    is_active: bool | None,
+    limit: int,
+    offset: int,
     scope: Scope,
     db: AsyncSession,
-) -> list[ModelOfferingResponse]:
+) -> ModelOfferingPageResponse:
     await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
-    model_offerings = await repository.list_model_offerings(
+    model_offerings, total = await repository.list_model_offerings(
         org_id=scope.org_id,
         provider_id=provider_id,
+        search=search,
+        modality=modality,
+        is_active=is_active,
+        limit=limit,
+        offset=offset,
         db=db,
     )
-    return [
-        ModelOfferingResponse.model_validate(model_offering) for model_offering in model_offerings
-    ]
+    return ModelOfferingPageResponse(
+        items=[
+            ModelOfferingResponse.model_validate(model_offering)
+            for model_offering in model_offerings
+        ],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 async def get_model_offering(

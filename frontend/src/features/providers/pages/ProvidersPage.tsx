@@ -520,6 +520,20 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
   const providerId = provider.id;
   const [tab, setTab] = useQueryState("tab", { defaultValue: "credentials" });
   const activeTab = tab === "models" ? "models" : "credentials";
+  const [modelSearch, setModelSearch] = useQueryState("modelSearch", { defaultValue: "" });
+  const [modelModality, setModelModality] = useQueryState("modality", { defaultValue: "all" });
+  const [modelStatus, setModelStatus] = useQueryState("modelStatus", { defaultValue: "all" });
+  const [modelPageParam, setModelPageParam] = useQueryState("modelPage", { defaultValue: "1" });
+  const modelPageSize = 24;
+  const modelPage = Math.max(Number(modelPageParam) || 1, 1);
+  const modelOffset = (modelPage - 1) * modelPageSize;
+  const modelParams = {
+    search: modelSearch.trim() || undefined,
+    modality: modelModality === "all" ? undefined : modelModality,
+    is_active: modelStatus === "all" ? undefined : modelStatus === "active" ? true : false,
+    limit: modelPageSize,
+    offset: modelOffset,
+  };
   const [createCredentialOpen, setCreateCredentialOpen] = useState(false);
   const [createModelOpen, setCreateModelOpen] = useState(false);
   const credentialsQuery = useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet(
@@ -528,11 +542,18 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
       query: { enabled: Boolean(providerId) },
     },
   );
-  const modelsQuery = useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet(providerId, {
-    query: { enabled: Boolean(providerId) },
-  });
+  const modelsQuery = useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet(
+    providerId,
+    modelParams,
+    {
+      query: { enabled: Boolean(providerId) },
+    },
+  );
   const credentials = credentialsQuery.data?.status === 200 ? credentialsQuery.data.data : [];
-  const models = modelsQuery.data?.status === 200 ? modelsQuery.data.data : [];
+  const modelsPage =
+    modelsQuery.data?.status === 200
+      ? modelsQuery.data.data
+      : { items: [], total: 0, limit: modelPageSize, offset: modelOffset };
 
   const createCredential = useCreateProviderCredentialApiV1ProvidersProviderIdCredentialsPost({
     mutation: {
@@ -618,118 +639,144 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
 
   return (
     <>
-      <Tabs value={activeTab} onValueChange={setTab} className="pb-6">
-        <TabsList>
-          <TabsTrigger value="credentials">Credentials</TabsTrigger>
-          <TabsTrigger value="models">Models</TabsTrigger>
-        </TabsList>
-        <TabsContent value="credentials">
-          <section className="flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-medium">Credentials</h3>
-                <p className="text-xs text-muted-foreground">
-                  Credentials are encrypted. Routing priority decides which active credential is
-                  tried first.
-                </p>
-              </div>
-              <Button size="sm" onClick={() => setCreateCredentialOpen(true)}>
-                <Plus />
-                Add credential
-              </Button>
-            </div>
-            <ResourceKeyTable
-              providerId={providerId}
-              credentials={credentials}
-              isLoading={credentialsQuery.isPending || credentialsQuery.isFetching}
-              isError={credentialsQuery.isError}
-              isTesting={testCredential.isPending}
-              testResult={testResult}
-              onUpdate={(credential, values) =>
-                updateCredential.mutate({
-                  providerId,
-                  providerCredentialId: credential.id,
-                  data: values,
-                })
-              }
-              onRotate={(credential, apiKey) =>
-                updateCredential.mutate({
-                  providerId,
-                  providerCredentialId: credential.id,
-                  data: { api_key: apiKey },
-                })
-              }
-              onDeactivate={(credential) =>
-                deactivateCredential.mutate({ providerId, providerCredentialId: credential.id })
-              }
-              onReactivate={(credential) =>
-                updateCredential.mutate({
-                  providerId,
-                  providerCredentialId: credential.id,
-                  data: { is_active: true },
-                })
-              }
-              onTest={handleTestCredential}
-            />
-          </section>
-        </TabsContent>
-
-        <TabsContent value="models">
-          <section className="flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-medium">Models</h3>
-                <p className="text-xs text-muted-foreground">
-                  Alias is optional and scoped to this provider.
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button size="sm" variant="outline" onClick={() => setCreateModelOpen(true)}>
+      <Card>
+        <CardHeader>
+          <CardTitle>Provider resources</CardTitle>
+          <CardDescription>
+            Credentials authenticate upstream requests. Models define what this provider can serve.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Tabs value={activeTab} onValueChange={setTab} className="gap-5">
+            <TabsList>
+              <TabsTrigger value="credentials">Credentials</TabsTrigger>
+              <TabsTrigger value="models">Models</TabsTrigger>
+            </TabsList>
+            <TabsContent value="credentials" className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h3 className="text-base font-medium">Credentials</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Credentials are encrypted. Routing priority decides which active credential is
+                    tried first.
+                  </p>
+                </div>
+                <Button size="sm" onClick={() => setCreateCredentialOpen(true)}>
                   <Plus />
-                  Add offering
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={!providerId || !hasActiveCredential || syncModels.isPending}
-                  onClick={() => providerId && syncModels.mutate({ providerId })}
-                  title={
-                    !hasActiveCredential
-                      ? "Add an active credential before syncing models."
-                      : undefined
-                  }
-                >
-                  <RefreshCw />
-                  Sync
+                  Add credential
                 </Button>
               </div>
-            </div>
-            <ResourceModelTable
-              providerId={providerId}
-              models={models}
-              isLoading={modelsQuery.isPending || modelsQuery.isFetching}
-              isError={modelsQuery.isError}
-              onAlias={(model, alias) =>
-                updateModel.mutate({
-                  providerId,
-                  modelOfferingId: model.id,
-                  data: { alias: alias || null },
-                })
-              }
-              onDeactivate={(model) =>
-                deactivateModel.mutate({ providerId, modelOfferingId: model.id })
-              }
-              onReactivate={(model) =>
-                updateModel.mutate({
-                  providerId,
-                  modelOfferingId: model.id,
-                  data: { is_active: true },
-                })
-              }
-            />
-          </section>
-        </TabsContent>
-      </Tabs>
+              <ResourceKeyTable
+                providerId={providerId}
+                credentials={credentials}
+                isLoading={credentialsQuery.isPending || credentialsQuery.isFetching}
+                isError={credentialsQuery.isError}
+                isTesting={testCredential.isPending}
+                testResult={testResult}
+                onUpdate={(credential, values) =>
+                  updateCredential.mutate({
+                    providerId,
+                    providerCredentialId: credential.id,
+                    data: values,
+                  })
+                }
+                onRotate={(credential, apiKey) =>
+                  updateCredential.mutate({
+                    providerId,
+                    providerCredentialId: credential.id,
+                    data: { api_key: apiKey },
+                  })
+                }
+                onDeactivate={(credential) =>
+                  deactivateCredential.mutate({ providerId, providerCredentialId: credential.id })
+                }
+                onReactivate={(credential) =>
+                  updateCredential.mutate({
+                    providerId,
+                    providerCredentialId: credential.id,
+                    data: { is_active: true },
+                  })
+                }
+                onTest={handleTestCredential}
+              />
+            </TabsContent>
+
+            <TabsContent value="models" className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h3 className="text-base font-medium">Models</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Alias is optional and scoped to this provider.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="outline" onClick={() => setCreateModelOpen(true)}>
+                    <Plus />
+                    Add offering
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!providerId || !hasActiveCredential || syncModels.isPending}
+                    onClick={() => providerId && syncModels.mutate({ providerId })}
+                    title={
+                      !hasActiveCredential
+                        ? "Add an active credential before syncing models."
+                        : undefined
+                    }
+                  >
+                    <RefreshCw />
+                    Sync
+                  </Button>
+                </div>
+              </div>
+              <ResourceModelTable
+                providerId={providerId}
+                models={modelsPage.items}
+                total={modelsPage.total}
+                limit={modelsPage.limit}
+                offset={modelsPage.offset}
+                search={modelSearch}
+                modality={modelModality}
+                status={modelStatus}
+                page={modelPage}
+                isLoading={modelsQuery.isPending || modelsQuery.isFetching}
+                isError={modelsQuery.isError}
+                onSearchChange={(value) => {
+                  void setModelSearch(value);
+                  void setModelPageParam("1");
+                }}
+                onModalityChange={(value) => {
+                  void setModelModality(value);
+                  void setModelPageParam("1");
+                }}
+                onStatusChange={(value) => {
+                  void setModelStatus(value);
+                  void setModelPageParam("1");
+                }}
+                onPageChange={(page) => void setModelPageParam(String(page))}
+                onAlias={(model, alias) =>
+                  updateModel.mutate({
+                    providerId,
+                    modelOfferingId: model.id,
+                    data: { alias: alias || null },
+                  })
+                }
+                onDeactivate={(model) =>
+                  deactivateModel.mutate({ providerId, modelOfferingId: model.id })
+                }
+                onReactivate={(model) =>
+                  updateModel.mutate({
+                    providerId,
+                    modelOfferingId: model.id,
+                    data: { is_active: true },
+                  })
+                }
+              />
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
       <CreateProviderCredentialSheet
         open={createCredentialOpen}
         onOpenChange={setCreateCredentialOpen}
@@ -1205,69 +1252,59 @@ function CreateModelOfferingSheet({
 function ResourceModelTable({
   providerId,
   models,
+  total,
+  limit,
+  offset,
+  search,
+  modality,
+  status,
+  page,
   isLoading,
   isError,
+  onSearchChange,
+  onModalityChange,
+  onStatusChange,
+  onPageChange,
   onAlias,
   onDeactivate,
   onReactivate,
 }: {
   providerId: string;
   models: ModelOfferingResponse[];
+  total: number;
+  limit: number;
+  offset: number;
+  search: string;
+  modality: string;
+  status: string;
+  page: number;
   isLoading: boolean;
   isError: boolean;
+  onSearchChange: (value: string) => void;
+  onModalityChange: (value: string) => void;
+  onStatusChange: (value: string) => void;
+  onPageChange: (page: number) => void;
   onAlias: (model: ModelOfferingResponse, alias: string) => void;
   onDeactivate: (model: ModelOfferingResponse) => void;
   onReactivate: (model: ModelOfferingResponse) => void;
 }) {
   const [editModel, setEditModel] = useState<ModelOfferingResponse | null>(null);
   const [alias, setAlias] = useState("");
-  const [search, setSearch] = useQueryState("modelSearch", { defaultValue: "" });
-  const [modality, setModality] = useQueryState("modality", { defaultValue: "all" });
-  const [pageParam, setPageParam] = useQueryState("modelPage", { defaultValue: "1" });
-  const pageSize = 12;
-  const page = Math.max(Number(pageParam) || 1, 1);
-  const modalities = Array.from(new Set(models.map((model) => model.modality))).sort();
-  const sortedModels = [...models].sort(
-    (a, b) =>
-      Number(b.is_active) - Number(a.is_active) ||
-      a.provider_model_name.localeCompare(b.provider_model_name),
-  );
-  const filteredModels = sortedModels.filter((model) => {
-    const normalizedSearch = search.trim().toLowerCase();
-    const matchesSearch = normalizedSearch
-      ? `${model.provider_model_name} ${model.alias ?? ""} ${model.modality}`
-          .toLowerCase()
-          .includes(normalizedSearch)
-      : true;
-    const matchesModality = modality === "all" ? true : model.modality === modality;
-
-    return matchesSearch && matchesModality;
-  });
-  const pageCount = Math.max(Math.ceil(filteredModels.length / pageSize), 1);
+  const modalities = ["text", "chat", "embedding", "image", "audio", "multimodal"];
+  const pageCount = Math.max(Math.ceil(total / limit), 1);
   const safePage = Math.min(page, pageCount);
-  const paginatedModels = filteredModels.slice((safePage - 1) * pageSize, safePage * pageSize);
-
-  function updateModelSearch(value: string) {
-    void setSearch(value);
-    void setPageParam("1");
-  }
-
-  function updateModality(value: string) {
-    void setModality(value);
-    void setPageParam("1");
-  }
+  const hasFilters = Boolean(search.trim()) || modality !== "all" || status !== "all";
 
   return (
     <>
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-col gap-4">
+        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto_auto]">
           <Input
             value={search}
-            onChange={(event) => updateModelSearch(event.target.value)}
+            onChange={(event) => onSearchChange(event.target.value)}
             placeholder="Search models or aliases..."
-            className="md:max-w-sm"
           />
-          <Select value={modality} onValueChange={updateModality}>
+          <Select value={modality} onValueChange={onModalityChange}>
             <SelectTrigger>
               <SelectValue placeholder="Filter by modality" />
             </SelectTrigger>
@@ -1279,6 +1316,18 @@ function ResourceModelTable({
                     {item}
                   </SelectItem>
                 ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          <Select value={status} onValueChange={onStatusChange}>
+            <SelectTrigger>
+              <SelectValue placeholder="Filter by status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="all">All statuses</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="disabled">Disabled</SelectItem>
               </SelectGroup>
             </SelectContent>
           </Select>
@@ -1294,19 +1343,19 @@ function ResourceModelTable({
             Model offerings could not be loaded.
           </p>
         ) : null}
-        {!isLoading && !isError && sortedModels.length === 0 ? (
+        {!isLoading && !isError && total === 0 && !hasFilters ? (
           <p className="rounded-lg border py-8 text-center text-sm text-muted-foreground">
             No model offerings added yet.
           </p>
         ) : null}
-        {!isLoading && !isError && sortedModels.length > 0 && filteredModels.length === 0 ? (
+        {!isLoading && !isError && total === 0 && hasFilters ? (
           <p className="rounded-lg border py-8 text-center text-sm text-muted-foreground">
             No model offerings match these filters.
           </p>
         ) : null}
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {paginatedModels.map((model) => (
+          {models.map((model) => (
             <Card key={model.id} size="sm" className={!model.is_active ? "opacity-60" : undefined}>
               <CardHeader>
                 <CardTitle className="truncate font-mono text-sm">
@@ -1376,17 +1425,18 @@ function ResourceModelTable({
           ))}
         </div>
 
-        {filteredModels.length > pageSize ? (
+        {total > limit ? (
           <div className="flex items-center justify-between">
             <p className="text-xs text-muted-foreground">
-              Page {safePage} of {pageCount} · {filteredModels.length} models
+              Page {safePage} of {pageCount} · showing {offset + 1}-
+              {Math.min(offset + models.length, total)} of {total}
             </p>
             <div className="flex gap-2">
               <Button
                 size="sm"
                 variant="outline"
                 disabled={safePage <= 1}
-                onClick={() => void setPageParam(String(safePage - 1))}
+                onClick={() => onPageChange(safePage - 1)}
               >
                 Previous
               </Button>
@@ -1394,7 +1444,7 @@ function ResourceModelTable({
                 size="sm"
                 variant="outline"
                 disabled={safePage >= pageCount}
-                onClick={() => void setPageParam(String(safePage + 1))}
+                onClick={() => onPageChange(safePage + 1)}
               >
                 Next
               </Button>

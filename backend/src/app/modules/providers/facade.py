@@ -10,6 +10,7 @@ from app.modules.providers.schemas import (
     CreateModelOfferingRequest,
     CreateProviderCredentialRequest,
     CreateProviderRequest,
+    ModelOfferingPageResponse,
     ModelOfferingResponse,
     ProviderChatCompletionRequest,
     ProviderChatCompletionResponse,
@@ -172,10 +173,24 @@ async def sync_model_offerings(
 async def list_model_offerings(
     *,
     provider_id: UUID,
+    search: str | None,
+    modality: str | None,
+    is_active: bool | None,
+    limit: int,
+    offset: int,
     scope: Scope,
     db: AsyncSession,
-) -> list[ModelOfferingResponse]:
-    return await service.list_model_offerings(provider_id=provider_id, scope=scope, db=db)
+) -> ModelOfferingPageResponse:
+    return await service.list_model_offerings(
+        provider_id=provider_id,
+        search=search,
+        modality=modality,
+        is_active=is_active,
+        limit=limit,
+        offset=offset,
+        scope=scope,
+        db=db,
+    )
 
 
 async def get_model_offering(

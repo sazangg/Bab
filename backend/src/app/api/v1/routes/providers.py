@@ -2,7 +2,7 @@ from typing import Annotated
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, get_scope, require_role
@@ -18,6 +18,7 @@ from app.modules.providers.schemas import (
     CreateModelOfferingRequest,
     CreateProviderCredentialRequest,
     CreateProviderRequest,
+    ModelOfferingPageResponse,
     ModelOfferingResponse,
     ProviderCredentialResponse,
     ProviderResponse,
@@ -172,9 +173,23 @@ async def list_model_offerings(
     scope: RequestScope,
     db: DatabaseSession,
     _: CurrentUser,
-) -> list[ModelOfferingResponse]:
+    search: str | None = Query(default=None, min_length=1, max_length=255),
+    modality: str | None = Query(default=None, min_length=1, max_length=100),
+    is_active: bool | None = Query(default=None),
+    limit: int = Query(default=24, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> ModelOfferingPageResponse:
     try:
-        return await facade.list_model_offerings(provider_id=provider_id, scope=scope, db=db)
+        return await facade.list_model_offerings(
+            provider_id=provider_id,
+            search=search,
+            modality=modality,
+            is_active=is_active,
+            limit=limit,
+            offset=offset,
+            scope=scope,
+            db=db,
+        )
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc
 

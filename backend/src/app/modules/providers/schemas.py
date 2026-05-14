@@ -127,6 +127,13 @@ class ModelOfferingResponse(BaseModel):
     updated_at: datetime
 
 
+class ModelOfferingPageResponse(BaseModel):
+    items: list[ModelOfferingResponse]
+    total: int
+    limit: int
+    offset: int
+
+
 class ProviderResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
