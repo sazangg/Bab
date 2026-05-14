@@ -10,6 +10,7 @@ from app.modules.providers.schemas import (
     CreateModelOfferingRequest,
     CreateProviderCredentialRequest,
     CreateProviderRequest,
+    ModelMetadataSyncMode,
     ModelOfferingPageResponse,
     ModelOfferingResponse,
     ProviderChatCompletionRequest,
@@ -160,6 +161,7 @@ async def sync_model_offerings(
     scope: Scope,
     db: AsyncSession,
     http_client: httpx.AsyncClient,
+    metadata_mode: ModelMetadataSyncMode,
 ) -> list[ModelOfferingResponse]:
     return await service.sync_model_offerings(
         provider_id=provider_id,
@@ -167,6 +169,7 @@ async def sync_model_offerings(
         scope=scope,
         db=db,
         http_client=http_client,
+        metadata_mode=metadata_mode,
     )
 
 

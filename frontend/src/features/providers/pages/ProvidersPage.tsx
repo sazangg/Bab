@@ -762,7 +762,13 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
                     size="sm"
                     variant="outline"
                     disabled={!providerId || !hasActiveCredential || syncModels.isPending}
-                    onClick={() => providerId && syncModels.mutate({ providerId })}
+                    onClick={() =>
+                      providerId &&
+                      syncModels.mutate({
+                        providerId,
+                        data: { metadata_mode: "fill_missing" },
+                      })
+                    }
                     title={
                       !hasActiveCredential
                         ? "Add an active credential before syncing models."

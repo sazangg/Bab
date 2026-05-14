@@ -30,6 +30,7 @@ import type {
   ModelOfferingResponse,
   ProviderCredentialResponse,
   ProviderResponse,
+  SyncModelOfferingsRequest,
   TestProviderCredentialResponse,
   UpdateModelOfferingRequest,
   UpdateProviderCredentialRequest,
@@ -1800,6 +1801,7 @@ export const getSyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostUrl =
  */
 export const syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost = async (
   providerId: string,
+  syncModelOfferingsRequest?: SyncModelOfferingsRequest,
   options?: RequestInit,
 ): Promise<syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostResponse> => {
   return apiMutator<syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostResponse>(
@@ -1807,6 +1809,9 @@ export const syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost = async
     {
       ...options,
       method: "POST",
+      ...(syncModelOfferingsRequest
+        ? { body: JSON.stringify(syncModelOfferingsRequest) }
+        : {}),
     },
   );
 };
@@ -1818,13 +1823,13 @@ export const getSyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostMutat
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost>>,
     TError,
-    { providerId: string },
+    { providerId: string; data?: SyncModelOfferingsRequest },
     TContext
   >;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost>>,
   TError,
-  { providerId: string },
+  { providerId: string; data?: SyncModelOfferingsRequest },
   TContext
 > => {
   const mutationKey = ["syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost"];
@@ -1836,11 +1841,11 @@ export const getSyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostMutat
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost>>,
-    { providerId: string }
+    { providerId: string; data?: SyncModelOfferingsRequest }
   > = (props) => {
-    const { providerId } = props ?? {};
+    const { providerId, data } = props ?? {};
 
-    return syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost(providerId);
+    return syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost(providerId, data);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -1864,7 +1869,7 @@ export const useSyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost = <
     mutation?: UseMutationOptions<
       Awaited<ReturnType<typeof syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost>>,
       TError,
-      { providerId: string },
+      { providerId: string; data?: SyncModelOfferingsRequest },
       TContext
     >;
   },
@@ -1872,7 +1877,7 @@ export const useSyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost = <
 ): UseMutationResult<
   Awaited<ReturnType<typeof syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost>>,
   TError,
-  { providerId: string },
+  { providerId: string; data?: SyncModelOfferingsRequest },
   TContext
 > => {
   return useMutation(

@@ -22,6 +22,7 @@ from app.modules.providers.schemas import (
     ModelOfferingResponse,
     ProviderCredentialResponse,
     ProviderResponse,
+    SyncModelOfferingsRequest,
     TestProviderCredentialResponse,
     UpdateModelOfferingRequest,
     UpdateProviderCredentialRequest,
@@ -272,6 +273,7 @@ async def sync_model_offerings(
     actor: ProviderAdmin,
     scope: RequestScope,
     db: DatabaseSession,
+    payload: SyncModelOfferingsRequest | None = None,
 ) -> list[ModelOfferingResponse]:
     try:
         async with httpx.AsyncClient(timeout=30) as http_client:
@@ -281,6 +283,11 @@ async def sync_model_offerings(
                 scope=scope,
                 db=db,
                 http_client=http_client,
+                metadata_mode=(
+                    payload.metadata_mode
+                    if payload is not None
+                    else SyncModelOfferingsRequest().metadata_mode
+                ),
             )
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc

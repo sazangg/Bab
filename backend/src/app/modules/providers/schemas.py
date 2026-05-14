@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import datetime
+from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
@@ -108,6 +109,15 @@ class UpdateModelOfferingRequest(BaseModel):
     cached_input_price_per_million_tokens: int | None = Field(default=None, ge=0)
     rate_limit_hints: dict[str, Any] | None = None
     is_active: bool | None = None
+
+
+class ModelMetadataSyncMode(StrEnum):
+    fill_missing = "fill_missing"
+    overwrite_catalog = "overwrite_catalog"
+
+
+class SyncModelOfferingsRequest(BaseModel):
+    metadata_mode: ModelMetadataSyncMode = ModelMetadataSyncMode.fill_missing
 
 
 class ModelOfferingResponse(BaseModel):

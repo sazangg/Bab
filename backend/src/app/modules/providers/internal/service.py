@@ -31,6 +31,7 @@ from app.modules.providers.schemas import (
     CreateModelOfferingRequest,
     CreateProviderCredentialRequest,
     CreateProviderRequest,
+    ModelMetadataSyncMode,
     ModelOfferingPageResponse,
     ModelOfferingResponse,
     ProviderChatCompletionRequest,
@@ -372,6 +373,7 @@ async def sync_model_offerings(
     scope: Scope,
     db: AsyncSession,
     http_client: httpx.AsyncClient,
+    metadata_mode: ModelMetadataSyncMode,
 ) -> list[ModelOfferingResponse]:
     async with transaction(db):
         provider = await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
@@ -448,10 +450,16 @@ async def sync_model_offerings(
                 model_offering.is_active = True
                 model_offering.metadata_last_synced_at = synced_at
                 if metadata is not None:
-                    _enrich_model_offering_from_metadata(
-                        model_offering=model_offering,
-                        metadata=metadata,
-                    )
+                    if metadata_mode == ModelMetadataSyncMode.overwrite_catalog:
+                        _overwrite_model_offering_from_metadata(
+                            model_offering=model_offering,
+                            metadata=metadata,
+                        )
+                    else:
+                        _enrich_model_offering_from_metadata(
+                            model_offering=model_offering,
+                            metadata=metadata,
+                        )
                 await db.flush()
             synced_models.append(model_offering)
 
@@ -920,6 +928,33 @@ def _enrich_model_offering_from_metadata(
         **metadata.rate_limit_hints,
         **(model_offering.rate_limit_hints or {}),
     }
+
+
+def _overwrite_model_offering_from_metadata(
+    *,
+    model_offering: ModelOffering,
+    metadata: ModelMetadata,
+) -> None:
+    model_offering.version = metadata.version
+    model_offering.input_modalities = metadata.input_modalities
+    model_offering.output_modalities = metadata.output_modalities
+    model_offering.modality = _combined_modality(
+        metadata.input_modalities,
+        metadata.output_modalities,
+    )
+    model_offering.capabilities = metadata.capabilities
+    model_offering.context_window = metadata.context_window
+    model_offering.input_price_per_million_tokens = (
+        metadata.pricing.input_price_per_million_tokens
+    )
+    model_offering.output_price_per_million_tokens = (
+        metadata.pricing.output_price_per_million_tokens
+    )
+    model_offering.cached_input_price_per_million_tokens = (
+        metadata.pricing.cached_input_price_per_million_tokens
+    )
+    model_offering.rate_limit_hints = metadata.rate_limit_hints
+    model_offering.metadata_source = "catalog"
 
 
 def _combined_modality(input_modalities: list[str], output_modalities: list[str]) -> str:
