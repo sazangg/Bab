@@ -1,4 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useQueryState } from "nuqs";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
@@ -42,6 +43,14 @@ import type {
 } from "@/shared/api/generated/schemas";
 import { Button } from "@/components/ui/button";
 import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
   Dialog,
   DialogClose,
   DialogContent,
@@ -69,6 +78,14 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -76,6 +93,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
@@ -409,7 +428,12 @@ function ProviderCatalogRow({
   const activeCredentialCount = credentials.filter((credential) => credential.is_active).length;
 
   return (
-    <div className="rounded-lg border p-4 transition-colors hover:bg-muted/30">
+    <div
+      className={cn(
+        "rounded-lg border p-4 transition-colors hover:bg-muted/30",
+        entry.provider && !entry.provider.is_active && "opacity-60",
+      )}
+    >
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <Link
           className="min-w-0 flex-1 space-y-2"
@@ -491,18 +515,11 @@ function ProviderCatalogRow({
   );
 }
 
-function ProviderFact({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="space-y-1">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="truncate text-sm font-medium">{value}</p>
-    </div>
-  );
-}
-
 function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) {
   const queryClient = useQueryClient();
   const providerId = provider.id;
+  const [tab, setTab] = useQueryState("tab", { defaultValue: "credentials" });
+  const activeTab = tab === "models" ? "models" : "credentials";
   const [createCredentialOpen, setCreateCredentialOpen] = useState(false);
   const [createModelOpen, setCreateModelOpen] = useState(false);
   const credentialsQuery = useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet(
@@ -601,126 +618,118 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
 
   return (
     <>
-      <div className="space-y-6 overflow-y-auto pb-6">
-        <section className="grid gap-3 rounded-lg border p-4 md:grid-cols-4">
-          <ProviderFact label="Integration" value={provider.supported_integration} />
-          <ProviderFact label="Timeout" value={`${provider.request_timeout_seconds ?? 30}s`} />
-          <ProviderFact
-            label="Max body"
-            value={
-              provider.max_body_bytes
-                ? `${Math.round(provider.max_body_bytes / 1024)} KB`
-                : "Default"
-            }
-          />
-          <ProviderFact
-            label="Concurrency"
-            value={provider.max_concurrent_requests?.toString() ?? "Default"}
-          />
-        </section>
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-medium">Credentials</h3>
-              <p className="text-xs text-muted-foreground">
-                Credentials are encrypted. Routing priority decides which active credential is tried
-                first.
-              </p>
-            </div>
-            <Button size="sm" onClick={() => setCreateCredentialOpen(true)}>
-              <Plus />
-              Add credential
-            </Button>
-          </div>
-          <ResourceKeyTable
-            providerId={providerId}
-            credentials={credentials}
-            isLoading={credentialsQuery.isPending || credentialsQuery.isFetching}
-            isError={credentialsQuery.isError}
-            isTesting={testCredential.isPending}
-            testResult={testResult}
-            onUpdate={(credential, values) =>
-              updateCredential.mutate({
-                providerId,
-                providerCredentialId: credential.id,
-                data: values,
-              })
-            }
-            onRotate={(credential, apiKey) =>
-              updateCredential.mutate({
-                providerId,
-                providerCredentialId: credential.id,
-                data: { api_key: apiKey },
-              })
-            }
-            onDeactivate={(credential) =>
-              deactivateCredential.mutate({ providerId, providerCredentialId: credential.id })
-            }
-            onReactivate={(credential) =>
-              updateCredential.mutate({
-                providerId,
-                providerCredentialId: credential.id,
-                data: { is_active: true },
-              })
-            }
-            onTest={handleTestCredential}
-          />
-        </section>
-
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-medium">Models</h3>
-              <p className="text-xs text-muted-foreground">
-                Alias is optional and scoped to this provider.
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline" onClick={() => setCreateModelOpen(true)}>
+      <Tabs value={activeTab} onValueChange={setTab} className="pb-6">
+        <TabsList>
+          <TabsTrigger value="credentials">Credentials</TabsTrigger>
+          <TabsTrigger value="models">Models</TabsTrigger>
+        </TabsList>
+        <TabsContent value="credentials">
+          <section className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-medium">Credentials</h3>
+                <p className="text-xs text-muted-foreground">
+                  Credentials are encrypted. Routing priority decides which active credential is
+                  tried first.
+                </p>
+              </div>
+              <Button size="sm" onClick={() => setCreateCredentialOpen(true)}>
                 <Plus />
-                Add offering
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!providerId || !hasActiveCredential || syncModels.isPending}
-                onClick={() => providerId && syncModels.mutate({ providerId })}
-                title={
-                  !hasActiveCredential
-                    ? "Add an active credential before syncing models."
-                    : undefined
-                }
-              >
-                <RefreshCw />
-                Sync
+                Add credential
               </Button>
             </div>
-          </div>
-          <ResourceModelTable
-            providerId={providerId}
-            models={models}
-            isLoading={modelsQuery.isPending || modelsQuery.isFetching}
-            isError={modelsQuery.isError}
-            onAlias={(model, alias) =>
-              updateModel.mutate({
-                providerId,
-                modelOfferingId: model.id,
-                data: { alias: alias || null },
-              })
-            }
-            onDeactivate={(model) =>
-              deactivateModel.mutate({ providerId, modelOfferingId: model.id })
-            }
-            onReactivate={(model) =>
-              updateModel.mutate({
-                providerId,
-                modelOfferingId: model.id,
-                data: { is_active: true },
-              })
-            }
-          />
-        </section>
-      </div>
+            <ResourceKeyTable
+              providerId={providerId}
+              credentials={credentials}
+              isLoading={credentialsQuery.isPending || credentialsQuery.isFetching}
+              isError={credentialsQuery.isError}
+              isTesting={testCredential.isPending}
+              testResult={testResult}
+              onUpdate={(credential, values) =>
+                updateCredential.mutate({
+                  providerId,
+                  providerCredentialId: credential.id,
+                  data: values,
+                })
+              }
+              onRotate={(credential, apiKey) =>
+                updateCredential.mutate({
+                  providerId,
+                  providerCredentialId: credential.id,
+                  data: { api_key: apiKey },
+                })
+              }
+              onDeactivate={(credential) =>
+                deactivateCredential.mutate({ providerId, providerCredentialId: credential.id })
+              }
+              onReactivate={(credential) =>
+                updateCredential.mutate({
+                  providerId,
+                  providerCredentialId: credential.id,
+                  data: { is_active: true },
+                })
+              }
+              onTest={handleTestCredential}
+            />
+          </section>
+        </TabsContent>
+
+        <TabsContent value="models">
+          <section className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-medium">Models</h3>
+                <p className="text-xs text-muted-foreground">
+                  Alias is optional and scoped to this provider.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" onClick={() => setCreateModelOpen(true)}>
+                  <Plus />
+                  Add offering
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!providerId || !hasActiveCredential || syncModels.isPending}
+                  onClick={() => providerId && syncModels.mutate({ providerId })}
+                  title={
+                    !hasActiveCredential
+                      ? "Add an active credential before syncing models."
+                      : undefined
+                  }
+                >
+                  <RefreshCw />
+                  Sync
+                </Button>
+              </div>
+            </div>
+            <ResourceModelTable
+              providerId={providerId}
+              models={models}
+              isLoading={modelsQuery.isPending || modelsQuery.isFetching}
+              isError={modelsQuery.isError}
+              onAlias={(model, alias) =>
+                updateModel.mutate({
+                  providerId,
+                  modelOfferingId: model.id,
+                  data: { alias: alias || null },
+                })
+              }
+              onDeactivate={(model) =>
+                deactivateModel.mutate({ providerId, modelOfferingId: model.id })
+              }
+              onReactivate={(model) =>
+                updateModel.mutate({
+                  providerId,
+                  modelOfferingId: model.id,
+                  data: { is_active: true },
+                })
+              }
+            />
+          </section>
+        </TabsContent>
+      </Tabs>
       <CreateProviderCredentialSheet
         open={createCredentialOpen}
         onOpenChange={setCreateCredentialOpen}
@@ -1212,100 +1221,187 @@ function ResourceModelTable({
 }) {
   const [editModel, setEditModel] = useState<ModelOfferingResponse | null>(null);
   const [alias, setAlias] = useState("");
+  const [search, setSearch] = useQueryState("modelSearch", { defaultValue: "" });
+  const [modality, setModality] = useQueryState("modality", { defaultValue: "all" });
+  const [pageParam, setPageParam] = useQueryState("modelPage", { defaultValue: "1" });
+  const pageSize = 12;
+  const page = Math.max(Number(pageParam) || 1, 1);
+  const modalities = Array.from(new Set(models.map((model) => model.modality))).sort();
   const sortedModels = [...models].sort(
     (a, b) =>
       Number(b.is_active) - Number(a.is_active) ||
       a.provider_model_name.localeCompare(b.provider_model_name),
   );
+  const filteredModels = sortedModels.filter((model) => {
+    const normalizedSearch = search.trim().toLowerCase();
+    const matchesSearch = normalizedSearch
+      ? `${model.provider_model_name} ${model.alias ?? ""} ${model.modality}`
+          .toLowerCase()
+          .includes(normalizedSearch)
+      : true;
+    const matchesModality = modality === "all" ? true : model.modality === modality;
+
+    return matchesSearch && matchesModality;
+  });
+  const pageCount = Math.max(Math.ceil(filteredModels.length / pageSize), 1);
+  const safePage = Math.min(page, pageCount);
+  const paginatedModels = filteredModels.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  function updateModelSearch(value: string) {
+    void setSearch(value);
+    void setPageParam("1");
+  }
+
+  function updateModality(value: string) {
+    void setModality(value);
+    void setPageParam("1");
+  }
 
   return (
     <>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Provider model</TableHead>
-            <TableHead>Alias</TableHead>
-            <TableHead>Modality</TableHead>
-            <TableHead>Context</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead className="w-[1%]" />
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {isLoading ? (
-            <TableRow>
-              <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
-                Loading model offerings...
-              </TableCell>
-            </TableRow>
-          ) : null}
-          {isError ? (
-            <TableRow>
-              <TableCell colSpan={6} className="py-8 text-center text-sm text-destructive">
-                Model offerings could not be loaded.
-              </TableCell>
-            </TableRow>
-          ) : null}
-          {!isLoading && !isError && sortedModels.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
-                No model offerings added yet.
-              </TableCell>
-            </TableRow>
-          ) : null}
-          {sortedModels.map((model) => (
-            <TableRow key={model.id}>
-              <TableCell>
-                <div className="font-mono text-xs">{model.provider_model_name}</div>
-                <div className="text-xs text-muted-foreground">
-                  {model.version ?? "Unversioned"}
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <Input
+            value={search}
+            onChange={(event) => updateModelSearch(event.target.value)}
+            placeholder="Search models or aliases..."
+            className="md:max-w-sm"
+          />
+          <Select value={modality} onValueChange={updateModality}>
+            <SelectTrigger>
+              <SelectValue placeholder="Filter by modality" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="all">All modalities</SelectItem>
+                {modalities.map((item) => (
+                  <SelectItem key={item} value={item}>
+                    {item}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {isLoading ? (
+          <p className="rounded-lg border py-8 text-center text-sm text-muted-foreground">
+            Loading model offerings...
+          </p>
+        ) : null}
+        {isError ? (
+          <p className="rounded-lg border py-8 text-center text-sm text-destructive">
+            Model offerings could not be loaded.
+          </p>
+        ) : null}
+        {!isLoading && !isError && sortedModels.length === 0 ? (
+          <p className="rounded-lg border py-8 text-center text-sm text-muted-foreground">
+            No model offerings added yet.
+          </p>
+        ) : null}
+        {!isLoading && !isError && sortedModels.length > 0 && filteredModels.length === 0 ? (
+          <p className="rounded-lg border py-8 text-center text-sm text-muted-foreground">
+            No model offerings match these filters.
+          </p>
+        ) : null}
+
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {paginatedModels.map((model) => (
+            <Card key={model.id} size="sm" className={!model.is_active ? "opacity-60" : undefined}>
+              <CardHeader>
+                <CardTitle className="truncate font-mono text-sm">
+                  {model.provider_model_name}
+                </CardTitle>
+                <CardDescription>
+                  {model.alias ? `Alias: ${model.alias}` : "No alias configured"}
+                </CardDescription>
+                <CardAction>
+                  <StatusBadge variant={model.is_active ? "active" : "inactive"}>
+                    {model.is_active ? "Active" : "Disabled"}
+                  </StatusBadge>
+                </CardAction>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <ModelFact label="Modality" value={model.modality} />
+                  <ModelFact
+                    label="Context"
+                    value={model.context_window ? model.context_window.toLocaleString() : "—"}
+                  />
+                  <ModelFact label="Version" value={model.version ?? "Unversioned"} />
+                  <ModelFact
+                    label="Streaming"
+                    value={model.capabilities?.streaming ? "Supported" : "Unknown"}
+                  />
                 </div>
-              </TableCell>
-              <TableCell>{model.alias || "—"}</TableCell>
-              <TableCell>{model.modality}</TableCell>
-              <TableCell>
-                {model.context_window ? model.context_window.toLocaleString() : "—"}
-              </TableCell>
-              <TableCell>
-                <StatusBadge variant={model.is_active ? "active" : "inactive"}>
-                  {model.is_active ? "Active" : "Disabled"}
-                </StatusBadge>
-              </TableCell>
-              <TableCell className="flex justify-end gap-1">
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setEditModel(model);
-                    setAlias(model.alias ?? "");
-                  }}
-                >
-                  <Pencil />
-                </Button>
-                {model.is_active ? (
+                <div className="flex justify-end gap-1">
                   <Button
                     size="icon-sm"
                     variant="ghost"
-                    disabled={!providerId}
-                    onClick={() => onDeactivate(model)}
+                    onClick={() => {
+                      setEditModel(model);
+                      setAlias(model.alias ?? "");
+                    }}
+                    title="Edit alias"
+                    aria-label="Edit alias"
                   >
-                    <Trash2 />
+                    <Pencil />
                   </Button>
-                ) : (
-                  <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    disabled={!providerId}
-                    onClick={() => onReactivate(model)}
-                  >
-                    <RotateCcw />
-                  </Button>
-                )}
-              </TableCell>
-            </TableRow>
+                  {model.is_active ? (
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      disabled={!providerId}
+                      onClick={() => onDeactivate(model)}
+                      title="Disable model offering"
+                      aria-label="Disable model offering"
+                    >
+                      <Trash2 />
+                    </Button>
+                  ) : (
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      disabled={!providerId}
+                      onClick={() => onReactivate(model)}
+                      title="Reactivate model offering"
+                      aria-label="Reactivate model offering"
+                    >
+                      <RotateCcw />
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
           ))}
-        </TableBody>
-      </Table>
+        </div>
+
+        {filteredModels.length > pageSize ? (
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">
+              Page {safePage} of {pageCount} · {filteredModels.length} models
+            </p>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={safePage <= 1}
+                onClick={() => void setPageParam(String(safePage - 1))}
+              >
+                Previous
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={safePage >= pageCount}
+                onClick={() => void setPageParam(String(safePage + 1))}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </div>
       <Dialog open={Boolean(editModel)} onOpenChange={(open) => !open && setEditModel(null)}>
         <DialogContent>
           <DialogHeader>
@@ -1330,6 +1426,15 @@ function ResourceModelTable({
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+function ModelFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="truncate text-sm font-medium">{value}</p>
+    </div>
   );
 }
 

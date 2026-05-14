@@ -2,23 +2,39 @@ import { ArrowLeft } from "lucide-react";
 import { Link, Navigate, useParams } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
-import { useListProvidersApiV1ProvidersGet } from "@/shared/api/generated/providers/providers";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useGetProviderApiV1ProvidersProviderIdGet } from "@/shared/api/generated/providers/providers";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { ProviderResourcesPanel } from "@/features/providers/pages/ProvidersPage";
 
 export function ProviderDetailPage() {
   const { providerId } = useParams();
-  const providersQuery = useListProvidersApiV1ProvidersGet();
-  const providers = providersQuery.data?.status === 200 ? providersQuery.data.data : [];
-  const provider = providers.find((item) => item.id === providerId);
+  const providerQuery = useGetProviderApiV1ProvidersProviderIdGet(providerId ?? "", {
+    query: { enabled: Boolean(providerId) },
+  });
+  const provider = providerQuery.data?.status === 200 ? providerQuery.data.data : null;
 
   if (!providerId) {
     return <Navigate to="/providers" replace />;
   }
 
-  if (providersQuery.isPending) {
+  if (providerQuery.isPending) {
     return <p className="text-sm text-muted-foreground">Loading provider...</p>;
+  }
+
+  if (providerQuery.isError || providerQuery.data?.status !== 200) {
+    return (
+      <EmptyState
+        title="Provider could not be loaded"
+        description="The provider detail request failed. Try again or return to the providers list."
+        action={
+          <Button asChild variant="outline">
+            <Link to="/providers">Back to providers</Link>
+          </Button>
+        }
+      />
+    );
   }
 
   if (!provider) {
@@ -49,7 +65,34 @@ export function ProviderDetailPage() {
           </Button>
         }
       />
+      <Card>
+        <CardHeader>
+          <CardTitle>Provider summary</CardTitle>
+          <CardDescription>{provider.base_url}</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-4">
+          <ProviderSummaryFact label="Status" value={provider.is_active ? "Active" : "Disabled"} />
+          <ProviderSummaryFact label="Integration" value={provider.supported_integration} />
+          <ProviderSummaryFact
+            label="Request timeout"
+            value={`${provider.request_timeout_seconds ?? 30}s`}
+          />
+          <ProviderSummaryFact
+            label="Concurrency"
+            value={provider.max_concurrent_requests?.toString() ?? "Default"}
+          />
+        </CardContent>
+      </Card>
       <ProviderResourcesPanel provider={provider} />
     </>
+  );
+}
+
+function ProviderSummaryFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="truncate text-sm font-medium">{value}</p>
+    </div>
   );
 }

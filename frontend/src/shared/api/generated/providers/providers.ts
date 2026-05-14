@@ -281,6 +281,118 @@ export const useCreateProviderApiV1ProvidersPost = <
 > => {
   return useMutation(getCreateProviderApiV1ProvidersPostMutationOptions(options), queryClient);
 };
+
+export type getProviderApiV1ProvidersProviderIdGetResponse200 = {
+  data: ProviderResponse;
+  status: 200;
+};
+
+export type getProviderApiV1ProvidersProviderIdGetResponse422 = {
+  data: HTTPValidationError;
+  status: 422;
+};
+
+export type getProviderApiV1ProvidersProviderIdGetResponseSuccess =
+  getProviderApiV1ProvidersProviderIdGetResponse200 & {
+    headers: Headers;
+  };
+export type getProviderApiV1ProvidersProviderIdGetResponseError =
+  getProviderApiV1ProvidersProviderIdGetResponse422 & {
+    headers: Headers;
+  };
+
+export type getProviderApiV1ProvidersProviderIdGetResponse =
+  | getProviderApiV1ProvidersProviderIdGetResponseSuccess
+  | getProviderApiV1ProvidersProviderIdGetResponseError;
+
+export const getGetProviderApiV1ProvidersProviderIdGetUrl = (providerId: string) => {
+  return `/api/v1/providers/${providerId}`;
+};
+
+/**
+ * @summary Get Provider
+ */
+export const getProviderApiV1ProvidersProviderIdGet = async (
+  providerId: string,
+  options?: RequestInit,
+): Promise<getProviderApiV1ProvidersProviderIdGetResponse> => {
+  return apiMutator<getProviderApiV1ProvidersProviderIdGetResponse>(
+    getGetProviderApiV1ProvidersProviderIdGetUrl(providerId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetProviderApiV1ProvidersProviderIdGetQueryKey = (providerId: string) => {
+  return [`/api/v1/providers/${providerId}`] as const;
+};
+
+export const getGetProviderApiV1ProvidersProviderIdGetQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>,
+  TError = HTTPValidationError,
+>(
+  providerId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>,
+        TError,
+        TData
+      >
+    >;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetProviderApiV1ProvidersProviderIdGetQueryKey(providerId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>
+  > = ({ signal }) => getProviderApiV1ProvidersProviderIdGet(providerId, { signal });
+
+  return { queryKey, queryFn, enabled: !!providerId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetProviderApiV1ProvidersProviderIdGetQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>
+>;
+export type GetProviderApiV1ProvidersProviderIdGetQueryError = HTTPValidationError;
+
+/**
+ * @summary Get Provider
+ */
+export function useGetProviderApiV1ProvidersProviderIdGet<
+  TData = Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>,
+  TError = HTTPValidationError,
+>(
+  providerId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>,
+        TError,
+        TData
+      >
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetProviderApiV1ProvidersProviderIdGetQueryOptions(providerId, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
 export type listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponse200 = {
   data: ProviderCredentialResponse[];
   status: 200;

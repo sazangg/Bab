@@ -53,6 +53,19 @@ async def create_provider(
     return await facade.create_provider(payload=payload, actor=actor, scope=scope, db=db)
 
 
+@router.get("/{provider_id}")
+async def get_provider(
+    provider_id: UUID,
+    scope: RequestScope,
+    db: DatabaseSession,
+    _: CurrentUser,
+) -> ProviderResponse:
+    try:
+        return await facade.get_provider(provider_id=provider_id, scope=scope, db=db)
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="provider not found") from exc
+
+
 @router.get("/{provider_id}/credentials")
 async def list_provider_credentials(
     provider_id: UUID,
