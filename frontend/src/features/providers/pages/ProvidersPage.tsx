@@ -635,6 +635,8 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
           <ResourceKeyTable
             providerId={providerId}
             credentials={credentials}
+            isLoading={credentialsQuery.isPending || credentialsQuery.isFetching}
+            isError={credentialsQuery.isError}
             isTesting={testCredential.isPending}
             testResult={testResult}
             onUpdate={(credential, values) =>
@@ -697,6 +699,8 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
           <ResourceModelTable
             providerId={providerId}
             models={models}
+            isLoading={modelsQuery.isPending || modelsQuery.isFetching}
+            isError={modelsQuery.isError}
             onAlias={(model, alias) =>
               updateModel.mutate({
                 providerId,
@@ -755,6 +759,8 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
 function ResourceKeyTable({
   providerId,
   credentials,
+  isLoading,
+  isError,
   isTesting,
   testResult,
   onUpdate,
@@ -765,6 +771,8 @@ function ResourceKeyTable({
 }: {
   providerId: string;
   credentials: ProviderCredentialResponse[];
+  isLoading: boolean;
+  isError: boolean;
   isTesting: boolean;
   testResult: {
     providerCredentialId: string;
@@ -807,6 +815,27 @@ function ResourceKeyTable({
           </TableRow>
         </TableHeader>
         <TableBody>
+          {isLoading ? (
+            <TableRow>
+              <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
+                Loading credentials...
+              </TableCell>
+            </TableRow>
+          ) : null}
+          {isError ? (
+            <TableRow>
+              <TableCell colSpan={8} className="py-8 text-center text-sm text-destructive">
+                Credentials could not be loaded.
+              </TableCell>
+            </TableRow>
+          ) : null}
+          {!isLoading && !isError && sortedCredentials.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
+                No credentials added yet.
+              </TableCell>
+            </TableRow>
+          ) : null}
           {sortedCredentials.map((credential) => (
             <TableRow key={credential.id}>
               <TableCell className="font-medium">
@@ -1167,12 +1196,16 @@ function CreateModelOfferingSheet({
 function ResourceModelTable({
   providerId,
   models,
+  isLoading,
+  isError,
   onAlias,
   onDeactivate,
   onReactivate,
 }: {
   providerId: string;
   models: ModelOfferingResponse[];
+  isLoading: boolean;
+  isError: boolean;
   onAlias: (model: ModelOfferingResponse, alias: string) => void;
   onDeactivate: (model: ModelOfferingResponse) => void;
   onReactivate: (model: ModelOfferingResponse) => void;
@@ -1199,6 +1232,27 @@ function ResourceModelTable({
           </TableRow>
         </TableHeader>
         <TableBody>
+          {isLoading ? (
+            <TableRow>
+              <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
+                Loading model offerings...
+              </TableCell>
+            </TableRow>
+          ) : null}
+          {isError ? (
+            <TableRow>
+              <TableCell colSpan={6} className="py-8 text-center text-sm text-destructive">
+                Model offerings could not be loaded.
+              </TableCell>
+            </TableRow>
+          ) : null}
+          {!isLoading && !isError && sortedModels.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
+                No model offerings added yet.
+              </TableCell>
+            </TableRow>
+          ) : null}
           {sortedModels.map((model) => (
             <TableRow key={model.id}>
               <TableCell>
