@@ -1354,31 +1354,33 @@ function RoutingPolicyField({
   disabled?: boolean;
 }) {
   return (
-    <div className="space-y-1.5">
+    <div className="flex flex-col gap-1.5">
       <Label htmlFor="provider-key-routing-policy">Routing strategy</Label>
-      <Select
-        value={value}
-        onValueChange={(nextValue) => onValueChange(nextValue as RoutingPolicyValue)}
-        disabled={disabled}
-      >
-        <SelectTrigger id="provider-key-routing-policy">
-          <span>{formatRoutingPolicy(value)}</span>
-        </SelectTrigger>
-        <SelectContent className="w-80">
-          <SelectGroup>
-            {routingPolicyOptions.map((option) => (
-              <SelectItem key={option.value} value={option.value} textValue={option.label}>
-                <span className="flex flex-col gap-0.5 py-1">
-                  <span>{option.label}</span>
-                  <span className="whitespace-normal text-xs text-muted-foreground">
-                    {option.description}
-                  </span>
-                </span>
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild disabled={disabled}>
+          <Button
+            id="provider-key-routing-policy"
+            type="button"
+            variant="outline"
+            className="w-full justify-between"
+          >
+            {formatRoutingPolicy(value)}
+            <ChevronDown />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-80">
+          {routingPolicyOptions.map((option) => (
+            <DropdownMenuItem
+              key={option.value}
+              className="flex flex-col items-start gap-0.5"
+              onSelect={() => onValueChange(option.value)}
+            >
+              <span>{option.label}</span>
+              <span className="text-xs text-muted-foreground">{option.description}</span>
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
