@@ -1,4 +1,5 @@
-import { ArrowLeft } from "lucide-react";
+import { useState } from "react";
+import { ArrowLeft, Pencil } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate, useParams } from "react-router-dom";
 
@@ -18,19 +19,31 @@ import {
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
-import {
-  ProviderResourcesPanel,
-  ProviderRoutingPolicyField,
-} from "@/features/providers/pages/ProvidersPage";
+import { EditProviderSheet, ProviderResourcesPanel } from "@/features/providers/pages/ProvidersPage";
+
+const routingPolicyLabels: Record<string, string> = {
+  priority: "Priority",
+  round_robin: "Round robin",
+  least_recently_used: "Least recently used",
+  health_based: "Health based",
+  weighted: "Weighted",
+  fallback: "Fallback",
+};
 
 export function ProviderDetailPage() {
   const { providerId } = useParams();
+  const [isEditOpen, setIsEditOpen] = useState(false);
   const queryClient = useQueryClient();
   const providerQuery = useGetProviderApiV1ProvidersProviderIdGet(providerId ?? "", {
     query: { enabled: Boolean(providerId) },
   });
   const updateProvider = useUpdateProviderApiV1ProvidersProviderIdPatch({
-    mutation: { onSuccess: async () => queryClient.invalidateQueries() },
+    mutation: {
+      onSuccess: async () => {
+        setIsEditOpen(false);
+        await queryClient.invalidateQueries();
+      },
+    },
   });
   const provider = providerQuery.data?.status === 200 ? providerQuery.data.data : null;
 
@@ -76,12 +89,18 @@ export function ProviderDetailPage() {
         title={provider.name}
         description="Manage upstream credentials and model names for this provider."
         actions={
-          <Button asChild variant="outline">
-            <Link to="/providers">
-              <ArrowLeft />
-              Providers
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setIsEditOpen(true)}>
+              <Pencil />
+              Edit provider
+            </Button>
+            <Button asChild variant="outline">
+              <Link to="/providers">
+                <ArrowLeft />
+                Providers
+              </Link>
+            </Button>
+          </div>
         }
       />
       <Card>
@@ -98,7 +117,7 @@ export function ProviderDetailPage() {
           <ProviderSummaryFact label="Integration" value={provider.supported_integration} />
           <ProviderSummaryFact
             label="Credential routing"
-            value={provider.credential_routing_policy.replaceAll("_", " ")}
+            value={formatRoutingPolicy(provider.credential_routing_policy)}
           />
           <ProviderSummaryFact
             label="Request timeout"
@@ -117,19 +136,23 @@ export function ProviderDetailPage() {
             value={provider.max_concurrent_requests?.toString() ?? "Default"}
           />
         </CardContent>
-        <CardContent>
-          <ProviderRoutingPolicyField
-            value={provider.credential_routing_policy}
-            disabled={updateProvider.isPending}
-            onValueChange={(value) =>
-              updateProvider.mutate({
-                providerId: provider.id,
-                data: { credential_routing_policy: value },
-              })
-            }
-          />
-        </CardContent>
       </Card>
+      <EditProviderSheet
+        provider={isEditOpen ? provider : null}
+        onClose={() => setIsEditOpen(false)}
+        isPending={updateProvider.isPending}
+        onSubmit={(values) =>
+          updateProvider.mutate({
+            providerId: provider.id,
+            data: {
+              name: values.name,
+              ...(values.slug ? { slug: values.slug } : {}),
+              base_url: values.base_url,
+              credential_routing_policy: values.credential_routing_policy,
+            },
+          })
+        }
+      />
       <ProviderResourcesPanel provider={provider} />
     </div>
   );
@@ -142,4 +165,8 @@ function ProviderSummaryFact({ label, value }: { label: string; value: string })
       <p className="truncate text-sm font-medium">{value}</p>
     </div>
   );
+}
+
+function formatRoutingPolicy(value: string) {
+  return routingPolicyLabels[value] ?? value.replaceAll("_", " ");
 }

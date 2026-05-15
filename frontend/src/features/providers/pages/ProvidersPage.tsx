@@ -250,10 +250,6 @@ function formatRoutingPolicy(value: string) {
   return routingPolicyOptions.find((option) => option.value === value)?.label ?? value;
 }
 
-function describeRoutingPolicy(value: string) {
-  return routingPolicyOptions.find((option) => option.value === value)?.description ?? "";
-}
-
 function formatCapability(value: unknown) {
   if (value === true) {
     return "Supported";
@@ -503,18 +499,6 @@ export function ProvidersPage() {
 
 export function ProviderResourcesPanel({ provider }: { provider: ProviderResponse }) {
   return <ProviderResourcesContent provider={provider} />;
-}
-
-export function ProviderRoutingPolicyField({
-  value,
-  onValueChange,
-  disabled,
-}: {
-  value: string;
-  onValueChange: (value: RoutingPolicyValue) => void;
-  disabled?: boolean;
-}) {
-  return <RoutingPolicyField value={value} onValueChange={onValueChange} disabled={disabled} />;
 }
 
 function ProviderCatalogRow({
@@ -1378,22 +1362,23 @@ function RoutingPolicyField({
         disabled={disabled}
       >
         <SelectTrigger id="provider-key-routing-policy">
-          <SelectValue />
+          <span>{formatRoutingPolicy(value)}</span>
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent className="w-80">
           <SelectGroup>
             {routingPolicyOptions.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                <span className="flex flex-col gap-0.5">
+              <SelectItem key={option.value} value={option.value} textValue={option.label}>
+                <span className="flex flex-col gap-0.5 py-1">
                   <span>{option.label}</span>
-                  <span className="text-xs text-muted-foreground">{option.description}</span>
+                  <span className="whitespace-normal text-xs text-muted-foreground">
+                    {option.description}
+                  </span>
                 </span>
               </SelectItem>
             ))}
           </SelectGroup>
         </SelectContent>
       </Select>
-      <p className="text-xs text-muted-foreground">{describeRoutingPolicy(value)}</p>
     </div>
   );
 }
@@ -2130,7 +2115,7 @@ function CreateProviderSheet({
   );
 }
 
-function EditProviderSheet({
+export function EditProviderSheet({
   provider,
   onClose,
   onSubmit,
