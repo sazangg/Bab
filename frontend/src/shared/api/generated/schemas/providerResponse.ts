@@ -26,6 +26,7 @@ export interface ProviderResponse {
   fallback_policy: ProviderResponseFallbackPolicy;
   circuit_breaker_policy: ProviderResponseCircuitBreakerPolicy;
   max_concurrent_requests: number | null;
+  credential_routing_policy: string;
   is_active: boolean;
   created_at: string;
   updated_at: string;

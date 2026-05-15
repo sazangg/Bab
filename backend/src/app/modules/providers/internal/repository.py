@@ -22,6 +22,7 @@ async def create_provider(
     fallback_policy: dict,
     circuit_breaker_policy: dict,
     max_concurrent_requests: int | None,
+    credential_routing_policy: str,
     db: AsyncSession,
 ) -> Provider:
     provider = Provider(
@@ -40,6 +41,7 @@ async def create_provider(
         fallback_policy=fallback_policy,
         circuit_breaker_policy=circuit_breaker_policy,
         max_concurrent_requests=max_concurrent_requests,
+        credential_routing_policy=credential_routing_policy,
     )
     db.add(provider)
     await db.flush()
@@ -67,7 +69,6 @@ async def create_provider_credential(
     name: str,
     key_prefix: str,
     api_key_encrypted: str,
-    routing_policy: str,
     priority: int,
     db: AsyncSession,
 ) -> ProviderCredential:
@@ -78,7 +79,6 @@ async def create_provider_credential(
         name=name,
         key_prefix=key_prefix,
         api_key_encrypted=api_key_encrypted,
-        routing_policy=routing_policy,
         priority=priority,
     )
     db.add(provider_credential)

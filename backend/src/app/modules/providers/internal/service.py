@@ -74,6 +74,7 @@ async def create_provider(
             fallback_policy=payload.fallback_policy,
             circuit_breaker_policy=payload.circuit_breaker_policy,
             max_concurrent_requests=payload.max_concurrent_requests,
+            credential_routing_policy=payload.credential_routing_policy,
             db=db,
         )
         await audit_facade.record_event(
@@ -120,7 +121,6 @@ async def create_provider_credential(
             name=payload.name,
             key_prefix=_key_prefix(api_key),
             api_key_encrypted=encrypt(api_key),
-            routing_policy=payload.routing_policy,
             priority=payload.priority,
             db=db,
         )
@@ -198,8 +198,6 @@ async def update_provider_credential(
             provider_credential.api_key_encrypted = encrypt(api_key)
             provider_credential.health_status = "unchecked"
             provider_credential.last_validation_error = None
-        if payload.routing_policy is not None:
-            provider_credential.routing_policy = payload.routing_policy
         if payload.priority is not None:
             provider_credential.priority = payload.priority
         if payload.is_active is not None:
@@ -672,6 +670,8 @@ async def update_provider(
             provider.circuit_breaker_policy = payload.circuit_breaker_policy
         if "max_concurrent_requests" in payload.model_fields_set:
             provider.max_concurrent_requests = payload.max_concurrent_requests
+        if payload.credential_routing_policy is not None:
+            provider.credential_routing_policy = payload.credential_routing_policy
         if payload.is_active is not None:
             provider.is_active = payload.is_active
         if payload.api_key is not None:
@@ -901,7 +901,10 @@ async def _resolve_provider_credential_route(
             credential for credential in provider_credentials if credential.is_active
         ]
         if active_credentials:
-            return _route_provider_credentials(active_credentials)
+            return _route_provider_credentials(
+                active_credentials,
+                routing_policy=_provider_routing_policy(provider),
+            )
         if provider.api_key_encrypted is not None:
             return [None]
         raise ProviderCredentialRequiredError
@@ -923,29 +926,28 @@ async def _resolve_provider_credential_route(
 
 def _route_provider_credentials(
     credentials: list[ProviderCredential],
+    *,
+    routing_policy: ProviderCredentialRoutingPolicy,
 ) -> list[ProviderCredential]:
     ordered = sorted(credentials, key=_provider_credential_priority_key)
-    policy = _effective_routing_policy(ordered)
-    if policy == ProviderCredentialRoutingPolicy.priority:
+    if routing_policy == ProviderCredentialRoutingPolicy.priority:
         return [ordered[0]]
-    if policy == ProviderCredentialRoutingPolicy.round_robin:
+    if routing_policy == ProviderCredentialRoutingPolicy.round_robin:
         return [sorted(credentials, key=_provider_credential_lru_key)[0]]
-    if policy == ProviderCredentialRoutingPolicy.least_recently_used:
+    if routing_policy == ProviderCredentialRoutingPolicy.least_recently_used:
         return [sorted(credentials, key=_provider_credential_lru_key)[0]]
-    if policy == ProviderCredentialRoutingPolicy.health_based:
+    if routing_policy == ProviderCredentialRoutingPolicy.health_based:
         return [sorted(credentials, key=_provider_credential_health_key)[0]]
-    if policy == ProviderCredentialRoutingPolicy.weighted:
+    if routing_policy == ProviderCredentialRoutingPolicy.weighted:
         return [_weighted_provider_credential_route(credentials)[0]]
-    if policy == ProviderCredentialRoutingPolicy.fallback:
+    if routing_policy == ProviderCredentialRoutingPolicy.fallback:
         return ordered
     return ordered
 
 
-def _effective_routing_policy(
-    credentials: list[ProviderCredential],
-) -> ProviderCredentialRoutingPolicy:
+def _provider_routing_policy(provider: Provider) -> ProviderCredentialRoutingPolicy:
     try:
-        return ProviderCredentialRoutingPolicy(credentials[0].routing_policy)
+        return ProviderCredentialRoutingPolicy(provider.credential_routing_policy)
     except ValueError:
         return ProviderCredentialRoutingPolicy.priority
 

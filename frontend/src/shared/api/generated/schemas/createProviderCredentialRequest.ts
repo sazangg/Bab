@@ -13,8 +13,6 @@ export interface CreateProviderCredentialRequest {
   name: string;
   /** @minLength 1 */
   api_key: string;
-  /** @maxLength 100 */
-  routing_policy?: string;
   /** @minimum 0 */
   priority?: number;
 }

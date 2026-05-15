@@ -22,5 +22,13 @@ export interface UpdateProviderRequest {
   fallback_policy?: UpdateProviderRequestFallbackPolicy;
   circuit_breaker_policy?: UpdateProviderRequestCircuitBreakerPolicy;
   max_concurrent_requests?: number | null;
+  credential_routing_policy?:
+    | "priority"
+    | "round_robin"
+    | "least_recently_used"
+    | "health_based"
+    | "weighted"
+    | "fallback"
+    | null;
   is_active?: boolean | null;
 }

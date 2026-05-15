@@ -7,6 +7,15 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 
+class ProviderCredentialRoutingPolicy(StrEnum):
+    priority = "priority"
+    round_robin = "round_robin"
+    least_recently_used = "least_recently_used"
+    health_based = "health_based"
+    weighted = "weighted"
+    fallback = "fallback"
+
+
 class CreateProviderRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     slug: str | None = Field(default=None, min_length=1, max_length=100)
@@ -20,6 +29,9 @@ class CreateProviderRequest(BaseModel):
     fallback_policy: dict[str, Any] = Field(default_factory=dict)
     circuit_breaker_policy: dict[str, Any] = Field(default_factory=dict)
     max_concurrent_requests: int | None = Field(default=None, ge=1)
+    credential_routing_policy: ProviderCredentialRoutingPolicy = (
+        ProviderCredentialRoutingPolicy.priority
+    )
 
 
 class UpdateProviderRequest(BaseModel):
@@ -35,29 +47,19 @@ class UpdateProviderRequest(BaseModel):
     fallback_policy: dict[str, Any] | None = None
     circuit_breaker_policy: dict[str, Any] | None = None
     max_concurrent_requests: int | None = Field(default=None, ge=1)
+    credential_routing_policy: ProviderCredentialRoutingPolicy | None = None
     is_active: bool | None = None
-
-
-class ProviderCredentialRoutingPolicy(StrEnum):
-    priority = "priority"
-    round_robin = "round_robin"
-    least_recently_used = "least_recently_used"
-    health_based = "health_based"
-    weighted = "weighted"
-    fallback = "fallback"
 
 
 class CreateProviderCredentialRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     api_key: str = Field(min_length=1)
-    routing_policy: ProviderCredentialRoutingPolicy = ProviderCredentialRoutingPolicy.priority
     priority: int = Field(default=100, ge=0)
 
 
 class UpdateProviderCredentialRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     api_key: str | None = Field(default=None, min_length=1)
-    routing_policy: ProviderCredentialRoutingPolicy | None = None
     priority: int | None = Field(default=None, ge=0)
     is_active: bool | None = None
 
@@ -71,7 +73,6 @@ class ProviderCredentialResponse(BaseModel):
     created_by: UUID | None
     name: str
     key_prefix: str
-    routing_policy: str
     priority: int
     health_status: str
     last_validation_error: str | None
@@ -180,6 +181,7 @@ class ProviderResponse(BaseModel):
     fallback_policy: dict[str, Any]
     circuit_breaker_policy: dict[str, Any]
     max_concurrent_requests: int | None
+    credential_routing_policy: str
     is_active: bool
     created_at: datetime
     updated_at: datetime

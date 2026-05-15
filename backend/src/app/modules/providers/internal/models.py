@@ -31,6 +31,7 @@ class Provider(Base):
     fallback_policy: Mapped[dict] = mapped_column(JSON, default=dict)
     circuit_breaker_policy: Mapped[dict] = mapped_column(JSON, default=dict)
     max_concurrent_requests: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    credential_routing_policy: Mapped[str] = mapped_column(String(100), default="priority")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -59,7 +60,6 @@ class ProviderCredential(Base):
     name: Mapped[str] = mapped_column(String(255))
     key_prefix: Mapped[str] = mapped_column(String(20))
     api_key_encrypted: Mapped[str] = mapped_column(String(1000))
-    routing_policy: Mapped[str] = mapped_column(String(100), default="priority")
     priority: Mapped[int] = mapped_column(Integer, default=100)
     health_status: Mapped[str] = mapped_column(String(50), default="unchecked")
     last_validation_error: Mapped[str | None] = mapped_column(String(1000), nullable=True)

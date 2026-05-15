@@ -34,4 +34,11 @@ export interface CreateProviderRequest {
   fallback_policy?: CreateProviderRequestFallbackPolicy;
   circuit_breaker_policy?: CreateProviderRequestCircuitBreakerPolicy;
   max_concurrent_requests?: number | null;
+  credential_routing_policy?:
+    | "priority"
+    | "round_robin"
+    | "least_recently_used"
+    | "health_based"
+    | "weighted"
+    | "fallback";
 }

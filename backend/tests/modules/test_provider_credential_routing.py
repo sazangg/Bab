@@ -38,6 +38,7 @@ async def _create_provider_with_credentials(
         payload=CreateProviderRequest(
             name="OpenAI",
             base_url="https://api.example.test/v1",
+            credential_routing_policy=routing_policy,
         ),
         actor=actor,
         scope=scope,
@@ -48,7 +49,6 @@ async def _create_provider_with_credentials(
         payload=CreateProviderCredentialRequest(
             name="First",
             api_key="first-secret",
-            routing_policy=routing_policy,
             priority=10,
         ),
         actor=actor,
@@ -60,7 +60,6 @@ async def _create_provider_with_credentials(
         payload=CreateProviderCredentialRequest(
             name="Second",
             api_key="second-secret",
-            routing_policy=routing_policy,
             priority=20,
         ),
         actor=actor,
@@ -237,3 +236,9 @@ def test_weighted_routing_uses_priority_as_weight(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(service.secrets, "choice", choose_last)
 
     assert service._weighted_provider_credential_route([first, second])[0] == second
+
+
+def test_routing_uses_provider_policy_not_credential_policy() -> None:
+    provider = type("Provider", (), {"credential_routing_policy": "fallback"})()
+
+    assert service._provider_routing_policy(provider) == ProviderCredentialRoutingPolicy.fallback
