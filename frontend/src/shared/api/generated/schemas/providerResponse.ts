@@ -4,6 +4,7 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
+import type { ProviderCredentialSummary } from './providerCredentialSummary';
 import type { ProviderResponseCapabilities } from './providerResponseCapabilities';
 import type { ProviderResponseCircuitBreakerPolicy } from './providerResponseCircuitBreakerPolicy';
 import type { ProviderResponseFallbackPolicy } from './providerResponseFallbackPolicy';
@@ -27,6 +28,7 @@ export interface ProviderResponse {
   circuit_breaker_policy: ProviderResponseCircuitBreakerPolicy;
   max_concurrent_requests: number | null;
   credential_routing_policy: string;
+  credential_summary?: ProviderCredentialSummary;
   is_active: boolean;
   created_at: string;
   updated_at: string;

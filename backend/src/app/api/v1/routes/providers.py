@@ -22,6 +22,7 @@ from app.modules.providers.schemas import (
     ModelOfferingResponse,
     ProviderCredentialResponse,
     ProviderResponse,
+    ReorderProviderCredentialsRequest,
     SyncModelOfferingsRequest,
     TestModelOfferingRequest,
     TestModelOfferingResponse,
@@ -116,6 +117,26 @@ async def update_provider_credential(
         return await facade.update_provider_credential(
             provider_id=provider_id,
             provider_credential_id=provider_credential_id,
+            payload=payload,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="provider credential not found") from exc
+
+
+@router.post("/{provider_id}/credentials/reorder")
+async def reorder_provider_credentials(
+    provider_id: UUID,
+    payload: ReorderProviderCredentialsRequest,
+    actor: ProviderAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> list[ProviderCredentialResponse]:
+    try:
+        return await facade.reorder_provider_credentials(
+            provider_id=provider_id,
             payload=payload,
             actor=actor,
             scope=scope,

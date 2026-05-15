@@ -28,6 +28,7 @@ from app.modules.providers import facade as providers_facade
 from app.modules.providers.errors import (
     ProviderAdapterNotFoundError,
     ProviderInactiveError,
+    ProviderNotFoundError,
     ProviderUpstreamError,
 )
 from app.modules.providers.schemas import ProviderChatCompletionRequest
@@ -85,6 +86,12 @@ async def create_chat_completion(
             ),
             db=db,
         )
+        resolved_provider = await providers_facade.get_provider(
+            provider_id=resolved.provider_id,
+            scope=Scope(org_id=resolved.org_id),
+            db=db,
+        )
+        _enforce_provider_body_size(raw_body, resolved_provider.max_body_bytes)
         estimated_tokens = estimate_request_tokens(provider_payload.messages)
         limit_reservations = await limits_facade.reserve_proxy_limits(
             context=LimitEvaluationContext(
@@ -163,7 +170,7 @@ async def create_chat_completion(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="limit exceeded",
         ) from exc
-    except (ProviderInactiveError, ProviderAdapterNotFoundError) as exc:
+    except (ProviderInactiveError, ProviderAdapterNotFoundError, ProviderNotFoundError) as exc:
         if resolved is not None:
             await _record_proxy_request(
                 resolved=resolved,
@@ -269,6 +276,11 @@ def _enforce_content_length(request: Request) -> None:
 def _enforce_body_size(raw_body: bytes) -> None:
     if len(raw_body) > settings.proxy_max_body_bytes:
         raise HTTPException(status_code=413, detail="request body is too large")
+
+
+def _enforce_provider_body_size(raw_body: bytes, max_body_bytes: int | None) -> None:
+    if max_body_bytes is not None and len(raw_body) > max_body_bytes:
+        raise HTTPException(status_code=413, detail="request body exceeds provider limit")
 
 
 def _decode_json_body(raw_body: bytes) -> dict[str, Any]:

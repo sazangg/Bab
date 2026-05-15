@@ -104,6 +104,17 @@ async def list_provider_credentials(
     return list(result)
 
 
+async def list_all_provider_credentials(
+    *,
+    org_id: UUID,
+    db: AsyncSession,
+) -> list[ProviderCredential]:
+    result = await db.scalars(
+        select(ProviderCredential).where(ProviderCredential.org_id == org_id)
+    )
+    return list(result)
+
+
 async def get_provider_credential(
     *,
     org_id: UUID,

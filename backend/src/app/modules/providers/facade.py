@@ -18,6 +18,7 @@ from app.modules.providers.schemas import (
     ProviderChatCompletionStream,
     ProviderCredentialResponse,
     ProviderResponse,
+    ReorderProviderCredentialsRequest,
     TestModelOfferingRequest,
     TestModelOfferingResponse,
     TestProviderCredentialResponse,
@@ -96,6 +97,23 @@ async def update_provider_credential(
     return await service.update_provider_credential(
         provider_id=provider_id,
         provider_credential_id=provider_credential_id,
+        payload=payload,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def reorder_provider_credentials(
+    *,
+    provider_id: UUID,
+    payload: ReorderProviderCredentialsRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[ProviderCredentialResponse]:
+    return await service.reorder_provider_credentials(
+        provider_id=provider_id,
         payload=payload,
         actor=actor,
         scope=scope,

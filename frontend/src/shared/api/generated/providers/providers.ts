@@ -33,6 +33,7 @@ import type {
   ModelOfferingResponse,
   ProviderCredentialResponse,
   ProviderResponse,
+  ReorderProviderCredentialsRequest,
   SyncModelOfferingsRequest,
   TestModelOfferingRequest,
   TestModelOfferingResponse,
@@ -935,6 +936,96 @@ export const useDeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsP
         TContext
       > => {
       return useMutation(getDeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteMutationOptions(options), queryClient);
+    }
+    export type reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostResponse200 = {
+  data: ProviderCredentialResponse[]
+  status: 200
+}
+
+export type reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostResponseSuccess = (reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostResponse200) & {
+  headers: Headers;
+};
+export type reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostResponseError = (reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostResponse422) & {
+  headers: Headers;
+};
+
+export type reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostResponse = (reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostResponseSuccess | reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostResponseError)
+
+export const getReorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostUrl = (providerId: string,) => {
+
+
+
+
+  return `/api/v1/providers/${providerId}/credentials/reorder`
+}
+
+/**
+ * @summary Reorder Provider Credentials
+ */
+export const reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPost = async (providerId: string,
+    reorderProviderCredentialsRequest: ReorderProviderCredentialsRequest, options?: RequestInit): Promise<reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostResponse> => {
+
+  return apiMutator<reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostResponse>(getReorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostUrl(providerId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      reorderProviderCredentialsRequest,)
+  }
+);}
+
+
+
+
+export const getReorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPost>>, TError,{providerId: string;data: ReorderProviderCredentialsRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPost>>, TError,{providerId: string;data: ReorderProviderCredentialsRequest}, TContext> => {
+
+const mutationKey = ['reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPost'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPost>>, {providerId: string;data: ReorderProviderCredentialsRequest}> = (props) => {
+          const {providerId,data} = props ?? {};
+
+          return  reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPost(providerId,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostMutationResult = NonNullable<Awaited<ReturnType<typeof reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPost>>>
+    export type ReorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostMutationBody = ReorderProviderCredentialsRequest
+    export type ReorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostMutationError = HTTPValidationError
+
+    /**
+ * @summary Reorder Provider Credentials
+ */
+export const useReorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPost = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPost>>, TError,{providerId: string;data: ReorderProviderCredentialsRequest}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPost>>,
+        TError,
+        {providerId: string;data: ReorderProviderCredentialsRequest},
+        TContext
+      > => {
+      return useMutation(getReorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostMutationOptions(options), queryClient);
     }
     export type testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponse200 = {
   data: TestProviderCredentialResponse

@@ -64,6 +64,15 @@ class UpdateProviderCredentialRequest(BaseModel):
     is_active: bool | None = None
 
 
+class ProviderCredentialPriorityUpdate(BaseModel):
+    provider_credential_id: UUID
+    priority: int = Field(ge=0)
+
+
+class ReorderProviderCredentialsRequest(BaseModel):
+    updates: list[ProviderCredentialPriorityUpdate] = Field(min_length=1)
+
+
 class ProviderCredentialResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -81,6 +90,15 @@ class ProviderCredentialResponse(BaseModel):
     last_used_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class ProviderCredentialSummary(BaseModel):
+    total: int = 0
+    active: int = 0
+    valid: int = 0
+    degraded: int = 0
+    invalid: int = 0
+    unchecked: int = 0
 
 
 class TestProviderCredentialResponse(BaseModel):
@@ -194,6 +212,7 @@ class ProviderResponse(BaseModel):
     circuit_breaker_policy: dict[str, Any]
     max_concurrent_requests: int | None
     credential_routing_policy: str
+    credential_summary: ProviderCredentialSummary = Field(default_factory=ProviderCredentialSummary)
     is_active: bool
     created_at: datetime
     updated_at: datetime

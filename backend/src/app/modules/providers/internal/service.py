@@ -1,6 +1,9 @@
+import asyncio
 import re
 import secrets
-from datetime import UTC, datetime
+from collections import defaultdict, deque
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import httpx
@@ -41,7 +44,9 @@ from app.modules.providers.schemas import (
     ProviderChatCompletionStream,
     ProviderCredentialResponse,
     ProviderCredentialRoutingPolicy,
+    ProviderCredentialSummary,
     ProviderResponse,
+    ReorderProviderCredentialsRequest,
     TestModelOfferingRequest,
     TestModelOfferingResponse,
     TestProviderCredentialResponse,
@@ -51,6 +56,10 @@ from app.modules.providers.schemas import (
 )
 
 logger = structlog.get_logger(__name__)
+
+_provider_semaphores: dict[UUID, tuple[int, asyncio.Semaphore]] = {}
+_provider_circuit_events: dict[UUID, deque[tuple[datetime, bool]]] = defaultdict(deque)
+_provider_circuit_open_until: dict[UUID, datetime] = {}
 
 
 async def create_provider(
@@ -97,12 +106,19 @@ async def create_provider(
 
 async def list_providers(*, scope: Scope, db: AsyncSession) -> list[ProviderResponse]:
     providers = await repository.list_providers(org_id=scope.org_id, db=db)
-    return [_to_response(provider) for provider in providers]
+    credentials = await repository.list_all_provider_credentials(org_id=scope.org_id, db=db)
+    summaries = _credential_summaries(credentials)
+    return [_to_response(provider, summaries.get(provider.id)) for provider in providers]
 
 
 async def get_provider(*, provider_id: UUID, scope: Scope, db: AsyncSession) -> ProviderResponse:
     provider = await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
-    return _to_response(provider)
+    credentials = await repository.list_provider_credentials(
+        org_id=scope.org_id,
+        provider_id=provider_id,
+        db=db,
+    )
+    return _to_response(provider, _credential_summary(credentials))
 
 
 async def create_provider_credential(
@@ -231,6 +247,49 @@ async def update_provider_credential(
             )
 
     return ProviderCredentialResponse.model_validate(provider_credential)
+
+
+async def reorder_provider_credentials(
+    *,
+    provider_id: UUID,
+    payload: ReorderProviderCredentialsRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[ProviderCredentialResponse]:
+    async with transaction(db):
+        await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
+        seen_ids: set[UUID] = set()
+        credentials: list[ProviderCredential] = []
+        for item in payload.updates:
+            if item.provider_credential_id in seen_ids:
+                raise ProviderNotFoundError
+            seen_ids.add(item.provider_credential_id)
+            credential = await _get_provider_credential_or_raise(
+                provider_id=provider_id,
+                provider_credential_id=item.provider_credential_id,
+                scope=scope,
+                db=db,
+            )
+            credential.priority = item.priority
+            credentials.append(credential)
+
+        await db.flush()
+        await audit_facade.record_event(
+            RecordAuditEvent(
+                org_id=scope.org_id,
+                actor_user_id=actor.id,
+                event="provider_credentials.reordered",
+                target_type="provider",
+                target_id=provider_id,
+                event_metadata={"credential_count": len(credentials)},
+            ),
+            db,
+        )
+    return [
+        ProviderCredentialResponse.model_validate(credential)
+        for credential in sorted(credentials, key=_provider_credential_priority_key)
+    ]
 
 
 async def test_provider_credential(
@@ -855,10 +914,32 @@ async def create_chat_completion(
     db: AsyncSession,
     http_client: httpx.AsyncClient,
 ) -> ProviderChatCompletionResponse:
+    return await _create_chat_completion_with_policy(
+        provider_id=provider_id,
+        provider_credential_id=provider_credential_id,
+        payload=payload,
+        scope=scope,
+        db=db,
+        http_client=http_client,
+        allow_provider_fallback=True,
+    )
+
+
+async def _create_chat_completion_with_policy(
+    *,
+    provider_id: UUID,
+    provider_credential_id: UUID | None,
+    payload: ProviderChatCompletionRequest,
+    scope: Scope,
+    db: AsyncSession,
+    http_client: httpx.AsyncClient,
+    allow_provider_fallback: bool,
+) -> ProviderChatCompletionResponse:
     provider = await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
     if not provider.is_active:
         raise ProviderInactiveError
 
+    _raise_if_circuit_open(provider)
     adapter = default_adapter_registry.get(provider.adapter_type)
     routed_credentials = await _resolve_provider_credential_route(
         provider=provider,
@@ -867,38 +948,307 @@ async def create_chat_completion(
         db=db,
     )
     last_error: ProviderUpstreamError | None = None
-    for credential in routed_credentials:
-        try:
-            response = await adapter.create_chat_completion(
-                provider=AdapterProvider(
-                    base_url=provider.base_url,
-                    api_key=_api_key_for_routed_credential(
-                        provider=provider,
-                        credential=credential,
+    async with _provider_concurrency_slot(provider):
+        for credential in routed_credentials:
+            async def call_upstream(
+                routed_credential: ProviderCredential | None = credential,
+            ) -> ProviderChatCompletionResponse:
+                return await adapter.create_chat_completion(
+                    provider=AdapterProvider(
+                        base_url=provider.base_url,
+                        api_key=_api_key_for_routed_credential(
+                            provider=provider,
+                            credential=routed_credential,
+                        ),
                     ),
-                ),
-                payload=payload,
-                http_client=http_client,
-            )
-            if credential is not None:
-                await repository.mark_provider_credential_used(
-                    provider_credential=credential,
-                    db=db,
+                    payload=payload,
+                    http_client=http_client,
                 )
-            return response
-        except ProviderUpstreamError as exc:
-            last_error = exc
-            if credential is not None:
-                await _mark_provider_credential_failed(
-                    provider_credential=credential,
-                    error=exc,
-                    db=db,
+
+            try:
+                response = await _call_with_retries(
+                    call=call_upstream,
+                    provider=provider,
                 )
-            if provider_credential_id is not None or not _should_try_next_credential(exc):
-                raise
+                _record_circuit_success(provider)
+                if credential is not None:
+                    await repository.mark_provider_credential_used(
+                        provider_credential=credential,
+                        db=db,
+                    )
+                return response
+            except ProviderUpstreamError as exc:
+                last_error = exc
+                _record_circuit_failure(provider)
+                if credential is not None:
+                    await _mark_provider_credential_failed(
+                        provider_credential=credential,
+                        error=exc,
+                        db=db,
+                    )
+                if provider_credential_id is not None or not _should_try_next_credential(exc):
+                    break
+
+    if allow_provider_fallback and provider_credential_id is None and last_error is not None:
+        fallback_result = await _try_provider_fallbacks(
+            provider=provider,
+            payload=payload,
+            scope=scope,
+            db=db,
+            http_client=http_client,
+        )
+        if isinstance(fallback_result, ProviderChatCompletionResponse):
+            return fallback_result
+        if isinstance(fallback_result, ProviderUpstreamError):
+            last_error = fallback_result
+
     if last_error is not None:
         raise last_error
     raise ProviderCredentialRequiredError
+
+
+async def _try_provider_fallbacks(
+    *,
+    provider: Provider,
+    payload: ProviderChatCompletionRequest,
+    scope: Scope,
+    db: AsyncSession,
+    http_client: httpx.AsyncClient,
+) -> ProviderChatCompletionResponse | ProviderUpstreamError | None:
+    fallback_policy = _fallback_policy(provider)
+    if not fallback_policy["enabled"]:
+        return None
+    fallback_ids = fallback_policy["fallback_provider_ids"]
+    if not fallback_ids:
+        return None
+
+    last_error: ProviderUpstreamError | None = None
+    for fallback_provider_id in fallback_ids:
+        try:
+            return await _create_chat_completion_with_policy(
+                provider_id=fallback_provider_id,
+                provider_credential_id=None,
+                payload=payload,
+                scope=scope,
+                db=db,
+                http_client=http_client,
+                allow_provider_fallback=False,
+            )
+        except ProviderUpstreamError as exc:
+            last_error = exc
+            if exc.status_code not in fallback_policy["trigger_on_status"]:
+                return exc
+        except (ProviderInactiveError, ProviderCredentialRequiredError):
+            continue
+    return last_error
+
+
+async def _call_with_retries(
+    *,
+    call: Callable[[], Awaitable[ProviderChatCompletionResponse]],
+    provider: Provider,
+) -> ProviderChatCompletionResponse:
+    retry_policy = _retry_policy(provider)
+    max_attempts = retry_policy["max_attempts"] if retry_policy["enabled"] else 1
+    last_error: ProviderUpstreamError | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            async with asyncio.timeout(provider.request_timeout_seconds):
+                return await call()
+        except TimeoutError as exc:
+            last_error = ProviderUpstreamError(
+                status_code=504,
+                body={"error": "provider request timed out"},
+            )
+            if attempt >= max_attempts or 504 not in retry_policy["retry_on_status"]:
+                raise last_error from exc
+        except ProviderUpstreamError as exc:
+            last_error = exc
+            if (
+                attempt >= max_attempts
+                or exc.status_code not in retry_policy["retry_on_status"]
+            ):
+                raise
+        await asyncio.sleep(_retry_delay_seconds(retry_policy, attempt))
+    if last_error is not None:
+        raise last_error
+    raise ProviderCredentialRequiredError
+
+
+def _retry_delay_seconds(policy: dict, attempt: int) -> float:
+    initial = policy["initial_delay_ms"] / 1000
+    maximum = policy["max_delay_ms"] / 1000
+    if policy["backoff"] == "constant":
+        return min(initial, maximum)
+    if policy["backoff"] == "linear":
+        return min(initial * attempt, maximum)
+    return min(initial * (2 ** (attempt - 1)), maximum)
+
+
+def _retry_policy(provider: Provider) -> dict:
+    stored = provider.retry_policy if isinstance(provider.retry_policy, dict) else {}
+    return {
+        "enabled": bool(stored.get("enabled", False)),
+        "max_attempts": _int_policy_value(stored.get("max_attempts"), 3, minimum=1, maximum=10),
+        "backoff": (
+            stored.get("backoff")
+            if stored.get("backoff") in {"constant", "linear", "exponential"}
+            else "exponential"
+        ),
+        "initial_delay_ms": _int_policy_value(
+            stored.get("initial_delay_ms"),
+            500,
+            minimum=0,
+        ),
+        "max_delay_ms": _int_policy_value(stored.get("max_delay_ms"), 10000, minimum=0),
+        "retry_on_status": _status_policy_values(
+            stored.get("retry_on_status"),
+            fallback={408, 429, 500, 502, 503, 504},
+        ),
+    }
+
+
+def _fallback_policy(provider: Provider) -> dict:
+    stored = provider.fallback_policy if isinstance(provider.fallback_policy, dict) else {}
+    fallback_ids = []
+    if isinstance(stored.get("fallback_provider_ids"), list):
+        for item in stored["fallback_provider_ids"]:
+            try:
+                fallback_ids.append(UUID(str(item)))
+            except ValueError:
+                continue
+    return {
+        "enabled": bool(stored.get("enabled", False)),
+        "trigger_on_status": _status_policy_values(
+            stored.get("trigger_on_status"),
+            fallback={502, 503, 504},
+        ),
+        "fallback_provider_ids": fallback_ids,
+    }
+
+
+def _circuit_breaker_policy(provider: Provider) -> dict:
+    stored = (
+        provider.circuit_breaker_policy
+        if isinstance(provider.circuit_breaker_policy, dict)
+        else {}
+    )
+    return {
+        "enabled": bool(stored.get("enabled", False)),
+        "failure_threshold_pct": _int_policy_value(
+            stored.get("failure_threshold_pct"),
+            50,
+            minimum=0,
+            maximum=100,
+        ),
+        "min_request_count": _int_policy_value(stored.get("min_request_count"), 20, minimum=0),
+        "window_seconds": _int_policy_value(stored.get("window_seconds"), 60, minimum=1),
+        "cooldown_seconds": _int_policy_value(stored.get("cooldown_seconds"), 30, minimum=1),
+    }
+
+
+def _raise_if_circuit_open(provider: Provider) -> None:
+    policy = _circuit_breaker_policy(provider)
+    if not policy["enabled"]:
+        return
+    now = datetime.now(UTC)
+    open_until = _provider_circuit_open_until.get(provider.id)
+    if open_until and open_until > now:
+        raise ProviderUpstreamError(status_code=503, body={"error": "provider circuit is open"})
+    if open_until:
+        _provider_circuit_open_until.pop(provider.id, None)
+
+
+def _record_circuit_success(provider: Provider) -> None:
+    policy = _circuit_breaker_policy(provider)
+    if not policy["enabled"]:
+        return
+    _record_circuit_event(provider, succeeded=True, policy=policy)
+    _provider_circuit_open_until.pop(provider.id, None)
+
+
+def _record_circuit_failure(provider: Provider) -> None:
+    policy = _circuit_breaker_policy(provider)
+    if not policy["enabled"]:
+        return
+    now = datetime.now(UTC)
+    events = _record_circuit_event(provider, succeeded=False, policy=policy, now=now)
+    if len(events) < policy["min_request_count"]:
+        return
+    failure_count = sum(1 for _, succeeded in events if not succeeded)
+    failure_pct = int((failure_count / len(events)) * 100)
+    if failure_pct < policy["failure_threshold_pct"]:
+        return
+    _provider_circuit_open_until[provider.id] = now + timedelta(
+        seconds=policy["cooldown_seconds"],
+    )
+
+
+def _record_circuit_event(
+    provider: Provider,
+    *,
+    succeeded: bool,
+    policy: dict,
+    now: datetime | None = None,
+) -> deque[tuple[datetime, bool]]:
+    recorded_at = now or datetime.now(UTC)
+    events = _provider_circuit_events[provider.id]
+    events.append((recorded_at, succeeded))
+    window_started_at = recorded_at.timestamp() - policy["window_seconds"]
+    while events and events[0][0].timestamp() < window_started_at:
+        events.popleft()
+    return events
+
+
+def _provider_concurrency_slot(provider: Provider):
+    if provider.max_concurrent_requests is None:
+        return _NoopAsyncContext()
+    stored = _provider_semaphores.get(provider.id)
+    if stored is None or stored[0] != provider.max_concurrent_requests:
+        semaphore = asyncio.Semaphore(provider.max_concurrent_requests)
+        _provider_semaphores[provider.id] = (provider.max_concurrent_requests, semaphore)
+        return semaphore
+    _, semaphore = stored
+    return semaphore
+
+
+class _NoopAsyncContext:
+    async def __aenter__(self):
+        return None
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+def _int_policy_value(
+    value: object,
+    fallback: int,
+    *,
+    minimum: int,
+    maximum: int | None = None,
+) -> int:
+    try:
+        parsed = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        parsed = fallback
+    parsed = max(minimum, parsed)
+    if maximum is not None:
+        parsed = min(maximum, parsed)
+    return parsed
+
+
+def _status_policy_values(value: object, *, fallback: set[int]) -> set[int]:
+    if not isinstance(value, list):
+        return set(fallback)
+    statuses = set()
+    for item in value:
+        try:
+            status_code = int(item)
+        except (TypeError, ValueError):
+            continue
+        if 100 <= status_code <= 599:
+            statuses.add(status_code)
+    return statuses or set(fallback)
 
 
 async def stream_chat_completion(
@@ -922,35 +1272,54 @@ async def stream_chat_completion(
         db=db,
     )
     last_error: ProviderUpstreamError | None = None
-    for credential in routed_credentials:
-        try:
-            stream = await adapter.stream_chat_completion(
-                provider=AdapterProvider(
-                    base_url=provider.base_url,
-                    api_key=_api_key_for_routed_credential(
-                        provider=provider,
-                        credential=credential,
-                    ),
-                ),
-                payload=payload,
-                http_client=http_client,
-            )
-            if credential is not None:
-                await repository.mark_provider_credential_used(
-                    provider_credential=credential,
-                    db=db,
+    _raise_if_circuit_open(provider)
+    async with _provider_concurrency_slot(provider):
+        for credential in routed_credentials:
+            try:
+                async with asyncio.timeout(provider.request_timeout_seconds):
+                    stream = await adapter.stream_chat_completion(
+                        provider=AdapterProvider(
+                            base_url=provider.base_url,
+                            api_key=_api_key_for_routed_credential(
+                                provider=provider,
+                                credential=credential,
+                            ),
+                        ),
+                        payload=payload,
+                        http_client=http_client,
+                    )
+                _record_circuit_success(provider)
+                if credential is not None:
+                    await repository.mark_provider_credential_used(
+                        provider_credential=credential,
+                        db=db,
+                    )
+                return stream
+            except TimeoutError as exc:
+                last_error = ProviderUpstreamError(
+                    status_code=504,
+                    body={"error": "provider request timed out"},
                 )
-            return stream
-        except ProviderUpstreamError as exc:
-            last_error = exc
-            if credential is not None:
-                await _mark_provider_credential_failed(
-                    provider_credential=credential,
-                    error=exc,
-                    db=db,
-                )
-            if provider_credential_id is not None or not _should_try_next_credential(exc):
-                raise
+                _record_circuit_failure(provider)
+                if credential is not None:
+                    await _mark_provider_credential_failed(
+                        provider_credential=credential,
+                        error=last_error,
+                        db=db,
+                    )
+                if provider_credential_id is not None:
+                    raise last_error from exc
+            except ProviderUpstreamError as exc:
+                last_error = exc
+                _record_circuit_failure(provider)
+                if credential is not None:
+                    await _mark_provider_credential_failed(
+                        provider_credential=credential,
+                        error=exc,
+                        db=db,
+                    )
+                if provider_credential_id is not None or not _should_try_next_credential(exc):
+                    raise
     if last_error is not None:
         raise last_error
     raise ProviderCredentialRequiredError
@@ -997,8 +1366,42 @@ async def _get_model_offering_or_raise(
     return model_offering
 
 
-def _to_response(provider: Provider) -> ProviderResponse:
-    return ProviderResponse.model_validate(provider)
+def _to_response(
+    provider: Provider,
+    credential_summary: ProviderCredentialSummary | None = None,
+) -> ProviderResponse:
+    response = ProviderResponse.model_validate(provider)
+    response.credential_summary = credential_summary or ProviderCredentialSummary()
+    return response
+
+
+def _credential_summaries(
+    credentials: list[ProviderCredential],
+) -> dict[UUID, ProviderCredentialSummary]:
+    grouped: dict[UUID, list[ProviderCredential]] = defaultdict(list)
+    for credential in credentials:
+        grouped[credential.provider_id].append(credential)
+    return {
+        provider_id: _credential_summary(provider_credentials)
+        for provider_id, provider_credentials in grouped.items()
+    }
+
+
+def _credential_summary(credentials: list[ProviderCredential]) -> ProviderCredentialSummary:
+    summary = ProviderCredentialSummary(total=len(credentials))
+    for credential in credentials:
+        if credential.is_active:
+            summary.active += 1
+        status = credential.health_status if credential.health_status else "unchecked"
+        if status == "valid":
+            summary.valid += 1
+        elif status == "degraded":
+            summary.degraded += 1
+        elif status == "invalid":
+            summary.invalid += 1
+        else:
+            summary.unchecked += 1
+    return summary
 
 
 async def _resolve_provider_credential_route(

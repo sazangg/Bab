@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { BrowserRouter } from "react-router-dom";
 import { NuqsAdapter } from "nuqs/adapters/react-router/v7";
 
+import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { queryClient } from "@/shared/config/query-client";
 
@@ -21,6 +22,7 @@ export function AppProviders({ children }: AppProvidersProps) {
             <NuqsAdapter>{children}</NuqsAdapter>
           </BrowserRouter>
         </TooltipProvider>
+        <Toaster richColors position="bottom-right" />
       </ThemeProvider>
       <ReactQueryDevtools initialIsOpen={false} />
     </QueryClientProvider>
