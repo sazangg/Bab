@@ -15,7 +15,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useForm, useWatch } from "react-hook-form";
+import { useForm, useWatch, type UseFormRegister } from "react-hook-form";
 import { Link } from "react-router-dom";
 import { z } from "zod";
 
@@ -190,6 +190,18 @@ const modelOfferingSchema = z.object({
     (value) => (value === "" || value === null || value === undefined ? undefined : Number(value)),
     z.number().int().min(1).optional(),
   ),
+  input_price_per_million_tokens: z.preprocess(
+    (value) => (value === "" || value === null || value === undefined ? undefined : Number(value)),
+    z.number().int().min(0).optional(),
+  ),
+  output_price_per_million_tokens: z.preprocess(
+    (value) => (value === "" || value === null || value === undefined ? undefined : Number(value)),
+    z.number().int().min(0).optional(),
+  ),
+  cached_input_price_per_million_tokens: z.preprocess(
+    (value) => (value === "" || value === null || value === undefined ? undefined : Number(value)),
+    z.number().int().min(0).optional(),
+  ),
   capabilities: z.array(z.string()).default([]),
 });
 
@@ -261,6 +273,10 @@ function formatCapability(value: unknown) {
   }
 
   return "Unknown";
+}
+
+function formatTokenPrice(value: number | null | undefined) {
+  return value === null || value === undefined ? "Unset" : `${value.toLocaleString()} / 1M`;
 }
 
 function capabilityListToRecord(capabilities: string[]) {
@@ -950,6 +966,12 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
                       input_modalities: values.input_modalities,
                       output_modalities: values.output_modalities,
                       context_window: values.context_window ?? null,
+                      input_price_per_million_tokens:
+                        values.input_price_per_million_tokens ?? null,
+                      output_price_per_million_tokens:
+                        values.output_price_per_million_tokens ?? null,
+                      cached_input_price_per_million_tokens:
+                        values.cached_input_price_per_million_tokens ?? null,
                       capabilities: capabilityListToRecord(values.capabilities),
                     },
                   })
@@ -1001,6 +1023,10 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
               input_modalities: values.input_modalities,
               output_modalities: values.output_modalities,
               context_window: values.context_window,
+              input_price_per_million_tokens: values.input_price_per_million_tokens,
+              output_price_per_million_tokens: values.output_price_per_million_tokens,
+              cached_input_price_per_million_tokens:
+                values.cached_input_price_per_million_tokens,
               capabilities: capabilityListToRecord(values.capabilities),
             },
           })
@@ -1457,6 +1483,9 @@ function CreateModelOfferingSheet({
       input_modalities: ["text"],
       output_modalities: ["text"],
       context_window: undefined,
+      input_price_per_million_tokens: undefined,
+      output_price_per_million_tokens: undefined,
+      cached_input_price_per_million_tokens: undefined,
       capabilities: ["chat", "streaming"],
     },
   });
@@ -1473,6 +1502,9 @@ function CreateModelOfferingSheet({
         input_modalities: ["text"],
         output_modalities: ["text"],
         context_window: undefined,
+        input_price_per_million_tokens: undefined,
+        output_price_per_million_tokens: undefined,
+        cached_input_price_per_million_tokens: undefined,
         capabilities: ["chat", "streaming"],
       });
     }
@@ -1533,6 +1565,7 @@ function CreateModelOfferingSheet({
               {...form.register("context_window")}
             />
           </div>
+          <PricingFields register={form.register} prefix="detail" />
           <CapabilityCheckboxGroup
             values={capabilities ?? []}
             onChange={(values) => form.setValue("capabilities", values)}
@@ -1548,6 +1581,49 @@ function CreateModelOfferingSheet({
         </SheetFooter>
       </SheetContent>
     </Sheet>
+  );
+}
+
+function PricingFields({
+  register,
+  prefix,
+}: {
+  register: UseFormRegister<ModelOfferingFormInput>;
+  prefix: string;
+}) {
+  return (
+    <div className="grid gap-3 md:grid-cols-3">
+      <div className="space-y-1.5">
+        <Label htmlFor={`${prefix}-provider-model-input-price`}>Input price / 1M</Label>
+        <Input
+          id={`${prefix}-provider-model-input-price`}
+          type="number"
+          min={0}
+          placeholder="0"
+          {...register("input_price_per_million_tokens")}
+        />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor={`${prefix}-provider-model-output-price`}>Output price / 1M</Label>
+        <Input
+          id={`${prefix}-provider-model-output-price`}
+          type="number"
+          min={0}
+          placeholder="0"
+          {...register("output_price_per_million_tokens")}
+        />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor={`${prefix}-provider-model-cached-price`}>Cached input / 1M</Label>
+        <Input
+          id={`${prefix}-provider-model-cached-price`}
+          type="number"
+          min={0}
+          placeholder="0"
+          {...register("cached_input_price_per_million_tokens")}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -1612,6 +1688,9 @@ function ResourceModelTable({
       input_modalities: ["text"],
       output_modalities: ["text"],
       context_window: undefined,
+      input_price_per_million_tokens: undefined,
+      output_price_per_million_tokens: undefined,
+      cached_input_price_per_million_tokens: undefined,
       capabilities: [],
     },
   });
@@ -1634,6 +1713,10 @@ function ResourceModelTable({
         : editModel.modality.split("+"),
       output_modalities: editModel.output_modalities?.length ? editModel.output_modalities : ["text"],
       context_window: editModel.context_window ?? undefined,
+      input_price_per_million_tokens: editModel.input_price_per_million_tokens ?? undefined,
+      output_price_per_million_tokens: editModel.output_price_per_million_tokens ?? undefined,
+      cached_input_price_per_million_tokens:
+        editModel.cached_input_price_per_million_tokens ?? undefined,
       capabilities: capabilityRecordToList(editModel.capabilities),
     });
   }, [editModel, editForm]);
@@ -1744,6 +1827,15 @@ function ResourceModelTable({
                     label="Streaming"
                     value={formatCapability(model.capabilities?.streaming)}
                   />
+                  <ModelFact
+                    label="Input price"
+                    value={formatTokenPrice(model.input_price_per_million_tokens)}
+                  />
+                  <ModelFact
+                    label="Output price"
+                    value={formatTokenPrice(model.output_price_per_million_tokens)}
+                  />
+                  <ModelFact label="Usage" value="Pending" />
                 </div>
                 {testResult?.modelOfferingId === model.id ? (
                   <p
@@ -1884,6 +1976,7 @@ function ResourceModelTable({
                 {...editForm.register("context_window")}
               />
             </div>
+            <PricingFields register={editForm.register} prefix="edit" />
             <CapabilityCheckboxGroup
               values={editCapabilities ?? []}
               onChange={(values) => editForm.setValue("capabilities", values)}

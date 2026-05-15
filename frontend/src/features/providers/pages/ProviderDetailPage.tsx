@@ -153,6 +153,21 @@ export function ProviderDetailPage() {
           })
         }
       />
+      <Card>
+        <CardHeader>
+          <CardTitle>Usage metrics</CardTitle>
+          <CardDescription>
+            Provider and model analytics will appear here once request logging captures provider,
+            credential, and model offering dimensions.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-4">
+          <ProviderSummaryFact label="Requests" value="Pending" />
+          <ProviderSummaryFact label="Error rate" value="Pending" />
+          <ProviderSummaryFact label="Latency" value="Pending" />
+          <ProviderSummaryFact label="Estimated spend" value="Pending" />
+        </CardContent>
+      </Card>
       <ProviderResourcesPanel provider={provider} />
     </div>
   );
