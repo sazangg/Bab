@@ -4,10 +4,11 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { UpdateProviderRequestCapabilities } from "./updateProviderRequestCapabilities";
-import type { UpdateProviderRequestCircuitBreakerPolicy } from "./updateProviderRequestCircuitBreakerPolicy";
-import type { UpdateProviderRequestFallbackPolicy } from "./updateProviderRequestFallbackPolicy";
-import type { UpdateProviderRequestRetryPolicy } from "./updateProviderRequestRetryPolicy";
+import type { ProviderCredentialRoutingPolicy } from './providerCredentialRoutingPolicy';
+import type { UpdateProviderRequestCapabilities } from './updateProviderRequestCapabilities';
+import type { UpdateProviderRequestCircuitBreakerPolicy } from './updateProviderRequestCircuitBreakerPolicy';
+import type { UpdateProviderRequestFallbackPolicy } from './updateProviderRequestFallbackPolicy';
+import type { UpdateProviderRequestRetryPolicy } from './updateProviderRequestRetryPolicy';
 
 export interface UpdateProviderRequest {
   name?: string | null;
@@ -22,13 +23,6 @@ export interface UpdateProviderRequest {
   fallback_policy?: UpdateProviderRequestFallbackPolicy;
   circuit_breaker_policy?: UpdateProviderRequestCircuitBreakerPolicy;
   max_concurrent_requests?: number | null;
-  credential_routing_policy?:
-    | "priority"
-    | "round_robin"
-    | "least_recently_used"
-    | "health_based"
-    | "weighted"
-    | "fallback"
-    | null;
+  credential_routing_policy?: ProviderCredentialRoutingPolicy | null;
   is_active?: boolean | null;
 }

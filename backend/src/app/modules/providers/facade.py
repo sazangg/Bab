@@ -18,6 +18,8 @@ from app.modules.providers.schemas import (
     ProviderChatCompletionStream,
     ProviderCredentialResponse,
     ProviderResponse,
+    TestModelOfferingRequest,
+    TestModelOfferingResponse,
     TestProviderCredentialResponse,
     UpdateModelOfferingRequest,
     UpdateProviderCredentialRequest,
@@ -206,6 +208,27 @@ async def get_model_offering(
         model_offering_id=model_offering_id,
         scope=scope,
         db=db,
+    )
+
+
+async def test_model_offering(
+    *,
+    provider_id: UUID,
+    model_offering_id: UUID,
+    payload: TestModelOfferingRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+    http_client: httpx.AsyncClient,
+) -> TestModelOfferingResponse:
+    return await service.test_model_offering(
+        provider_id=provider_id,
+        model_offering_id=model_offering_id,
+        payload=payload,
+        actor=actor,
+        scope=scope,
+        db=db,
+        http_client=http_client,
     )
 
 

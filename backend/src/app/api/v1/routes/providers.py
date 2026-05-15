@@ -23,6 +23,8 @@ from app.modules.providers.schemas import (
     ProviderCredentialResponse,
     ProviderResponse,
     SyncModelOfferingsRequest,
+    TestModelOfferingRequest,
+    TestModelOfferingResponse,
     TestProviderCredentialResponse,
     UpdateModelOfferingRequest,
     UpdateProviderCredentialRequest,
@@ -242,6 +244,32 @@ async def update_model_offering(
         )
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="model offering not found") from exc
+
+
+@router.post("/{provider_id}/offerings/{model_offering_id}/test")
+async def test_model_offering(
+    provider_id: UUID,
+    model_offering_id: UUID,
+    actor: ProviderAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+    payload: TestModelOfferingRequest | None = None,
+) -> TestModelOfferingResponse:
+    try:
+        async with httpx.AsyncClient(timeout=30) as http_client:
+            return await facade.test_model_offering(
+                provider_id=provider_id,
+                model_offering_id=model_offering_id,
+                payload=payload or TestModelOfferingRequest(),
+                actor=actor,
+                scope=scope,
+                db=db,
+                http_client=http_client,
+            )
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="model offering not found") from exc
+    except ProviderCredentialRequiredError as exc:
+        raise HTTPException(status_code=400, detail="active provider credential required") from exc
 
 
 @router.delete(

@@ -4,7 +4,10 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery
+} from '@tanstack/react-query';
 import type {
   DataTag,
   DefinedInitialDataOptions,
@@ -17,8 +20,8 @@ import type {
   UseMutationOptions,
   UseMutationResult,
   UseQueryOptions,
-  UseQueryResult,
-} from "@tanstack/react-query";
+  UseQueryResult
+} from '@tanstack/react-query';
 
 import type {
   CreateProjectRequest,
@@ -31,1838 +34,1299 @@ import type {
   UpdateProjectProviderAccessRequest,
   UpdateProjectRequest,
   UpdateVirtualKeyRequest,
-  VirtualKeyResponse,
-} from "../schemas";
+  VirtualKeyResponse
+} from '../schemas';
 
-import { apiMutator } from "../../orval-mutator";
+import { apiMutator } from '../../orval-mutator';
+
+
+
 
 export type listProjectsApiV1ProjectsGetResponse200 = {
-  data: ProjectResponse[];
-  status: 200;
-};
+  data: ProjectResponse[]
+  status: 200
+}
 
-export type listProjectsApiV1ProjectsGetResponseSuccess =
-  listProjectsApiV1ProjectsGetResponse200 & {
-    headers: Headers;
-  };
-export type listProjectsApiV1ProjectsGetResponse = listProjectsApiV1ProjectsGetResponseSuccess;
+export type listProjectsApiV1ProjectsGetResponseSuccess = (listProjectsApiV1ProjectsGetResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listProjectsApiV1ProjectsGetResponse = (listProjectsApiV1ProjectsGetResponseSuccess)
 
 export const getListProjectsApiV1ProjectsGetUrl = () => {
-  return `/api/v1/projects`;
-};
+
+
+
+
+  return `/api/v1/projects`
+}
 
 /**
  * @summary List Projects
  */
-export const listProjectsApiV1ProjectsGet = async (
-  options?: RequestInit,
-): Promise<listProjectsApiV1ProjectsGetResponse> => {
-  return apiMutator<listProjectsApiV1ProjectsGetResponse>(getListProjectsApiV1ProjectsGetUrl(), {
+export const listProjectsApiV1ProjectsGet = async ( options?: RequestInit): Promise<listProjectsApiV1ProjectsGetResponse> => {
+
+  return apiMutator<listProjectsApiV1ProjectsGetResponse>(getListProjectsApiV1ProjectsGetUrl(),
+  {
     ...options,
-    method: "GET",
-  });
-};
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
 
 export const getListProjectsApiV1ProjectsGetQueryKey = () => {
-  return [`/api/v1/projects`] as const;
-};
+    return [
+    `/api/v1/projects`
+    ] as const;
+    }
 
-export const getListProjectsApiV1ProjectsGetQueryOptions = <
-  TData = Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>,
-  TError = unknown,
->(options?: {
-  query?: Partial<
-    UseQueryOptions<Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>, TError, TData>
-  >;
-}) => {
-  const { query: queryOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getListProjectsApiV1ProjectsGetQueryKey();
+export const getListProjectsApiV1ProjectsGetQueryOptions = <TData = Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>, TError, TData>>, }
+) => {
 
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>> = ({
-    signal,
-  }) => listProjectsApiV1ProjectsGet({ signal });
+const {query: queryOptions} = options ?? {};
 
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>,
-    TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
-};
+  const queryKey =  queryOptions?.queryKey ?? getListProjectsApiV1ProjectsGetQueryKey();
 
-export type ListProjectsApiV1ProjectsGetQueryResult = NonNullable<
-  Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>
->;
-export type ListProjectsApiV1ProjectsGetQueryError = unknown;
 
-export function useListProjectsApiV1ProjectsGet<
-  TData = Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>,
-  TError = unknown,
->(
-  options: {
-    query: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>, TError, TData>
-    > &
-      Pick<
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>> = ({ signal }) => listProjectsApiV1ProjectsGet({ signal });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListProjectsApiV1ProjectsGetQueryResult = NonNullable<Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>>
+export type ListProjectsApiV1ProjectsGetQueryError = unknown
+
+
+export function useListProjectsApiV1ProjectsGet<TData = Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>,
           TError,
           Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useListProjectsApiV1ProjectsGet<
-  TData = Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>,
-  TError = unknown,
->(
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>, TError, TData>
-    > &
-      Pick<
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListProjectsApiV1ProjectsGet<TData = Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>,
           TError,
           Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useListProjectsApiV1ProjectsGet<
-  TData = Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>,
-  TError = unknown,
->(
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>, TError, TData>
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListProjectsApiV1ProjectsGet<TData = Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary List Projects
  */
 
-export function useListProjectsApiV1ProjectsGet<
-  TData = Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>,
-  TError = unknown,
->(
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>, TError, TData>
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getListProjectsApiV1ProjectsGetQueryOptions(options);
+export function useListProjectsApiV1ProjectsGet<TData = Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProjectsApiV1ProjectsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
-    queryKey: DataTag<QueryKey, TData, TError>;
-  };
+  const queryOptions = getListProjectsApiV1ProjectsGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+
+
+
+
 
 export type createProjectApiV1ProjectsPostResponse201 = {
-  data: ProjectResponse;
-  status: 201;
-};
+  data: ProjectResponse
+  status: 201
+}
 
 export type createProjectApiV1ProjectsPostResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type createProjectApiV1ProjectsPostResponseSuccess = (createProjectApiV1ProjectsPostResponse201) & {
+  headers: Headers;
+};
+export type createProjectApiV1ProjectsPostResponseError = (createProjectApiV1ProjectsPostResponse422) & {
+  headers: Headers;
 };
 
-export type createProjectApiV1ProjectsPostResponseSuccess =
-  createProjectApiV1ProjectsPostResponse201 & {
-    headers: Headers;
-  };
-export type createProjectApiV1ProjectsPostResponseError =
-  createProjectApiV1ProjectsPostResponse422 & {
-    headers: Headers;
-  };
-
-export type createProjectApiV1ProjectsPostResponse =
-  | createProjectApiV1ProjectsPostResponseSuccess
-  | createProjectApiV1ProjectsPostResponseError;
+export type createProjectApiV1ProjectsPostResponse = (createProjectApiV1ProjectsPostResponseSuccess | createProjectApiV1ProjectsPostResponseError)
 
 export const getCreateProjectApiV1ProjectsPostUrl = () => {
-  return `/api/v1/projects`;
-};
+
+
+
+
+  return `/api/v1/projects`
+}
 
 /**
  * @summary Create Project
  */
-export const createProjectApiV1ProjectsPost = async (
-  createProjectRequest: CreateProjectRequest,
-  options?: RequestInit,
-): Promise<createProjectApiV1ProjectsPostResponse> => {
-  return apiMutator<createProjectApiV1ProjectsPostResponse>(
-    getCreateProjectApiV1ProjectsPostUrl(),
-    {
-      ...options,
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(createProjectRequest),
-    },
-  );
-};
+export const createProjectApiV1ProjectsPost = async (createProjectRequest: CreateProjectRequest, options?: RequestInit): Promise<createProjectApiV1ProjectsPostResponse> => {
 
-export const getCreateProjectApiV1ProjectsPostMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof createProjectApiV1ProjectsPost>>,
-    TError,
-    { data: CreateProjectRequest },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof createProjectApiV1ProjectsPost>>,
-  TError,
-  { data: CreateProjectRequest },
-  TContext
-> => {
-  const mutationKey = ["createProjectApiV1ProjectsPost"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
+  return apiMutator<createProjectApiV1ProjectsPostResponse>(getCreateProjectApiV1ProjectsPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      createProjectRequest,)
+  }
+);}
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof createProjectApiV1ProjectsPost>>,
-    { data: CreateProjectRequest }
-  > = (props) => {
-    const { data } = props ?? {};
 
-    return createProjectApiV1ProjectsPost(data);
-  };
 
-  return { mutationFn, ...mutationOptions };
-};
 
-export type CreateProjectApiV1ProjectsPostMutationResult = NonNullable<
-  Awaited<ReturnType<typeof createProjectApiV1ProjectsPost>>
->;
-export type CreateProjectApiV1ProjectsPostMutationBody = CreateProjectRequest;
-export type CreateProjectApiV1ProjectsPostMutationError = HTTPValidationError;
+export const getCreateProjectApiV1ProjectsPostMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProjectApiV1ProjectsPost>>, TError,{data: CreateProjectRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof createProjectApiV1ProjectsPost>>, TError,{data: CreateProjectRequest}, TContext> => {
 
-/**
+const mutationKey = ['createProjectApiV1ProjectsPost'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createProjectApiV1ProjectsPost>>, {data: CreateProjectRequest}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createProjectApiV1ProjectsPost(data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateProjectApiV1ProjectsPostMutationResult = NonNullable<Awaited<ReturnType<typeof createProjectApiV1ProjectsPost>>>
+    export type CreateProjectApiV1ProjectsPostMutationBody = CreateProjectRequest
+    export type CreateProjectApiV1ProjectsPostMutationError = HTTPValidationError
+
+    /**
  * @summary Create Project
  */
-export const useCreateProjectApiV1ProjectsPost = <TError = HTTPValidationError, TContext = unknown>(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof createProjectApiV1ProjectsPost>>,
-      TError,
-      { data: CreateProjectRequest },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof createProjectApiV1ProjectsPost>>,
-  TError,
-  { data: CreateProjectRequest },
-  TContext
-> => {
-  return useMutation(getCreateProjectApiV1ProjectsPostMutationOptions(options), queryClient);
-};
-export type updateProjectApiV1ProjectsProjectIdPatchResponse200 = {
-  data: ProjectResponse;
-  status: 200;
-};
+export const useCreateProjectApiV1ProjectsPost = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProjectApiV1ProjectsPost>>, TError,{data: CreateProjectRequest}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createProjectApiV1ProjectsPost>>,
+        TError,
+        {data: CreateProjectRequest},
+        TContext
+      > => {
+      return useMutation(getCreateProjectApiV1ProjectsPostMutationOptions(options), queryClient);
+    }
+    export type updateProjectApiV1ProjectsProjectIdPatchResponse200 = {
+  data: ProjectResponse
+  status: 200
+}
 
 export type updateProjectApiV1ProjectsProjectIdPatchResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type updateProjectApiV1ProjectsProjectIdPatchResponseSuccess = (updateProjectApiV1ProjectsProjectIdPatchResponse200) & {
+  headers: Headers;
+};
+export type updateProjectApiV1ProjectsProjectIdPatchResponseError = (updateProjectApiV1ProjectsProjectIdPatchResponse422) & {
+  headers: Headers;
 };
 
-export type updateProjectApiV1ProjectsProjectIdPatchResponseSuccess =
-  updateProjectApiV1ProjectsProjectIdPatchResponse200 & {
-    headers: Headers;
-  };
-export type updateProjectApiV1ProjectsProjectIdPatchResponseError =
-  updateProjectApiV1ProjectsProjectIdPatchResponse422 & {
-    headers: Headers;
-  };
+export type updateProjectApiV1ProjectsProjectIdPatchResponse = (updateProjectApiV1ProjectsProjectIdPatchResponseSuccess | updateProjectApiV1ProjectsProjectIdPatchResponseError)
 
-export type updateProjectApiV1ProjectsProjectIdPatchResponse =
-  | updateProjectApiV1ProjectsProjectIdPatchResponseSuccess
-  | updateProjectApiV1ProjectsProjectIdPatchResponseError;
+export const getUpdateProjectApiV1ProjectsProjectIdPatchUrl = (projectId: string,) => {
 
-export const getUpdateProjectApiV1ProjectsProjectIdPatchUrl = (projectId: string) => {
-  return `/api/v1/projects/${projectId}`;
-};
+
+
+
+  return `/api/v1/projects/${projectId}`
+}
 
 /**
  * @summary Update Project
  */
-export const updateProjectApiV1ProjectsProjectIdPatch = async (
-  projectId: string,
-  updateProjectRequest: UpdateProjectRequest,
-  options?: RequestInit,
-): Promise<updateProjectApiV1ProjectsProjectIdPatchResponse> => {
-  return apiMutator<updateProjectApiV1ProjectsProjectIdPatchResponse>(
-    getUpdateProjectApiV1ProjectsProjectIdPatchUrl(projectId),
-    {
-      ...options,
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(updateProjectRequest),
-    },
-  );
-};
+export const updateProjectApiV1ProjectsProjectIdPatch = async (projectId: string,
+    updateProjectRequest: UpdateProjectRequest, options?: RequestInit): Promise<updateProjectApiV1ProjectsProjectIdPatchResponse> => {
 
-export const getUpdateProjectApiV1ProjectsProjectIdPatchMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof updateProjectApiV1ProjectsProjectIdPatch>>,
-    TError,
-    { projectId: string; data: UpdateProjectRequest },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof updateProjectApiV1ProjectsProjectIdPatch>>,
-  TError,
-  { projectId: string; data: UpdateProjectRequest },
-  TContext
-> => {
-  const mutationKey = ["updateProjectApiV1ProjectsProjectIdPatch"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
+  return apiMutator<updateProjectApiV1ProjectsProjectIdPatchResponse>(getUpdateProjectApiV1ProjectsProjectIdPatchUrl(projectId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateProjectRequest,)
+  }
+);}
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof updateProjectApiV1ProjectsProjectIdPatch>>,
-    { projectId: string; data: UpdateProjectRequest }
-  > = (props) => {
-    const { projectId, data } = props ?? {};
 
-    return updateProjectApiV1ProjectsProjectIdPatch(projectId, data);
-  };
 
-  return { mutationFn, ...mutationOptions };
-};
 
-export type UpdateProjectApiV1ProjectsProjectIdPatchMutationResult = NonNullable<
-  Awaited<ReturnType<typeof updateProjectApiV1ProjectsProjectIdPatch>>
->;
-export type UpdateProjectApiV1ProjectsProjectIdPatchMutationBody = UpdateProjectRequest;
-export type UpdateProjectApiV1ProjectsProjectIdPatchMutationError = HTTPValidationError;
+export const getUpdateProjectApiV1ProjectsProjectIdPatchMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProjectApiV1ProjectsProjectIdPatch>>, TError,{projectId: string;data: UpdateProjectRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof updateProjectApiV1ProjectsProjectIdPatch>>, TError,{projectId: string;data: UpdateProjectRequest}, TContext> => {
 
-/**
+const mutationKey = ['updateProjectApiV1ProjectsProjectIdPatch'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateProjectApiV1ProjectsProjectIdPatch>>, {projectId: string;data: UpdateProjectRequest}> = (props) => {
+          const {projectId,data} = props ?? {};
+
+          return  updateProjectApiV1ProjectsProjectIdPatch(projectId,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateProjectApiV1ProjectsProjectIdPatchMutationResult = NonNullable<Awaited<ReturnType<typeof updateProjectApiV1ProjectsProjectIdPatch>>>
+    export type UpdateProjectApiV1ProjectsProjectIdPatchMutationBody = UpdateProjectRequest
+    export type UpdateProjectApiV1ProjectsProjectIdPatchMutationError = HTTPValidationError
+
+    /**
  * @summary Update Project
  */
-export const useUpdateProjectApiV1ProjectsProjectIdPatch = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof updateProjectApiV1ProjectsProjectIdPatch>>,
-      TError,
-      { projectId: string; data: UpdateProjectRequest },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof updateProjectApiV1ProjectsProjectIdPatch>>,
-  TError,
-  { projectId: string; data: UpdateProjectRequest },
-  TContext
-> => {
-  return useMutation(
-    getUpdateProjectApiV1ProjectsProjectIdPatchMutationOptions(options),
-    queryClient,
-  );
-};
-export type deactivateProjectApiV1ProjectsProjectIdDeleteResponse204 = {
-  data: void;
-  status: 204;
-};
+export const useUpdateProjectApiV1ProjectsProjectIdPatch = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProjectApiV1ProjectsProjectIdPatch>>, TError,{projectId: string;data: UpdateProjectRequest}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateProjectApiV1ProjectsProjectIdPatch>>,
+        TError,
+        {projectId: string;data: UpdateProjectRequest},
+        TContext
+      > => {
+      return useMutation(getUpdateProjectApiV1ProjectsProjectIdPatchMutationOptions(options), queryClient);
+    }
+    export type deactivateProjectApiV1ProjectsProjectIdDeleteResponse204 = {
+  data: void
+  status: 204
+}
 
 export type deactivateProjectApiV1ProjectsProjectIdDeleteResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type deactivateProjectApiV1ProjectsProjectIdDeleteResponseSuccess = (deactivateProjectApiV1ProjectsProjectIdDeleteResponse204) & {
+  headers: Headers;
+};
+export type deactivateProjectApiV1ProjectsProjectIdDeleteResponseError = (deactivateProjectApiV1ProjectsProjectIdDeleteResponse422) & {
+  headers: Headers;
 };
 
-export type deactivateProjectApiV1ProjectsProjectIdDeleteResponseSuccess =
-  deactivateProjectApiV1ProjectsProjectIdDeleteResponse204 & {
-    headers: Headers;
-  };
-export type deactivateProjectApiV1ProjectsProjectIdDeleteResponseError =
-  deactivateProjectApiV1ProjectsProjectIdDeleteResponse422 & {
-    headers: Headers;
-  };
+export type deactivateProjectApiV1ProjectsProjectIdDeleteResponse = (deactivateProjectApiV1ProjectsProjectIdDeleteResponseSuccess | deactivateProjectApiV1ProjectsProjectIdDeleteResponseError)
 
-export type deactivateProjectApiV1ProjectsProjectIdDeleteResponse =
-  | deactivateProjectApiV1ProjectsProjectIdDeleteResponseSuccess
-  | deactivateProjectApiV1ProjectsProjectIdDeleteResponseError;
+export const getDeactivateProjectApiV1ProjectsProjectIdDeleteUrl = (projectId: string,) => {
 
-export const getDeactivateProjectApiV1ProjectsProjectIdDeleteUrl = (projectId: string) => {
-  return `/api/v1/projects/${projectId}`;
-};
+
+
+
+  return `/api/v1/projects/${projectId}`
+}
 
 /**
  * @summary Deactivate Project
  */
-export const deactivateProjectApiV1ProjectsProjectIdDelete = async (
-  projectId: string,
-  options?: RequestInit,
-): Promise<deactivateProjectApiV1ProjectsProjectIdDeleteResponse> => {
-  return apiMutator<deactivateProjectApiV1ProjectsProjectIdDeleteResponse>(
-    getDeactivateProjectApiV1ProjectsProjectIdDeleteUrl(projectId),
-    {
-      ...options,
-      method: "DELETE",
-    },
-  );
-};
+export const deactivateProjectApiV1ProjectsProjectIdDelete = async (projectId: string, options?: RequestInit): Promise<deactivateProjectApiV1ProjectsProjectIdDeleteResponse> => {
 
-export const getDeactivateProjectApiV1ProjectsProjectIdDeleteMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof deactivateProjectApiV1ProjectsProjectIdDelete>>,
-    TError,
-    { projectId: string },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof deactivateProjectApiV1ProjectsProjectIdDelete>>,
-  TError,
-  { projectId: string },
-  TContext
-> => {
-  const mutationKey = ["deactivateProjectApiV1ProjectsProjectIdDelete"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
+  return apiMutator<deactivateProjectApiV1ProjectsProjectIdDeleteResponse>(getDeactivateProjectApiV1ProjectsProjectIdDeleteUrl(projectId),
+  {
+    ...options,
+    method: 'DELETE'
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof deactivateProjectApiV1ProjectsProjectIdDelete>>,
-    { projectId: string }
-  > = (props) => {
-    const { projectId } = props ?? {};
 
-    return deactivateProjectApiV1ProjectsProjectIdDelete(projectId);
-  };
+  }
+);}
 
-  return { mutationFn, ...mutationOptions };
-};
 
-export type DeactivateProjectApiV1ProjectsProjectIdDeleteMutationResult = NonNullable<
-  Awaited<ReturnType<typeof deactivateProjectApiV1ProjectsProjectIdDelete>>
->;
 
-export type DeactivateProjectApiV1ProjectsProjectIdDeleteMutationError = HTTPValidationError;
 
-/**
+export const getDeactivateProjectApiV1ProjectsProjectIdDeleteMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deactivateProjectApiV1ProjectsProjectIdDelete>>, TError,{projectId: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof deactivateProjectApiV1ProjectsProjectIdDelete>>, TError,{projectId: string}, TContext> => {
+
+const mutationKey = ['deactivateProjectApiV1ProjectsProjectIdDelete'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deactivateProjectApiV1ProjectsProjectIdDelete>>, {projectId: string}> = (props) => {
+          const {projectId} = props ?? {};
+
+          return  deactivateProjectApiV1ProjectsProjectIdDelete(projectId,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeactivateProjectApiV1ProjectsProjectIdDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof deactivateProjectApiV1ProjectsProjectIdDelete>>>
+
+    export type DeactivateProjectApiV1ProjectsProjectIdDeleteMutationError = HTTPValidationError
+
+    /**
  * @summary Deactivate Project
  */
-export const useDeactivateProjectApiV1ProjectsProjectIdDelete = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof deactivateProjectApiV1ProjectsProjectIdDelete>>,
-      TError,
-      { projectId: string },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof deactivateProjectApiV1ProjectsProjectIdDelete>>,
-  TError,
-  { projectId: string },
-  TContext
-> => {
-  return useMutation(
-    getDeactivateProjectApiV1ProjectsProjectIdDeleteMutationOptions(options),
-    queryClient,
-  );
-};
-export type listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetResponse200 = {
-  data: ProjectProviderAccessResponse[];
-  status: 200;
-};
+export const useDeactivateProjectApiV1ProjectsProjectIdDelete = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deactivateProjectApiV1ProjectsProjectIdDelete>>, TError,{projectId: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deactivateProjectApiV1ProjectsProjectIdDelete>>,
+        TError,
+        {projectId: string},
+        TContext
+      > => {
+      return useMutation(getDeactivateProjectApiV1ProjectsProjectIdDeleteMutationOptions(options), queryClient);
+    }
+    export type listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetResponse200 = {
+  data: ProjectProviderAccessResponse[]
+  status: 200
+}
 
 export type listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetResponseSuccess = (listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetResponse200) & {
+  headers: Headers;
+};
+export type listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetResponseError = (listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetResponse422) & {
+  headers: Headers;
 };
 
-export type listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetResponseSuccess =
-  listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetResponse200 & {
-    headers: Headers;
-  };
-export type listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetResponseError =
-  listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetResponse422 & {
-    headers: Headers;
-  };
+export type listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetResponse = (listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetResponseSuccess | listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetResponseError)
 
-export type listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetResponse =
-  | listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetResponseSuccess
-  | listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetResponseError;
+export const getListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetUrl = (projectId: string,) => {
 
-export const getListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetUrl = (
-  projectId: string,
-) => {
-  return `/api/v1/projects/${projectId}/provider-access`;
-};
+
+
+
+  return `/api/v1/projects/${projectId}/provider-access`
+}
 
 /**
  * @summary List Project Provider Access
  */
-export const listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet = async (
-  projectId: string,
-  options?: RequestInit,
-): Promise<listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetResponse> => {
-  return apiMutator<listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetResponse>(
-    getListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetUrl(projectId),
-    {
-      ...options,
-      method: "GET",
-    },
-  );
-};
+export const listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet = async (projectId: string, options?: RequestInit): Promise<listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetResponse> => {
 
-export const getListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetQueryKey = (
-  projectId: string,
+  return apiMutator<listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetResponse>(getListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetUrl(projectId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetQueryKey = (projectId: string,) => {
+    return [
+    `/api/v1/projects/${projectId}/provider-access`
+    ] as const;
+    }
+
+
+export const getListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetQueryOptions = <TData = Awaited<ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>>, TError = HTTPValidationError>(projectId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>>, TError, TData>>, }
 ) => {
-  return [`/api/v1/projects/${projectId}/provider-access`] as const;
-};
 
-export const getListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetQueryOptions = <
-  TData = Awaited<
-    ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>
-  >,
-  TError = HTTPValidationError,
->(
-  projectId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<
-          ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>
-        >,
-        TError,
-        TData
-      >
-    >;
-  },
-) => {
-  const { query: queryOptions } = options ?? {};
+const {query: queryOptions} = options ?? {};
 
-  const queryKey =
-    queryOptions?.queryKey ??
-    getListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetQueryKey(projectId);
+  const queryKey =  queryOptions?.queryKey ?? getListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetQueryKey(projectId);
 
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>>
-  > = ({ signal }) =>
-    listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet(projectId, { signal });
 
-  return { queryKey, queryFn, enabled: !!projectId, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>>,
-    TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
-};
 
-export type ListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetQueryResult =
-  NonNullable<
-    Awaited<ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>>
-  >;
-export type ListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetQueryError =
-  HTTPValidationError;
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>>> = ({ signal }) => listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet(projectId, { signal });
 
-export function useListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet<
-  TData = Awaited<
-    ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>
-  >,
-  TError = HTTPValidationError,
->(
-  projectId: string,
-  options: {
-    query: Partial<
-      UseQueryOptions<
-        Awaited<
-          ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>
-        >,
-        TError,
-        TData
-      >
-    > &
-      Pick<
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(projectId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetQueryResult = NonNullable<Awaited<ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>>>
+export type ListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetQueryError = HTTPValidationError
+
+
+export function useListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet<TData = Awaited<ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>>, TError = HTTPValidationError>(
+ projectId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
-          Awaited<
-            ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>
-          >,
+          Awaited<ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>>,
           TError,
-          Awaited<
-            ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>
-          >
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet<
-  TData = Awaited<
-    ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>
-  >,
-  TError = HTTPValidationError,
->(
-  projectId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<
-          ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>
-        >,
-        TError,
-        TData
-      >
-    > &
-      Pick<
+          Awaited<ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet<TData = Awaited<ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>>, TError = HTTPValidationError>(
+ projectId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
-          Awaited<
-            ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>
-          >,
+          Awaited<ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>>,
           TError,
-          Awaited<
-            ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>
-          >
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet<
-  TData = Awaited<
-    ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>
-  >,
-  TError = HTTPValidationError,
->(
-  projectId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<
-          ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>
-        >,
-        TError,
-        TData
-      >
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+          Awaited<ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet<TData = Awaited<ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>>, TError = HTTPValidationError>(
+ projectId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary List Project Provider Access
  */
 
-export function useListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet<
-  TData = Awaited<
-    ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>
-  >,
-  TError = HTTPValidationError,
->(
-  projectId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<
-          ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>
-        >,
-        TError,
-        TData
-      >
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions =
-    getListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetQueryOptions(
-      projectId,
-      options,
-    );
+export function useListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet<TData = Awaited<ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>>, TError = HTTPValidationError>(
+ projectId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
-    queryKey: DataTag<QueryKey, TData, TError>;
-  };
+  const queryOptions = getListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGetQueryOptions(projectId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+
+
+
+
 
 export type grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostResponse201 = {
-  data: ProjectProviderAccessResponse;
-  status: 201;
-};
+  data: ProjectProviderAccessResponse
+  status: 201
+}
 
 export type grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostResponseSuccess = (grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostResponse201) & {
+  headers: Headers;
+};
+export type grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostResponseError = (grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostResponse422) & {
+  headers: Headers;
 };
 
-export type grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostResponseSuccess =
-  grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostResponse201 & {
-    headers: Headers;
-  };
-export type grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostResponseError =
-  grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostResponse422 & {
-    headers: Headers;
-  };
+export type grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostResponse = (grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostResponseSuccess | grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostResponseError)
 
-export type grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostResponse =
-  | grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostResponseSuccess
-  | grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostResponseError;
+export const getGrantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostUrl = (projectId: string,) => {
 
-export const getGrantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostUrl = (
-  projectId: string,
-) => {
-  return `/api/v1/projects/${projectId}/provider-access`;
-};
+
+
+
+  return `/api/v1/projects/${projectId}/provider-access`
+}
 
 /**
  * @summary Grant Project Provider Access
  */
-export const grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPost = async (
-  projectId: string,
-  grantProjectProviderAccessRequest: GrantProjectProviderAccessRequest,
-  options?: RequestInit,
-): Promise<grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostResponse> => {
-  return apiMutator<grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostResponse>(
-    getGrantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostUrl(projectId),
-    {
-      ...options,
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(grantProjectProviderAccessRequest),
-    },
-  );
-};
+export const grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPost = async (projectId: string,
+    grantProjectProviderAccessRequest: GrantProjectProviderAccessRequest, options?: RequestInit): Promise<grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostResponse> => {
 
-export const getGrantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostMutationOptions =
-  <TError = HTTPValidationError, TContext = unknown>(options?: {
-    mutation?: UseMutationOptions<
-      Awaited<
-        ReturnType<typeof grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPost>
-      >,
-      TError,
-      { projectId: string; data: GrantProjectProviderAccessRequest },
-      TContext
-    >;
-  }): UseMutationOptions<
-    Awaited<ReturnType<typeof grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPost>>,
-    TError,
-    { projectId: string; data: GrantProjectProviderAccessRequest },
-    TContext
-  > => {
-    const mutationKey = ["grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPost"];
-    const { mutation: mutationOptions } = options
-      ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-        ? options
-        : { ...options, mutation: { ...options.mutation, mutationKey } }
-      : { mutation: { mutationKey } };
+  return apiMutator<grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostResponse>(getGrantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostUrl(projectId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      grantProjectProviderAccessRequest,)
+  }
+);}
 
-    const mutationFn: MutationFunction<
-      Awaited<
-        ReturnType<typeof grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPost>
-      >,
-      { projectId: string; data: GrantProjectProviderAccessRequest }
-    > = (props) => {
-      const { projectId, data } = props ?? {};
 
-      return grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPost(projectId, data);
-    };
 
-    return { mutationFn, ...mutationOptions };
-  };
 
-export type GrantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostMutationResult =
-  NonNullable<
-    Awaited<ReturnType<typeof grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPost>>
-  >;
-export type GrantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostMutationBody =
-  GrantProjectProviderAccessRequest;
-export type GrantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostMutationError =
-  HTTPValidationError;
+export const getGrantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPost>>, TError,{projectId: string;data: GrantProjectProviderAccessRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPost>>, TError,{projectId: string;data: GrantProjectProviderAccessRequest}, TContext> => {
 
-/**
+const mutationKey = ['grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPost'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPost>>, {projectId: string;data: GrantProjectProviderAccessRequest}> = (props) => {
+          const {projectId,data} = props ?? {};
+
+          return  grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPost(projectId,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GrantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostMutationResult = NonNullable<Awaited<ReturnType<typeof grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPost>>>
+    export type GrantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostMutationBody = GrantProjectProviderAccessRequest
+    export type GrantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostMutationError = HTTPValidationError
+
+    /**
  * @summary Grant Project Provider Access
  */
-export const useGrantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPost = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<
-        ReturnType<typeof grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPost>
-      >,
-      TError,
-      { projectId: string; data: GrantProjectProviderAccessRequest },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPost>>,
-  TError,
-  { projectId: string; data: GrantProjectProviderAccessRequest },
-  TContext
-> => {
-  return useMutation(
-    getGrantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostMutationOptions(options),
-    queryClient,
-  );
+export const useGrantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPost = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPost>>, TError,{projectId: string;data: GrantProjectProviderAccessRequest}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof grantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPost>>,
+        TError,
+        {projectId: string;data: GrantProjectProviderAccessRequest},
+        TContext
+      > => {
+      return useMutation(getGrantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostMutationOptions(options), queryClient);
+    }
+    export type updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchResponse200 = {
+  data: ProjectProviderAccessResponse
+  status: 200
+}
+
+export type updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchResponseSuccess = (updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchResponse200) & {
+  headers: Headers;
 };
-export type updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchResponse200 =
-  {
-    data: ProjectProviderAccessResponse;
-    status: 200;
-  };
+export type updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchResponseError = (updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchResponse422) & {
+  headers: Headers;
+};
 
-export type updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchResponse422 =
-  {
-    data: HTTPValidationError;
-    status: 422;
-  };
+export type updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchResponse = (updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchResponseSuccess | updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchResponseError)
 
-export type updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchResponseSuccess =
-  updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchResponse200 & {
-    headers: Headers;
-  };
-export type updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchResponseError =
-  updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchResponse422 & {
-    headers: Headers;
-  };
+export const getUpdateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchUrl = (projectId: string,
+    providerId: string,) => {
 
-export type updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchResponse =
-  | updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchResponseSuccess
-  | updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchResponseError;
 
-export const getUpdateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchUrl =
-  (projectId: string, providerId: string) => {
-    return `/api/v1/projects/${projectId}/provider-access/${providerId}`;
-  };
+
+
+  return `/api/v1/projects/${projectId}/provider-access/${providerId}`
+}
 
 /**
  * @summary Update Project Provider Access
  */
-export const updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatch =
-  async (
-    projectId: string,
+export const updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatch = async (projectId: string,
     providerId: string,
-    updateProjectProviderAccessRequest: UpdateProjectProviderAccessRequest,
-    options?: RequestInit,
-  ): Promise<updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchResponse> => {
-    return apiMutator<updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchResponse>(
-      getUpdateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchUrl(
-        projectId,
-        providerId,
-      ),
-      {
-        ...options,
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...options?.headers },
-        body: JSON.stringify(updateProjectProviderAccessRequest),
-      },
-    );
-  };
+    updateProjectProviderAccessRequest: UpdateProjectProviderAccessRequest, options?: RequestInit): Promise<updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchResponse> => {
 
-export const getUpdateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchMutationOptions =
-  <TError = HTTPValidationError, TContext = unknown>(options?: {
-    mutation?: UseMutationOptions<
-      Awaited<
-        ReturnType<
-          typeof updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatch
-        >
-      >,
-      TError,
-      { projectId: string; providerId: string; data: UpdateProjectProviderAccessRequest },
-      TContext
-    >;
-  }): UseMutationOptions<
-    Awaited<
-      ReturnType<
-        typeof updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatch
-      >
-    >,
-    TError,
-    { projectId: string; providerId: string; data: UpdateProjectProviderAccessRequest },
-    TContext
-  > => {
-    const mutationKey = [
-      "updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatch",
-    ];
-    const { mutation: mutationOptions } = options
-      ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-        ? options
-        : { ...options, mutation: { ...options.mutation, mutationKey } }
-      : { mutation: { mutationKey } };
+  return apiMutator<updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchResponse>(getUpdateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchUrl(projectId,providerId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateProjectProviderAccessRequest,)
+  }
+);}
 
-    const mutationFn: MutationFunction<
-      Awaited<
-        ReturnType<
-          typeof updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatch
-        >
-      >,
-      { projectId: string; providerId: string; data: UpdateProjectProviderAccessRequest }
-    > = (props) => {
-      const { projectId, providerId, data } = props ?? {};
 
-      return updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatch(
-        projectId,
-        providerId,
-        data,
-      );
-    };
 
-    return { mutationFn, ...mutationOptions };
-  };
 
-export type UpdateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchMutationResult =
-  NonNullable<
-    Awaited<
-      ReturnType<
-        typeof updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatch
-      >
-    >
-  >;
-export type UpdateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchMutationBody =
-  UpdateProjectProviderAccessRequest;
-export type UpdateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchMutationError =
-  HTTPValidationError;
+export const getUpdateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatch>>, TError,{projectId: string;providerId: string;data: UpdateProjectProviderAccessRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatch>>, TError,{projectId: string;providerId: string;data: UpdateProjectProviderAccessRequest}, TContext> => {
 
-/**
+const mutationKey = ['updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatch'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatch>>, {projectId: string;providerId: string;data: UpdateProjectProviderAccessRequest}> = (props) => {
+          const {projectId,providerId,data} = props ?? {};
+
+          return  updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatch(projectId,providerId,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchMutationResult = NonNullable<Awaited<ReturnType<typeof updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatch>>>
+    export type UpdateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchMutationBody = UpdateProjectProviderAccessRequest
+    export type UpdateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchMutationError = HTTPValidationError
+
+    /**
  * @summary Update Project Provider Access
  */
-export const useUpdateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatch = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<
-        ReturnType<
-          typeof updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatch
-        >
-      >,
-      TError,
-      { projectId: string; providerId: string; data: UpdateProjectProviderAccessRequest },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<
-    ReturnType<
-      typeof updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatch
-    >
-  >,
-  TError,
-  { projectId: string; providerId: string; data: UpdateProjectProviderAccessRequest },
-  TContext
-> => {
-  return useMutation(
-    getUpdateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchMutationOptions(
-      options,
-    ),
-    queryClient,
-  );
+export const useUpdateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatch = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatch>>, TError,{projectId: string;providerId: string;data: UpdateProjectProviderAccessRequest}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatch>>,
+        TError,
+        {projectId: string;providerId: string;data: UpdateProjectProviderAccessRequest},
+        TContext
+      > => {
+      return useMutation(getUpdateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchMutationOptions(options), queryClient);
+    }
+    export type revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteResponse204 = {
+  data: void
+  status: 204
+}
+
+export type revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteResponseSuccess = (revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteResponse204) & {
+  headers: Headers;
 };
-export type revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteResponse204 =
-  {
-    data: void;
-    status: 204;
-  };
+export type revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteResponseError = (revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteResponse422) & {
+  headers: Headers;
+};
 
-export type revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteResponse422 =
-  {
-    data: HTTPValidationError;
-    status: 422;
-  };
+export type revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteResponse = (revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteResponseSuccess | revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteResponseError)
 
-export type revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteResponseSuccess =
-  revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteResponse204 & {
-    headers: Headers;
-  };
-export type revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteResponseError =
-  revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteResponse422 & {
-    headers: Headers;
-  };
+export const getRevokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteUrl = (projectId: string,
+    providerId: string,) => {
 
-export type revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteResponse =
 
-    | revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteResponseSuccess
-    | revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteResponseError;
 
-export const getRevokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteUrl =
-  (projectId: string, providerId: string) => {
-    return `/api/v1/projects/${projectId}/provider-access/${providerId}`;
-  };
+
+  return `/api/v1/projects/${projectId}/provider-access/${providerId}`
+}
 
 /**
  * @summary Revoke Project Provider Access
  */
-export const revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDelete =
-  async (
-    projectId: string,
-    providerId: string,
-    options?: RequestInit,
-  ): Promise<revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteResponse> => {
-    return apiMutator<revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteResponse>(
-      getRevokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteUrl(
-        projectId,
-        providerId,
-      ),
-      {
-        ...options,
-        method: "DELETE",
-      },
-    );
-  };
+export const revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDelete = async (projectId: string,
+    providerId: string, options?: RequestInit): Promise<revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteResponse> => {
 
-export const getRevokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteMutationOptions =
-  <TError = HTTPValidationError, TContext = unknown>(options?: {
-    mutation?: UseMutationOptions<
-      Awaited<
-        ReturnType<
-          typeof revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDelete
-        >
-      >,
-      TError,
-      { projectId: string; providerId: string },
-      TContext
-    >;
-  }): UseMutationOptions<
-    Awaited<
-      ReturnType<
-        typeof revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDelete
-      >
-    >,
-    TError,
-    { projectId: string; providerId: string },
-    TContext
-  > => {
-    const mutationKey = [
-      "revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDelete",
-    ];
-    const { mutation: mutationOptions } = options
-      ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-        ? options
-        : { ...options, mutation: { ...options.mutation, mutationKey } }
-      : { mutation: { mutationKey } };
+  return apiMutator<revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteResponse>(getRevokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteUrl(projectId,providerId),
+  {
+    ...options,
+    method: 'DELETE'
 
-    const mutationFn: MutationFunction<
-      Awaited<
-        ReturnType<
-          typeof revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDelete
-        >
-      >,
-      { projectId: string; providerId: string }
-    > = (props) => {
-      const { projectId, providerId } = props ?? {};
 
-      return revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDelete(
-        projectId,
-        providerId,
-      );
-    };
+  }
+);}
 
-    return { mutationFn, ...mutationOptions };
-  };
 
-export type RevokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteMutationResult =
-  NonNullable<
-    Awaited<
-      ReturnType<
-        typeof revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDelete
-      >
-    >
-  >;
 
-export type RevokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteMutationError =
-  HTTPValidationError;
 
-/**
+export const getRevokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDelete>>, TError,{projectId: string;providerId: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDelete>>, TError,{projectId: string;providerId: string}, TContext> => {
+
+const mutationKey = ['revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDelete'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDelete>>, {projectId: string;providerId: string}> = (props) => {
+          const {projectId,providerId} = props ?? {};
+
+          return  revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDelete(projectId,providerId,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDelete>>>
+
+    export type RevokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteMutationError = HTTPValidationError
+
+    /**
  * @summary Revoke Project Provider Access
  */
-export const useRevokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDelete = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<
-        ReturnType<
-          typeof revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDelete
-        >
-      >,
-      TError,
-      { projectId: string; providerId: string },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<
-    ReturnType<
-      typeof revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDelete
-    >
-  >,
-  TError,
-  { projectId: string; providerId: string },
-  TContext
-> => {
-  return useMutation(
-    getRevokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteMutationOptions(
-      options,
-    ),
-    queryClient,
-  );
-};
-export type listVirtualKeysApiV1ProjectsProjectIdKeysGetResponse200 = {
-  data: VirtualKeyResponse[];
-  status: 200;
-};
+export const useRevokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDelete = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDelete>>, TError,{projectId: string;providerId: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof revokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDelete>>,
+        TError,
+        {projectId: string;providerId: string},
+        TContext
+      > => {
+      return useMutation(getRevokeProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdDeleteMutationOptions(options), queryClient);
+    }
+    export type listVirtualKeysApiV1ProjectsProjectIdKeysGetResponse200 = {
+  data: VirtualKeyResponse[]
+  status: 200
+}
 
 export type listVirtualKeysApiV1ProjectsProjectIdKeysGetResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type listVirtualKeysApiV1ProjectsProjectIdKeysGetResponseSuccess = (listVirtualKeysApiV1ProjectsProjectIdKeysGetResponse200) & {
+  headers: Headers;
+};
+export type listVirtualKeysApiV1ProjectsProjectIdKeysGetResponseError = (listVirtualKeysApiV1ProjectsProjectIdKeysGetResponse422) & {
+  headers: Headers;
 };
 
-export type listVirtualKeysApiV1ProjectsProjectIdKeysGetResponseSuccess =
-  listVirtualKeysApiV1ProjectsProjectIdKeysGetResponse200 & {
-    headers: Headers;
-  };
-export type listVirtualKeysApiV1ProjectsProjectIdKeysGetResponseError =
-  listVirtualKeysApiV1ProjectsProjectIdKeysGetResponse422 & {
-    headers: Headers;
-  };
+export type listVirtualKeysApiV1ProjectsProjectIdKeysGetResponse = (listVirtualKeysApiV1ProjectsProjectIdKeysGetResponseSuccess | listVirtualKeysApiV1ProjectsProjectIdKeysGetResponseError)
 
-export type listVirtualKeysApiV1ProjectsProjectIdKeysGetResponse =
-  | listVirtualKeysApiV1ProjectsProjectIdKeysGetResponseSuccess
-  | listVirtualKeysApiV1ProjectsProjectIdKeysGetResponseError;
+export const getListVirtualKeysApiV1ProjectsProjectIdKeysGetUrl = (projectId: string,) => {
 
-export const getListVirtualKeysApiV1ProjectsProjectIdKeysGetUrl = (projectId: string) => {
-  return `/api/v1/projects/${projectId}/keys`;
-};
+
+
+
+  return `/api/v1/projects/${projectId}/keys`
+}
 
 /**
  * @summary List Virtual Keys
  */
-export const listVirtualKeysApiV1ProjectsProjectIdKeysGet = async (
-  projectId: string,
-  options?: RequestInit,
-): Promise<listVirtualKeysApiV1ProjectsProjectIdKeysGetResponse> => {
-  return apiMutator<listVirtualKeysApiV1ProjectsProjectIdKeysGetResponse>(
-    getListVirtualKeysApiV1ProjectsProjectIdKeysGetUrl(projectId),
-    {
-      ...options,
-      method: "GET",
-    },
-  );
-};
+export const listVirtualKeysApiV1ProjectsProjectIdKeysGet = async (projectId: string, options?: RequestInit): Promise<listVirtualKeysApiV1ProjectsProjectIdKeysGetResponse> => {
 
-export const getListVirtualKeysApiV1ProjectsProjectIdKeysGetQueryKey = (projectId: string) => {
-  return [`/api/v1/projects/${projectId}/keys`] as const;
-};
+  return apiMutator<listVirtualKeysApiV1ProjectsProjectIdKeysGetResponse>(getListVirtualKeysApiV1ProjectsProjectIdKeysGetUrl(projectId),
+  {
+    ...options,
+    method: 'GET'
 
-export const getListVirtualKeysApiV1ProjectsProjectIdKeysGetQueryOptions = <
-  TData = Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>,
-  TError = HTTPValidationError,
->(
-  projectId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>,
-        TError,
-        TData
-      >
-    >;
-  },
+
+  }
+);}
+
+
+
+
+
+export const getListVirtualKeysApiV1ProjectsProjectIdKeysGetQueryKey = (projectId: string,) => {
+    return [
+    `/api/v1/projects/${projectId}/keys`
+    ] as const;
+    }
+
+
+export const getListVirtualKeysApiV1ProjectsProjectIdKeysGetQueryOptions = <TData = Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>, TError = HTTPValidationError>(projectId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>, TError, TData>>, }
 ) => {
-  const { query: queryOptions } = options ?? {};
 
-  const queryKey =
-    queryOptions?.queryKey ?? getListVirtualKeysApiV1ProjectsProjectIdKeysGetQueryKey(projectId);
+const {query: queryOptions} = options ?? {};
 
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>
-  > = ({ signal }) => listVirtualKeysApiV1ProjectsProjectIdKeysGet(projectId, { signal });
+  const queryKey =  queryOptions?.queryKey ?? getListVirtualKeysApiV1ProjectsProjectIdKeysGetQueryKey(projectId);
 
-  return { queryKey, queryFn, enabled: !!projectId, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>,
-    TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
-};
 
-export type ListVirtualKeysApiV1ProjectsProjectIdKeysGetQueryResult = NonNullable<
-  Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>
->;
-export type ListVirtualKeysApiV1ProjectsProjectIdKeysGetQueryError = HTTPValidationError;
 
-export function useListVirtualKeysApiV1ProjectsProjectIdKeysGet<
-  TData = Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>,
-  TError = HTTPValidationError,
->(
-  projectId: string,
-  options: {
-    query: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>> = ({ signal }) => listVirtualKeysApiV1ProjectsProjectIdKeysGet(projectId, { signal });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(projectId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListVirtualKeysApiV1ProjectsProjectIdKeysGetQueryResult = NonNullable<Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>>
+export type ListVirtualKeysApiV1ProjectsProjectIdKeysGetQueryError = HTTPValidationError
+
+
+export function useListVirtualKeysApiV1ProjectsProjectIdKeysGet<TData = Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>, TError = HTTPValidationError>(
+ projectId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>,
           TError,
           Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useListVirtualKeysApiV1ProjectsProjectIdKeysGet<
-  TData = Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>,
-  TError = HTTPValidationError,
->(
-  projectId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListVirtualKeysApiV1ProjectsProjectIdKeysGet<TData = Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>, TError = HTTPValidationError>(
+ projectId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>,
           TError,
           Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useListVirtualKeysApiV1ProjectsProjectIdKeysGet<
-  TData = Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>,
-  TError = HTTPValidationError,
->(
-  projectId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>,
-        TError,
-        TData
-      >
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListVirtualKeysApiV1ProjectsProjectIdKeysGet<TData = Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>, TError = HTTPValidationError>(
+ projectId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary List Virtual Keys
  */
 
-export function useListVirtualKeysApiV1ProjectsProjectIdKeysGet<
-  TData = Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>,
-  TError = HTTPValidationError,
->(
-  projectId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>,
-        TError,
-        TData
-      >
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getListVirtualKeysApiV1ProjectsProjectIdKeysGetQueryOptions(
-    projectId,
-    options,
-  );
+export function useListVirtualKeysApiV1ProjectsProjectIdKeysGet<TData = Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>, TError = HTTPValidationError>(
+ projectId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listVirtualKeysApiV1ProjectsProjectIdKeysGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
-    queryKey: DataTag<QueryKey, TData, TError>;
-  };
+  const queryOptions = getListVirtualKeysApiV1ProjectsProjectIdKeysGetQueryOptions(projectId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+
+
+
+
 
 export type createVirtualKeyApiV1ProjectsProjectIdKeysPostResponse201 = {
-  data: CreatedVirtualKeyResponse;
-  status: 201;
-};
+  data: CreatedVirtualKeyResponse
+  status: 201
+}
 
 export type createVirtualKeyApiV1ProjectsProjectIdKeysPostResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type createVirtualKeyApiV1ProjectsProjectIdKeysPostResponseSuccess = (createVirtualKeyApiV1ProjectsProjectIdKeysPostResponse201) & {
+  headers: Headers;
+};
+export type createVirtualKeyApiV1ProjectsProjectIdKeysPostResponseError = (createVirtualKeyApiV1ProjectsProjectIdKeysPostResponse422) & {
+  headers: Headers;
 };
 
-export type createVirtualKeyApiV1ProjectsProjectIdKeysPostResponseSuccess =
-  createVirtualKeyApiV1ProjectsProjectIdKeysPostResponse201 & {
-    headers: Headers;
-  };
-export type createVirtualKeyApiV1ProjectsProjectIdKeysPostResponseError =
-  createVirtualKeyApiV1ProjectsProjectIdKeysPostResponse422 & {
-    headers: Headers;
-  };
+export type createVirtualKeyApiV1ProjectsProjectIdKeysPostResponse = (createVirtualKeyApiV1ProjectsProjectIdKeysPostResponseSuccess | createVirtualKeyApiV1ProjectsProjectIdKeysPostResponseError)
 
-export type createVirtualKeyApiV1ProjectsProjectIdKeysPostResponse =
-  | createVirtualKeyApiV1ProjectsProjectIdKeysPostResponseSuccess
-  | createVirtualKeyApiV1ProjectsProjectIdKeysPostResponseError;
+export const getCreateVirtualKeyApiV1ProjectsProjectIdKeysPostUrl = (projectId: string,) => {
 
-export const getCreateVirtualKeyApiV1ProjectsProjectIdKeysPostUrl = (projectId: string) => {
-  return `/api/v1/projects/${projectId}/keys`;
-};
+
+
+
+  return `/api/v1/projects/${projectId}/keys`
+}
 
 /**
  * @summary Create Virtual Key
  */
-export const createVirtualKeyApiV1ProjectsProjectIdKeysPost = async (
-  projectId: string,
-  createVirtualKeyRequest: CreateVirtualKeyRequest,
-  options?: RequestInit,
-): Promise<createVirtualKeyApiV1ProjectsProjectIdKeysPostResponse> => {
-  return apiMutator<createVirtualKeyApiV1ProjectsProjectIdKeysPostResponse>(
-    getCreateVirtualKeyApiV1ProjectsProjectIdKeysPostUrl(projectId),
-    {
-      ...options,
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(createVirtualKeyRequest),
-    },
-  );
-};
+export const createVirtualKeyApiV1ProjectsProjectIdKeysPost = async (projectId: string,
+    createVirtualKeyRequest: CreateVirtualKeyRequest, options?: RequestInit): Promise<createVirtualKeyApiV1ProjectsProjectIdKeysPostResponse> => {
 
-export const getCreateVirtualKeyApiV1ProjectsProjectIdKeysPostMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof createVirtualKeyApiV1ProjectsProjectIdKeysPost>>,
-    TError,
-    { projectId: string; data: CreateVirtualKeyRequest },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof createVirtualKeyApiV1ProjectsProjectIdKeysPost>>,
-  TError,
-  { projectId: string; data: CreateVirtualKeyRequest },
-  TContext
-> => {
-  const mutationKey = ["createVirtualKeyApiV1ProjectsProjectIdKeysPost"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
+  return apiMutator<createVirtualKeyApiV1ProjectsProjectIdKeysPostResponse>(getCreateVirtualKeyApiV1ProjectsProjectIdKeysPostUrl(projectId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      createVirtualKeyRequest,)
+  }
+);}
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof createVirtualKeyApiV1ProjectsProjectIdKeysPost>>,
-    { projectId: string; data: CreateVirtualKeyRequest }
-  > = (props) => {
-    const { projectId, data } = props ?? {};
 
-    return createVirtualKeyApiV1ProjectsProjectIdKeysPost(projectId, data);
-  };
 
-  return { mutationFn, ...mutationOptions };
-};
 
-export type CreateVirtualKeyApiV1ProjectsProjectIdKeysPostMutationResult = NonNullable<
-  Awaited<ReturnType<typeof createVirtualKeyApiV1ProjectsProjectIdKeysPost>>
->;
-export type CreateVirtualKeyApiV1ProjectsProjectIdKeysPostMutationBody = CreateVirtualKeyRequest;
-export type CreateVirtualKeyApiV1ProjectsProjectIdKeysPostMutationError = HTTPValidationError;
+export const getCreateVirtualKeyApiV1ProjectsProjectIdKeysPostMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createVirtualKeyApiV1ProjectsProjectIdKeysPost>>, TError,{projectId: string;data: CreateVirtualKeyRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof createVirtualKeyApiV1ProjectsProjectIdKeysPost>>, TError,{projectId: string;data: CreateVirtualKeyRequest}, TContext> => {
 
-/**
+const mutationKey = ['createVirtualKeyApiV1ProjectsProjectIdKeysPost'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createVirtualKeyApiV1ProjectsProjectIdKeysPost>>, {projectId: string;data: CreateVirtualKeyRequest}> = (props) => {
+          const {projectId,data} = props ?? {};
+
+          return  createVirtualKeyApiV1ProjectsProjectIdKeysPost(projectId,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateVirtualKeyApiV1ProjectsProjectIdKeysPostMutationResult = NonNullable<Awaited<ReturnType<typeof createVirtualKeyApiV1ProjectsProjectIdKeysPost>>>
+    export type CreateVirtualKeyApiV1ProjectsProjectIdKeysPostMutationBody = CreateVirtualKeyRequest
+    export type CreateVirtualKeyApiV1ProjectsProjectIdKeysPostMutationError = HTTPValidationError
+
+    /**
  * @summary Create Virtual Key
  */
-export const useCreateVirtualKeyApiV1ProjectsProjectIdKeysPost = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof createVirtualKeyApiV1ProjectsProjectIdKeysPost>>,
-      TError,
-      { projectId: string; data: CreateVirtualKeyRequest },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof createVirtualKeyApiV1ProjectsProjectIdKeysPost>>,
-  TError,
-  { projectId: string; data: CreateVirtualKeyRequest },
-  TContext
-> => {
-  return useMutation(
-    getCreateVirtualKeyApiV1ProjectsProjectIdKeysPostMutationOptions(options),
-    queryClient,
-  );
-};
-export type getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetResponse200 = {
-  data: VirtualKeyResponse;
-  status: 200;
-};
+export const useCreateVirtualKeyApiV1ProjectsProjectIdKeysPost = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createVirtualKeyApiV1ProjectsProjectIdKeysPost>>, TError,{projectId: string;data: CreateVirtualKeyRequest}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createVirtualKeyApiV1ProjectsProjectIdKeysPost>>,
+        TError,
+        {projectId: string;data: CreateVirtualKeyRequest},
+        TContext
+      > => {
+      return useMutation(getCreateVirtualKeyApiV1ProjectsProjectIdKeysPostMutationOptions(options), queryClient);
+    }
+    export type getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetResponse200 = {
+  data: VirtualKeyResponse
+  status: 200
+}
 
 export type getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetResponseSuccess = (getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetResponse200) & {
+  headers: Headers;
+};
+export type getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetResponseError = (getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetResponse422) & {
+  headers: Headers;
 };
 
-export type getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetResponseSuccess =
-  getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetResponse200 & {
-    headers: Headers;
-  };
-export type getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetResponseError =
-  getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetResponse422 & {
-    headers: Headers;
-  };
+export type getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetResponse = (getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetResponseSuccess | getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetResponseError)
 
-export type getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetResponse =
-  | getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetResponseSuccess
-  | getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetResponseError;
+export const getGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetUrl = (projectId: string,
+    keyId: string,) => {
 
-export const getGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetUrl = (
-  projectId: string,
-  keyId: string,
-) => {
-  return `/api/v1/projects/${projectId}/keys/${keyId}`;
-};
+
+
+
+  return `/api/v1/projects/${projectId}/keys/${keyId}`
+}
 
 /**
  * @summary Get Virtual Key
  */
-export const getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet = async (
-  projectId: string,
-  keyId: string,
-  options?: RequestInit,
-): Promise<getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetResponse> => {
-  return apiMutator<getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetResponse>(
-    getGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetUrl(projectId, keyId),
-    {
-      ...options,
-      method: "GET",
-    },
-  );
-};
+export const getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet = async (projectId: string,
+    keyId: string, options?: RequestInit): Promise<getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetResponse> => {
 
-export const getGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetQueryKey = (
-  projectId: string,
-  keyId: string,
+  return apiMutator<getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetResponse>(getGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetUrl(projectId,keyId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetQueryKey = (projectId: string,
+    keyId: string,) => {
+    return [
+    `/api/v1/projects/${projectId}/keys/${keyId}`
+    ] as const;
+    }
+
+
+export const getGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetQueryOptions = <TData = Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>, TError = HTTPValidationError>(projectId: string,
+    keyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>, TError, TData>>, }
 ) => {
-  return [`/api/v1/projects/${projectId}/keys/${keyId}`] as const;
-};
 
-export const getGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetQueryOptions = <
-  TData = Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>,
-  TError = HTTPValidationError,
->(
-  projectId: string,
-  keyId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>,
-        TError,
-        TData
-      >
-    >;
-  },
-) => {
-  const { query: queryOptions } = options ?? {};
+const {query: queryOptions} = options ?? {};
 
-  const queryKey =
-    queryOptions?.queryKey ??
-    getGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetQueryKey(projectId, keyId);
+  const queryKey =  queryOptions?.queryKey ?? getGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetQueryKey(projectId,keyId);
 
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>
-  > = ({ signal }) => getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet(projectId, keyId, { signal });
 
-  return { queryKey, queryFn, enabled: !!(projectId && keyId), ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>,
-    TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
-};
 
-export type GetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetQueryResult = NonNullable<
-  Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>
->;
-export type GetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetQueryError = HTTPValidationError;
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>> = ({ signal }) => getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet(projectId,keyId, { signal });
 
-export function useGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet<
-  TData = Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>,
-  TError = HTTPValidationError,
->(
-  projectId: string,
-  keyId: string,
-  options: {
-    query: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(projectId && keyId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetQueryResult = NonNullable<Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>>
+export type GetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetQueryError = HTTPValidationError
+
+
+export function useGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet<TData = Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>, TError = HTTPValidationError>(
+ projectId: string,
+    keyId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>,
           TError,
           Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet<
-  TData = Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>,
-  TError = HTTPValidationError,
->(
-  projectId: string,
-  keyId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet<TData = Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>, TError = HTTPValidationError>(
+ projectId: string,
+    keyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>,
           TError,
           Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet<
-  TData = Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>,
-  TError = HTTPValidationError,
->(
-  projectId: string,
-  keyId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>,
-        TError,
-        TData
-      >
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet<TData = Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>, TError = HTTPValidationError>(
+ projectId: string,
+    keyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary Get Virtual Key
  */
 
-export function useGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet<
-  TData = Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>,
-  TError = HTTPValidationError,
->(
-  projectId: string,
-  keyId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>,
-        TError,
-        TData
-      >
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetQueryOptions(
-    projectId,
-    keyId,
-    options,
-  );
+export function useGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet<TData = Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>, TError = HTTPValidationError>(
+ projectId: string,
+    keyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
-    queryKey: DataTag<QueryKey, TData, TError>;
-  };
+  const queryOptions = getGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetQueryOptions(projectId,keyId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
+
+
+
+
+
 export type updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchResponse200 = {
-  data: VirtualKeyResponse;
-  status: 200;
-};
+  data: VirtualKeyResponse
+  status: 200
+}
 
 export type updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchResponseSuccess = (updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchResponse200) & {
+  headers: Headers;
+};
+export type updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchResponseError = (updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchResponse422) & {
+  headers: Headers;
 };
 
-export type updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchResponseSuccess =
-  updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchResponse200 & {
-    headers: Headers;
-  };
-export type updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchResponseError =
-  updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchResponse422 & {
-    headers: Headers;
-  };
+export type updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchResponse = (updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchResponseSuccess | updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchResponseError)
 
-export type updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchResponse =
-  | updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchResponseSuccess
-  | updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchResponseError;
+export const getUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchUrl = (projectId: string,
+    keyId: string,) => {
 
-export const getUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchUrl = (
-  projectId: string,
-  keyId: string,
-) => {
-  return `/api/v1/projects/${projectId}/keys/${keyId}`;
-};
+
+
+
+  return `/api/v1/projects/${projectId}/keys/${keyId}`
+}
 
 /**
  * @summary Update Virtual Key
  */
-export const updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch = async (
-  projectId: string,
-  keyId: string,
-  updateVirtualKeyRequest: UpdateVirtualKeyRequest,
-  options?: RequestInit,
-): Promise<updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchResponse> => {
-  return apiMutator<updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchResponse>(
-    getUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchUrl(projectId, keyId),
-    {
-      ...options,
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(updateVirtualKeyRequest),
-    },
-  );
-};
+export const updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch = async (projectId: string,
+    keyId: string,
+    updateVirtualKeyRequest: UpdateVirtualKeyRequest, options?: RequestInit): Promise<updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchResponse> => {
 
-export const getUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch>>,
-    TError,
-    { projectId: string; keyId: string; data: UpdateVirtualKeyRequest },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch>>,
-  TError,
-  { projectId: string; keyId: string; data: UpdateVirtualKeyRequest },
-  TContext
-> => {
-  const mutationKey = ["updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
+  return apiMutator<updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchResponse>(getUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchUrl(projectId,keyId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateVirtualKeyRequest,)
+  }
+);}
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch>>,
-    { projectId: string; keyId: string; data: UpdateVirtualKeyRequest }
-  > = (props) => {
-    const { projectId, keyId, data } = props ?? {};
 
-    return updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch(projectId, keyId, data);
-  };
 
-  return { mutationFn, ...mutationOptions };
-};
 
-export type UpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchMutationResult = NonNullable<
-  Awaited<ReturnType<typeof updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch>>
->;
-export type UpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchMutationBody =
-  UpdateVirtualKeyRequest;
-export type UpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchMutationError = HTTPValidationError;
+export const getUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch>>, TError,{projectId: string;keyId: string;data: UpdateVirtualKeyRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch>>, TError,{projectId: string;keyId: string;data: UpdateVirtualKeyRequest}, TContext> => {
 
-/**
+const mutationKey = ['updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch>>, {projectId: string;keyId: string;data: UpdateVirtualKeyRequest}> = (props) => {
+          const {projectId,keyId,data} = props ?? {};
+
+          return  updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch(projectId,keyId,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchMutationResult = NonNullable<Awaited<ReturnType<typeof updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch>>>
+    export type UpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchMutationBody = UpdateVirtualKeyRequest
+    export type UpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchMutationError = HTTPValidationError
+
+    /**
  * @summary Update Virtual Key
  */
-export const useUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch>>,
-      TError,
-      { projectId: string; keyId: string; data: UpdateVirtualKeyRequest },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch>>,
-  TError,
-  { projectId: string; keyId: string; data: UpdateVirtualKeyRequest },
-  TContext
-> => {
-  return useMutation(
-    getUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchMutationOptions(options),
-    queryClient,
-  );
-};
-export type revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteResponse204 = {
-  data: void;
-  status: 204;
-};
+export const useUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch>>, TError,{projectId: string;keyId: string;data: UpdateVirtualKeyRequest}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch>>,
+        TError,
+        {projectId: string;keyId: string;data: UpdateVirtualKeyRequest},
+        TContext
+      > => {
+      return useMutation(getUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatchMutationOptions(options), queryClient);
+    }
+    export type revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteResponse204 = {
+  data: void
+  status: 204
+}
 
 export type revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteResponseSuccess = (revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteResponse204) & {
+  headers: Headers;
+};
+export type revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteResponseError = (revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteResponse422) & {
+  headers: Headers;
 };
 
-export type revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteResponseSuccess =
-  revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteResponse204 & {
-    headers: Headers;
-  };
-export type revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteResponseError =
-  revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteResponse422 & {
-    headers: Headers;
-  };
+export type revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteResponse = (revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteResponseSuccess | revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteResponseError)
 
-export type revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteResponse =
-  | revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteResponseSuccess
-  | revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteResponseError;
+export const getRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteUrl = (projectId: string,
+    keyId: string,) => {
 
-export const getRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteUrl = (
-  projectId: string,
-  keyId: string,
-) => {
-  return `/api/v1/projects/${projectId}/keys/${keyId}`;
-};
+
+
+
+  return `/api/v1/projects/${projectId}/keys/${keyId}`
+}
 
 /**
  * @summary Revoke Virtual Key
  */
-export const revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete = async (
-  projectId: string,
-  keyId: string,
-  options?: RequestInit,
-): Promise<revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteResponse> => {
-  return apiMutator<revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteResponse>(
-    getRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteUrl(projectId, keyId),
-    {
-      ...options,
-      method: "DELETE",
-    },
-  );
-};
+export const revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete = async (projectId: string,
+    keyId: string, options?: RequestInit): Promise<revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteResponse> => {
 
-export const getRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete>>,
-    TError,
-    { projectId: string; keyId: string },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete>>,
-  TError,
-  { projectId: string; keyId: string },
-  TContext
-> => {
-  const mutationKey = ["revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
+  return apiMutator<revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteResponse>(getRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteUrl(projectId,keyId),
+  {
+    ...options,
+    method: 'DELETE'
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete>>,
-    { projectId: string; keyId: string }
-  > = (props) => {
-    const { projectId, keyId } = props ?? {};
 
-    return revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete(projectId, keyId);
-  };
+  }
+);}
 
-  return { mutationFn, ...mutationOptions };
-};
 
-export type RevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteMutationResult = NonNullable<
-  Awaited<ReturnType<typeof revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete>>
->;
 
-export type RevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteMutationError =
-  HTTPValidationError;
 
-/**
+export const getRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete>>, TError,{projectId: string;keyId: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete>>, TError,{projectId: string;keyId: string}, TContext> => {
+
+const mutationKey = ['revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete>>, {projectId: string;keyId: string}> = (props) => {
+          const {projectId,keyId} = props ?? {};
+
+          return  revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete(projectId,keyId,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete>>>
+
+    export type RevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteMutationError = HTTPValidationError
+
+    /**
  * @summary Revoke Virtual Key
  */
-export const useRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete>>,
-      TError,
-      { projectId: string; keyId: string },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete>>,
-  TError,
-  { projectId: string; keyId: string },
-  TContext
-> => {
-  return useMutation(
-    getRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteMutationOptions(options),
-    queryClient,
-  );
-};
+export const useRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete>>, TError,{projectId: string;keyId: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete>>,
+        TError,
+        {projectId: string;keyId: string},
+        TContext
+      > => {
+      return useMutation(getRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteMutationOptions(options), queryClient);
+    }

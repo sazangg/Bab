@@ -4,10 +4,10 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { ProviderResponseCapabilities } from "./providerResponseCapabilities";
-import type { ProviderResponseCircuitBreakerPolicy } from "./providerResponseCircuitBreakerPolicy";
-import type { ProviderResponseFallbackPolicy } from "./providerResponseFallbackPolicy";
-import type { ProviderResponseRetryPolicy } from "./providerResponseRetryPolicy";
+import type { ProviderResponseCapabilities } from './providerResponseCapabilities';
+import type { ProviderResponseCircuitBreakerPolicy } from './providerResponseCircuitBreakerPolicy';
+import type { ProviderResponseFallbackPolicy } from './providerResponseFallbackPolicy';
+import type { ProviderResponseRetryPolicy } from './providerResponseRetryPolicy';
 
 export interface ProviderResponse {
   id: string;

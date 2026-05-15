@@ -4,4 +4,11 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-export type ModelMetadataSyncMode = "fill_missing" | "overwrite_catalog";
+
+export type ModelMetadataSyncMode = typeof ModelMetadataSyncMode[keyof typeof ModelMetadataSyncMode];
+
+
+export const ModelMetadataSyncMode = {
+  fill_missing: 'fill_missing',
+  overwrite_catalog: 'overwrite_catalog',
+} as const;

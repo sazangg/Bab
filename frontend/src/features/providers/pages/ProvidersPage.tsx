@@ -32,6 +32,7 @@ import {
   useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet,
   useListProvidersApiV1ProvidersGet,
   useSyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost,
+  useTestModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPost,
   useTestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost,
   useUpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch,
   useUpdateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatch,
@@ -697,8 +698,16 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
     useTestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost({
       mutation: { onSettled: async () => queryClient.invalidateQueries() },
     });
+  const testModel = useTestModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPost({
+    mutation: { onSettled: async () => queryClient.invalidateQueries() },
+  });
   const [testResult, setTestResult] = useState<{
     providerCredentialId: string;
+    message: string;
+    status: "valid" | "invalid";
+  } | null>(null);
+  const [modelTestResult, setModelTestResult] = useState<{
+    modelOfferingId: string;
     message: string;
     status: "valid" | "invalid";
   } | null>(null);
@@ -734,6 +743,43 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
           setTestResult({
             providerCredentialId: providerCredential.id,
             message: "Credential validation failed. Check the key and provider settings.",
+            status: "invalid",
+          });
+        },
+      },
+    );
+  }
+
+  function handleTestModel(model: ModelOfferingResponse) {
+    setModelTestResult(null);
+    testModel.mutate(
+      { providerId, modelOfferingId: model.id },
+      {
+        onSuccess: (response) => {
+          if (response.status !== 200) {
+            setModelTestResult({
+              modelOfferingId: model.id,
+              message: "Model validation failed. Check the model and provider credentials.",
+              status: "invalid",
+            });
+            return;
+          }
+
+          const message =
+            response.data.health_status === "valid"
+              ? "Model test succeeded."
+              : (sanitizeCredentialValidationMessage(response.data.last_validation_error) ??
+                "Model test failed.");
+          setModelTestResult({
+            modelOfferingId: model.id,
+            message,
+            status: response.data.health_status === "valid" ? "valid" : "invalid",
+          });
+        },
+        onError: () => {
+          setModelTestResult({
+            modelOfferingId: model.id,
+            message: "Model validation failed. Check the model and provider credentials.",
             status: "invalid",
           });
         },
@@ -876,6 +922,9 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
                 page={modelPage}
                 isLoading={modelsQuery.isPending || modelsQuery.isFetching}
                 isError={modelsQuery.isError}
+                hasActiveCredential={hasActiveCredential}
+                isTesting={testModel.isPending}
+                testResult={modelTestResult}
                 onSearchChange={(value) => {
                   void setModelSearch(value);
                   void setModelPageParam("1");
@@ -915,6 +964,7 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
                     data: { is_active: true },
                   })
                 }
+                onTest={handleTestModel}
               />
             </TabsContent>
           </Tabs>
@@ -1513,6 +1563,9 @@ function ResourceModelTable({
   page,
   isLoading,
   isError,
+  hasActiveCredential,
+  isTesting,
+  testResult,
   onSearchChange,
   onModalityChange,
   onStatusChange,
@@ -1520,6 +1573,7 @@ function ResourceModelTable({
   onUpdate,
   onDeactivate,
   onReactivate,
+  onTest,
 }: {
   providerId: string;
   models: ModelOfferingResponse[];
@@ -1532,6 +1586,13 @@ function ResourceModelTable({
   page: number;
   isLoading: boolean;
   isError: boolean;
+  hasActiveCredential: boolean;
+  isTesting: boolean;
+  testResult: {
+    modelOfferingId: string;
+    message: string;
+    status: "valid" | "invalid";
+  } | null;
   onSearchChange: (value: string) => void;
   onModalityChange: (value: string) => void;
   onStatusChange: (value: string) => void;
@@ -1539,6 +1600,7 @@ function ResourceModelTable({
   onUpdate: (model: ModelOfferingResponse, values: ModelOfferingValues) => void;
   onDeactivate: (model: ModelOfferingResponse) => void;
   onReactivate: (model: ModelOfferingResponse) => void;
+  onTest: (model: ModelOfferingResponse) => void;
 }) {
   const [editModel, setEditModel] = useState<ModelOfferingResponse | null>(null);
   const editForm = useForm<ModelOfferingFormInput, unknown, ModelOfferingValues>({
@@ -1683,7 +1745,35 @@ function ResourceModelTable({
                     value={formatCapability(model.capabilities?.streaming)}
                   />
                 </div>
+                {testResult?.modelOfferingId === model.id ? (
+                  <p
+                    className={cn(
+                      "rounded-md border p-2 text-xs",
+                      testResult.status === "valid"
+                        ? "text-muted-foreground"
+                        : "text-destructive",
+                    )}
+                  >
+                    {testResult.message}
+                  </p>
+                ) : null}
                 <div className="flex justify-end gap-1">
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    disabled={
+                      !providerId || !model.is_active || !hasActiveCredential || isTesting
+                    }
+                    onClick={() => onTest(model)}
+                    title={
+                      !hasActiveCredential
+                        ? "Add an active credential before testing models."
+                        : "Test model"
+                    }
+                    aria-label="Test model"
+                  >
+                    <Activity />
+                  </Button>
                   <Button
                     size="icon-sm"
                     variant="ghost"

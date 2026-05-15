@@ -42,6 +42,8 @@ from app.modules.providers.schemas import (
     ProviderCredentialResponse,
     ProviderCredentialRoutingPolicy,
     ProviderResponse,
+    TestModelOfferingRequest,
+    TestModelOfferingResponse,
     TestProviderCredentialResponse,
     UpdateModelOfferingRequest,
     UpdateProviderCredentialRequest,
@@ -535,6 +537,121 @@ async def get_model_offering(
     if model_offering is None:
         raise ProviderNotFoundError
     return ModelOfferingResponse.model_validate(model_offering)
+
+
+async def test_model_offering(
+    *,
+    provider_id: UUID,
+    model_offering_id: UUID,
+    payload: TestModelOfferingRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+    http_client: httpx.AsyncClient,
+) -> TestModelOfferingResponse:
+    async with transaction(db):
+        provider = await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
+        model_offering = await _get_model_offering_or_raise(
+            provider_id=provider_id,
+            model_offering_id=model_offering_id,
+            scope=scope,
+            db=db,
+        )
+        if not provider.is_active or not model_offering.is_active:
+            raise ProviderNotFoundError
+
+        adapter = default_adapter_registry.get(provider.adapter_type)
+        routed_credentials = await _resolve_provider_credential_route(
+            provider=provider,
+            provider_credential_id=payload.provider_credential_id,
+            scope=scope,
+            db=db,
+        )
+        tested_credential_id: UUID | None = None
+        health_status = "invalid"
+        error: str | None = None
+        upstream_status_code: int | None = None
+        last_error: ProviderUpstreamError | None = None
+
+        for credential in routed_credentials:
+            tested_credential_id = credential.id if credential is not None else None
+            try:
+                response = await adapter.create_chat_completion(
+                    provider=AdapterProvider(
+                        base_url=provider.base_url,
+                        api_key=_api_key_for_routed_credential(
+                            provider=provider,
+                            credential=credential,
+                        ),
+                    ),
+                    payload=ProviderChatCompletionRequest(
+                        model=model_offering.provider_model_name,
+                        messages=[
+                            {
+                                "role": "user",
+                                "content": "Reply with ok.",
+                            }
+                        ],
+                    ),
+                    http_client=http_client,
+                )
+                upstream_status_code = response.status_code
+                health_status = "valid"
+                error = None
+                if credential is not None:
+                    await repository.mark_provider_credential_used(
+                        provider_credential=credential,
+                        db=db,
+                    )
+                break
+            except ProviderUpstreamError as exc:
+                last_error = exc
+                upstream_status_code = exc.status_code
+                error = str(exc.body)
+                if credential is not None:
+                    await _mark_provider_credential_failed(
+                        provider_credential=credential,
+                        error=exc,
+                        db=db,
+                    )
+                if (
+                    payload.provider_credential_id is not None
+                    or not _should_try_next_credential(exc)
+                ):
+                    break
+            except Exception as exc:  # noqa: BLE001 - surfaced as model validation result.
+                error = str(exc)
+                break
+
+        if last_error is not None and error is None:
+            error = str(last_error.body)
+
+        await audit_facade.record_event(
+            RecordAuditEvent(
+                org_id=scope.org_id,
+                actor_user_id=actor.id,
+                event="model_offering.tested",
+                target_type="model_offering",
+                target_id=model_offering.id,
+                event_metadata={
+                    "provider_id": str(provider_id),
+                    "provider_credential_id": (
+                        str(tested_credential_id) if tested_credential_id is not None else None
+                    ),
+                    "health_status": health_status,
+                    "upstream_status_code": upstream_status_code,
+                },
+            ),
+            db,
+        )
+
+    return TestModelOfferingResponse(
+        id=model_offering.id,
+        provider_credential_id=tested_credential_id,
+        health_status=health_status,
+        last_validation_error=error,
+        upstream_status_code=upstream_status_code,
+    )
 
 
 async def update_model_offering(

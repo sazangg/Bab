@@ -7,9 +7,9 @@
 
 export interface CreateProviderCredentialRequest {
   /**
-   * @minLength 1
-   * @maxLength 255
-   */
+     * @minLength 1
+     * @maxLength 255
+     */
   name: string;
   /** @minLength 1 */
   api_key: string;

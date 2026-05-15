@@ -4,7 +4,7 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { ModelMetadataSyncMode } from "./modelMetadataSyncMode";
+import type { ModelMetadataSyncMode } from './modelMetadataSyncMode';
 
 export interface SyncModelOfferingsRequest {
   metadata_mode?: ModelMetadataSyncMode;

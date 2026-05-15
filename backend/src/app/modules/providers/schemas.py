@@ -90,6 +90,18 @@ class TestProviderCredentialResponse(BaseModel):
     last_successful_request_at: datetime | None = None
 
 
+class TestModelOfferingRequest(BaseModel):
+    provider_credential_id: UUID | None = None
+
+
+class TestModelOfferingResponse(BaseModel):
+    id: UUID
+    provider_credential_id: UUID | None = None
+    health_status: str
+    last_validation_error: str | None = None
+    upstream_status_code: int | None = None
+
+
 class CreateModelOfferingRequest(BaseModel):
     provider_model_name: str = Field(min_length=1, max_length=255)
     alias: str | None = Field(default=None, min_length=1, max_length=255)
