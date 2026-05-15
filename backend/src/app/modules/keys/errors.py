@@ -2,15 +2,7 @@ class ProjectNotFoundError(Exception):
     pass
 
 
-class ProjectProviderAccessNotFoundError(Exception):
-    pass
-
-
 class ProjectAllocationNotFoundError(Exception):
-    pass
-
-
-class SubscriptionNotFoundError(Exception):
     pass
 
 
@@ -33,6 +25,3 @@ class InvalidVirtualKeyError(Exception):
 class AccessDeniedError(Exception):
     pass
 
-
-class AmbiguousModelResolutionError(Exception):
-    pass

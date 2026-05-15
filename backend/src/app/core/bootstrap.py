@@ -9,11 +9,7 @@ from app.modules.auth.internal.models import Organization, Team  # noqa: F401
 from app.modules.keys.internal.models import (  # noqa: F401
     ModelAlias,
     Project,
-    ProjectProviderAccess,
-    ProjectSubscriptionAccess,
-    Subscription,
-    SubscriptionModelAccess,
-    SubscriptionProviderKey,
+    ProjectAllocation,
     VirtualKey,
 )
 from app.modules.limits.internal.models import LimitCounter, LimitPolicy  # noqa: F401

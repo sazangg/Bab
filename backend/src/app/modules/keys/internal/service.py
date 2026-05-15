@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -12,14 +11,11 @@ from app.modules.audit.schemas import RecordAuditEvent
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys.errors import (
     AccessDeniedError,
-    AmbiguousModelResolutionError,
     InvalidVirtualKeyError,
     ModelAliasAlreadyExistsError,
     ModelAliasNotFoundError,
     ProjectAllocationNotFoundError,
     ProjectNotFoundError,
-    ProjectProviderAccessNotFoundError,
-    SubscriptionNotFoundError,
     VirtualKeyNotFoundError,
 )
 from app.modules.keys.internal import repository
@@ -27,37 +23,21 @@ from app.modules.keys.internal.models import (
     ModelAlias,
     Project,
     ProjectAllocation,
-    ProjectProviderAccess,
-    ProjectSubscriptionAccess,
-    Subscription,
-    SubscriptionModelAccess,
-    SubscriptionProviderKey,
     VirtualKey,
 )
 from app.modules.keys.schemas import (
-    AttachSubscriptionProviderKeyRequest,
     CreatedVirtualKeyResponse,
     CreateModelAliasRequest,
     CreateProjectAllocationRequest,
     CreateProjectRequest,
-    CreateSubscriptionRequest,
     CreateVirtualKeyRequest,
-    GrantProjectProviderAccessRequest,
-    GrantProjectSubscriptionAccessRequest,
     ModelAliasResponse,
     ProjectAllocationResponse,
-    ProjectProviderAccessResponse,
     ProjectResponse,
-    ProjectSubscriptionAccessResponse,
     ResolveAccessRequest,
     ResolvedAccess,
-    SetSubscriptionModelAccessRequest,
-    SubscriptionModelAccessResponse,
-    SubscriptionProviderKeyResponse,
-    SubscriptionResponse,
     UpdateModelAliasRequest,
     UpdateProjectAllocationRequest,
-    UpdateProjectProviderAccessRequest,
     UpdateProjectRequest,
     UpdateVirtualKeyRequest,
     VirtualKeyResponse,
@@ -373,441 +353,6 @@ def _uuid_list_to_json(values: list[UUID] | None) -> list[str] | None:
     if values is None:
         return None
     return [str(value) for value in values]
-
-
-async def grant_project_provider_access(
-    *,
-    project_id: UUID,
-    payload: GrantProjectProviderAccessRequest,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    db: AsyncSession,
-) -> ProjectProviderAccessResponse:
-    async with transaction(db):
-        project = await _get_project_or_raise(project_id=project_id, scope=scope, db=db)
-        await providers_facade.get_provider(provider_id=payload.provider_id, scope=scope, db=db)
-        access = await repository.get_provider_access(
-            org_id=scope.org_id,
-            project_id=project.id,
-            provider_id=payload.provider_id,
-            db=db,
-        )
-        event = "project_provider_access.updated"
-        if access is None:
-            access = await repository.grant_provider_access(
-                org_id=scope.org_id,
-                project_id=project.id,
-                provider_id=payload.provider_id,
-                allowed_models=payload.allowed_models,
-                db=db,
-            )
-            event = "project_provider_access.granted"
-        else:
-            access.allowed_models = payload.allowed_models
-            await db.flush()
-
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event=event,
-                target_type="project_provider_access",
-                target_id=access.id,
-                event_metadata={
-                    "project_id": str(project.id),
-                    "provider_id": str(payload.provider_id),
-                },
-            ),
-            db,
-        )
-
-    logger.info(
-        "project_provider_access_saved",
-        project_id=str(project_id),
-        provider_id=str(payload.provider_id),
-        org_id=str(scope.org_id),
-    )
-    return _access_to_response(access)
-
-
-async def list_project_provider_access(
-    *,
-    project_id: UUID,
-    scope: Scope,
-    db: AsyncSession,
-) -> list[ProjectProviderAccessResponse]:
-    await _get_project_or_raise(project_id=project_id, scope=scope, db=db)
-    access_rules = await repository.list_provider_access(
-        org_id=scope.org_id,
-        project_id=project_id,
-        db=db,
-    )
-    return [_access_to_response(access) for access in access_rules]
-
-
-async def update_project_provider_access(
-    *,
-    project_id: UUID,
-    provider_id: UUID,
-    payload: UpdateProjectProviderAccessRequest,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    db: AsyncSession,
-) -> ProjectProviderAccessResponse:
-    async with transaction(db):
-        await _get_project_or_raise(project_id=project_id, scope=scope, db=db)
-        access = await _get_provider_access_or_raise(
-            project_id=project_id,
-            provider_id=provider_id,
-            scope=scope,
-            db=db,
-        )
-        access.allowed_models = payload.allowed_models
-        await db.flush()
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="project_provider_access.updated",
-                target_type="project_provider_access",
-                target_id=access.id,
-                event_metadata={
-                    "project_id": str(project_id),
-                    "provider_id": str(provider_id),
-                },
-            ),
-            db,
-        )
-
-    logger.info(
-        "project_provider_access_updated",
-        project_id=str(project_id),
-        provider_id=str(provider_id),
-        org_id=str(scope.org_id),
-    )
-    return _access_to_response(access)
-
-
-async def revoke_project_provider_access(
-    *,
-    project_id: UUID,
-    provider_id: UUID,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    db: AsyncSession,
-) -> None:
-    async with transaction(db):
-        await _get_project_or_raise(project_id=project_id, scope=scope, db=db)
-        access = await _get_provider_access_or_raise(
-            project_id=project_id,
-            provider_id=provider_id,
-            scope=scope,
-            db=db,
-        )
-        access_id = access.id
-        await repository.delete_provider_access(access=access, db=db)
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="project_provider_access.revoked",
-                target_type="project_provider_access",
-                target_id=access_id,
-                event_metadata={
-                    "project_id": str(project_id),
-                    "provider_id": str(provider_id),
-                },
-            ),
-            db,
-        )
-
-    logger.info(
-        "project_provider_access_revoked",
-        project_id=str(project_id),
-        provider_id=str(provider_id),
-        org_id=str(scope.org_id),
-    )
-
-
-async def _get_provider_access_or_raise(
-    *,
-    project_id: UUID,
-    provider_id: UUID,
-    scope: Scope,
-    db: AsyncSession,
-) -> ProjectProviderAccess:
-    access = await repository.get_provider_access(
-        org_id=scope.org_id,
-        project_id=project_id,
-        provider_id=provider_id,
-        db=db,
-    )
-    if access is None:
-        raise ProjectProviderAccessNotFoundError
-    return access
-
-
-def _access_to_response(access: ProjectProviderAccess) -> ProjectProviderAccessResponse:
-    return ProjectProviderAccessResponse.model_validate(access)
-
-
-async def create_subscription(
-    *,
-    payload: CreateSubscriptionRequest,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    db: AsyncSession,
-) -> SubscriptionResponse:
-    async with transaction(db):
-        subscription = await repository.create_subscription(
-            org_id=scope.org_id,
-            name=payload.name,
-            description=payload.description,
-            db=db,
-        )
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="subscription.created",
-                target_type="subscription",
-                target_id=subscription.id,
-                event_metadata={"name": subscription.name},
-            ),
-            db,
-        )
-
-    logger.info("subscription_created", subscription_id=str(subscription.id))
-    return _subscription_to_response(subscription)
-
-
-async def list_subscriptions(*, scope: Scope, db: AsyncSession) -> list[SubscriptionResponse]:
-    subscriptions = await repository.list_subscriptions(org_id=scope.org_id, db=db)
-    return [_subscription_to_response(subscription) for subscription in subscriptions]
-
-
-async def attach_provider_key_to_subscription(
-    *,
-    subscription_id: UUID,
-    payload: AttachSubscriptionProviderKeyRequest,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    db: AsyncSession,
-) -> SubscriptionProviderKeyResponse:
-    async with transaction(db):
-        subscription = await _get_subscription_or_raise(
-            subscription_id=subscription_id,
-            scope=scope,
-            db=db,
-        )
-        await providers_facade.get_provider_credential(
-            provider_credential_id=payload.provider_key_id,
-            scope=scope,
-            db=db,
-        )
-        attachment = await repository.attach_provider_key_to_subscription(
-            org_id=scope.org_id,
-            subscription_id=subscription.id,
-            provider_key_id=payload.provider_key_id,
-            priority=payload.priority,
-            db=db,
-        )
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="subscription_provider_key.attached",
-                target_type="subscription_provider_key",
-                target_id=attachment.id,
-                event_metadata={
-                    "subscription_id": str(subscription.id),
-                    "provider_key_id": str(payload.provider_key_id),
-                },
-            ),
-            db,
-        )
-
-    return _subscription_provider_key_to_response(attachment)
-
-
-async def list_subscription_provider_keys(
-    *,
-    subscription_id: UUID,
-    scope: Scope,
-    db: AsyncSession,
-) -> list[SubscriptionProviderKeyResponse]:
-    await _get_subscription_or_raise(subscription_id=subscription_id, scope=scope, db=db)
-    attachments = await repository.list_subscription_provider_keys(
-        org_id=scope.org_id,
-        subscription_id=subscription_id,
-        db=db,
-    )
-    return [_subscription_provider_key_to_response(attachment) for attachment in attachments]
-
-
-async def set_subscription_model_access(
-    *,
-    subscription_id: UUID,
-    payload: SetSubscriptionModelAccessRequest,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    db: AsyncSession,
-) -> list[SubscriptionModelAccessResponse]:
-    async with transaction(db):
-        subscription = await _get_subscription_or_raise(
-            subscription_id=subscription_id,
-            scope=scope,
-            db=db,
-        )
-        await repository.delete_subscription_model_access(
-            org_id=scope.org_id,
-            subscription_id=subscription.id,
-            db=db,
-        )
-        access_rules: list[SubscriptionModelAccess] = []
-        if payload.provider_model_ids is not None:
-            provider_models = []
-            for provider_model_id in set(payload.provider_model_ids):
-                provider_models.append(
-                    await providers_facade.get_model_offering(
-                        model_offering_id=provider_model_id,
-                        scope=scope,
-                        db=db,
-                    )
-                )
-            for provider_model in sorted(
-                provider_models,
-                key=lambda model: model.provider_model_name,
-            ):
-                access_rules.append(
-                    await repository.add_subscription_model_access(
-                        org_id=scope.org_id,
-                        subscription_id=subscription.id,
-                        provider_model_id=provider_model.id,
-                        db=db,
-                    )
-                )
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="subscription_model_access.updated",
-                target_type="subscription",
-                target_id=subscription.id,
-                event_metadata={"model_count": len(access_rules)},
-            ),
-            db,
-        )
-
-    return [_subscription_model_access_to_response(access) for access in access_rules]
-
-
-async def list_subscription_model_access(
-    *,
-    subscription_id: UUID,
-    scope: Scope,
-    db: AsyncSession,
-) -> list[SubscriptionModelAccessResponse]:
-    await _get_subscription_or_raise(subscription_id=subscription_id, scope=scope, db=db)
-    access_rules = await repository.list_subscription_model_access(
-        org_id=scope.org_id,
-        subscription_id=subscription_id,
-        db=db,
-    )
-    return [_subscription_model_access_to_response(access) for access in access_rules]
-
-
-async def grant_project_subscription_access(
-    *,
-    project_id: UUID,
-    payload: GrantProjectSubscriptionAccessRequest,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    db: AsyncSession,
-) -> ProjectSubscriptionAccessResponse:
-    async with transaction(db):
-        project = await _get_project_or_raise(project_id=project_id, scope=scope, db=db)
-        subscription = await _get_subscription_or_raise(
-            subscription_id=payload.subscription_id,
-            scope=scope,
-            db=db,
-        )
-        access = await repository.grant_project_subscription_access(
-            org_id=scope.org_id,
-            project_id=project.id,
-            subscription_id=subscription.id,
-            priority=payload.priority,
-            db=db,
-        )
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="project_subscription_access.granted",
-                target_type="project_subscription_access",
-                target_id=access.id,
-                event_metadata={
-                    "project_id": str(project.id),
-                    "subscription_id": str(subscription.id),
-                },
-            ),
-            db,
-        )
-
-    return _project_subscription_access_to_response(access)
-
-
-async def list_project_subscription_access(
-    *,
-    project_id: UUID,
-    scope: Scope,
-    db: AsyncSession,
-) -> list[ProjectSubscriptionAccessResponse]:
-    await _get_project_or_raise(project_id=project_id, scope=scope, db=db)
-    access_rules = await repository.list_project_subscription_access(
-        org_id=scope.org_id,
-        project_id=project_id,
-        db=db,
-    )
-    return [_project_subscription_access_to_response(access) for access in access_rules]
-
-
-async def _get_subscription_or_raise(
-    *,
-    subscription_id: UUID,
-    scope: Scope,
-    db: AsyncSession,
-) -> Subscription:
-    subscription = await repository.get_subscription(
-        org_id=scope.org_id,
-        subscription_id=subscription_id,
-        db=db,
-    )
-    if subscription is None:
-        raise SubscriptionNotFoundError
-    return subscription
-
-
-def _subscription_to_response(subscription: Subscription) -> SubscriptionResponse:
-    return SubscriptionResponse.model_validate(subscription)
-
-
-def _subscription_provider_key_to_response(
-    attachment: SubscriptionProviderKey,
-) -> SubscriptionProviderKeyResponse:
-    return SubscriptionProviderKeyResponse.model_validate(attachment)
-
-
-def _subscription_model_access_to_response(
-    access: SubscriptionModelAccess,
-) -> SubscriptionModelAccessResponse:
-    return SubscriptionModelAccessResponse.model_validate(access)
-
-
-def _project_subscription_access_to_response(
-    access: ProjectSubscriptionAccess,
-) -> ProjectSubscriptionAccessResponse:
-    return ProjectSubscriptionAccessResponse.model_validate(access)
 
 
 async def create_model_alias(
@@ -1190,55 +735,15 @@ async def resolve_access(*, payload: ResolveAccessRequest, db: AsyncSession) -> 
     if project is None or not project.is_active:
         raise InvalidVirtualKeyError
 
-    allocation_match = await _resolve_allocation_access(
+    resolved = await _resolve_allocation_access(
         payload=payload,
         virtual_key=virtual_key,
         db=db,
     )
-    if allocation_match is not None:
-        return allocation_match
-
-    subscription_match = await _resolve_subscription_access(
-        payload=payload,
-        virtual_key=virtual_key,
-        db=db,
-    )
-    if subscription_match is not None:
-        return subscription_match
-
-    provider_id, provider_model, used_alias = await _resolve_requested_model(
-        requested_model=payload.requested_model,
-        requested_provider_id=payload.provider_id,
-        org_id=virtual_key.org_id,
-        db=db,
-    )
-    provider_access = await repository.get_provider_access(
-        org_id=virtual_key.org_id,
-        project_id=virtual_key.project_id,
-        provider_id=provider_id,
-        db=db,
-    )
-    if provider_access is None:
+    if resolved is None:
         raise AccessDeniedError
 
-    if not _model_allowed(provider_model, provider_access.allowed_models):
-        raise AccessDeniedError
-    if not _key_restrictions_allow(
-        provider_id=provider_id,
-        provider_model=provider_model,
-        restrictions=virtual_key.restrictions,
-    ):
-        raise AccessDeniedError
-
-    return ResolvedAccess(
-        org_id=virtual_key.org_id,
-        project_id=virtual_key.project_id,
-        virtual_key_id=virtual_key.id,
-        provider_id=provider_id,
-        requested_model=payload.requested_model,
-        provider_model=provider_model,
-        used_alias=used_alias,
-    )
+    return resolved
 
 
 async def _resolve_allocation_access(
@@ -1327,131 +832,6 @@ async def _allocation_allows_model(
     return False
 
 
-@dataclass(frozen=True)
-class _SubscriptionModelMatch:
-    provider_id: UUID
-    provider_key_id: UUID
-    provider_model: str
-    used_alias: bool
-    priority: int
-
-
-async def _resolve_subscription_access(
-    *,
-    payload: ResolveAccessRequest,
-    virtual_key: VirtualKey,
-    db: AsyncSession,
-) -> ResolvedAccess | None:
-    scope = Scope(org_id=virtual_key.org_id)
-    matches: list[_SubscriptionModelMatch] = []
-    project_access_rules = await repository.list_project_subscription_access(
-        org_id=virtual_key.org_id,
-        project_id=virtual_key.project_id,
-        db=db,
-    )
-
-    for project_access in project_access_rules:
-        if not project_access.is_active:
-            continue
-        subscription = await repository.get_subscription(
-            org_id=virtual_key.org_id,
-            subscription_id=project_access.subscription_id,
-            db=db,
-        )
-        if subscription is None or not subscription.is_active:
-            continue
-
-        model_access = await repository.list_subscription_model_access(
-            org_id=virtual_key.org_id,
-            subscription_id=subscription.id,
-            db=db,
-        )
-        allowed_provider_model_ids = {
-            item.provider_model_id for item in model_access if item.is_active
-        }
-        provider_key_attachments = await repository.list_subscription_provider_keys(
-            org_id=virtual_key.org_id,
-            subscription_id=subscription.id,
-            db=db,
-        )
-        for attachment in provider_key_attachments:
-            if not attachment.is_active:
-                continue
-            provider_key = await providers_facade.get_provider_credential(
-                provider_credential_id=attachment.provider_key_id,
-                scope=scope,
-                db=db,
-            )
-            if not provider_key.is_active:
-                continue
-            provider = await providers_facade.get_provider(
-                provider_id=provider_key.provider_id,
-                scope=scope,
-                db=db,
-            )
-            if not provider.is_active:
-                continue
-            if payload.provider is not None and provider.slug != payload.provider:
-                continue
-            if payload.provider_id is not None and provider.id != payload.provider_id:
-                continue
-
-            provider_models = await providers_facade.list_model_offerings(
-                provider_id=provider.id,
-                scope=scope,
-                db=db,
-            )
-            for provider_model in provider_models:
-                if not provider_model.is_active:
-                    continue
-                if (
-                    allowed_provider_model_ids
-                    and provider_model.id not in allowed_provider_model_ids
-                ):
-                    continue
-                used_alias = (
-                    provider_model.alias == payload.requested_model
-                    and provider_model.provider_model_name != payload.requested_model
-                )
-                if provider_model.provider_model_name != payload.requested_model and not used_alias:
-                    continue
-                if not _key_restrictions_allow(
-                    provider_id=provider.id,
-                    provider_model=provider_model.provider_model_name,
-                    restrictions=virtual_key.restrictions,
-                ):
-                    continue
-                matches.append(
-                    _SubscriptionModelMatch(
-                        provider_id=provider.id,
-                        provider_key_id=provider_key.id,
-                        provider_model=provider_model.provider_model_name,
-                        used_alias=used_alias,
-                        priority=project_access.priority,
-                    )
-                )
-
-    if not matches:
-        return None
-
-    sorted_matches = sorted(matches, key=lambda item: item.priority)
-    match = sorted_matches[0]
-    best_priority_matches = [item for item in sorted_matches if item.priority == match.priority]
-    if len(best_priority_matches) > 1:
-        raise AmbiguousModelResolutionError
-
-    return ResolvedAccess(
-        org_id=virtual_key.org_id,
-        project_id=virtual_key.project_id,
-        virtual_key_id=virtual_key.id,
-        provider_id=match.provider_id,
-        provider_key_id=match.provider_key_id,
-        requested_model=payload.requested_model,
-        provider_model=match.provider_model,
-        used_alias=match.used_alias,
-    )
-
-
 async def _resolve_requested_model(
     *,
     requested_model: str,
@@ -1471,12 +851,6 @@ async def _resolve_requested_model(
         raise AccessDeniedError
 
     return requested_provider_id, requested_model, False
-
-
-def _model_allowed(provider_model: str, allowed_models: list[str] | None) -> bool:
-    if allowed_models is None:
-        return True
-    return provider_model in allowed_models
 
 
 def _key_restrictions_allow(

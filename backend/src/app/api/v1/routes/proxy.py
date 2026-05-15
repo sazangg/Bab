@@ -17,7 +17,6 @@ from app.core.database import Scope, get_db
 from app.modules.keys import facade as keys_facade
 from app.modules.keys.errors import (
     AccessDeniedError,
-    AmbiguousModelResolutionError,
     InvalidVirtualKeyError,
 )
 from app.modules.keys.schemas import ResolveAccessRequest
@@ -150,11 +149,6 @@ async def create_chat_completion(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="model or provider is not allowed for this key",
-        ) from exc
-    except AmbiguousModelResolutionError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="model alias is ambiguous; provide a provider hint",
         ) from exc
     except LimitExceededError as exc:
         if resolved is not None:

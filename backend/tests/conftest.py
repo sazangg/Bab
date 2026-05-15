@@ -15,7 +15,6 @@ from app.modules.keys.internal.models import (  # noqa: F401
     ModelAlias,
     Project,
     ProjectAllocation,
-    ProjectProviderAccess,
     VirtualKey,
 )
 from app.modules.limits.internal.models import LimitCounter, LimitPolicy  # noqa: F401

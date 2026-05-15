@@ -15,7 +15,6 @@ export function useBreadcrumbs(): Breadcrumb[] {
   const keyDetailMatch = useMatch("/projects/:projectId/keys/:keyId");
   const providersMatch = useMatch("/providers");
   const providerDetailMatch = useMatch("/providers/:providerId");
-  const subscriptionsMatch = useMatch("/subscriptions");
   const logsMatch = useMatch("/logs");
   const auditMatch = useMatch("/audit");
   const settingsMatch = useMatch("/settings");
@@ -60,9 +59,6 @@ export function useBreadcrumbs(): Breadcrumb[] {
   }
   if (providerDetailMatch) {
     return [{ label: "Providers", to: "/providers" }, { label: providerName }];
-  }
-  if (subscriptionsMatch) {
-    return [{ label: "Subscriptions" }];
   }
   if (logsMatch) {
     return [{ label: "Request logs" }];

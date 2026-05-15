@@ -9,7 +9,7 @@ import { z } from "zod";
 import { useGetKeyUsageApiV1AnalyticsKeysVirtualKeyIdGet } from "@/shared/api/generated/analytics/analytics";
 import {
   useGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet,
-  useListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet,
+  useListProjectAllocationsApiV1ProjectsProjectIdAllocationsGet,
   useListProjectsApiV1ProjectsGet,
   useRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete,
   useUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch,
@@ -74,7 +74,7 @@ export function KeyDetailPage() {
   const keyQuery = useGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet(projectId, keyId, {
     query: { enabled: Boolean(projectId && keyId) },
   });
-  const accessQuery = useListProjectProviderAccessApiV1ProjectsProjectIdProviderAccessGet(
+  const allocationsQuery = useListProjectAllocationsApiV1ProjectsProjectIdAllocationsGet(
     projectId,
     { query: { enabled: Boolean(projectId) } },
   );
@@ -91,7 +91,7 @@ export function KeyDetailPage() {
   const providers = providersQuery.data?.status === 200 ? providersQuery.data.data : [];
   const key = keyQuery.data?.status === 200 ? keyQuery.data.data : undefined;
   const usage = usageQuery.data?.status === 200 ? usageQuery.data.data : null;
-  const accessRules = accessQuery.data?.status === 200 ? accessQuery.data.data : [];
+  const allocations = allocationsQuery.data?.status === 200 ? allocationsQuery.data.data : [];
 
   const updateMutation = useUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch({
     mutation: {
@@ -209,7 +209,7 @@ export function KeyDetailPage() {
         <CardContent>
           {!key.restrictions || key.restrictions.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No restrictions. Inherits all access from project: {accessSummary(accessRules.length)}
+              No restrictions. Inherits all access from project: {accessSummary(allocations.length)}
               .
             </p>
           ) : (
@@ -333,11 +333,11 @@ export function KeyDetailPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__all">No restriction</SelectItem>
-                  {accessRules.map((rule) => {
-                    const provider = providers.find((p) => p.id === rule.provider_id);
+                  {allocations.map((allocation) => {
+                    const provider = providers.find((p) => p.id === allocation.provider_id);
                     return (
-                      <SelectItem key={rule.provider_id} value={rule.provider_id}>
-                        {provider?.name ?? rule.provider_id}
+                      <SelectItem key={allocation.provider_id} value={allocation.provider_id}>
+                        {provider?.name ?? allocation.provider_id}
                       </SelectItem>
                     );
                   })}
