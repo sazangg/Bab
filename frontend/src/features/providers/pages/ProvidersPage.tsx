@@ -121,13 +121,30 @@ const editSchema = z.object({
 const providerCredentialSchema = z.object({
   name: z.string().min(1).max(255),
   api_key: z.string().min(1),
+  routing_policy: z.enum([
+    "priority",
+    "round_robin",
+    "least_recently_used",
+    "health_based",
+    "weighted",
+    "fallback",
+  ]),
   priority: z.number().int().min(0),
 });
 
 type ProviderCredentialValues = z.infer<typeof providerCredentialSchema>;
+type RoutingPolicyValue = ProviderCredentialValues["routing_policy"];
 
 const modelModalities = ["text", "vision", "embedding", "image", "audio"];
 const modelCapabilityOptions = ["chat", "embeddings", "vision", "tools", "json_mode", "streaming"];
+const routingPolicyOptions = [
+  { value: "priority", label: "Priority" },
+  { value: "round_robin", label: "Round robin" },
+  { value: "least_recently_used", label: "Least recently used" },
+  { value: "health_based", label: "Health based" },
+  { value: "weighted", label: "Weighted" },
+  { value: "fallback", label: "Fallback" },
+] as const;
 
 const modelOfferingSchema = z.object({
   provider_model_name: z.string().min(1).max(255),
@@ -196,6 +213,10 @@ function formatDateTime(value: string) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function formatRoutingPolicy(value: string) {
+  return routingPolicyOptions.find((option) => option.value === value)?.label ?? value;
 }
 
 function formatCapability(value: unknown) {
@@ -871,6 +892,7 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
             data: {
               name: values.name,
               api_key: values.api_key,
+              routing_policy: values.routing_policy,
               priority: values.priority,
             },
           })
@@ -927,7 +949,7 @@ function ResourceKeyTable({
   } | null;
   onUpdate: (
     credential: ProviderCredentialResponse,
-    values: { name: string; priority: number },
+    values: { name: string; routing_policy: string; priority: number },
   ) => void;
   onRotate: (credential: ProviderCredentialResponse, apiKey: string) => void;
   onDeactivate: (credential: ProviderCredentialResponse) => void;
@@ -952,6 +974,7 @@ function ResourceKeyTable({
           <TableRow>
             <TableHead>Credential</TableHead>
             <TableHead>Prefix</TableHead>
+            <TableHead>Routing</TableHead>
             <TableHead>Priority</TableHead>
             <TableHead>Health</TableHead>
             <TableHead>Status</TableHead>
@@ -963,21 +986,21 @@ function ResourceKeyTable({
         <TableBody>
           {isLoading ? (
             <TableRow>
-              <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
+              <TableCell colSpan={9} className="py-8 text-center text-sm text-muted-foreground">
                 Loading credentials...
               </TableCell>
             </TableRow>
           ) : null}
           {isError ? (
             <TableRow>
-              <TableCell colSpan={8} className="py-8 text-center text-sm text-destructive">
+              <TableCell colSpan={9} className="py-8 text-center text-sm text-destructive">
                 Credentials could not be loaded.
               </TableCell>
             </TableRow>
           ) : null}
           {!isLoading && !isError && sortedCredentials.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
+              <TableCell colSpan={9} className="py-8 text-center text-sm text-muted-foreground">
                 No credentials added yet.
               </TableCell>
             </TableRow>
@@ -1009,6 +1032,7 @@ function ResourceKeyTable({
                 ) : null}
               </TableCell>
               <TableCell className="font-mono text-xs">{credential.key_prefix}</TableCell>
+              <TableCell className="text-xs">{formatRoutingPolicy(credential.routing_policy)}</TableCell>
               <TableCell>{credential.priority}</TableCell>
               <TableCell>
                 <StatusBadge
@@ -1151,21 +1175,27 @@ function EditProviderCredentialSheet({
 }: {
   providerCredential: ProviderCredentialResponse | null;
   onClose: () => void;
-  onSubmit: (values: { name: string; priority: number }) => void;
+  onSubmit: (values: { name: string; routing_policy: string; priority: number }) => void;
 }) {
-  const form = useForm<{ name: string; priority: number }>({
+  const form = useForm<{ name: string; routing_policy: string; priority: number }>({
     resolver: zodResolver(
       z.object({
         name: z.string().min(1).max(255),
+        routing_policy: z.string().min(1),
         priority: z.number().int().min(0),
       }),
     ),
-    defaultValues: { name: "", priority: 100 },
+    defaultValues: { name: "", routing_policy: "priority", priority: 100 },
   });
+  const routingPolicy = useWatch({ control: form.control, name: "routing_policy" });
 
   useEffect(() => {
     if (providerCredential) {
-      form.reset({ name: providerCredential.name, priority: providerCredential.priority });
+      form.reset({
+        name: providerCredential.name,
+        routing_policy: providerCredential.routing_policy,
+        priority: providerCredential.priority,
+      });
     }
   }, [providerCredential, form]);
 
@@ -1194,6 +1224,10 @@ function EditProviderCredentialSheet({
               Active credentials are tried first. Lower numbers win within active credentials.
             </p>
           </div>
+          <RoutingPolicyField
+            value={routingPolicy}
+            onValueChange={(value) => form.setValue("routing_policy", value)}
+          />
         </form>
         <SheetFooter>
           <Button onClick={form.handleSubmit(onSubmit)}>Save changes</Button>
@@ -1221,11 +1255,19 @@ function CreateProviderCredentialSheet({
 }) {
   const form = useForm<ProviderCredentialValues>({
     resolver: zodResolver(providerCredentialSchema),
-    defaultValues: { name: "", api_key: "", priority: 100 },
+    defaultValues: { name: "", api_key: "", routing_policy: "priority", priority: 100 },
   });
+  const routingPolicy = useWatch({ control: form.control, name: "routing_policy" });
 
   useEffect(() => {
-    if (open) form.reset({ name: `${providerName} credential`, api_key: "", priority: 100 });
+    if (open) {
+      form.reset({
+        name: `${providerName} credential`,
+        api_key: "",
+        routing_policy: "priority",
+        priority: 100,
+      });
+    }
   }, [open, providerName, form]);
 
   return (
@@ -1262,6 +1304,10 @@ function CreateProviderCredentialSheet({
               Lower numbers are preferred when multiple active credentials exist for this provider.
             </p>
           </div>
+          <RoutingPolicyField
+            value={routingPolicy}
+            onValueChange={(value) => form.setValue("routing_policy", value)}
+          />
         </form>
         <SheetFooter>
           <Button disabled={isPending} onClick={form.handleSubmit(onSubmit)}>
@@ -1273,6 +1319,37 @@ function CreateProviderCredentialSheet({
         </SheetFooter>
       </SheetContent>
     </Sheet>
+  );
+}
+
+function RoutingPolicyField({
+  value,
+  onValueChange,
+}: {
+  value: string;
+  onValueChange: (value: RoutingPolicyValue) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor="provider-key-routing-policy">Routing strategy</Label>
+      <Select value={value} onValueChange={(nextValue) => onValueChange(nextValue as RoutingPolicyValue)}>
+        <SelectTrigger id="provider-key-routing-policy">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            {routingPolicyOptions.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+      <p className="text-xs text-muted-foreground">
+        The highest-priority active credential controls the provider routing strategy.
+      </p>
+    </div>
   );
 }
 
@@ -1809,12 +1886,18 @@ function AddProviderCredentialDialog({
   const [isError, setIsError] = useState(false);
   const form = useForm<ProviderCredentialValues>({
     resolver: zodResolver(providerCredentialSchema),
-    defaultValues: { name: "", api_key: "", priority: 100 },
+    defaultValues: { name: "", api_key: "", routing_policy: "priority", priority: 100 },
   });
+  const routingPolicy = useWatch({ control: form.control, name: "routing_policy" });
 
   useEffect(() => {
     if (entry) {
-      form.reset({ name: `${entry.name} credential`, api_key: "", priority: 100 });
+      form.reset({
+        name: `${entry.name} credential`,
+        api_key: "",
+        routing_policy: "priority",
+        priority: 100,
+      });
     }
   }, [entry, form]);
 
@@ -1842,6 +1925,7 @@ function AddProviderCredentialDialog({
         {
           name: values.name,
           api_key: values.api_key,
+          routing_policy: values.routing_policy,
           priority: values.priority,
         },
       );
@@ -1892,6 +1976,10 @@ function AddProviderCredentialDialog({
               Lower numbers are preferred when multiple active credentials exist for this provider.
             </p>
           </div>
+          <RoutingPolicyField
+            value={routingPolicy}
+            onValueChange={(value) => form.setValue("routing_policy", value)}
+          />
           {isError ? <p className="text-sm text-destructive">Credential was not added.</p> : null}
         </form>
         <SheetFooter>

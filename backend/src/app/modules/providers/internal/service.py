@@ -1,4 +1,5 @@
 import re
+import secrets
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -15,6 +16,7 @@ from app.modules.providers.errors import (
     ProviderCredentialRequiredError,
     ProviderInactiveError,
     ProviderNotFoundError,
+    ProviderUpstreamError,
 )
 from app.modules.providers.internal import repository
 from app.modules.providers.internal.adapters import (
@@ -26,7 +28,7 @@ from app.modules.providers.internal.model_metadata import (
     ModelMetadata,
     default_model_metadata_registry,
 )
-from app.modules.providers.internal.models import ModelOffering, Provider
+from app.modules.providers.internal.models import ModelOffering, Provider, ProviderCredential
 from app.modules.providers.schemas import (
     CreateModelOfferingRequest,
     CreateProviderCredentialRequest,
@@ -38,6 +40,7 @@ from app.modules.providers.schemas import (
     ProviderChatCompletionResponse,
     ProviderChatCompletionStream,
     ProviderCredentialResponse,
+    ProviderCredentialRoutingPolicy,
     ProviderResponse,
     TestProviderCredentialResponse,
     UpdateModelOfferingRequest,
@@ -740,20 +743,45 @@ async def create_chat_completion(
         raise ProviderInactiveError
 
     adapter = default_adapter_registry.get(provider.adapter_type)
-    api_key = await _resolve_provider_api_key(
+    routed_credentials = await _resolve_provider_credential_route(
         provider=provider,
         provider_credential_id=provider_credential_id,
         scope=scope,
         db=db,
     )
-    return await adapter.create_chat_completion(
-        provider=AdapterProvider(
-            base_url=provider.base_url,
-            api_key=api_key,
-        ),
-        payload=payload,
-        http_client=http_client,
-    )
+    last_error: ProviderUpstreamError | None = None
+    for credential in routed_credentials:
+        try:
+            response = await adapter.create_chat_completion(
+                provider=AdapterProvider(
+                    base_url=provider.base_url,
+                    api_key=_api_key_for_routed_credential(
+                        provider=provider,
+                        credential=credential,
+                    ),
+                ),
+                payload=payload,
+                http_client=http_client,
+            )
+            if credential is not None:
+                await repository.mark_provider_credential_used(
+                    provider_credential=credential,
+                    db=db,
+                )
+            return response
+        except ProviderUpstreamError as exc:
+            last_error = exc
+            if credential is not None:
+                await _mark_provider_credential_failed(
+                    provider_credential=credential,
+                    error=exc,
+                    db=db,
+                )
+            if provider_credential_id is not None or not _should_try_next_credential(exc):
+                raise
+    if last_error is not None:
+        raise last_error
+    raise ProviderCredentialRequiredError
 
 
 async def stream_chat_completion(
@@ -770,20 +798,45 @@ async def stream_chat_completion(
         raise ProviderInactiveError
 
     adapter = default_adapter_registry.get(provider.adapter_type)
-    api_key = await _resolve_provider_api_key(
+    routed_credentials = await _resolve_provider_credential_route(
         provider=provider,
         provider_credential_id=provider_credential_id,
         scope=scope,
         db=db,
     )
-    return await adapter.stream_chat_completion(
-        provider=AdapterProvider(
-            base_url=provider.base_url,
-            api_key=api_key,
-        ),
-        payload=payload,
-        http_client=http_client,
-    )
+    last_error: ProviderUpstreamError | None = None
+    for credential in routed_credentials:
+        try:
+            stream = await adapter.stream_chat_completion(
+                provider=AdapterProvider(
+                    base_url=provider.base_url,
+                    api_key=_api_key_for_routed_credential(
+                        provider=provider,
+                        credential=credential,
+                    ),
+                ),
+                payload=payload,
+                http_client=http_client,
+            )
+            if credential is not None:
+                await repository.mark_provider_credential_used(
+                    provider_credential=credential,
+                    db=db,
+                )
+            return stream
+        except ProviderUpstreamError as exc:
+            last_error = exc
+            if credential is not None:
+                await _mark_provider_credential_failed(
+                    provider_credential=credential,
+                    error=exc,
+                    db=db,
+                )
+            if provider_credential_id is not None or not _should_try_next_credential(exc):
+                raise
+    if last_error is not None:
+        raise last_error
+    raise ProviderCredentialRequiredError
 
 
 async def _get_provider_or_raise(*, provider_id: UUID, scope: Scope, db: AsyncSession) -> Provider:
@@ -831,17 +884,27 @@ def _to_response(provider: Provider) -> ProviderResponse:
     return ProviderResponse.model_validate(provider)
 
 
-async def _resolve_provider_api_key(
+async def _resolve_provider_credential_route(
     *,
     provider: Provider,
     provider_credential_id: UUID | None,
     scope: Scope,
     db: AsyncSession,
-) -> str:
+) -> list[ProviderCredential | None]:
     if provider_credential_id is None:
-        if provider.api_key_encrypted is None:
-            raise ProviderNotFoundError
-        return decrypt(provider.api_key_encrypted)
+        provider_credentials = await repository.list_provider_credentials(
+            org_id=scope.org_id,
+            provider_id=provider.id,
+            db=db,
+        )
+        active_credentials = [
+            credential for credential in provider_credentials if credential.is_active
+        ]
+        if active_credentials:
+            return _route_provider_credentials(active_credentials)
+        if provider.api_key_encrypted is not None:
+            return [None]
+        raise ProviderCredentialRequiredError
 
     provider_credential = await repository.get_provider_credential(
         org_id=scope.org_id,
@@ -855,8 +918,107 @@ async def _resolve_provider_api_key(
     ):
         raise ProviderNotFoundError
 
-    await repository.mark_provider_credential_used(provider_credential=provider_credential, db=db)
-    return decrypt(provider_credential.api_key_encrypted)
+    return [provider_credential]
+
+
+def _route_provider_credentials(
+    credentials: list[ProviderCredential],
+) -> list[ProviderCredential]:
+    ordered = sorted(credentials, key=_provider_credential_priority_key)
+    policy = _effective_routing_policy(ordered)
+    if policy == ProviderCredentialRoutingPolicy.priority:
+        return [ordered[0]]
+    if policy == ProviderCredentialRoutingPolicy.round_robin:
+        return [sorted(credentials, key=_provider_credential_lru_key)[0]]
+    if policy == ProviderCredentialRoutingPolicy.least_recently_used:
+        return [sorted(credentials, key=_provider_credential_lru_key)[0]]
+    if policy == ProviderCredentialRoutingPolicy.health_based:
+        return [sorted(credentials, key=_provider_credential_health_key)[0]]
+    if policy == ProviderCredentialRoutingPolicy.weighted:
+        return [_weighted_provider_credential_route(credentials)[0]]
+    if policy == ProviderCredentialRoutingPolicy.fallback:
+        return ordered
+    return ordered
+
+
+def _effective_routing_policy(
+    credentials: list[ProviderCredential],
+) -> ProviderCredentialRoutingPolicy:
+    try:
+        return ProviderCredentialRoutingPolicy(credentials[0].routing_policy)
+    except ValueError:
+        return ProviderCredentialRoutingPolicy.priority
+
+
+def _provider_credential_priority_key(
+    credential: ProviderCredential,
+) -> tuple[int, datetime]:
+    return (credential.priority, credential.created_at)
+
+
+def _provider_credential_lru_key(
+    credential: ProviderCredential,
+) -> tuple[datetime, int, datetime]:
+    return (
+        credential.last_used_at or datetime.min.replace(tzinfo=UTC),
+        credential.priority,
+        credential.created_at,
+    )
+
+
+def _provider_credential_health_key(
+    credential: ProviderCredential,
+) -> tuple[int, int, datetime]:
+    health_rank = {
+        "valid": 0,
+        "unchecked": 1,
+        "degraded": 2,
+        "invalid": 3,
+    }.get(credential.health_status, 2)
+    return (health_rank, credential.priority, credential.created_at)
+
+
+def _weighted_provider_credential_route(
+    credentials: list[ProviderCredential],
+) -> list[ProviderCredential]:
+    weighted_pool: list[ProviderCredential] = []
+    for credential in credentials:
+        weight = max(1, 101 - credential.priority)
+        weighted_pool.extend([credential] * weight)
+    selected = secrets.choice(weighted_pool)
+    rest = [
+        credential
+        for credential in sorted(credentials, key=_provider_credential_priority_key)
+        if credential.id != selected.id
+    ]
+    return [selected, *rest]
+
+
+def _api_key_for_routed_credential(
+    *,
+    provider: Provider,
+    credential: ProviderCredential | None,
+) -> str:
+    if credential is None:
+        if provider.api_key_encrypted is None:
+            raise ProviderCredentialRequiredError
+        return decrypt(provider.api_key_encrypted)
+    return decrypt(credential.api_key_encrypted)
+
+
+async def _mark_provider_credential_failed(
+    *,
+    provider_credential: ProviderCredential,
+    error: ProviderUpstreamError,
+    db: AsyncSession,
+) -> None:
+    provider_credential.health_status = "invalid" if error.status_code in {401, 403} else "degraded"
+    provider_credential.last_validation_error = str(error.body)
+    await db.flush()
+
+
+def _should_try_next_credential(error: ProviderUpstreamError) -> bool:
+    return error.status_code in {401, 403, 408, 409, 429, 500, 502, 503, 504}
 
 
 def _key_prefix(api_key: str) -> str:

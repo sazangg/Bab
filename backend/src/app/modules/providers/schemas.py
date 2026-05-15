@@ -38,17 +38,26 @@ class UpdateProviderRequest(BaseModel):
     is_active: bool | None = None
 
 
+class ProviderCredentialRoutingPolicy(StrEnum):
+    priority = "priority"
+    round_robin = "round_robin"
+    least_recently_used = "least_recently_used"
+    health_based = "health_based"
+    weighted = "weighted"
+    fallback = "fallback"
+
+
 class CreateProviderCredentialRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     api_key: str = Field(min_length=1)
-    routing_policy: str = Field(default="priority", max_length=100)
+    routing_policy: ProviderCredentialRoutingPolicy = ProviderCredentialRoutingPolicy.priority
     priority: int = Field(default=100, ge=0)
 
 
 class UpdateProviderCredentialRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     api_key: str | None = Field(default=None, min_length=1)
-    routing_policy: str | None = Field(default=None, max_length=100)
+    routing_policy: ProviderCredentialRoutingPolicy | None = None
     priority: int | None = Field(default=None, ge=0)
     is_active: bool | None = None
 
