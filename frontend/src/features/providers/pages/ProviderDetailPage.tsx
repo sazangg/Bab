@@ -1,4 +1,5 @@
 import { ArrowLeft } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate, useParams } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
@@ -10,16 +11,26 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { useGetProviderApiV1ProvidersProviderIdGet } from "@/shared/api/generated/providers/providers";
+import {
+  useGetProviderApiV1ProvidersProviderIdGet,
+  useUpdateProviderApiV1ProvidersProviderIdPatch,
+} from "@/shared/api/generated/providers/providers";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
-import { ProviderResourcesPanel } from "@/features/providers/pages/ProvidersPage";
+import {
+  ProviderResourcesPanel,
+  ProviderRoutingPolicyField,
+} from "@/features/providers/pages/ProvidersPage";
 
 export function ProviderDetailPage() {
   const { providerId } = useParams();
+  const queryClient = useQueryClient();
   const providerQuery = useGetProviderApiV1ProvidersProviderIdGet(providerId ?? "", {
     query: { enabled: Boolean(providerId) },
+  });
+  const updateProvider = useUpdateProviderApiV1ProvidersProviderIdPatch({
+    mutation: { onSuccess: async () => queryClient.invalidateQueries() },
   });
   const provider = providerQuery.data?.status === 200 ? providerQuery.data.data : null;
 
@@ -86,6 +97,10 @@ export function ProviderDetailPage() {
         <CardContent className="grid gap-4 md:grid-cols-4">
           <ProviderSummaryFact label="Integration" value={provider.supported_integration} />
           <ProviderSummaryFact
+            label="Credential routing"
+            value={provider.credential_routing_policy.replaceAll("_", " ")}
+          />
+          <ProviderSummaryFact
             label="Request timeout"
             value={`${provider.request_timeout_seconds ?? 30}s`}
           />
@@ -100,6 +115,18 @@ export function ProviderDetailPage() {
           <ProviderSummaryFact
             label="Concurrency"
             value={provider.max_concurrent_requests?.toString() ?? "Default"}
+          />
+        </CardContent>
+        <CardContent>
+          <ProviderRoutingPolicyField
+            value={provider.credential_routing_policy}
+            disabled={updateProvider.isPending}
+            onValueChange={(value) =>
+              updateProvider.mutate({
+                providerId: provider.id,
+                data: { credential_routing_policy: value },
+              })
+            }
           />
         </CardContent>
       </Card>

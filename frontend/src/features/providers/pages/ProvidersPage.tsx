@@ -147,12 +147,36 @@ type RoutingPolicyValue = EditValues["credential_routing_policy"];
 const modelModalities = ["text", "vision", "embedding", "image", "audio"];
 const modelCapabilityOptions = ["chat", "embeddings", "vision", "tools", "json_mode", "streaming"];
 const routingPolicyOptions = [
-  { value: "priority", label: "Priority" },
-  { value: "round_robin", label: "Round robin" },
-  { value: "least_recently_used", label: "Least recently used" },
-  { value: "health_based", label: "Health based" },
-  { value: "weighted", label: "Weighted" },
-  { value: "fallback", label: "Fallback" },
+  {
+    value: "priority",
+    label: "Priority",
+    description: "Always use the active credential with the lowest priority number.",
+  },
+  {
+    value: "round_robin",
+    label: "Round robin",
+    description: "Rotate through active credentials by choosing the one used least recently.",
+  },
+  {
+    value: "least_recently_used",
+    label: "Least recently used",
+    description: "Prefer the active credential with the oldest last-used timestamp.",
+  },
+  {
+    value: "health_based",
+    label: "Health based",
+    description: "Prefer valid credentials before unchecked, degraded, or invalid credentials.",
+  },
+  {
+    value: "weighted",
+    label: "Weighted",
+    description: "Randomly select a credential, with lower priority numbers receiving more weight.",
+  },
+  {
+    value: "fallback",
+    label: "Fallback",
+    description: "Try credentials by priority and move to the next one on retryable upstream errors.",
+  },
 ] as const;
 
 const modelOfferingSchema = z.object({
@@ -224,6 +248,10 @@ function formatDateTime(value: string) {
 
 function formatRoutingPolicy(value: string) {
   return routingPolicyOptions.find((option) => option.value === value)?.label ?? value;
+}
+
+function describeRoutingPolicy(value: string) {
+  return routingPolicyOptions.find((option) => option.value === value)?.description ?? "";
 }
 
 function formatCapability(value: unknown) {
@@ -475,6 +503,18 @@ export function ProvidersPage() {
 
 export function ProviderResourcesPanel({ provider }: { provider: ProviderResponse }) {
   return <ProviderResourcesContent provider={provider} />;
+}
+
+export function ProviderRoutingPolicyField({
+  value,
+  onValueChange,
+  disabled,
+}: {
+  value: string;
+  onValueChange: (value: RoutingPolicyValue) => void;
+  disabled?: boolean;
+}) {
+  return <RoutingPolicyField value={value} onValueChange={onValueChange} disabled={disabled} />;
 }
 
 function ProviderCatalogRow({
@@ -1323,14 +1363,20 @@ function CreateProviderCredentialSheet({
 function RoutingPolicyField({
   value,
   onValueChange,
+  disabled = false,
 }: {
   value: string;
   onValueChange: (value: RoutingPolicyValue) => void;
+  disabled?: boolean;
 }) {
   return (
     <div className="space-y-1.5">
       <Label htmlFor="provider-key-routing-policy">Routing strategy</Label>
-      <Select value={value} onValueChange={(nextValue) => onValueChange(nextValue as RoutingPolicyValue)}>
+      <Select
+        value={value}
+        onValueChange={(nextValue) => onValueChange(nextValue as RoutingPolicyValue)}
+        disabled={disabled}
+      >
         <SelectTrigger id="provider-key-routing-policy">
           <SelectValue />
         </SelectTrigger>
@@ -1338,15 +1384,16 @@ function RoutingPolicyField({
           <SelectGroup>
             {routingPolicyOptions.map((option) => (
               <SelectItem key={option.value} value={option.value}>
-                {option.label}
+                <span className="flex flex-col gap-0.5">
+                  <span>{option.label}</span>
+                  <span className="text-xs text-muted-foreground">{option.description}</span>
+                </span>
               </SelectItem>
             ))}
           </SelectGroup>
         </SelectContent>
       </Select>
-      <p className="text-xs text-muted-foreground">
-        This provider-level strategy decides how active credentials are selected.
-      </p>
+      <p className="text-xs text-muted-foreground">{describeRoutingPolicy(value)}</p>
     </div>
   );
 }
