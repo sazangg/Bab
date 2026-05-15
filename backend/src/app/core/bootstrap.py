@@ -35,7 +35,16 @@ async def _sqlite_schema_is_stale(connection) -> bool:
     provider_column_names = {row[1] for row in providers_columns}
     if "display_name" not in provider_column_names:
         return True
-    if "credential_routing_policy" not in provider_column_names:
+        if "credential_routing_policy" not in provider_column_names:
+            return True
+    teams_columns = await connection.exec_driver_sql("PRAGMA table_info(teams)")
+    team_column_names = {row[1] for row in teams_columns}
+    if "updated_at" not in team_column_names:
+        return True
+
+    projects_columns = await connection.exec_driver_sql("PRAGMA table_info(projects)")
+    project_column_names = {row[1] for row in projects_columns}
+    if "team_id" not in project_column_names:
         return True
 
     provider_credentials = await connection.exec_driver_sql(
@@ -87,6 +96,7 @@ async def sync_default_workspace(db) -> None:
                 org_id=org.id,
                 name=settings.default_team_name,
                 slug=team_slug,
+                description=None,
             )
             db.add(team)
             await db.flush()

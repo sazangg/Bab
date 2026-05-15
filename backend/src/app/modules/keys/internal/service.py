@@ -43,20 +43,24 @@ from app.modules.keys.schemas import (
     VirtualKeyResponse,
 )
 from app.modules.providers import facade as providers_facade
+from app.modules.teams import facade as teams_facade
 
 logger = structlog.get_logger(__name__)
 
 
 async def create_project(
     *,
+    team_id: UUID,
     payload: CreateProjectRequest,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
 ) -> ProjectResponse:
     async with transaction(db):
+        await teams_facade.get_team(team_id=team_id, scope=scope, db=db)
         project = await repository.create_project(
             org_id=scope.org_id,
+            team_id=team_id,
             created_by=actor.id,
             name=payload.name,
             description=payload.description,
@@ -69,7 +73,7 @@ async def create_project(
                 event="project.created",
                 target_type="project",
                 target_id=project.id,
-                event_metadata={"name": project.name},
+                event_metadata={"name": project.name, "team_id": str(team_id)},
             ),
             db,
         )
@@ -80,6 +84,17 @@ async def create_project(
 
 async def list_projects(*, scope: Scope, db: AsyncSession) -> list[ProjectResponse]:
     projects = await repository.list_projects(org_id=scope.org_id, db=db)
+    return [_to_response(project) for project in projects]
+
+
+async def list_team_projects(
+    *,
+    team_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[ProjectResponse]:
+    await teams_facade.get_team(team_id=team_id, scope=scope, db=db)
+    projects = await repository.list_team_projects(org_id=scope.org_id, team_id=team_id, db=db)
     return [_to_response(project) for project in projects]
 
 

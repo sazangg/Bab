@@ -2,6 +2,7 @@ import { useMatch } from "react-router-dom";
 
 import { useListProjectsApiV1ProjectsGet } from "@/shared/api/generated/projects/projects";
 import { useListProvidersApiV1ProvidersGet } from "@/shared/api/generated/providers/providers";
+import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
 
 export type Breadcrumb = {
   label: string;
@@ -10,6 +11,8 @@ export type Breadcrumb = {
 
 export function useBreadcrumbs(): Breadcrumb[] {
   const overviewMatch = useMatch("/");
+  const teamsMatch = useMatch("/teams");
+  const teamDetailMatch = useMatch("/teams/:teamId");
   const projectsMatch = useMatch("/projects");
   const projectDetailMatch = useMatch("/projects/:projectId");
   const keyDetailMatch = useMatch("/projects/:projectId/keys/:keyId");
@@ -37,9 +40,23 @@ export function useBreadcrumbs(): Breadcrumb[] {
       ? (providersQuery.data.data.find((provider) => provider.id === providerId)?.name ??
         "Provider")
       : "Provider";
+  const teamId = teamDetailMatch?.params.teamId ?? null;
+  const teamsQuery = useListTeamsApiV1TeamsGet({
+    query: { enabled: Boolean(teamId) },
+  });
+  const teamName =
+    teamId && teamsQuery.data?.status === 200
+      ? (teamsQuery.data.data.find((team) => team.id === teamId)?.name ?? "Team")
+      : "Team";
 
   if (overviewMatch) {
     return [{ label: "Overview" }];
+  }
+  if (teamDetailMatch) {
+    return [{ label: "Teams", to: "/teams" }, { label: teamName }];
+  }
+  if (teamsMatch) {
+    return [{ label: "Teams" }];
   }
   if (keyDetailMatch) {
     return [

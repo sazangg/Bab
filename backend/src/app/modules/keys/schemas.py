@@ -20,6 +20,7 @@ class ProjectResponse(BaseModel):
 
     id: UUID
     org_id: UUID
+    team_id: UUID
     name: str
     description: str | None
     is_active: bool

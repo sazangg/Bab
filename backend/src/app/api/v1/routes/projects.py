@@ -16,7 +16,6 @@ from app.modules.keys.errors import (
 from app.modules.keys.schemas import (
     CreatedVirtualKeyResponse,
     CreateProjectAllocationRequest,
-    CreateProjectRequest,
     CreateVirtualKeyRequest,
     ProjectAllocationResponse,
     ProjectResponse,
@@ -42,16 +41,6 @@ async def list_projects(
     _: CurrentUser,
 ) -> list[ProjectResponse]:
     return await facade.list_projects(scope=scope, db=db)
-
-
-@router.post("", status_code=status.HTTP_201_CREATED)
-async def create_project(
-    payload: CreateProjectRequest,
-    actor: CurrentUser,
-    scope: RequestScope,
-    db: DatabaseSession,
-) -> ProjectResponse:
-    return await facade.create_project(payload=payload, actor=actor, scope=scope, db=db)
 
 
 @router.patch("/{project_id}")

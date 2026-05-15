@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope
-from app.modules.auth.internal.models import Organization
+from app.modules.auth.internal.models import Organization, Team
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys import facade as keys_facade
 from app.modules.keys.errors import AccessDeniedError
@@ -22,19 +22,24 @@ from app.modules.providers.schemas import CreateModelOfferingRequest, CreateProv
 async def _create_actor_scope(db_session: AsyncSession):
     org = Organization(name=f"Allocation {uuid4()}", slug=f"allocation-{uuid4()}")
     db_session.add(org)
+    await db_session.flush()
+    team = Team(org_id=org.id, name="Platform", slug=f"platform-{uuid4()}")
+    db_session.add(team)
     await db_session.commit()
     actor = AuthenticatedUser(
         id=uuid4(),
         org_id=org.id,
+        team_id=team.id,
         email="admin@example.com",
         role="super_admin",
     )
-    return actor, Scope(org_id=org.id)
+    return actor, Scope(org_id=org.id), team
 
 
 async def _create_project_provider_and_models(db_session: AsyncSession):
-    actor, scope = await _create_actor_scope(db_session)
+    actor, scope, team = await _create_actor_scope(db_session)
     project = await keys_facade.create_project(
+        team_id=team.id,
         payload=CreateProjectRequest(name="Console", description=None),
         actor=actor,
         scope=scope,

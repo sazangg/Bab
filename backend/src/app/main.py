@@ -13,6 +13,7 @@ from app.api.v1.routes.projects import router as projects_router
 from app.api.v1.routes.providers import router as providers_router
 from app.api.v1.routes.proxy import router as proxy_router
 from app.api.v1.routes.request_logs import router as request_logs_router
+from app.api.v1.routes.teams import router as teams_router
 from app.core.bootstrap import create_development_database, ensure_default_workspace
 from app.core.config import settings
 from app.core.logging import configure_logging
@@ -40,6 +41,7 @@ def create_app() -> FastAPI:
     app.include_router(providers_router, prefix="/api/v1")
     app.include_router(projects_router, prefix="/api/v1")
     app.include_router(request_logs_router, prefix="/api/v1")
+    app.include_router(teams_router, prefix="/api/v1")
     app.include_router(proxy_router)
     return app
 

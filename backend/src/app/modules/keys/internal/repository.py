@@ -14,12 +14,19 @@ from app.modules.keys.internal.models import (
 async def create_project(
     *,
     org_id: UUID,
+    team_id: UUID,
     created_by: UUID,
     name: str,
     description: str | None,
     db: AsyncSession,
 ) -> Project:
-    project = Project(org_id=org_id, created_by=created_by, name=name, description=description)
+    project = Project(
+        org_id=org_id,
+        team_id=team_id,
+        created_by=created_by,
+        name=name,
+        description=description,
+    )
     db.add(project)
     await db.flush()
     return project
@@ -28,6 +35,15 @@ async def create_project(
 async def list_projects(*, org_id: UUID, db: AsyncSession) -> list[Project]:
     result = await db.scalars(
         select(Project).where(Project.org_id == org_id).order_by(Project.name)
+    )
+    return list(result)
+
+
+async def list_team_projects(*, org_id: UUID, team_id: UUID, db: AsyncSession) -> list[Project]:
+    result = await db.scalars(
+        select(Project)
+        .where(Project.org_id == org_id, Project.team_id == team_id)
+        .order_by(Project.name)
     )
     return list(result)
 

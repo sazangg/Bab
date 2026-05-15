@@ -26,16 +26,32 @@ from app.modules.keys.schemas import (
 
 async def create_project(
     *,
+    team_id: UUID,
     payload: CreateProjectRequest,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
 ) -> ProjectResponse:
-    return await service.create_project(payload=payload, actor=actor, scope=scope, db=db)
+    return await service.create_project(
+        team_id=team_id,
+        payload=payload,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
 
 
 async def list_projects(*, scope: Scope, db: AsyncSession) -> list[ProjectResponse]:
     return await service.list_projects(scope=scope, db=db)
+
+
+async def list_team_projects(
+    *,
+    team_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[ProjectResponse]:
+    return await service.list_team_projects(team_id=team_id, scope=scope, db=db)
 
 
 async def update_project(

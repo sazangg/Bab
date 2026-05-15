@@ -25,7 +25,6 @@ import type {
 
 import type {
   CreateProjectAllocationRequest,
-  CreateProjectRequest,
   CreateVirtualKeyRequest,
   CreatedVirtualKeyResponse,
   HTTPValidationError,
@@ -154,96 +153,7 @@ export function useListProjectsApiV1ProjectsGet<TData = Awaited<ReturnType<typeo
 
 
 
-export type createProjectApiV1ProjectsPostResponse201 = {
-  data: ProjectResponse
-  status: 201
-}
-
-export type createProjectApiV1ProjectsPostResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type createProjectApiV1ProjectsPostResponseSuccess = (createProjectApiV1ProjectsPostResponse201) & {
-  headers: Headers;
-};
-export type createProjectApiV1ProjectsPostResponseError = (createProjectApiV1ProjectsPostResponse422) & {
-  headers: Headers;
-};
-
-export type createProjectApiV1ProjectsPostResponse = (createProjectApiV1ProjectsPostResponseSuccess | createProjectApiV1ProjectsPostResponseError)
-
-export const getCreateProjectApiV1ProjectsPostUrl = () => {
-
-
-
-
-  return `/api/v1/projects`
-}
-
-/**
- * @summary Create Project
- */
-export const createProjectApiV1ProjectsPost = async (createProjectRequest: CreateProjectRequest, options?: RequestInit): Promise<createProjectApiV1ProjectsPostResponse> => {
-
-  return apiMutator<createProjectApiV1ProjectsPostResponse>(getCreateProjectApiV1ProjectsPostUrl(),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(
-      createProjectRequest,)
-  }
-);}
-
-
-
-
-export const getCreateProjectApiV1ProjectsPostMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProjectApiV1ProjectsPost>>, TError,{data: CreateProjectRequest}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof createProjectApiV1ProjectsPost>>, TError,{data: CreateProjectRequest}, TContext> => {
-
-const mutationKey = ['createProjectApiV1ProjectsPost'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createProjectApiV1ProjectsPost>>, {data: CreateProjectRequest}> = (props) => {
-          const {data} = props ?? {};
-
-          return  createProjectApiV1ProjectsPost(data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type CreateProjectApiV1ProjectsPostMutationResult = NonNullable<Awaited<ReturnType<typeof createProjectApiV1ProjectsPost>>>
-    export type CreateProjectApiV1ProjectsPostMutationBody = CreateProjectRequest
-    export type CreateProjectApiV1ProjectsPostMutationError = HTTPValidationError
-
-    /**
- * @summary Create Project
- */
-export const useCreateProjectApiV1ProjectsPost = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProjectApiV1ProjectsPost>>, TError,{data: CreateProjectRequest}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof createProjectApiV1ProjectsPost>>,
-        TError,
-        {data: CreateProjectRequest},
-        TContext
-      > => {
-      return useMutation(getCreateProjectApiV1ProjectsPostMutationOptions(options), queryClient);
-    }
-    export type updateProjectApiV1ProjectsProjectIdPatchResponse200 = {
+export type updateProjectApiV1ProjectsProjectIdPatchResponse200 = {
   data: ProjectResponse
   status: 200
 }

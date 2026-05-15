@@ -16,6 +16,10 @@ class Project(Base):
         ForeignKey("organizations.id", ondelete="RESTRICT"),
         index=True,
     )
+    team_id: Mapped[UUID] = mapped_column(
+        ForeignKey("teams.id", ondelete="RESTRICT"),
+        index=True,
+    )
     created_by: Mapped[UUID] = mapped_column()
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(String(1000), nullable=True)

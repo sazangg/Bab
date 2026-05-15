@@ -5,11 +5,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface ProjectResponse {
+export interface TeamResponse {
   id: string;
   org_id: string;
-  team_id: string;
   name: string;
+  slug: string;
   description: string | null;
   is_active: boolean;
   created_at: string;
