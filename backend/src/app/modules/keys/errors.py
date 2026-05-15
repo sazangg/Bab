@@ -6,6 +6,10 @@ class ProjectProviderAccessNotFoundError(Exception):
     pass
 
 
+class ProjectAllocationNotFoundError(Exception):
+    pass
+
+
 class SubscriptionNotFoundError(Exception):
     pass
 

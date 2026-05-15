@@ -14,6 +14,7 @@ from app.modules.auth.internal.models import Organization, Team  # noqa: F401
 from app.modules.keys.internal.models import (  # noqa: F401
     ModelAlias,
     Project,
+    ProjectAllocation,
     ProjectProviderAccess,
     VirtualKey,
 )

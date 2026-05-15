@@ -66,6 +66,47 @@ class ProjectProviderAccessResponse(BaseModel):
     updated_at: datetime
 
 
+class CreateProjectAllocationRequest(BaseModel):
+    provider_id: UUID
+    model_offering_ids: list[UUID] | None = None
+
+    @field_validator("model_offering_ids")
+    @classmethod
+    def reject_empty_model_list(cls, value: list[UUID] | None) -> list[UUID] | None:
+        if value == []:
+            raise ValueError(
+                "model_offering_ids must be null for all models or contain at least one model"
+            )
+        return value
+
+
+class UpdateProjectAllocationRequest(BaseModel):
+    model_offering_ids: list[UUID] | None = None
+    is_active: bool | None = None
+
+    @field_validator("model_offering_ids")
+    @classmethod
+    def reject_empty_model_list(cls, value: list[UUID] | None) -> list[UUID] | None:
+        if value == []:
+            raise ValueError(
+                "model_offering_ids must be null for all models or contain at least one model"
+            )
+        return value
+
+
+class ProjectAllocationResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    org_id: UUID
+    project_id: UUID
+    provider_id: UUID
+    model_offering_ids: list[UUID] | None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
 class CreateSubscriptionRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=1000)

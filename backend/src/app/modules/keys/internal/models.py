@@ -60,6 +60,36 @@ class ProjectProviderAccess(Base):
     )
 
 
+class ProjectAllocation(Base):
+    __tablename__ = "project_allocations"
+    __table_args__ = (UniqueConstraint("project_id", "provider_id"),)
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        index=True,
+    )
+    project_id: Mapped[UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        index=True,
+    )
+    provider_id: Mapped[UUID] = mapped_column(
+        ForeignKey("providers.id", ondelete="CASCADE"),
+        index=True,
+    )
+    model_offering_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+
 class Subscription(Base):
     __tablename__ = "subscriptions"
 

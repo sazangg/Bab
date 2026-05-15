@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.keys.internal.models import (
     ModelAlias,
     Project,
+    ProjectAllocation,
     ProjectProviderAccess,
     ProjectSubscriptionAccess,
     Subscription,
@@ -96,6 +97,77 @@ async def get_provider_access(
 
 async def delete_provider_access(*, access: ProjectProviderAccess, db: AsyncSession) -> None:
     await db.delete(access)
+    await db.flush()
+
+
+async def upsert_project_allocation(
+    *,
+    org_id: UUID,
+    project_id: UUID,
+    provider_id: UUID,
+    model_offering_ids: list[str] | None,
+    db: AsyncSession,
+) -> ProjectAllocation:
+    allocation = await get_project_allocation(
+        org_id=org_id,
+        project_id=project_id,
+        provider_id=provider_id,
+        db=db,
+    )
+    if allocation is None:
+        allocation = ProjectAllocation(
+            org_id=org_id,
+            project_id=project_id,
+            provider_id=provider_id,
+            model_offering_ids=model_offering_ids,
+        )
+        db.add(allocation)
+    else:
+        allocation.model_offering_ids = model_offering_ids
+        allocation.is_active = True
+    await db.flush()
+    return allocation
+
+
+async def list_project_allocations(
+    *,
+    org_id: UUID,
+    project_id: UUID,
+    db: AsyncSession,
+) -> list[ProjectAllocation]:
+    result = await db.scalars(
+        select(ProjectAllocation)
+        .where(
+            ProjectAllocation.org_id == org_id,
+            ProjectAllocation.project_id == project_id,
+        )
+        .order_by(ProjectAllocation.created_at.desc())
+    )
+    return list(result)
+
+
+async def get_project_allocation(
+    *,
+    org_id: UUID,
+    project_id: UUID,
+    provider_id: UUID,
+    db: AsyncSession,
+) -> ProjectAllocation | None:
+    return await db.scalar(
+        select(ProjectAllocation).where(
+            ProjectAllocation.org_id == org_id,
+            ProjectAllocation.project_id == project_id,
+            ProjectAllocation.provider_id == provider_id,
+        )
+    )
+
+
+async def delete_project_allocation(
+    *,
+    allocation: ProjectAllocation,
+    db: AsyncSession,
+) -> None:
+    await db.delete(allocation)
     await db.flush()
 
 

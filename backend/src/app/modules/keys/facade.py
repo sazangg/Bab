@@ -9,12 +9,14 @@ from app.modules.keys.schemas import (
     AttachSubscriptionProviderKeyRequest,
     CreatedVirtualKeyResponse,
     CreateModelAliasRequest,
+    CreateProjectAllocationRequest,
     CreateProjectRequest,
     CreateSubscriptionRequest,
     CreateVirtualKeyRequest,
     GrantProjectProviderAccessRequest,
     GrantProjectSubscriptionAccessRequest,
     ModelAliasResponse,
+    ProjectAllocationResponse,
     ProjectProviderAccessResponse,
     ProjectResponse,
     ProjectSubscriptionAccessResponse,
@@ -25,6 +27,7 @@ from app.modules.keys.schemas import (
     SubscriptionProviderKeyResponse,
     SubscriptionResponse,
     UpdateModelAliasRequest,
+    UpdateProjectAllocationRequest,
     UpdateProjectProviderAccessRequest,
     UpdateProjectRequest,
     UpdateVirtualKeyRequest,
@@ -127,6 +130,68 @@ async def revoke_project_provider_access(
     db: AsyncSession,
 ) -> None:
     await service.revoke_project_provider_access(
+        project_id=project_id,
+        provider_id=provider_id,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def create_project_allocation(
+    *,
+    project_id: UUID,
+    payload: CreateProjectAllocationRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProjectAllocationResponse:
+    return await service.create_project_allocation(
+        project_id=project_id,
+        payload=payload,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def list_project_allocations(
+    *,
+    project_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[ProjectAllocationResponse]:
+    return await service.list_project_allocations(project_id=project_id, scope=scope, db=db)
+
+
+async def update_project_allocation(
+    *,
+    project_id: UUID,
+    provider_id: UUID,
+    payload: UpdateProjectAllocationRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProjectAllocationResponse:
+    return await service.update_project_allocation(
+        project_id=project_id,
+        provider_id=provider_id,
+        payload=payload,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def revoke_project_allocation(
+    *,
+    project_id: UUID,
+    provider_id: UUID,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> None:
+    await service.revoke_project_allocation(
         project_id=project_id,
         provider_id=provider_id,
         actor=actor,

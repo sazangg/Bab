@@ -24,13 +24,16 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  CreateProjectAllocationRequest,
   CreateProjectRequest,
   CreateVirtualKeyRequest,
   CreatedVirtualKeyResponse,
   GrantProjectProviderAccessRequest,
   HTTPValidationError,
+  ProjectAllocationResponse,
   ProjectProviderAccessResponse,
   ProjectResponse,
+  UpdateProjectAllocationRequest,
   UpdateProjectProviderAccessRequest,
   UpdateProjectRequest,
   UpdateVirtualKeyRequest,
@@ -629,6 +632,397 @@ export const useGrantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPo
         TContext
       > => {
       return useMutation(getGrantProjectProviderAccessApiV1ProjectsProjectIdProviderAccessPostMutationOptions(options), queryClient);
+    }
+    export type listProjectAllocationsApiV1ProjectsProjectIdAllocationsGetResponse200 = {
+  data: ProjectAllocationResponse[]
+  status: 200
+}
+
+export type listProjectAllocationsApiV1ProjectsProjectIdAllocationsGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type listProjectAllocationsApiV1ProjectsProjectIdAllocationsGetResponseSuccess = (listProjectAllocationsApiV1ProjectsProjectIdAllocationsGetResponse200) & {
+  headers: Headers;
+};
+export type listProjectAllocationsApiV1ProjectsProjectIdAllocationsGetResponseError = (listProjectAllocationsApiV1ProjectsProjectIdAllocationsGetResponse422) & {
+  headers: Headers;
+};
+
+export type listProjectAllocationsApiV1ProjectsProjectIdAllocationsGetResponse = (listProjectAllocationsApiV1ProjectsProjectIdAllocationsGetResponseSuccess | listProjectAllocationsApiV1ProjectsProjectIdAllocationsGetResponseError)
+
+export const getListProjectAllocationsApiV1ProjectsProjectIdAllocationsGetUrl = (projectId: string,) => {
+
+
+
+
+  return `/api/v1/projects/${projectId}/allocations`
+}
+
+/**
+ * @summary List Project Allocations
+ */
+export const listProjectAllocationsApiV1ProjectsProjectIdAllocationsGet = async (projectId: string, options?: RequestInit): Promise<listProjectAllocationsApiV1ProjectsProjectIdAllocationsGetResponse> => {
+
+  return apiMutator<listProjectAllocationsApiV1ProjectsProjectIdAllocationsGetResponse>(getListProjectAllocationsApiV1ProjectsProjectIdAllocationsGetUrl(projectId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListProjectAllocationsApiV1ProjectsProjectIdAllocationsGetQueryKey = (projectId: string,) => {
+    return [
+    `/api/v1/projects/${projectId}/allocations`
+    ] as const;
+    }
+
+
+export const getListProjectAllocationsApiV1ProjectsProjectIdAllocationsGetQueryOptions = <TData = Awaited<ReturnType<typeof listProjectAllocationsApiV1ProjectsProjectIdAllocationsGet>>, TError = HTTPValidationError>(projectId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProjectAllocationsApiV1ProjectsProjectIdAllocationsGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListProjectAllocationsApiV1ProjectsProjectIdAllocationsGetQueryKey(projectId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listProjectAllocationsApiV1ProjectsProjectIdAllocationsGet>>> = ({ signal }) => listProjectAllocationsApiV1ProjectsProjectIdAllocationsGet(projectId, { signal });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(projectId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listProjectAllocationsApiV1ProjectsProjectIdAllocationsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListProjectAllocationsApiV1ProjectsProjectIdAllocationsGetQueryResult = NonNullable<Awaited<ReturnType<typeof listProjectAllocationsApiV1ProjectsProjectIdAllocationsGet>>>
+export type ListProjectAllocationsApiV1ProjectsProjectIdAllocationsGetQueryError = HTTPValidationError
+
+
+export function useListProjectAllocationsApiV1ProjectsProjectIdAllocationsGet<TData = Awaited<ReturnType<typeof listProjectAllocationsApiV1ProjectsProjectIdAllocationsGet>>, TError = HTTPValidationError>(
+ projectId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProjectAllocationsApiV1ProjectsProjectIdAllocationsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listProjectAllocationsApiV1ProjectsProjectIdAllocationsGet>>,
+          TError,
+          Awaited<ReturnType<typeof listProjectAllocationsApiV1ProjectsProjectIdAllocationsGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListProjectAllocationsApiV1ProjectsProjectIdAllocationsGet<TData = Awaited<ReturnType<typeof listProjectAllocationsApiV1ProjectsProjectIdAllocationsGet>>, TError = HTTPValidationError>(
+ projectId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProjectAllocationsApiV1ProjectsProjectIdAllocationsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listProjectAllocationsApiV1ProjectsProjectIdAllocationsGet>>,
+          TError,
+          Awaited<ReturnType<typeof listProjectAllocationsApiV1ProjectsProjectIdAllocationsGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListProjectAllocationsApiV1ProjectsProjectIdAllocationsGet<TData = Awaited<ReturnType<typeof listProjectAllocationsApiV1ProjectsProjectIdAllocationsGet>>, TError = HTTPValidationError>(
+ projectId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProjectAllocationsApiV1ProjectsProjectIdAllocationsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List Project Allocations
+ */
+
+export function useListProjectAllocationsApiV1ProjectsProjectIdAllocationsGet<TData = Awaited<ReturnType<typeof listProjectAllocationsApiV1ProjectsProjectIdAllocationsGet>>, TError = HTTPValidationError>(
+ projectId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProjectAllocationsApiV1ProjectsProjectIdAllocationsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListProjectAllocationsApiV1ProjectsProjectIdAllocationsGetQueryOptions(projectId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export type createProjectAllocationApiV1ProjectsProjectIdAllocationsPostResponse201 = {
+  data: ProjectAllocationResponse
+  status: 201
+}
+
+export type createProjectAllocationApiV1ProjectsProjectIdAllocationsPostResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type createProjectAllocationApiV1ProjectsProjectIdAllocationsPostResponseSuccess = (createProjectAllocationApiV1ProjectsProjectIdAllocationsPostResponse201) & {
+  headers: Headers;
+};
+export type createProjectAllocationApiV1ProjectsProjectIdAllocationsPostResponseError = (createProjectAllocationApiV1ProjectsProjectIdAllocationsPostResponse422) & {
+  headers: Headers;
+};
+
+export type createProjectAllocationApiV1ProjectsProjectIdAllocationsPostResponse = (createProjectAllocationApiV1ProjectsProjectIdAllocationsPostResponseSuccess | createProjectAllocationApiV1ProjectsProjectIdAllocationsPostResponseError)
+
+export const getCreateProjectAllocationApiV1ProjectsProjectIdAllocationsPostUrl = (projectId: string,) => {
+
+
+
+
+  return `/api/v1/projects/${projectId}/allocations`
+}
+
+/**
+ * @summary Create Project Allocation
+ */
+export const createProjectAllocationApiV1ProjectsProjectIdAllocationsPost = async (projectId: string,
+    createProjectAllocationRequest: CreateProjectAllocationRequest, options?: RequestInit): Promise<createProjectAllocationApiV1ProjectsProjectIdAllocationsPostResponse> => {
+
+  return apiMutator<createProjectAllocationApiV1ProjectsProjectIdAllocationsPostResponse>(getCreateProjectAllocationApiV1ProjectsProjectIdAllocationsPostUrl(projectId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      createProjectAllocationRequest,)
+  }
+);}
+
+
+
+
+export const getCreateProjectAllocationApiV1ProjectsProjectIdAllocationsPostMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProjectAllocationApiV1ProjectsProjectIdAllocationsPost>>, TError,{projectId: string;data: CreateProjectAllocationRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof createProjectAllocationApiV1ProjectsProjectIdAllocationsPost>>, TError,{projectId: string;data: CreateProjectAllocationRequest}, TContext> => {
+
+const mutationKey = ['createProjectAllocationApiV1ProjectsProjectIdAllocationsPost'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createProjectAllocationApiV1ProjectsProjectIdAllocationsPost>>, {projectId: string;data: CreateProjectAllocationRequest}> = (props) => {
+          const {projectId,data} = props ?? {};
+
+          return  createProjectAllocationApiV1ProjectsProjectIdAllocationsPost(projectId,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateProjectAllocationApiV1ProjectsProjectIdAllocationsPostMutationResult = NonNullable<Awaited<ReturnType<typeof createProjectAllocationApiV1ProjectsProjectIdAllocationsPost>>>
+    export type CreateProjectAllocationApiV1ProjectsProjectIdAllocationsPostMutationBody = CreateProjectAllocationRequest
+    export type CreateProjectAllocationApiV1ProjectsProjectIdAllocationsPostMutationError = HTTPValidationError
+
+    /**
+ * @summary Create Project Allocation
+ */
+export const useCreateProjectAllocationApiV1ProjectsProjectIdAllocationsPost = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProjectAllocationApiV1ProjectsProjectIdAllocationsPost>>, TError,{projectId: string;data: CreateProjectAllocationRequest}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createProjectAllocationApiV1ProjectsProjectIdAllocationsPost>>,
+        TError,
+        {projectId: string;data: CreateProjectAllocationRequest},
+        TContext
+      > => {
+      return useMutation(getCreateProjectAllocationApiV1ProjectsProjectIdAllocationsPostMutationOptions(options), queryClient);
+    }
+    export type updateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatchResponse200 = {
+  data: ProjectAllocationResponse
+  status: 200
+}
+
+export type updateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatchResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type updateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatchResponseSuccess = (updateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatchResponse200) & {
+  headers: Headers;
+};
+export type updateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatchResponseError = (updateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatchResponse422) & {
+  headers: Headers;
+};
+
+export type updateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatchResponse = (updateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatchResponseSuccess | updateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatchResponseError)
+
+export const getUpdateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatchUrl = (projectId: string,
+    providerId: string,) => {
+
+
+
+
+  return `/api/v1/projects/${projectId}/allocations/${providerId}`
+}
+
+/**
+ * @summary Update Project Allocation
+ */
+export const updateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatch = async (projectId: string,
+    providerId: string,
+    updateProjectAllocationRequest: UpdateProjectAllocationRequest, options?: RequestInit): Promise<updateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatchResponse> => {
+
+  return apiMutator<updateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatchResponse>(getUpdateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatchUrl(projectId,providerId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateProjectAllocationRequest,)
+  }
+);}
+
+
+
+
+export const getUpdateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatchMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatch>>, TError,{projectId: string;providerId: string;data: UpdateProjectAllocationRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof updateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatch>>, TError,{projectId: string;providerId: string;data: UpdateProjectAllocationRequest}, TContext> => {
+
+const mutationKey = ['updateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatch'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatch>>, {projectId: string;providerId: string;data: UpdateProjectAllocationRequest}> = (props) => {
+          const {projectId,providerId,data} = props ?? {};
+
+          return  updateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatch(projectId,providerId,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatchMutationResult = NonNullable<Awaited<ReturnType<typeof updateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatch>>>
+    export type UpdateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatchMutationBody = UpdateProjectAllocationRequest
+    export type UpdateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatchMutationError = HTTPValidationError
+
+    /**
+ * @summary Update Project Allocation
+ */
+export const useUpdateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatch = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatch>>, TError,{projectId: string;providerId: string;data: UpdateProjectAllocationRequest}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatch>>,
+        TError,
+        {projectId: string;providerId: string;data: UpdateProjectAllocationRequest},
+        TContext
+      > => {
+      return useMutation(getUpdateProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdPatchMutationOptions(options), queryClient);
+    }
+    export type revokeProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdDeleteResponse204 = {
+  data: void
+  status: 204
+}
+
+export type revokeProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdDeleteResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type revokeProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdDeleteResponseSuccess = (revokeProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdDeleteResponse204) & {
+  headers: Headers;
+};
+export type revokeProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdDeleteResponseError = (revokeProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdDeleteResponse422) & {
+  headers: Headers;
+};
+
+export type revokeProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdDeleteResponse = (revokeProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdDeleteResponseSuccess | revokeProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdDeleteResponseError)
+
+export const getRevokeProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdDeleteUrl = (projectId: string,
+    providerId: string,) => {
+
+
+
+
+  return `/api/v1/projects/${projectId}/allocations/${providerId}`
+}
+
+/**
+ * @summary Revoke Project Allocation
+ */
+export const revokeProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdDelete = async (projectId: string,
+    providerId: string, options?: RequestInit): Promise<revokeProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdDeleteResponse> => {
+
+  return apiMutator<revokeProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdDeleteResponse>(getRevokeProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdDeleteUrl(projectId,providerId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getRevokeProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdDeleteMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdDelete>>, TError,{projectId: string;providerId: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof revokeProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdDelete>>, TError,{projectId: string;providerId: string}, TContext> => {
+
+const mutationKey = ['revokeProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdDelete'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokeProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdDelete>>, {projectId: string;providerId: string}> = (props) => {
+          const {projectId,providerId} = props ?? {};
+
+          return  revokeProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdDelete(projectId,providerId,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokeProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof revokeProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdDelete>>>
+
+    export type RevokeProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdDeleteMutationError = HTTPValidationError
+
+    /**
+ * @summary Revoke Project Allocation
+ */
+export const useRevokeProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdDelete = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdDelete>>, TError,{projectId: string;providerId: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof revokeProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdDelete>>,
+        TError,
+        {projectId: string;providerId: string},
+        TContext
+      > => {
+      return useMutation(getRevokeProjectAllocationApiV1ProjectsProjectIdAllocationsProviderIdDeleteMutationOptions(options), queryClient);
     }
     export type updateProjectProviderAccessApiV1ProjectsProjectIdProviderAccessProviderIdPatchResponse200 = {
   data: ProjectProviderAccessResponse

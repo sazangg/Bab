@@ -9,17 +9,21 @@ from app.core.database import Scope, get_db
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys import facade
 from app.modules.keys.errors import (
+    ProjectAllocationNotFoundError,
     ProjectNotFoundError,
     ProjectProviderAccessNotFoundError,
     VirtualKeyNotFoundError,
 )
 from app.modules.keys.schemas import (
     CreatedVirtualKeyResponse,
+    CreateProjectAllocationRequest,
     CreateProjectRequest,
     CreateVirtualKeyRequest,
     GrantProjectProviderAccessRequest,
+    ProjectAllocationResponse,
     ProjectProviderAccessResponse,
     ProjectResponse,
+    UpdateProjectAllocationRequest,
     UpdateProjectProviderAccessRequest,
     UpdateProjectRequest,
     UpdateVirtualKeyRequest,
@@ -107,6 +111,92 @@ async def grant_project_provider_access(
         raise HTTPException(status_code=404, detail="project not found") from exc
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc
+
+
+@router.get("/{project_id}/allocations")
+async def list_project_allocations(
+    project_id: UUID,
+    scope: RequestScope,
+    db: DatabaseSession,
+    _: CurrentUser,
+) -> list[ProjectAllocationResponse]:
+    try:
+        return await facade.list_project_allocations(project_id=project_id, scope=scope, db=db)
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+
+
+@router.post("/{project_id}/allocations", status_code=status.HTTP_201_CREATED)
+async def create_project_allocation(
+    project_id: UUID,
+    payload: CreateProjectAllocationRequest,
+    actor: ProjectAccessAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> ProjectAllocationResponse:
+    try:
+        return await facade.create_project_allocation(
+            project_id=project_id,
+            payload=payload,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="provider not found") from exc
+
+
+@router.patch("/{project_id}/allocations/{provider_id}")
+async def update_project_allocation(
+    project_id: UUID,
+    provider_id: UUID,
+    payload: UpdateProjectAllocationRequest,
+    actor: ProjectAccessAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> ProjectAllocationResponse:
+    try:
+        return await facade.update_project_allocation(
+            project_id=project_id,
+            provider_id=provider_id,
+            payload=payload,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+    except ProjectAllocationNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project allocation not found") from exc
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="provider not found") from exc
+
+
+@router.delete(
+    "/{project_id}/allocations/{provider_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def revoke_project_allocation(
+    project_id: UUID,
+    provider_id: UUID,
+    actor: ProjectAccessAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> None:
+    try:
+        await facade.revoke_project_allocation(
+            project_id=project_id,
+            provider_id=provider_id,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+    except ProjectAllocationNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project allocation not found") from exc
 
 
 @router.patch("/{project_id}/provider-access/{provider_id}")
