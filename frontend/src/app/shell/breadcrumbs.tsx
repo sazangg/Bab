@@ -10,7 +10,7 @@ export type Breadcrumb = {
 };
 
 export function useBreadcrumbs(): Breadcrumb[] {
-  const overviewMatch = useMatch("/");
+  const homeMatch = useMatch("/");
   const teamsMatch = useMatch("/teams");
   const teamDetailMatch = useMatch("/teams/:teamId");
   const projectsMatch = useMatch("/projects");
@@ -18,19 +18,23 @@ export function useBreadcrumbs(): Breadcrumb[] {
   const keyDetailMatch = useMatch("/projects/:projectId/keys/:keyId");
   const providersMatch = useMatch("/providers");
   const providerDetailMatch = useMatch("/providers/:providerId");
-  const logsMatch = useMatch("/logs");
-  const auditMatch = useMatch("/audit");
+  const usageMatch = useMatch("/usage");
+  const activityMatch = useMatch("/activity");
   const settingsMatch = useMatch("/settings");
+  const allocationsMatch = useMatch("/allocations");
+  const guardrailsMatch = useMatch("/guardrails");
+  const designSystemMatch = useMatch("/design-system");
 
   const projectId =
     projectDetailMatch?.params.projectId ?? keyDetailMatch?.params.projectId ?? null;
   const projectsQuery = useListProjectsApiV1ProjectsGet({
     query: { enabled: Boolean(projectId) },
   });
-  const projectName =
+  const activeProject =
     projectId && projectsQuery.data?.status === 200
-      ? (projectsQuery.data.data.find((project) => project.id === projectId)?.name ?? "Project")
-      : "Project";
+      ? projectsQuery.data.data.find((project) => project.id === projectId)
+      : undefined;
+  const projectName = activeProject?.name ?? "Project";
   const providerId = providerDetailMatch?.params.providerId ?? null;
   const providersQuery = useListProvidersApiV1ProvidersGet({
     query: { enabled: Boolean(providerId) },
@@ -40,7 +44,7 @@ export function useBreadcrumbs(): Breadcrumb[] {
       ? (providersQuery.data.data.find((provider) => provider.id === providerId)?.name ??
         "Provider")
       : "Provider";
-  const teamId = teamDetailMatch?.params.teamId ?? null;
+  const teamId = teamDetailMatch?.params.teamId ?? activeProject?.team_id ?? null;
   const teamsQuery = useListTeamsApiV1TeamsGet({
     query: { enabled: Boolean(teamId) },
   });
@@ -48,9 +52,10 @@ export function useBreadcrumbs(): Breadcrumb[] {
     teamId && teamsQuery.data?.status === 200
       ? (teamsQuery.data.data.find((team) => team.id === teamId)?.name ?? "Team")
       : "Team";
+  const projectTeamId = activeProject?.team_id ?? null;
 
-  if (overviewMatch) {
-    return [{ label: "Overview" }];
+  if (homeMatch) {
+    return [{ label: "Home" }];
   }
   if (teamDetailMatch) {
     return [{ label: "Teams", to: "/teams" }, { label: teamName }];
@@ -60,13 +65,26 @@ export function useBreadcrumbs(): Breadcrumb[] {
   }
   if (keyDetailMatch) {
     return [
-      { label: "Projects", to: "/projects" },
+      ...(projectTeamId
+        ? [
+            { label: "Teams", to: "/teams" },
+            { label: teamName, to: `/teams/${projectTeamId}` },
+          ]
+        : [{ label: "Projects", to: "/projects" }]),
       { label: projectName, to: `/projects/${keyDetailMatch.params.projectId}` },
       { label: "Key" },
     ];
   }
   if (projectDetailMatch) {
-    return [{ label: "Projects", to: "/projects" }, { label: projectName }];
+    return [
+      ...(projectTeamId
+        ? [
+            { label: "Teams", to: "/teams" },
+            { label: teamName, to: `/teams/${projectTeamId}` },
+          ]
+        : [{ label: "Projects", to: "/projects" }]),
+      { label: projectName },
+    ];
   }
   if (projectsMatch) {
     return [{ label: "Projects" }];
@@ -77,14 +95,23 @@ export function useBreadcrumbs(): Breadcrumb[] {
   if (providerDetailMatch) {
     return [{ label: "Providers", to: "/providers" }, { label: providerName }];
   }
-  if (logsMatch) {
-    return [{ label: "Request logs" }];
+  if (usageMatch) {
+    return [{ label: "Usage" }];
   }
-  if (auditMatch) {
-    return [{ label: "Audit" }];
+  if (activityMatch) {
+    return [{ label: "Activity" }];
   }
   if (settingsMatch) {
     return [{ label: "Settings" }];
+  }
+  if (allocationsMatch) {
+    return [{ label: "Allocations" }];
+  }
+  if (guardrailsMatch) {
+    return [{ label: "Guardrails" }];
+  }
+  if (designSystemMatch) {
+    return [{ label: "Design system" }];
   }
   return [{ label: "Bab" }];
 }

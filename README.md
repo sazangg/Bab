@@ -1,7 +1,10 @@
 # Bab
 
-Bab is a self-hosted OpenAI-compatible LLM gateway. The local development setup runs as
-two separate apps:
+Bab is a self-hosted, OpenAI-compatible AI gateway for business teams. It centralizes provider
+credentials, groups them into credential pools, grants access through allocations, and records
+append-only usage for proxy attribution.
+
+The local development setup runs as two separate apps:
 
 - FastAPI backend on `http://127.0.0.1:8000`
 - Vite React frontend on `http://127.0.0.1:5173`
@@ -30,6 +33,9 @@ Generate a Fernet key:
 uv run --project backend python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
+In `BAB_ENVIRONMENT=development`, the backend creates local SQLite tables on startup. This is a
+temporary development bootstrap until migrations are wired.
+
 ## Run Locally
 
 Use two terminals:
@@ -39,11 +45,18 @@ Use two terminals:
 ./scripts/dev-frontend.ps1
 ```
 
-Then open `http://127.0.0.1:5173`. On a fresh local database, the app redirects to
-`/setup` to create the first admin.
+Then open `http://127.0.0.1:5173` and sign in with the development credentials configured for the
+local environment.
 
-In `BAB_ENVIRONMENT=development`, the backend creates local SQLite tables on startup.
-This is only a temporary development bootstrap until Alembic migrations are wired.
+## Current Product Surface
+
+- Providers define upstream OpenAI-compatible endpoints and model offerings.
+- Credential pools group provider credentials for routing.
+- Teams own projects.
+- Allocations grant projects access to provider pools and model offerings.
+- Virtual keys are issued per project and resolve through allocations.
+- Proxy requests append usage records with the resolved org, team, project, allocation, pool,
+  provider, credential, and model chain.
 
 ## Checks
 
@@ -61,17 +74,19 @@ Smoke check local servers:
 ./scripts/smoke-local.ps1
 ```
 
-## Manual Provider Smoke
+## Manual Proxy Smoke
 
 1. Start both apps.
-2. Complete first admin setup.
+2. Sign in locally.
 3. Create an OpenAI-compatible provider with:
    - Base URL like `https://api.openai.com/v1`
    - A real provider API key
-4. Create a project.
-5. Grant that project access to the provider and one model.
-6. Create a virtual key for the project.
-7. Send a non-streaming request to Bab:
+4. Create or select a credential pool for that provider.
+5. Register or sync a model offering.
+6. Create a team and project.
+7. Create a project allocation that points to the provider pool and model offering.
+8. Create a virtual key for the project allocation.
+9. Send a non-streaming request to Bab:
 
 ```powershell
 $body = @{
@@ -87,4 +102,4 @@ Invoke-RestMethod `
   -Body $body
 ```
 
-Request logs and analytics should update in the frontend.
+The backend should route through the allocation and append a usage record.

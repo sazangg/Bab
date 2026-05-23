@@ -1,23 +1,28 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ArrowLeft, Gauge, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { z } from "zod";
 
-import { useGetKeyUsageApiV1AnalyticsKeysVirtualKeyIdGet } from "@/shared/api/generated/analytics/analytics";
 import {
   useGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet,
+  useGetVirtualKeyUsageApiV1ProjectsProjectIdKeysKeyIdUsageGet,
   useListProjectAllocationsApiV1ProjectsProjectIdAllocationsGet,
   useListProjectsApiV1ProjectsGet,
   useRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete,
   useUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch,
 } from "@/shared/api/generated/projects/projects";
-import { useListProvidersApiV1ProvidersGet } from "@/shared/api/generated/providers/providers";
-import type { VirtualKeyRestriction } from "@/shared/api/generated/schemas";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   Dialog,
   DialogClose,
@@ -42,22 +47,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { PageHeader } from "@/shared/components/PageHeader";
-import { HttpStatusBadge, StatusBadge } from "@/shared/components/StatusBadge";
+import { StatusBadge } from "@/shared/components/StatusBadge";
+import type { UsageBreakdownRow } from "@/shared/api/generated/schemas";
 
 const editSchema = z.object({
   name: z.string().min(1).max(255),
   expires_at: z.string().optional(),
-  provider_id: z.string().optional(),
   allowed_models: z.string().optional(),
+  allocation_mode: z.enum(["inherited", "custom"]),
+  custom_allocation_id: z.string().optional(),
 });
 
 type EditValues = z.infer<typeof editSchema>;
@@ -70,7 +69,6 @@ export function KeyDetailPage() {
   const [revokeOpen, setRevokeOpen] = useState(false);
 
   const projectsQuery = useListProjectsApiV1ProjectsGet();
-  const providersQuery = useListProvidersApiV1ProvidersGet();
   const keyQuery = useGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet(projectId, keyId, {
     query: { enabled: Boolean(projectId && keyId) },
   });
@@ -78,20 +76,26 @@ export function KeyDetailPage() {
     projectId,
     { query: { enabled: Boolean(projectId) } },
   );
-  const usageQuery = useGetKeyUsageApiV1AnalyticsKeysVirtualKeyIdGet(
+  const usageQuery = useGetVirtualKeyUsageApiV1ProjectsProjectIdKeysKeyIdUsageGet(
+    projectId,
     keyId,
-    { days: 7, recent_limit: 20 },
-    { query: { enabled: Boolean(keyId) } },
+    { query: { enabled: Boolean(projectId && keyId) } },
   );
 
   const project =
     projectsQuery.data?.status === 200
       ? projectsQuery.data.data.find((p) => p.id === projectId)
       : undefined;
-  const providers = providersQuery.data?.status === 200 ? providersQuery.data.data : [];
   const key = keyQuery.data?.status === 200 ? keyQuery.data.data : undefined;
-  const usage = usageQuery.data?.status === 200 ? usageQuery.data.data : null;
   const allocations = allocationsQuery.data?.status === 200 ? allocationsQuery.data.data : [];
+  const allocation = allocations.find((item) => item.id === key?.allocation_id);
+  const customAllocation = allocations.find((item) => item.id === key?.custom_allocation_id);
+  const activeAllocations = allocations.filter((item) => item.is_active);
+  const usage = usageQuery.data?.status === 200 ? usageQuery.data.data : undefined;
+  const allocationModelOfferings = useMemo(
+    () => allocation?.offerings.map((offering) => offering.model_offering_id) ?? [],
+    [allocation],
+  );
 
   const updateMutation = useUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch({
     mutation: {
@@ -113,18 +117,25 @@ export function KeyDetailPage() {
 
   const form = useForm<EditValues>({
     resolver: zodResolver(editSchema),
-    defaultValues: { name: "", expires_at: "", provider_id: "", allowed_models: "" },
+    defaultValues: {
+      name: "",
+      expires_at: "",
+      allowed_models: "",
+      allocation_mode: "inherited",
+      custom_allocation_id: "",
+    },
   });
-  const selectedProviderId = useWatch({ control: form.control, name: "provider_id" });
+  const allocationMode = useWatch({ control: form.control, name: "allocation_mode" });
+  const customAllocationId = useWatch({ control: form.control, name: "custom_allocation_id" });
 
   useEffect(() => {
     if (key && editOpen) {
-      const firstRestriction = key.restrictions?.[0];
       form.reset({
         name: key.name,
         expires_at: key.expires_at ? toLocalInput(key.expires_at) : "",
-        provider_id: firstRestriction?.provider_id ?? "",
-        allowed_models: firstRestriction?.allowed_models?.join(", ") ?? "",
+        allowed_models: key.allowed_models?.join(", ") ?? "",
+        allocation_mode: key.allocation_mode === "custom" ? "custom" : "inherited",
+        custom_allocation_id: key.custom_allocation_id ?? "",
       });
     }
   }, [editOpen, key, form]);
@@ -157,13 +168,16 @@ export function KeyDetailPage() {
       : ("active" as const);
 
   return (
-    <>
+    <div className="flex flex-col gap-6">
       <PageHeader
         title={key.name}
         description={`Project: ${project.name}`}
         actions={
-          <>
-            <StatusBadge variant={status}>{status[0].toUpperCase() + status.slice(1)}</StatusBadge>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setEditOpen(true)}>
+              <Pencil />
+              Edit key
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="icon" aria-label="Key actions">
@@ -171,10 +185,6 @@ export function KeyDetailPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onSelect={() => setEditOpen(true)}>
-                  <Pencil className="mr-2 size-4" />
-                  Edit key
-                </DropdownMenuItem>
                 <DropdownMenuItem
                   onSelect={() => setRevokeOpen(true)}
                   disabled={Boolean(key.revoked_at)}
@@ -185,109 +195,54 @@ export function KeyDetailPage() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          </>
+          </div>
         }
       />
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <KeyMetric label="Prefix" value={key.key_prefix} mono />
-        <KeyMetric
-          label="Expires"
-          value={key.expires_at ? new Date(key.expires_at).toLocaleString() : "Never"}
-        />
-        <KeyMetric label="Requests (7d)" value={usage?.totals.request_count ?? 0} />
-        <KeyMetric label="Tokens (7d)" value={usage?.totals.total_tokens ?? 0} />
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Key summary</CardTitle>
+          <CardDescription className="font-mono text-xs">{key.key_prefix}</CardDescription>
+          <CardAction>
+            <StatusBadge variant={status}>{status[0].toUpperCase() + status.slice(1)}</StatusBadge>
+          </CardAction>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-4">
+          <Fact
+            label="Expires"
+            value={key.expires_at ? new Date(key.expires_at).toLocaleString() : "Never"}
+          />
+          <Fact label="Allocation" value={allocation?.name ?? key.allocation_id} />
+          <Fact label="Policy" value={key.allocation_mode === "custom" ? "Custom" : "Inherited"} />
+          <Fact label="Allowed models" value={formatModels(key.allowed_models)} />
+          <Fact label="Created" value={new Date(key.created_at).toLocaleString()} />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Restrictions</CardTitle>
+          <CardTitle>Allocation scope</CardTitle>
           <CardDescription>
-            Active restrictions narrow this key below the project's access.
+            This key inherits the project or team default unless a custom allocation override is
+            set.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          {!key.restrictions || key.restrictions.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No restrictions. Inherits all access from project: {accessSummary(allocations.length)}
-              .
-            </p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Provider</TableHead>
-                  <TableHead>Allowed models</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {key.restrictions.map((restriction: VirtualKeyRestriction) => (
-                  <TableRow key={restriction.provider_id}>
-                    <TableCell>
-                      {providers.find((p) => p.id === restriction.provider_id)?.name ??
-                        restriction.provider_id}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {restriction.allowed_models?.join(", ") ?? "All models"}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
+        <CardContent className="grid gap-4 md:grid-cols-3">
+          <Fact label="Effective allocation" value={allocation?.name ?? "Unknown allocation"} />
+          <Fact label="Custom override" value={customAllocation?.name ?? "None"} />
+          <Fact label="Model offerings" value={formatModels(allocationModelOfferings)} />
+          <Fact label="Key model subset" value={formatModels(key.allowed_models)} />
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent requests</CardTitle>
-          <CardDescription>Last 20 calls made with this key.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Time</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Model</TableHead>
-                <TableHead className="text-right">Tokens</TableHead>
-                <TableHead className="text-right">Latency</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(usage?.recent_requests ?? []).map((req) => (
-                <TableRow key={req.id}>
-                  <TableCell className="text-muted-foreground tabular-nums">
-                    {new Date(req.created_at).toLocaleString()}
-                  </TableCell>
-                  <TableCell>
-                    <HttpStatusBadge status={req.http_status} />
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">{req.requested_model}</TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {req.total_tokens ?? "—"}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">{req.latency_ms} ms</TableCell>
-                </TableRow>
-              ))}
-              {usage && usage.recent_requests.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground">
-                    No requests with this key yet.
-                  </TableCell>
-                </TableRow>
-              ) : null}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      <KeyUsageCard usage={usage} />
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit key</DialogTitle>
             <DialogDescription>
-              Restrictions can only narrow the project provider access.
+              A key can narrow the selected allocation by allowed model names.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -300,14 +255,11 @@ export function KeyDetailPage() {
                 data: {
                   name: values.name,
                   expires_at: values.expires_at ? new Date(values.expires_at).toISOString() : null,
-                  restrictions: values.provider_id
-                    ? [
-                        {
-                          provider_id: values.provider_id,
-                          allowed_models: parseModels(values.allowed_models),
-                        },
-                      ]
-                    : null,
+                  allowed_models: parseModels(values.allowed_models),
+                  custom_allocation_id:
+                    values.allocation_mode === "custom"
+                      ? values.custom_allocation_id || null
+                      : null,
                 },
               }),
             )}
@@ -317,32 +269,45 @@ export function KeyDetailPage() {
               <Input id="edit-key-name" autoFocus {...form.register("name")} />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="edit-key-expires">Expires at</Label>
-              <Input id="edit-key-expires" type="datetime-local" {...form.register("expires_at")} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Narrow to provider</Label>
+              <Label>Allocation policy</Label>
               <Select
-                value={selectedProviderId || "__all"}
+                value={allocationMode}
                 onValueChange={(value) =>
-                  form.setValue("provider_id", value === "__all" ? "" : value)
+                  form.setValue("allocation_mode", value as EditValues["allocation_mode"])
                 }
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__all">No restriction</SelectItem>
-                  {allocations.map((allocation) => {
-                    const provider = providers.find((p) => p.id === allocation.provider_id);
-                    return (
-                      <SelectItem key={allocation.provider_id} value={allocation.provider_id}>
-                        {provider?.name ?? allocation.provider_id}
-                      </SelectItem>
-                    );
-                  })}
+                  <SelectItem value="inherited">Use project/team default</SelectItem>
+                  <SelectItem value="custom">Use custom allocation</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            {allocationMode === "custom" ? (
+              <div className="space-y-1.5">
+                <Label>Custom allocation</Label>
+                <Select
+                  value={customAllocationId || ""}
+                  onValueChange={(value) => form.setValue("custom_allocation_id", value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select allocation" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {activeAllocations.map((item) => (
+                      <SelectItem key={item.id} value={item.id}>
+                        {item.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-key-expires">Expires at</Label>
+              <Input id="edit-key-expires" type="datetime-local" {...form.register("expires_at")} />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="edit-key-models">Allowed models</Label>
@@ -352,7 +317,7 @@ export function KeyDetailPage() {
                 {...form.register("allowed_models")}
               />
               <p className="text-xs text-muted-foreground">
-                Comma-separated. Only used when a provider restriction is selected.
+                Optional comma-separated subset of the allocation.
               </p>
             </div>
           </form>
@@ -389,34 +354,106 @@ export function KeyDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   );
 }
 
-function KeyMetric({
-  label,
-  value,
-  mono,
+function KeyUsageCard({
+  usage,
 }: {
-  label: string;
-  value: string | number;
-  mono?: boolean;
+  usage:
+    | {
+        totals: {
+          requests?: number;
+          total_tokens?: number;
+          cost_cents?: number;
+          failed_requests?: number;
+          average_latency_ms?: number | null;
+        };
+        by_provider: UsageBreakdownRow[];
+        by_model: UsageBreakdownRow[];
+        by_pool: UsageBreakdownRow[];
+        by_allocation: UsageBreakdownRow[];
+      }
+    | undefined;
 }) {
+  const totals = usage?.totals;
+  const requests = totals?.requests ?? 0;
+
   return (
     <Card>
-      <CardHeader className="pb-2">
-        <CardDescription>{label}</CardDescription>
-        <CardTitle className={mono ? "font-mono text-base" : "text-2xl tabular-nums"}>
-          {value}
-        </CardTitle>
+      <CardHeader>
+        <CardTitle>Usage pressure</CardTitle>
+        <CardDescription>
+          Key-scoped request, spend, routing, and error attribution.
+        </CardDescription>
+        <CardAction>
+          <StatusBadge variant={requests > 0 ? "active" : "muted"}>
+            {requests > 0 ? "Observed" : "No usage"}
+          </StatusBadge>
+        </CardAction>
       </CardHeader>
+      <CardContent className="grid gap-4">
+        <div className="grid gap-3 md:grid-cols-5">
+          <Fact label="Requests" value={requests.toLocaleString()} />
+          <Fact label="Tokens" value={(totals?.total_tokens ?? 0).toLocaleString()} />
+          <Fact label="Spend" value={formatCents(totals?.cost_cents ?? 0)} />
+          <Fact label="Errors" value={(totals?.failed_requests ?? 0).toLocaleString()} />
+          <Fact
+            label="Latency"
+            value={totals?.average_latency_ms == null ? "-" : `${totals.average_latency_ms}ms`}
+          />
+        </div>
+        {requests === 0 ? (
+          <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2">
+              <Gauge className="size-4" />
+              No proxy usage has been recorded for this key yet.
+            </div>
+          </div>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2">
+            <BreakdownList title="Providers" rows={usage?.by_provider ?? []} />
+            <BreakdownList title="Models" rows={usage?.by_model ?? []} />
+            <BreakdownList title="Pools" rows={usage?.by_pool ?? []} />
+            <BreakdownList title="Allocations" rows={usage?.by_allocation ?? []} />
+          </div>
+        )}
+      </CardContent>
     </Card>
   );
 }
 
-function accessSummary(count: number) {
-  if (count === 0) return "no providers attached";
-  return `${count} provider${count === 1 ? "" : "s"}`;
+function BreakdownList({ title, rows }: { title: string; rows: UsageBreakdownRow[] }) {
+  return (
+    <div className="rounded-md border p-3">
+      <div className="mb-2 text-xs font-medium text-muted-foreground">{title}</div>
+      <div className="space-y-1.5">
+        {rows.slice(0, 5).map((row) => (
+          <div key={row.id} className="flex items-center justify-between gap-3 text-xs">
+            <span className="min-w-0 truncate">{row.label}</span>
+            <span className="shrink-0 text-muted-foreground">
+              {(row.requests ?? 0).toLocaleString()} req ·{" "}
+              {(row.total_tokens ?? 0).toLocaleString()} tok
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Fact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="truncate text-sm font-medium">{value}</p>
+    </div>
+  );
+}
+
+function formatModels(models: string[] | null | undefined) {
+  return models && models.length > 0 ? models.join(", ") : "All allocation models";
 }
 
 function toLocalInput(iso: string) {
@@ -431,4 +468,8 @@ function parseModels(value: string | undefined): string[] | null {
     .map((model) => model.trim())
     .filter(Boolean);
   return models && models.length > 0 ? models : null;
+}
+
+function formatCents(value: number | null | undefined) {
+  return value == null ? "$0" : `$${(value / 100).toLocaleString()}`;
 }

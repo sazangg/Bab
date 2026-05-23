@@ -13,14 +13,14 @@ from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.providers import facade as providers_facade
 from app.modules.providers.errors import ProviderUpstreamError
 from app.modules.providers.internal import service
-from app.modules.providers.internal.models import ProviderCredential
+from app.modules.providers.internal.models import CredentialPoolCredential, ProviderCredential
 from app.modules.providers.schemas import (
+    AddCredentialPoolCredentialRequest,
+    CreateCredentialPoolRequest,
     CreateProviderCredentialRequest,
     CreateProviderRequest,
     ProviderChatCompletionRequest,
-    ProviderCredentialPriorityUpdate,
     ProviderCredentialRoutingPolicy,
-    ReorderProviderCredentialsRequest,
     UpdateProviderRequest,
 )
 
@@ -44,7 +44,6 @@ async def _create_provider_with_credentials(
         payload=CreateProviderRequest(
             name="OpenAI",
             base_url="https://api.example.test/v1",
-            credential_routing_policy=routing_policy,
         ),
         actor=actor,
         scope=scope,
@@ -55,7 +54,6 @@ async def _create_provider_with_credentials(
         payload=CreateProviderCredentialRequest(
             name="First",
             api_key="first-secret",
-            priority=10,
         ),
         actor=actor,
         scope=scope,
@@ -66,19 +64,47 @@ async def _create_provider_with_credentials(
         payload=CreateProviderCredentialRequest(
             name="Second",
             api_key="second-secret",
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    pool = await providers_facade.create_credential_pool(
+        provider_id=provider.id,
+        payload=CreateCredentialPoolRequest(name="Routing", selection_policy=routing_policy),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    await providers_facade.add_credential_pool_credential(
+        provider_id=provider.id,
+        pool_id=pool.id,
+        payload=AddCredentialPoolCredentialRequest(
+            provider_credential_id=first.id,
+            priority=10,
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    await providers_facade.add_credential_pool_credential(
+        provider_id=provider.id,
+        pool_id=pool.id,
+        payload=AddCredentialPoolCredentialRequest(
+            provider_credential_id=second.id,
             priority=20,
         ),
         actor=actor,
         scope=scope,
         db=db_session,
     )
-    return actor, scope, provider, first, second
+    return actor, scope, provider, pool, first, second
 
 
 async def test_priority_routing_uses_lowest_priority_active_credential(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, provider, *_ = await _create_provider_with_credentials(
+    actor, scope, provider, pool, *_ = await _create_provider_with_credentials(
         db_session,
         routing_policy=ProviderCredentialRoutingPolicy.priority,
     )
@@ -95,6 +121,7 @@ async def test_priority_routing_uses_lowest_priority_active_credential(
                 messages=[{"role": "user", "content": "Hello"}],
             ),
             scope=scope,
+            pool_id=pool.id,
             db=db_session,
             http_client=http_client,
         )
@@ -105,7 +132,7 @@ async def test_priority_routing_uses_lowest_priority_active_credential(
 async def test_least_recently_used_routing_uses_oldest_used_credential(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, provider, first, second = await _create_provider_with_credentials(
+    actor, scope, provider, pool, first, second = await _create_provider_with_credentials(
         db_session,
         routing_policy=ProviderCredentialRoutingPolicy.least_recently_used,
     )
@@ -137,6 +164,7 @@ async def test_least_recently_used_routing_uses_oldest_used_credential(
                 messages=[{"role": "user", "content": "Hello"}],
             ),
             scope=scope,
+            pool_id=pool.id,
             db=db_session,
             http_client=http_client,
         )
@@ -145,7 +173,7 @@ async def test_least_recently_used_routing_uses_oldest_used_credential(
 
 
 async def test_health_based_routing_prefers_valid_credential(db_session: AsyncSession) -> None:
-    actor, scope, provider, first, second = await _create_provider_with_credentials(
+    actor, scope, provider, pool, first, second = await _create_provider_with_credentials(
         db_session,
         routing_policy=ProviderCredentialRoutingPolicy.health_based,
     )
@@ -177,6 +205,7 @@ async def test_health_based_routing_prefers_valid_credential(db_session: AsyncSe
                 messages=[{"role": "user", "content": "Hello"}],
             ),
             scope=scope,
+            pool_id=pool.id,
             db=db_session,
             http_client=http_client,
         )
@@ -187,7 +216,7 @@ async def test_health_based_routing_prefers_valid_credential(db_session: AsyncSe
 async def test_fallback_routing_retries_next_credential_on_upstream_failure(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, provider, *_ = await _create_provider_with_credentials(
+    actor, scope, provider, pool, *_ = await _create_provider_with_credentials(
         db_session,
         routing_policy=ProviderCredentialRoutingPolicy.fallback,
     )
@@ -208,6 +237,7 @@ async def test_fallback_routing_retries_next_credential_on_upstream_failure(
                 messages=[{"role": "user", "content": "Hello"}],
             ),
             scope=scope,
+            pool_id=pool.id,
             db=db_session,
             http_client=http_client,
         )
@@ -216,7 +246,7 @@ async def test_fallback_routing_retries_next_credential_on_upstream_failure(
     assert response.body == {"id": "chatcmpl_fallback"}
 
 
-def test_weighted_routing_uses_priority_as_weight(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_weighted_routing_uses_membership_weight(monkeypatch: pytest.MonkeyPatch) -> None:
     first = ProviderCredential(
         id=uuid4(),
         org_id=uuid4(),
@@ -224,7 +254,6 @@ def test_weighted_routing_uses_priority_as_weight(monkeypatch: pytest.MonkeyPatc
         name="First",
         key_prefix="firs...",
         api_key_encrypted="first",
-        priority=100,
     )
     second = ProviderCredential(
         id=uuid4(),
@@ -233,7 +262,22 @@ def test_weighted_routing_uses_priority_as_weight(monkeypatch: pytest.MonkeyPatc
         name="Second",
         key_prefix="seco...",
         api_key_encrypted="second",
-        priority=0,
+    )
+    first_membership = CredentialPoolCredential(
+        id=uuid4(),
+        org_id=first.org_id,
+        pool_id=uuid4(),
+        provider_credential_id=first.id,
+        priority=10,
+        weight=1,
+    )
+    second_membership = CredentialPoolCredential(
+        id=uuid4(),
+        org_id=first.org_id,
+        pool_id=first_membership.pool_id,
+        provider_credential_id=second.id,
+        priority=20,
+        weight=10,
     )
 
     def choose_last(pool):
@@ -241,19 +285,18 @@ def test_weighted_routing_uses_priority_as_weight(monkeypatch: pytest.MonkeyPatc
 
     monkeypatch.setattr(service.secrets, "choice", choose_last)
 
-    assert service._weighted_provider_credential_route([first, second])[0] == second
-
-
-def test_routing_uses_provider_policy_not_credential_policy() -> None:
-    provider = type("Provider", (), {"credential_routing_policy": "fallback"})()
-
-    assert service._provider_routing_policy(provider) == ProviderCredentialRoutingPolicy.fallback
+    assert (
+        service._weighted_pool_credential_route(
+            [(first_membership, first), (second_membership, second)]
+        )[0]
+        == second
+    )
 
 
 async def test_retry_policy_retries_retryable_upstream_status(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, provider, *_ = await _create_provider_with_credentials(
+    actor, scope, provider, pool, *_ = await _create_provider_with_credentials(
         db_session,
         routing_policy=ProviderCredentialRoutingPolicy.priority,
     )
@@ -290,6 +333,7 @@ async def test_retry_policy_retries_retryable_upstream_status(
                 messages=[{"role": "user", "content": "Hello"}],
             ),
             scope=scope,
+            pool_id=pool.id,
             db=db_session,
             http_client=http_client,
         )
@@ -301,7 +345,7 @@ async def test_retry_policy_retries_retryable_upstream_status(
 async def test_fallback_policy_uses_configured_provider_after_failure(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, provider, *_ = await _create_provider_with_credentials(
+    actor, scope, provider, pool, *_ = await _create_provider_with_credentials(
         db_session,
         routing_policy=ProviderCredentialRoutingPolicy.priority,
     )
@@ -319,7 +363,6 @@ async def test_fallback_policy_uses_configured_provider_after_failure(
         payload=CreateProviderCredentialRequest(
             name="Fallback credential",
             api_key="fallback-secret",
-            priority=10,
         ),
         actor=actor,
         scope=scope,
@@ -356,6 +399,7 @@ async def test_fallback_policy_uses_configured_provider_after_failure(
                 messages=[{"role": "user", "content": "Hello"}],
             ),
             scope=scope,
+            pool_id=pool.id,
             db=db_session,
             http_client=http_client,
         )
@@ -370,7 +414,7 @@ async def test_fallback_policy_uses_configured_provider_after_failure(
 async def test_circuit_breaker_opens_after_configured_failure_rate(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, provider, *_ = await _create_provider_with_credentials(
+    actor, scope, provider, pool, *_ = await _create_provider_with_credentials(
         db_session,
         routing_policy=ProviderCredentialRoutingPolicy.priority,
     )
@@ -407,6 +451,7 @@ async def test_circuit_breaker_opens_after_configured_failure_rate(
                 messages=[{"role": "user", "content": "Hello"}],
             ),
             scope=scope,
+            pool_id=pool.id,
             db=db_session,
             http_client=http_client,
         )
@@ -418,6 +463,7 @@ async def test_circuit_breaker_opens_after_configured_failure_rate(
                     messages=[{"role": "user", "content": "Hello"}],
                 ),
                 scope=scope,
+                pool_id=pool.id,
                 db=db_session,
                 http_client=http_client,
             )
@@ -429,6 +475,7 @@ async def test_circuit_breaker_opens_after_configured_failure_rate(
                     messages=[{"role": "user", "content": "Hello"}],
                 ),
                 scope=scope,
+                pool_id=pool.id,
                 db=db_session,
                 http_client=http_client,
             )
@@ -436,38 +483,6 @@ async def test_circuit_breaker_opens_after_configured_failure_rate(
     assert attempts == 2
     assert exc_info.value.status_code == 503
     assert exc_info.value.body == {"error": "provider circuit is open"}
-
-
-async def test_reorder_provider_credentials_updates_priorities_atomically(
-    db_session: AsyncSession,
-) -> None:
-    actor, scope, provider, first, second = await _create_provider_with_credentials(
-        db_session,
-        routing_policy=ProviderCredentialRoutingPolicy.priority,
-    )
-
-    credentials = await providers_facade.reorder_provider_credentials(
-        provider_id=provider.id,
-        payload=ReorderProviderCredentialsRequest(
-            updates=[
-                ProviderCredentialPriorityUpdate(
-                    provider_credential_id=first.id,
-                    priority=second.priority,
-                ),
-                ProviderCredentialPriorityUpdate(
-                    provider_credential_id=second.id,
-                    priority=first.priority,
-                ),
-            ],
-        ),
-        actor=actor,
-        scope=scope,
-        db=db_session,
-    )
-
-    priorities = {credential.id: credential.priority for credential in credentials}
-    assert priorities[first.id] == 20
-    assert priorities[second.id] == 10
 
 
 def test_provider_concurrency_slot_tracks_limit_changes() -> None:

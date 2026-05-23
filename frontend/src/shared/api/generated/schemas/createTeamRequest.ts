@@ -7,9 +7,9 @@
 
 export interface CreateTeamRequest {
   /**
-     * @minLength 1
-     * @maxLength 255
-     */
+   * @minLength 1
+   * @maxLength 255
+   */
   name: string;
   slug?: string | null;
   description?: string | null;

@@ -1,19 +1,22 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
-import { Archive, FolderKanban, MoreHorizontal, Pencil, Plus, RotateCcw } from "lucide-react";
-import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { isAxiosError } from "axios";
+import { Archive, MoreHorizontal, Pencil, Plus, RotateCcw } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useForm, useWatch } from "react-hook-form";
 import { useNavigate, useParams } from "react-router-dom";
+import { toast } from "sonner";
 import { z } from "zod";
 
-import {
-  useCreateTeamProjectApiV1TeamsTeamIdProjectsPost,
-  useDeactivateTeamApiV1TeamsTeamIdDelete,
-  useGetTeamApiV1TeamsTeamIdGet,
-  useListTeamProjectsApiV1TeamsTeamIdProjectsGet,
-  useUpdateTeamApiV1TeamsTeamIdPatch,
-} from "@/shared/api/generated/teams/teams";
 import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   Dialog,
   DialogClose,
@@ -50,18 +53,34 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { EmptyState } from "@/shared/components/EmptyState";
+import { cn } from "@/lib/utils";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
+import {
+  useCreateTeamProjectApiV1TeamsTeamIdProjectsPost,
+  useDeactivateTeamApiV1TeamsTeamIdDelete,
+  useGetTeamApiV1TeamsTeamIdGet,
+  useListTeamProjectsApiV1TeamsTeamIdProjectsGet,
+  useUpdateTeamApiV1TeamsTeamIdPatch,
+} from "@/shared/api/generated/teams/teams";
+import type { ProjectResponse, UpdateTeamRequest } from "@/shared/api/generated/schemas";
+
+import { formatDateTime, formatRelativeFromNow } from "@/features/providers/lib/format";
+import { AllocationManagementSection } from "@/features/projects/sections/AllocationManagementSection";
+import { slugify } from "@/features/teams/lib/slug";
 
 const projectSchema = z.object({
-  name: z.string().min(1).max(255),
+  name: z.string().min(1, "Name is required").max(255),
   description: z.string().max(1000).optional(),
 });
 
 const editTeamSchema = z.object({
-  name: z.string().min(1).max(255),
-  slug: z.string().min(1).max(100),
+  name: z.string().min(1, "Name is required").max(255),
+  slug: z
+    .string()
+    .min(1, "Slug is required")
+    .max(100)
+    .regex(/^[a-z0-9-]+$/, "Use lowercase letters, numbers, and dashes only"),
   description: z.string().max(1000).optional(),
 });
 
@@ -84,6 +103,7 @@ export function TeamDetailPage() {
   });
   const team = teamQuery.data?.status === 200 ? teamQuery.data.data : undefined;
   const projects = projectsQuery.data?.status === 200 ? projectsQuery.data.data : [];
+  const activeProjectCount = projects.filter((p) => p.is_active).length;
 
   const projectForm = useForm<ProjectFormValues>({
     resolver: zodResolver(projectSchema),
@@ -91,12 +111,18 @@ export function TeamDetailPage() {
   });
   const editTeamForm = useForm<EditTeamValues>({
     resolver: zodResolver(editTeamSchema),
-    values: {
-      name: team?.name ?? "",
-      slug: team?.slug ?? "",
-      description: team?.description ?? "",
-    },
+    defaultValues: { name: "", slug: "", description: "" },
   });
+
+  useEffect(() => {
+    if (editOpen && team) {
+      editTeamForm.reset({
+        name: team.name,
+        slug: team.slug,
+        description: team.description ?? "",
+      });
+    }
+  }, [editOpen, team, editTeamForm]);
 
   const createProject = useCreateTeamProjectApiV1TeamsTeamIdProjectsPost({
     mutation: {
@@ -105,18 +131,39 @@ export function TeamDetailPage() {
           projectForm.reset();
           setProjectSheetOpen(false);
           await queryClient.invalidateQueries();
-          navigate(`/projects/${response.data.id}`);
+          toast.success(`Project "${response.data.name}" created.`);
         }
       },
+      onError: () => toast.error("Project could not be created."),
     },
   });
   const updateTeam = useUpdateTeamApiV1TeamsTeamIdPatch({
     mutation: {
       onSuccess: async () => {
         setEditOpen(false);
-        setArchiveOpen(false);
         await queryClient.invalidateQueries();
+        toast.success("Team updated.");
       },
+      onError: (error) => {
+        if (isAxiosError(error) && error.response?.status === 409) {
+          editTeamForm.setError("slug", {
+            type: "server",
+            message: "A team with this slug already exists.",
+          });
+          toast.error("Slug already in use. Pick another.");
+          return;
+        }
+        toast.error("Team could not be updated.");
+      },
+    },
+  });
+  const reactivateTeam = useUpdateTeamApiV1TeamsTeamIdPatch({
+    mutation: {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries();
+        toast.success("Team reactivated.");
+      },
+      onError: () => toast.error("Reactivation failed."),
     },
   });
   const deactivateTeam = useDeactivateTeamApiV1TeamsTeamIdDelete({
@@ -124,8 +171,30 @@ export function TeamDetailPage() {
       onSuccess: async () => {
         setArchiveOpen(false);
         await queryClient.invalidateQueries();
+        toast.success("Team archived.");
       },
+      onError: () => toast.error("Archive failed."),
     },
+  });
+
+  const slugInput = useWatch({ control: editTeamForm.control, name: "slug" });
+  const slugPreview = slugInput?.trim() ? slugify(slugInput) : "";
+  const slugChanged = team && slugInput !== team.slug;
+
+  const submitEdit = editTeamForm.handleSubmit((values) => {
+    if (!team) return;
+    const dirty = editTeamForm.formState.dirtyFields;
+    const payload: UpdateTeamRequest = {};
+    if (dirty.name) payload.name = values.name;
+    if (dirty.slug) payload.slug = values.slug;
+    if (dirty.description) {
+      payload.description = values.description?.trim() ? values.description : null;
+    }
+    if (Object.keys(payload).length === 0) {
+      setEditOpen(false);
+      return;
+    }
+    updateTeam.mutate({ teamId: team.id, data: payload });
   });
 
   if (teamQuery.isPending) {
@@ -136,15 +205,16 @@ export function TeamDetailPage() {
   }
 
   return (
-    <>
+    <div className="flex flex-col gap-6">
       <PageHeader
         title={team.name}
-        description={team.description ?? "No description."}
+        description={team.description ?? "Group projects under this team."}
         actions={
-          <>
-            <StatusBadge variant={team.is_active ? "active" : "inactive"}>
-              {team.is_active ? "Active" : "Archived"}
-            </StatusBadge>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setEditOpen(true)}>
+              <Pencil />
+              Edit team
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="icon" aria-label="Team actions">
@@ -152,143 +222,169 @@ export function TeamDetailPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onSelect={() => setEditOpen(true)}>
-                  <Pencil className="mr-2 size-4" />
-                  Edit team
-                </DropdownMenuItem>
                 <DropdownMenuItem
                   onSelect={() => setArchiveOpen(true)}
                   disabled={!team.is_active}
+                  variant="destructive"
                 >
                   <Archive className="mr-2 size-4" />
                   Archive team
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onSelect={() =>
-                    updateTeam.mutate({ teamId: team.id, data: { is_active: true } })
+                    reactivateTeam.mutate({ teamId: team.id, data: { is_active: true } })
                   }
-                  disabled={team.is_active || updateTeam.isPending}
+                  disabled={team.is_active || reactivateTeam.isPending}
                 >
                   <RotateCcw className="mr-2 size-4" />
                   Reactivate team
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          </>
+          </div>
         }
       />
 
-      <section className="space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold">Projects</h2>
-            <p className="text-sm text-muted-foreground">
-              Projects inside this team can receive allocations and issue virtual keys.
-            </p>
-          </div>
-          <Sheet open={projectSheetOpen} onOpenChange={setProjectSheetOpen}>
-            <SheetTrigger asChild>
-              <Button>
-                <Plus />
-                New project
-              </Button>
-            </SheetTrigger>
-            <SheetContent>
-              <SheetHeader>
-                <SheetTitle>New project</SheetTitle>
-                <SheetDescription>Create a project under {team.name}.</SheetDescription>
-              </SheetHeader>
-              <form
-                id="create-project-form"
-                className="grid gap-4 px-4"
-                onSubmit={projectForm.handleSubmit((values) =>
-                  createProject.mutate({
-                    teamId,
-                    data: {
-                      name: values.name,
-                      description: values.description || null,
-                    },
-                  }),
-                )}
-              >
-                <div className="space-y-1.5">
-                  <Label htmlFor="project-name">Name</Label>
-                  <Input id="project-name" autoFocus {...projectForm.register("name")} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="project-description">Description</Label>
-                  <Textarea
-                    id="project-description"
-                    rows={4}
-                    {...projectForm.register("description")}
-                  />
-                </div>
-              </form>
-              <SheetFooter>
-                <Button
-                  type="submit"
-                  form="create-project-form"
-                  disabled={createProject.isPending}
-                >
-                  {createProject.isPending ? "Creating..." : "Create project"}
-                </Button>
-                <SheetClose asChild>
-                  <Button variant="outline">Cancel</Button>
-                </SheetClose>
-              </SheetFooter>
-            </SheetContent>
-          </Sheet>
-        </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Team summary</CardTitle>
+          <CardDescription className="font-mono text-xs">{team.slug}</CardDescription>
+          <CardAction>
+            <StatusBadge variant={team.is_active ? "active" : "inactive"}>
+              {team.is_active ? "Active" : "Archived"}
+            </StatusBadge>
+          </CardAction>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-4">
+          <Fact label="Projects" value={`${activeProjectCount} active`} />
+          <Fact label="Total projects" value={`${projects.length}`} />
+          <Fact label="Created" value={formatRelativeFromNow(team.created_at)} />
+          <Fact label="Updated" value={formatRelativeFromNow(team.updated_at)} />
+        </CardContent>
+      </Card>
 
-        {!projectsQuery.isPending && projects.length === 0 ? (
-          <EmptyState
-            icon={FolderKanban}
-            title="No projects yet"
-            description="Create a project to start assigning allocations and keys."
-            action={
-              <Button onClick={() => setProjectSheetOpen(true)}>
+      <AllocationManagementSection target={{ type: "team", teamId: team.id }} />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Projects</CardTitle>
+          <CardDescription>
+            Projects inside this team receive allocations and issue virtual keys.
+          </CardDescription>
+          <CardAction>
+            <Sheet
+              open={projectSheetOpen}
+              onOpenChange={(next) => {
+                setProjectSheetOpen(next);
+                if (!next) projectForm.reset();
+              }}
+            >
+              <SheetTrigger asChild>
+                <Button
+                  size="sm"
+                  disabled={!team.is_active}
+                  title={team.is_active ? undefined : "Reactivate the team to add projects."}
+                >
+                  <Plus />
+                  New project
+                </Button>
+              </SheetTrigger>
+              <SheetContent>
+                <SheetHeader>
+                  <SheetTitle>New project</SheetTitle>
+                  <SheetDescription>Create a project under {team.name}.</SheetDescription>
+                </SheetHeader>
+                <form
+                  id="create-project-form"
+                  className="grid gap-4 px-4"
+                  onSubmit={projectForm.handleSubmit((values) =>
+                    createProject.mutate({
+                      teamId,
+                      data: {
+                        name: values.name,
+                        description: values.description?.trim() ? values.description : null,
+                      },
+                    }),
+                  )}
+                >
+                  <div className="space-y-1.5">
+                    <Label htmlFor="project-name">Name</Label>
+                    <Input id="project-name" autoFocus {...projectForm.register("name")} />
+                    {projectForm.formState.errors.name ? (
+                      <p className="text-xs text-destructive">
+                        {projectForm.formState.errors.name.message}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="project-description">Description</Label>
+                    <Textarea
+                      id="project-description"
+                      rows={4}
+                      {...projectForm.register("description")}
+                    />
+                  </div>
+                </form>
+                <SheetFooter>
+                  <Button
+                    type="submit"
+                    form="create-project-form"
+                    disabled={createProject.isPending}
+                  >
+                    {createProject.isPending ? "Creating..." : "Create project"}
+                  </Button>
+                  <SheetClose asChild>
+                    <Button variant="outline">Cancel</Button>
+                  </SheetClose>
+                </SheetFooter>
+              </SheetContent>
+            </Sheet>
+          </CardAction>
+        </CardHeader>
+        <CardContent>
+          {projectsQuery.isPending ? (
+            <p className="text-sm text-muted-foreground">Loading projects...</p>
+          ) : projects.length === 0 ? (
+            <div className="rounded-md border border-dashed p-8 text-center">
+              <p className="text-sm font-medium">No projects yet</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Create a project to start assigning allocations and keys.
+              </p>
+              <Button
+                className="mt-4"
+                size="sm"
+                onClick={() => setProjectSheetOpen(true)}
+                disabled={!team.is_active}
+              >
                 <Plus />
                 New project
               </Button>
-            }
-          />
-        ) : (
-          <div className="overflow-hidden rounded-lg border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Created</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {projects.map((project) => (
-                  <TableRow
-                    key={project.id}
-                    className="cursor-pointer"
-                    onClick={() => navigate(`/projects/${project.id}`)}
-                  >
-                    <TableCell className="font-medium">{project.name}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {project.description || "-"}
-                    </TableCell>
-                    <TableCell>
-                      <StatusBadge variant={project.is_active ? "active" : "inactive"}>
-                        {project.is_active ? "Active" : "Archived"}
-                      </StatusBadge>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {new Date(project.created_at).toLocaleDateString()}
-                    </TableCell>
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Created</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </section>
+                </TableHeader>
+                <TableBody>
+                  {projects.map((project) => (
+                    <ProjectTableRow
+                      key={project.id}
+                      project={project}
+                      onOpen={() => navigate(`/projects/${project.id}`)}
+                    />
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent>
@@ -296,27 +392,31 @@ export function TeamDetailPage() {
             <DialogTitle>Edit team</DialogTitle>
             <DialogDescription>Rename or update this team.</DialogDescription>
           </DialogHeader>
-          <form
-            id="edit-team-form"
-            className="grid gap-4"
-            onSubmit={editTeamForm.handleSubmit((values) =>
-              updateTeam.mutate({
-                teamId: team.id,
-                data: {
-                  name: values.name,
-                  slug: values.slug,
-                  description: values.description || null,
-                },
-              }),
-            )}
-          >
+          <form id="edit-team-form" className="grid gap-4" onSubmit={submitEdit}>
             <div className="space-y-1.5">
               <Label htmlFor="edit-team-name">Name</Label>
               <Input id="edit-team-name" autoFocus {...editTeamForm.register("name")} />
+              {editTeamForm.formState.errors.name ? (
+                <p className="text-xs text-destructive">
+                  {editTeamForm.formState.errors.name.message}
+                </p>
+              ) : null}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="edit-team-slug">Slug</Label>
               <Input id="edit-team-slug" {...editTeamForm.register("slug")} />
+              {editTeamForm.formState.errors.slug ? (
+                <p className="text-xs text-destructive">
+                  {editTeamForm.formState.errors.slug.message}
+                </p>
+              ) : slugChanged && slugPreview ? (
+                <p className="text-xs text-amber-600 dark:text-amber-500">
+                  Changing the slug will break links that reference{" "}
+                  <span className="font-mono">{team.slug}</span>.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">Used in URLs and attribution.</p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="edit-team-description">Description</Label>
@@ -325,6 +425,11 @@ export function TeamDetailPage() {
                 rows={4}
                 {...editTeamForm.register("description")}
               />
+              {editTeamForm.formState.errors.description ? (
+                <p className="text-xs text-destructive">
+                  {editTeamForm.formState.errors.description.message}
+                </p>
+              ) : null}
             </div>
           </form>
           <DialogFooter>
@@ -341,9 +446,10 @@ export function TeamDetailPage() {
       <Dialog open={archiveOpen} onOpenChange={setArchiveOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Archive team?</DialogTitle>
+            <DialogTitle>Archive {team.name}?</DialogTitle>
             <DialogDescription>
-              The team will remain visible, but it should no longer be used for new work.
+              Archived teams stay visible but cannot have new projects created in them. Existing
+              projects are unaffected.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -360,6 +466,34 @@ export function TeamDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
+  );
+}
+
+function ProjectTableRow({ project, onOpen }: { project: ProjectResponse; onOpen: () => void }) {
+  return (
+    <TableRow className={cn("cursor-pointer", !project.is_active && "opacity-60")} onClick={onOpen}>
+      <TableCell className="font-medium">{project.name}</TableCell>
+      <TableCell className="max-w-md truncate text-muted-foreground">
+        {project.description || "—"}
+      </TableCell>
+      <TableCell>
+        <StatusBadge variant={project.is_active ? "active" : "inactive"}>
+          {project.is_active ? "Active" : "Archived"}
+        </StatusBadge>
+      </TableCell>
+      <TableCell className="text-muted-foreground" title={formatDateTime(project.created_at)}>
+        {new Date(project.created_at).toLocaleDateString()}
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function Fact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="truncate text-sm font-medium">{value}</p>
+    </div>
   );
 }

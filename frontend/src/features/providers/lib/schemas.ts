@@ -44,14 +44,6 @@ export const createProviderSchema = z.object({
   name: z.string().min(1).max(255),
   slug: z.string().optional(),
   base_url: z.url(),
-  credential_routing_policy: z.enum([
-    "priority",
-    "round_robin",
-    "least_recently_used",
-    "health_based",
-    "weighted",
-    "fallback",
-  ]),
 });
 
 export type CreateProviderValues = z.infer<typeof createProviderSchema>;
@@ -89,14 +81,6 @@ export const editProviderSchema = z.object({
   slug: z.string().optional(),
   base_url: z.url(),
   description: z.string().max(1000).optional(),
-  credential_routing_policy: z.enum([
-    "priority",
-    "round_robin",
-    "least_recently_used",
-    "health_based",
-    "weighted",
-    "fallback",
-  ]),
   request_timeout_seconds: z.coerce.number().int().min(1).max(300),
   max_body_bytes_kb: optionalPositiveInt,
   max_concurrent_requests: optionalPositiveInt,
@@ -108,13 +92,25 @@ export const editProviderSchema = z.object({
 export const providerCredentialSchema = z.object({
   name: z.string().min(1).max(255),
   api_key: z.string().min(1),
-  priority: z.number().int().min(0),
+});
+
+export const credentialPoolSchema = z.object({
+  name: z.string().min(1).max(255),
+  description: z.string().max(1000).optional(),
+  selection_policy: z.enum([
+    "priority",
+    "round_robin",
+    "least_recently_used",
+    "health_based",
+    "weighted",
+    "fallback",
+  ]),
 });
 
 export type EditProviderValues = z.infer<typeof editProviderSchema>;
 export type EditProviderInput = z.input<typeof editProviderSchema>;
 export type ProviderCredentialValues = z.infer<typeof providerCredentialSchema>;
-export type RoutingPolicyValue = EditProviderValues["credential_routing_policy"];
+export type CredentialPoolValues = z.infer<typeof credentialPoolSchema>;
 export type RetryPolicyValues = z.infer<typeof retryPolicySchema>;
 export type FallbackPolicyValues = z.infer<typeof fallbackPolicySchema>;
 export type CircuitBreakerPolicyValues = z.infer<typeof circuitBreakerPolicySchema>;

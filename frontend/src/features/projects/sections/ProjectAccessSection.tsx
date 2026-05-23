@@ -1,13 +1,5 @@
-import { Layers3 } from "lucide-react";
+import { AllocationManagementSection } from "./AllocationManagementSection";
 
-import { EmptyState } from "@/shared/components/EmptyState";
-
-export function ProjectAccessSection() {
-  return (
-    <EmptyState
-      icon={Layers3}
-      title="Allocations are not wired yet"
-      description="Project access will be rebuilt around the allocation and pool model."
-    />
-  );
+export function ProjectAccessSection({ projectId, teamId }: { projectId: string; teamId: string }) {
+  return <AllocationManagementSection target={{ type: "project", projectId, teamId }} />;
 }

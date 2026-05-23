@@ -6,43 +6,35 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope, transaction
 from app.core.security import generate_virtual_key, hash_token
-from app.modules.audit import facade as audit_facade
-from app.modules.audit.schemas import RecordAuditEvent
+from app.modules.activity import facade as activity_facade
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys.errors import (
     AccessDeniedError,
+    AllocationNotFoundError,
     InvalidVirtualKeyError,
-    ModelAliasAlreadyExistsError,
-    ModelAliasNotFoundError,
-    ProjectAllocationNotFoundError,
     ProjectNotFoundError,
     VirtualKeyNotFoundError,
 )
 from app.modules.keys.internal import repository
-from app.modules.keys.internal.models import (
-    ModelAlias,
-    Project,
-    ProjectAllocation,
-    VirtualKey,
-)
+from app.modules.keys.internal.models import Allocation, Project, VirtualKey
 from app.modules.keys.schemas import (
+    AllocationOffering,
+    AllocationResponse,
+    CreateAllocationRequest,
     CreatedVirtualKeyResponse,
-    CreateModelAliasRequest,
-    CreateProjectAllocationRequest,
     CreateProjectRequest,
     CreateVirtualKeyRequest,
-    ModelAliasResponse,
-    ProjectAllocationResponse,
     ProjectResponse,
     ResolveAccessRequest,
     ResolvedAccess,
-    UpdateModelAliasRequest,
-    UpdateProjectAllocationRequest,
+    ResolvedAllocationLimit,
+    UpdateAllocationRequest,
     UpdateProjectRequest,
     UpdateVirtualKeyRequest,
     VirtualKeyResponse,
 )
 from app.modules.providers import facade as providers_facade
+from app.modules.providers.errors import ProviderNotFoundError
 from app.modules.teams import facade as teams_facade
 
 logger = structlog.get_logger(__name__)
@@ -66,25 +58,22 @@ async def create_project(
             description=payload.description,
             db=db,
         )
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="project.created",
-                target_type="project",
-                target_id=project.id,
-                event_metadata={"name": project.name, "team_id": str(team_id)},
-            ),
-            db,
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="workspace",
+            action="project.created",
+            message=f"Created project {project.name}.",
+            team_id=team_id,
+            project_id=project.id,
+            db=db,
         )
-
     logger.info("project_created", project_id=str(project.id), org_id=str(scope.org_id))
-    return _to_response(project)
+    return _to_project_response(project)
 
 
 async def list_projects(*, scope: Scope, db: AsyncSession) -> list[ProjectResponse]:
     projects = await repository.list_projects(org_id=scope.org_id, db=db)
-    return [_to_response(project) for project in projects]
+    return [_to_project_response(project) for project in projects]
 
 
 async def list_team_projects(
@@ -95,7 +84,7 @@ async def list_team_projects(
 ) -> list[ProjectResponse]:
     await teams_facade.get_team(team_id=team_id, scope=scope, db=db)
     projects = await repository.list_team_projects(org_id=scope.org_id, team_id=team_id, db=db)
-    return [_to_response(project) for project in projects]
+    return [_to_project_response(project) for project in projects]
 
 
 async def update_project(
@@ -114,21 +103,23 @@ async def update_project(
             project.description = payload.description
         if payload.is_active is not None:
             project.is_active = payload.is_active
-
         await db.flush()
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="project.updated",
-                target_type="project",
-                target_id=project.id,
-            ),
-            db,
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="workspace",
+            action="project.updated",
+            message=f"Updated project {project.name}.",
+            team_id=project.team_id,
+            project_id=project.id,
+            db=db,
         )
-
-    logger.info("project_updated", project_id=str(project.id), org_id=str(scope.org_id))
-    return _to_response(project)
+    logger.info(
+        "project_updated",
+        project_id=str(project.id),
+        org_id=str(scope.org_id),
+        actor_user_id=str(actor.id),
+    )
+    return _to_project_response(project)
 
 
 async def deactivate_project(
@@ -142,77 +133,110 @@ async def deactivate_project(
         project = await _get_project_or_raise(project_id=project_id, scope=scope, db=db)
         project.is_active = False
         await db.flush()
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="project.deactivated",
-                target_type="project",
-                target_id=project.id,
-            ),
-            db,
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="workspace",
+            action="project.deactivated",
+            message=f"Deactivated project {project.name}.",
+            team_id=project.team_id,
+            project_id=project.id,
+            db=db,
         )
-
-    logger.info("project_deactivated", project_id=str(project_id), org_id=str(scope.org_id))
-
-
-async def _get_project_or_raise(*, project_id: UUID, scope: Scope, db: AsyncSession) -> Project:
-    project = await repository.get_project(project_id=project_id, org_id=scope.org_id, db=db)
-    if project is None:
-        raise ProjectNotFoundError
-    return project
+    logger.info(
+        "project_deactivated",
+        project_id=str(project_id),
+        org_id=str(scope.org_id),
+        actor_user_id=str(actor.id),
+    )
 
 
-def _to_response(project: Project) -> ProjectResponse:
-    return ProjectResponse.model_validate(project)
-
-
-async def create_project_allocation(
+async def create_allocation(
     *,
-    project_id: UUID,
-    payload: CreateProjectAllocationRequest,
+    payload: CreateAllocationRequest,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
-) -> ProjectAllocationResponse:
+) -> AllocationResponse:
     async with transaction(db):
-        project = await _get_project_or_raise(project_id=project_id, scope=scope, db=db)
-        await providers_facade.get_provider(provider_id=payload.provider_id, scope=scope, db=db)
-        await _validate_model_offerings_belong_to_provider(
-            provider_id=payload.provider_id,
-            model_offering_ids=payload.model_offering_ids,
-            scope=scope,
-            db=db,
-        )
-        allocation = await repository.upsert_project_allocation(
-            org_id=scope.org_id,
-            project_id=project.id,
-            provider_id=payload.provider_id,
-            model_offering_ids=_uuid_list_to_json(payload.model_offering_ids),
-            db=db,
-        )
-        await audit_facade.record_event(
-            RecordAuditEvent(
+        project = await _validate_allocation_target(payload=payload, scope=scope, db=db)
+        parent_allocation_id = payload.parent_allocation_id
+        parent_allocation = None
+        if project is not None and parent_allocation_id is None:
+            parent_allocation = await repository.get_default_team_allocation(
                 org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="project_allocation.saved",
-                target_type="project_allocation",
-                target_id=allocation.id,
-                event_metadata={
-                    "project_id": str(project.id),
-                    "provider_id": str(payload.provider_id),
-                },
-            ),
-            db,
+                team_id=project.team_id,
+                db=db,
+            )
+            parent_allocation_id = parent_allocation.id if parent_allocation else None
+        if payload.parent_allocation_id is not None:
+            parent_allocation = await _get_allocation_or_raise(
+                allocation_id=payload.parent_allocation_id,
+                scope=scope,
+                db=db,
+            )
+        await _validate_offerings(payload.offerings, scope=scope, db=db)
+        if payload.is_default:
+            await repository.clear_default_allocations(
+                org_id=scope.org_id,
+                team_id=payload.team_id,
+                project_id=payload.project_id,
+                db=db,
+            )
+        allocation = await repository.create_allocation(
+            org_id=scope.org_id,
+            parent_allocation_id=parent_allocation_id,
+            target_type="project" if payload.project_id is not None else "team",
+            team_id=payload.team_id,
+            project_id=payload.project_id,
+            name=payload.name,
+            description=payload.description,
+            offerings=_offerings_to_json(payload.offerings),
+            is_default=payload.is_default,
+            budget_cents=payload.budget_cents,
+            max_requests=payload.max_requests,
+            max_input_tokens=payload.max_input_tokens,
+            max_output_tokens=payload.max_output_tokens,
+            max_tokens_per_request=payload.max_tokens_per_request,
+            window=payload.window,
+            db=db,
         )
-
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="allocation",
+            action="allocation.created",
+            message=f"Created allocation {allocation.name}.",
+            team_id=allocation.team_id,
+            project_id=allocation.project_id,
+            allocation_id=allocation.id,
+            db=db,
+        )
     logger.info(
-        "project_allocation_saved",
-        project_id=str(project_id),
-        provider_id=str(payload.provider_id),
+        "allocation_created",
+        allocation_id=str(allocation.id),
         org_id=str(scope.org_id),
+        actor_user_id=str(actor.id),
     )
-    return _allocation_to_response(allocation)
+    return _to_allocation_response(allocation)
+
+
+async def list_allocations(*, scope: Scope, db: AsyncSession) -> list[AllocationResponse]:
+    allocations = await repository.list_allocations(org_id=scope.org_id, db=db)
+    return [_to_allocation_response(allocation) for allocation in allocations]
+
+
+async def list_team_allocations(
+    *,
+    team_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[AllocationResponse]:
+    await teams_facade.get_team(team_id=team_id, scope=scope, db=db)
+    allocations = await repository.list_team_allocations(
+        org_id=scope.org_id,
+        team_id=team_id,
+        db=db,
+    )
+    return [_to_allocation_response(allocation) for allocation in allocations]
 
 
 async def list_project_allocations(
@@ -220,289 +244,76 @@ async def list_project_allocations(
     project_id: UUID,
     scope: Scope,
     db: AsyncSession,
-) -> list[ProjectAllocationResponse]:
+) -> list[AllocationResponse]:
     await _get_project_or_raise(project_id=project_id, scope=scope, db=db)
     allocations = await repository.list_project_allocations(
         org_id=scope.org_id,
         project_id=project_id,
         db=db,
     )
-    return [_allocation_to_response(allocation) for allocation in allocations]
+    return [_to_allocation_response(allocation) for allocation in allocations]
 
 
-async def update_project_allocation(
+async def update_allocation(
     *,
-    project_id: UUID,
-    provider_id: UUID,
-    payload: UpdateProjectAllocationRequest,
+    allocation_id: UUID,
+    payload: UpdateAllocationRequest,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
-) -> ProjectAllocationResponse:
+) -> AllocationResponse:
     async with transaction(db):
-        await _get_project_or_raise(project_id=project_id, scope=scope, db=db)
-        allocation = await _get_project_allocation_or_raise(
-            project_id=project_id,
-            provider_id=provider_id,
+        allocation = await _get_allocation_or_raise(
+            allocation_id=allocation_id,
             scope=scope,
             db=db,
         )
-        if "model_offering_ids" in payload.model_fields_set:
-            await _validate_model_offerings_belong_to_provider(
-                provider_id=provider_id,
-                model_offering_ids=payload.model_offering_ids,
-                scope=scope,
-                db=db,
-            )
-            allocation.model_offering_ids = _uuid_list_to_json(payload.model_offering_ids)
+        if payload.name is not None:
+            allocation.name = payload.name
+        if "description" in payload.model_fields_set:
+            allocation.description = payload.description
+        if payload.offerings is not None:
+            await _validate_offerings(payload.offerings, scope=scope, db=db)
+            allocation.offerings = _offerings_to_json(payload.offerings)
+        for field in (
+            "budget_cents",
+            "max_requests",
+            "max_input_tokens",
+            "max_output_tokens",
+            "max_tokens_per_request",
+            "window",
+        ):
+            if field in payload.model_fields_set:
+                setattr(allocation, field, getattr(payload, field))
+        if payload.is_default is not None:
+            if payload.is_default:
+                await repository.clear_default_allocations(
+                    org_id=scope.org_id,
+                    team_id=allocation.team_id,
+                    project_id=allocation.project_id,
+                    db=db,
+                )
+            allocation.is_default = payload.is_default
         if payload.is_active is not None:
             allocation.is_active = payload.is_active
         await db.flush()
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="project_allocation.updated",
-                target_type="project_allocation",
-                target_id=allocation.id,
-                event_metadata={
-                    "project_id": str(project_id),
-                    "provider_id": str(provider_id),
-                },
-            ),
-            db,
-        )
-
-    logger.info(
-        "project_allocation_updated",
-        project_id=str(project_id),
-        provider_id=str(provider_id),
-        org_id=str(scope.org_id),
-    )
-    return _allocation_to_response(allocation)
-
-
-async def revoke_project_allocation(
-    *,
-    project_id: UUID,
-    provider_id: UUID,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    db: AsyncSession,
-) -> None:
-    async with transaction(db):
-        await _get_project_or_raise(project_id=project_id, scope=scope, db=db)
-        allocation = await _get_project_allocation_or_raise(
-            project_id=project_id,
-            provider_id=provider_id,
-            scope=scope,
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="allocation",
+            action="allocation.updated",
+            message=f"Updated allocation {allocation.name}.",
+            team_id=allocation.team_id,
+            project_id=allocation.project_id,
+            allocation_id=allocation.id,
             db=db,
         )
-        allocation_id = allocation.id
-        await repository.delete_project_allocation(allocation=allocation, db=db)
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="project_allocation.revoked",
-                target_type="project_allocation",
-                target_id=allocation_id,
-                event_metadata={
-                    "project_id": str(project_id),
-                    "provider_id": str(provider_id),
-                },
-            ),
-            db,
-        )
-
     logger.info(
-        "project_allocation_revoked",
-        project_id=str(project_id),
-        provider_id=str(provider_id),
+        "allocation_updated",
+        allocation_id=str(allocation_id),
         org_id=str(scope.org_id),
+        actor_user_id=str(actor.id),
     )
-
-
-async def _get_project_allocation_or_raise(
-    *,
-    project_id: UUID,
-    provider_id: UUID,
-    scope: Scope,
-    db: AsyncSession,
-) -> ProjectAllocation:
-    allocation = await repository.get_project_allocation(
-        org_id=scope.org_id,
-        project_id=project_id,
-        provider_id=provider_id,
-        db=db,
-    )
-    if allocation is None:
-        raise ProjectAllocationNotFoundError
-    return allocation
-
-
-async def _validate_model_offerings_belong_to_provider(
-    *,
-    provider_id: UUID,
-    model_offering_ids: list[UUID] | None,
-    scope: Scope,
-    db: AsyncSession,
-) -> None:
-    if model_offering_ids is None:
-        return
-    for model_offering_id in model_offering_ids:
-        model_offering = await providers_facade.get_model_offering(
-            model_offering_id=model_offering_id,
-            scope=scope,
-            db=db,
-        )
-        if model_offering.provider_id != provider_id:
-            raise AccessDeniedError
-
-
-def _allocation_to_response(allocation: ProjectAllocation) -> ProjectAllocationResponse:
-    return ProjectAllocationResponse.model_validate(allocation)
-
-
-def _uuid_list_to_json(values: list[UUID] | None) -> list[str] | None:
-    if values is None:
-        return None
-    return [str(value) for value in values]
-
-
-async def create_model_alias(
-    *,
-    payload: CreateModelAliasRequest,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    db: AsyncSession,
-) -> ModelAliasResponse:
-    async with transaction(db):
-        await _ensure_alias_name_available(alias=payload.alias, scope=scope, db=db)
-        await providers_facade.get_provider(provider_id=payload.provider_id, scope=scope, db=db)
-        model_alias = await repository.create_model_alias(
-            org_id=scope.org_id,
-            alias=payload.alias,
-            provider_id=payload.provider_id,
-            provider_model=payload.provider_model,
-            db=db,
-        )
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="model_alias.created",
-                target_type="model_alias",
-                target_id=model_alias.id,
-                event_metadata={
-                    "alias": model_alias.alias,
-                    "provider_id": str(model_alias.provider_id),
-                    "provider_model": model_alias.provider_model,
-                },
-            ),
-            db,
-        )
-
-    logger.info(
-        "model_alias_created",
-        model_alias_id=str(model_alias.id),
-        org_id=str(scope.org_id),
-    )
-    return _model_alias_to_response(model_alias)
-
-
-async def list_model_aliases(*, scope: Scope, db: AsyncSession) -> list[ModelAliasResponse]:
-    model_aliases = await repository.list_model_aliases(org_id=scope.org_id, db=db)
-    return [_model_alias_to_response(model_alias) for model_alias in model_aliases]
-
-
-async def update_model_alias(
-    *,
-    alias_id: UUID,
-    payload: UpdateModelAliasRequest,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    db: AsyncSession,
-) -> ModelAliasResponse:
-    async with transaction(db):
-        model_alias = await _get_model_alias_or_raise(alias_id=alias_id, scope=scope, db=db)
-        if payload.alias is not None and payload.alias != model_alias.alias:
-            await _ensure_alias_name_available(alias=payload.alias, scope=scope, db=db)
-            model_alias.alias = payload.alias
-        if payload.provider_id is not None:
-            await providers_facade.get_provider(provider_id=payload.provider_id, scope=scope, db=db)
-            model_alias.provider_id = payload.provider_id
-        if payload.provider_model is not None:
-            model_alias.provider_model = payload.provider_model
-        if payload.is_active is not None:
-            model_alias.is_active = payload.is_active
-
-        await db.flush()
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="model_alias.updated",
-                target_type="model_alias",
-                target_id=model_alias.id,
-            ),
-            db,
-        )
-
-    logger.info(
-        "model_alias_updated",
-        model_alias_id=str(model_alias.id),
-        org_id=str(scope.org_id),
-    )
-    return _model_alias_to_response(model_alias)
-
-
-async def deactivate_model_alias(
-    *,
-    alias_id: UUID,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    db: AsyncSession,
-) -> None:
-    async with transaction(db):
-        model_alias = await _get_model_alias_or_raise(alias_id=alias_id, scope=scope, db=db)
-        model_alias.is_active = False
-        await db.flush()
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="model_alias.deactivated",
-                target_type="model_alias",
-                target_id=model_alias.id,
-            ),
-            db,
-        )
-
-    logger.info(
-        "model_alias_deactivated",
-        model_alias_id=str(alias_id),
-        org_id=str(scope.org_id),
-    )
-
-
-async def _ensure_alias_name_available(*, alias: str, scope: Scope, db: AsyncSession) -> None:
-    existing = await repository.get_model_alias_by_name(alias=alias, org_id=scope.org_id, db=db)
-    if existing is not None:
-        raise ModelAliasAlreadyExistsError
-
-
-async def _get_model_alias_or_raise(
-    *, alias_id: UUID, scope: Scope, db: AsyncSession
-) -> ModelAlias:
-    model_alias = await repository.get_model_alias(alias_id=alias_id, org_id=scope.org_id, db=db)
-    if model_alias is None:
-        raise ModelAliasNotFoundError
-    return model_alias
-
-
-def _model_alias_to_response(model_alias: ModelAlias) -> ModelAliasResponse:
-    return ModelAliasResponse.model_validate(model_alias)
+    return _to_allocation_response(allocation)
 
 
 async def create_virtual_key(
@@ -515,38 +326,51 @@ async def create_virtual_key(
 ) -> CreatedVirtualKeyResponse:
     async with transaction(db):
         project = await _get_project_or_raise(project_id=project_id, scope=scope, db=db)
-        await _validate_virtual_key_restrictions(payload.restrictions, scope=scope, db=db)
+        if payload.allocation_id is not None:
+            allocation = await _get_allocation_or_raise(
+                allocation_id=payload.allocation_id,
+                scope=scope,
+                db=db,
+            )
+            if allocation.project_id != project.id:
+                raise AccessDeniedError
+        else:
+            allocation = await _resolve_effective_allocation(project=project, scope=scope, db=db)
+            if allocation is None:
+                raise AllocationNotFoundError
         raw_key = generate_virtual_key()
         virtual_key = await repository.create_virtual_key(
             org_id=scope.org_id,
             project_id=project.id,
+            allocation_id=allocation.id,
+            custom_allocation_id=payload.allocation_id,
             name=payload.name,
             key_hash=hash_token(raw_key),
             key_prefix=_key_prefix(raw_key),
-            restrictions=_restrictions_to_json(payload.restrictions),
+            allowed_models=payload.allowed_models,
             expires_at=payload.expires_at,
             db=db,
         )
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="virtual_key.created",
-                target_type="virtual_key",
-                target_id=virtual_key.id,
-                event_metadata={"project_id": str(project.id), "name": virtual_key.name},
-            ),
-            db,
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="workspace",
+            action="virtual_key.created",
+            message=f"Created virtual key {virtual_key.name}.",
+            team_id=project.team_id,
+            project_id=project.id,
+            allocation_id=allocation.id,
+            virtual_key_id=virtual_key.id,
+            db=db,
         )
-
     logger.info(
         "virtual_key_created",
         virtual_key_id=str(virtual_key.id),
         project_id=str(project_id),
         org_id=str(scope.org_id),
+        actor_user_id=str(actor.id),
     )
     return CreatedVirtualKeyResponse(
-        **_virtual_key_to_response(virtual_key).model_dump(),
+        **_to_virtual_key_response(virtual_key).model_dump(),
         key=raw_key,
     )
 
@@ -563,7 +387,7 @@ async def list_virtual_keys(
         project_id=project_id,
         db=db,
     )
-    return [_virtual_key_to_response(virtual_key) for virtual_key in virtual_keys]
+    return [_to_virtual_key_response(virtual_key) for virtual_key in virtual_keys]
 
 
 async def get_virtual_key(
@@ -580,7 +404,7 @@ async def get_virtual_key(
         scope=scope,
         db=db,
     )
-    return _virtual_key_to_response(virtual_key)
+    return _to_virtual_key_response(virtual_key)
 
 
 async def update_virtual_key(
@@ -600,47 +424,52 @@ async def update_virtual_key(
             scope=scope,
             db=db,
         )
-        restrictions_changed = "restrictions" in payload.model_fields_set
         if payload.name is not None:
             virtual_key.name = payload.name
         if "expires_at" in payload.model_fields_set:
             virtual_key.expires_at = payload.expires_at
-        if restrictions_changed:
-            await _validate_virtual_key_restrictions(payload.restrictions, scope=scope, db=db)
-            virtual_key.restrictions = _restrictions_to_json(payload.restrictions)
-
+        if "allowed_models" in payload.model_fields_set:
+            virtual_key.allowed_models = payload.allowed_models
+        if "custom_allocation_id" in payload.model_fields_set:
+            if payload.custom_allocation_id is None:
+                effective_allocation = await _resolve_effective_allocation(
+                    project=await _get_project_or_raise(project_id=project_id, scope=scope, db=db),
+                    scope=scope,
+                    db=db,
+                )
+                if effective_allocation is None:
+                    raise AllocationNotFoundError
+                virtual_key.allocation_id = effective_allocation.id
+                virtual_key.custom_allocation_id = None
+            else:
+                allocation = await _get_allocation_or_raise(
+                    allocation_id=payload.custom_allocation_id,
+                    scope=scope,
+                    db=db,
+                )
+                if allocation.project_id != project_id:
+                    raise AccessDeniedError
+                virtual_key.allocation_id = allocation.id
+                virtual_key.custom_allocation_id = allocation.id
         await db.flush()
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="virtual_key.updated",
-                target_type="virtual_key",
-                target_id=virtual_key.id,
-                event_metadata={"project_id": str(project_id)},
-            ),
-            db,
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="workspace",
+            action="virtual_key.updated",
+            message=f"Updated virtual key {virtual_key.name}.",
+            project_id=project_id,
+            allocation_id=virtual_key.allocation_id,
+            virtual_key_id=virtual_key.id,
+            db=db,
         )
-        if restrictions_changed:
-            await audit_facade.record_event(
-                RecordAuditEvent(
-                    org_id=scope.org_id,
-                    actor_user_id=actor.id,
-                    event="virtual_key.restrictions_updated",
-                    target_type="virtual_key",
-                    target_id=virtual_key.id,
-                    event_metadata={"project_id": str(project_id)},
-                ),
-                db,
-            )
-
     logger.info(
         "virtual_key_updated",
         virtual_key_id=str(key_id),
         project_id=str(project_id),
         org_id=str(scope.org_id),
+        actor_user_id=str(actor.id),
     )
-    return _virtual_key_to_response(virtual_key)
+    return _to_virtual_key_response(virtual_key)
 
 
 async def revoke_virtual_key(
@@ -661,73 +490,23 @@ async def revoke_virtual_key(
         )
         virtual_key.revoked_at = datetime.now(UTC)
         await db.flush()
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="virtual_key.revoked",
-                target_type="virtual_key",
-                target_id=virtual_key.id,
-                event_metadata={"project_id": str(project_id)},
-            ),
-            db,
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="workspace",
+            action="virtual_key.revoked",
+            message=f"Revoked virtual key {virtual_key.name}.",
+            project_id=project_id,
+            allocation_id=virtual_key.allocation_id,
+            virtual_key_id=virtual_key.id,
+            db=db,
         )
-
     logger.info(
         "virtual_key_revoked",
         virtual_key_id=str(key_id),
         project_id=str(project_id),
         org_id=str(scope.org_id),
+        actor_user_id=str(actor.id),
     )
-
-
-async def _get_virtual_key_or_raise(
-    *,
-    project_id: UUID,
-    key_id: UUID,
-    scope: Scope,
-    db: AsyncSession,
-) -> VirtualKey:
-    virtual_key = await repository.get_virtual_key(
-        org_id=scope.org_id,
-        project_id=project_id,
-        key_id=key_id,
-        db=db,
-    )
-    if virtual_key is None:
-        raise VirtualKeyNotFoundError
-    return virtual_key
-
-
-def _virtual_key_to_response(virtual_key: VirtualKey) -> VirtualKeyResponse:
-    return VirtualKeyResponse.model_validate(virtual_key)
-
-
-def _key_prefix(raw_key: str) -> str:
-    return raw_key[:16]
-
-
-def _restrictions_to_json(restrictions) -> list[dict[str, object]] | None:
-    if restrictions is None:
-        return None
-    return [restriction.model_dump(mode="json") for restriction in restrictions]
-
-
-async def _validate_virtual_key_restrictions(
-    restrictions,
-    *,
-    scope: Scope,
-    db: AsyncSession,
-) -> None:
-    if restrictions is None:
-        return
-
-    for restriction in restrictions:
-        await providers_facade.get_provider(
-            provider_id=restriction.provider_id,
-            scope=scope,
-            db=db,
-        )
 
 
 async def resolve_access(*, payload: ResolveAccessRequest, db: AsyncSession) -> ResolvedAccess:
@@ -750,143 +529,274 @@ async def resolve_access(*, payload: ResolveAccessRequest, db: AsyncSession) -> 
     if project is None or not project.is_active:
         raise InvalidVirtualKeyError
 
-    resolved = await _resolve_allocation_access(
-        payload=payload,
-        virtual_key=virtual_key,
-        db=db,
-    )
-    if resolved is None:
-        raise AccessDeniedError
-
-    return resolved
-
-
-async def _resolve_allocation_access(
-    *,
-    payload: ResolveAccessRequest,
-    virtual_key: VirtualKey,
-    db: AsyncSession,
-) -> ResolvedAccess | None:
-    provider_id, provider_model, used_alias = await _resolve_requested_model(
-        requested_model=payload.requested_model,
-        requested_provider_id=payload.provider_id,
+    allocation = await repository.get_allocation(
+        allocation_id=virtual_key.custom_allocation_id or virtual_key.allocation_id,
         org_id=virtual_key.org_id,
         db=db,
     )
-    scope = Scope(org_id=virtual_key.org_id)
-    provider = await providers_facade.get_provider(provider_id=provider_id, scope=scope, db=db)
-    if not provider.is_active:
+    if allocation is None or not allocation.is_active:
         raise AccessDeniedError
-    if payload.provider is not None and provider.slug != payload.provider:
+    if allocation.project_id not in {None, project.id}:
+        raise AccessDeniedError
+    allocation_chain = [
+        allocation,
+        *await repository.get_parent_allocations(
+            allocation=allocation,
+            org_id=virtual_key.org_id,
+            db=db,
+        ),
+    ]
+    if any(not chain_allocation.is_active for chain_allocation in allocation_chain):
         raise AccessDeniedError
 
-    allocation = await repository.get_project_allocation(
-        org_id=virtual_key.org_id,
-        project_id=virtual_key.project_id,
-        provider_id=provider_id,
-        db=db,
-    )
-    if allocation is None:
-        return None
-    if not allocation.is_active:
-        raise AccessDeniedError
-    if not await _allocation_allows_model(
+    matched = await _match_offering(
         allocation=allocation,
-        provider_model=provider_model,
-        scope=scope,
+        requested_model=payload.requested_model,
+        scope=Scope(org_id=virtual_key.org_id),
         db=db,
-    ):
+    )
+    if matched is None:
         raise AccessDeniedError
-    if not _key_restrictions_allow(
-        provider_id=provider_id,
-        provider_model=provider_model,
-        restrictions=virtual_key.restrictions,
-    ):
+    provider_id, pool_id, provider_model, input_price, output_price = matched
+    for ancestor in allocation_chain[1:]:
+        if not await _allocation_allows_route(
+            allocation=ancestor,
+            provider_id=provider_id,
+            pool_id=pool_id,
+            provider_model=provider_model,
+            scope=Scope(org_id=virtual_key.org_id),
+            db=db,
+        ):
+            raise AccessDeniedError
+
+    if virtual_key.allowed_models is not None and provider_model not in virtual_key.allowed_models:
         raise AccessDeniedError
 
     return ResolvedAccess(
         org_id=virtual_key.org_id,
+        team_id=project.team_id,
         project_id=virtual_key.project_id,
+        allocation_id=allocation.id,
+        allocation_chain_ids=[chain_allocation.id for chain_allocation in allocation_chain],
+        allocation_limits=[
+            _to_resolved_allocation_limit(chain_allocation) for chain_allocation in allocation_chain
+        ],
         virtual_key_id=virtual_key.id,
         provider_id=provider_id,
+        pool_id=pool_id,
+        provider_key_id=None,
         requested_model=payload.requested_model,
         provider_model=provider_model,
-        used_alias=used_alias,
+        input_price_per_million_tokens=input_price,
+        output_price_per_million_tokens=output_price,
     )
 
 
-async def _allocation_allows_model(
+async def _match_offering(
     *,
-    allocation: ProjectAllocation,
+    allocation: Allocation,
+    requested_model: str,
+    scope: Scope,
+    db: AsyncSession,
+) -> tuple[UUID, UUID, str, int | None, int | None] | None:
+    for offering in allocation.offerings:
+        pool_id = UUID(str(offering["pool_id"]))
+        model_offering_id = UUID(str(offering["model_offering_id"]))
+        try:
+            pool = await providers_facade.get_credential_pool(pool_id=pool_id, scope=scope, db=db)
+            model = await providers_facade.get_model_offering(
+                model_offering_id=model_offering_id,
+                scope=scope,
+                db=db,
+            )
+        except ProviderNotFoundError:
+            continue
+        if not pool.is_active or not model.is_active:
+            continue
+        if pool.provider_id != model.provider_id:
+            continue
+        if requested_model in {model.provider_model_name, model.alias}:
+            return (
+                model.provider_id,
+                pool.id,
+                model.provider_model_name,
+                model.input_price_per_million_tokens,
+                model.output_price_per_million_tokens,
+            )
+    return None
+
+
+async def _allocation_allows_route(
+    *,
+    allocation: Allocation,
+    provider_id: UUID,
+    pool_id: UUID,
     provider_model: str,
     scope: Scope,
     db: AsyncSession,
 ) -> bool:
-    if allocation.model_offering_ids is None:
-        return True
-    allowed_ids = set(allocation.model_offering_ids)
-    model_offerings = await providers_facade.list_model_offerings(
-        provider_id=allocation.provider_id,
-        search=None,
-        modalities=None,
-        is_active=True,
-        limit=100,
-        offset=0,
-        scope=scope,
-        db=db,
-    )
-    for model_offering in model_offerings.items:
-        if str(model_offering.id) not in allowed_ids:
+    for offering in allocation.offerings:
+        offering_pool_id = UUID(str(offering["pool_id"]))
+        model_offering_id = UUID(str(offering["model_offering_id"]))
+        if offering_pool_id != pool_id:
             continue
-        if not model_offering.is_active:
+        try:
+            model = await providers_facade.get_model_offering(
+                model_offering_id=model_offering_id,
+                scope=scope,
+                db=db,
+            )
+        except ProviderNotFoundError:
             continue
-        if model_offering.provider_model_name == provider_model:
-            return True
-        if model_offering.alias == provider_model:
+        if (
+            model.is_active
+            and model.provider_id == provider_id
+            and model.provider_model_name == provider_model
+        ):
             return True
     return False
 
 
-async def _resolve_requested_model(
+async def _validate_allocation_target(
     *,
-    requested_model: str,
-    requested_provider_id: UUID | None,
-    org_id: UUID,
+    payload: CreateAllocationRequest,
+    scope: Scope,
     db: AsyncSession,
-) -> tuple[UUID, str, bool]:
-    alias = await repository.get_active_model_alias_by_name(
-        alias=requested_model,
-        org_id=org_id,
+) -> Project | None:
+    if payload.team_id is not None:
+        await teams_facade.get_team(team_id=payload.team_id, scope=scope, db=db)
+        return None
+    if payload.project_id is not None:
+        return await _get_project_or_raise(project_id=payload.project_id, scope=scope, db=db)
+    return None
+
+
+async def _validate_offerings(
+    offerings: list[AllocationOffering],
+    *,
+    scope: Scope,
+    db: AsyncSession,
+) -> None:
+    for offering in offerings:
+        pool = await providers_facade.get_credential_pool(
+            pool_id=offering.pool_id,
+            scope=scope,
+            db=db,
+        )
+        model = await providers_facade.get_model_offering(
+            model_offering_id=offering.model_offering_id,
+            scope=scope,
+            db=db,
+        )
+        if pool.provider_id != model.provider_id:
+            raise AccessDeniedError
+
+
+async def _resolve_effective_allocation(
+    *,
+    project: Project,
+    scope: Scope,
+    db: AsyncSession,
+) -> Allocation | None:
+    project_allocation = await repository.get_default_project_allocation(
+        org_id=scope.org_id,
+        project_id=project.id,
         db=db,
     )
-    if alias is not None:
-        return alias.provider_id, alias.provider_model, True
+    if project_allocation is not None:
+        return project_allocation
+    return await repository.get_default_team_allocation(
+        org_id=scope.org_id,
+        team_id=project.team_id,
+        db=db,
+    )
 
-    if requested_provider_id is None:
-        raise AccessDeniedError
 
-    return requested_provider_id, requested_model, False
+async def _get_project_or_raise(*, project_id: UUID, scope: Scope, db: AsyncSession) -> Project:
+    project = await repository.get_project(project_id=project_id, org_id=scope.org_id, db=db)
+    if project is None:
+        raise ProjectNotFoundError
+    return project
 
 
-def _key_restrictions_allow(
+async def _get_allocation_or_raise(
     *,
-    provider_id: UUID,
-    provider_model: str,
-    restrictions: list[dict[str, object]] | None,
-) -> bool:
-    if restrictions is None:
-        return True
+    allocation_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> Allocation:
+    allocation = await repository.get_allocation(
+        allocation_id=allocation_id,
+        org_id=scope.org_id,
+        db=db,
+    )
+    if allocation is None:
+        raise AllocationNotFoundError
+    return allocation
 
-    for restriction in restrictions:
-        if restriction.get("provider_id") != str(provider_id):
-            continue
-        allowed_models = restriction.get("allowed_models")
-        if allowed_models is None:
-            return True
-        if isinstance(allowed_models, list) and provider_model in allowed_models:
-            return True
 
-    return False
+async def _get_virtual_key_or_raise(
+    *,
+    project_id: UUID,
+    key_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> VirtualKey:
+    virtual_key = await repository.get_virtual_key(
+        org_id=scope.org_id,
+        project_id=project_id,
+        key_id=key_id,
+        db=db,
+    )
+    if virtual_key is None:
+        raise VirtualKeyNotFoundError
+    return virtual_key
+
+
+def _to_project_response(project: Project) -> ProjectResponse:
+    return ProjectResponse.model_validate(project)
+
+
+def _to_allocation_response(allocation: Allocation) -> AllocationResponse:
+    return AllocationResponse.model_validate(allocation)
+
+
+def _to_resolved_allocation_limit(allocation: Allocation) -> ResolvedAllocationLimit:
+    return ResolvedAllocationLimit(
+        allocation_id=allocation.id,
+        budget_cents=allocation.budget_cents,
+        max_requests=allocation.max_requests,
+        max_input_tokens=allocation.max_input_tokens,
+        max_output_tokens=allocation.max_output_tokens,
+        max_tokens_per_request=allocation.max_tokens_per_request,
+        window=allocation.window,
+    )
+
+
+def _to_virtual_key_response(virtual_key: VirtualKey) -> VirtualKeyResponse:
+    return VirtualKeyResponse(
+        id=virtual_key.id,
+        org_id=virtual_key.org_id,
+        project_id=virtual_key.project_id,
+        allocation_id=virtual_key.allocation_id,
+        custom_allocation_id=virtual_key.custom_allocation_id,
+        allocation_mode="custom" if virtual_key.custom_allocation_id else "inherited",
+        name=virtual_key.name,
+        key_prefix=virtual_key.key_prefix,
+        allowed_models=virtual_key.allowed_models,
+        expires_at=virtual_key.expires_at,
+        revoked_at=virtual_key.revoked_at,
+        created_at=virtual_key.created_at,
+        updated_at=virtual_key.updated_at,
+    )
+
+
+def _offerings_to_json(offerings: list[AllocationOffering]) -> list[dict[str, str]]:
+    return [offering.model_dump(mode="json") for offering in offerings]
+
+
+def _key_prefix(raw_key: str) -> str:
+    return raw_key[:16]
 
 
 def _as_utc(value: datetime) -> datetime:

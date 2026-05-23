@@ -37,10 +37,10 @@ describe("AppRoutes", () => {
     expect(screen.getByLabelText("Password")).toBeInTheDocument();
   });
 
-  it("renders the dashboard summary route", () => {
+  it("renders the dashboard home route", () => {
     renderRoute("/");
 
-    expect(screen.getByRole("heading", { name: "Bab" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Gateway home" })).toBeInTheDocument();
   });
 
   it("redirects unknown routes to login", () => {

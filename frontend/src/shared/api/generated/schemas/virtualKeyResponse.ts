@@ -4,15 +4,17 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { VirtualKeyRestriction } from './virtualKeyRestriction';
 
 export interface VirtualKeyResponse {
   id: string;
   org_id: string;
   project_id: string;
+  allocation_id: string;
+  custom_allocation_id: string | null;
+  allocation_mode: string;
   name: string;
   key_prefix: string;
-  restrictions: VirtualKeyRestriction[] | null;
+  allowed_models: string[] | null;
   expires_at: string | null;
   revoked_at: string | null;
   created_at: string;

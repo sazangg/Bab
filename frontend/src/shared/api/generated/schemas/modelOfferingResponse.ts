@@ -4,8 +4,8 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { ModelOfferingResponseCapabilities } from './modelOfferingResponseCapabilities';
-import type { ModelOfferingResponseRateLimitHints } from './modelOfferingResponseRateLimitHints';
+import type { ModelOfferingResponseCapabilities } from "./modelOfferingResponseCapabilities";
+import type { ModelOfferingResponseRateLimitHints } from "./modelOfferingResponseRateLimitHints";
 
 export interface ModelOfferingResponse {
   id: string;

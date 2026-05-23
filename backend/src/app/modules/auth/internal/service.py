@@ -7,8 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.security import SecurityError, create_access_token, decode_access_token
-from app.modules.audit import facade as audit_facade
-from app.modules.audit.schemas import RecordAuditEvent
 from app.modules.auth.errors import (
     InvalidAccessTokenError,
     InvalidCredentialsError,
@@ -30,16 +28,6 @@ async def login(payload: LoginRequest, db: AsyncSession) -> tuple[TokenResponse,
 
     principal = await get_default_principal(db)
     raw_refresh_token = _create_refresh_token(principal)
-    await audit_facade.record_event(
-        RecordAuditEvent(
-            org_id=principal.org_id,
-            actor_user_id=principal.id,
-            event="auth.login_success",
-            target_type="mock_admin",
-            target_id=principal.id,
-        ),
-        db,
-    )
     return _access_response(principal), raw_refresh_token
 
 
@@ -63,18 +51,6 @@ async def logout(raw_refresh_token: str | None, db: AsyncSession) -> None:
     if not raw_refresh_token:
         return
 
-    principal = await get_default_principal(db)
-    await audit_facade.record_event(
-        RecordAuditEvent(
-            org_id=principal.org_id,
-            actor_user_id=principal.id,
-            event="auth.logout",
-            target_type="mock_admin",
-            target_id=principal.id,
-        ),
-        db,
-    )
-
 
 async def verify_access_token(token: str, db: AsyncSession) -> AuthenticatedUser:
     try:
@@ -89,9 +65,7 @@ async def verify_access_token(token: str, db: AsyncSession) -> AuthenticatedUser
 
 
 async def get_default_principal(db: AsyncSession) -> AuthenticatedUser:
-    org = await db.scalar(
-        select(Organization).where(Organization.slug == _default_org_slug())
-    )
+    org = await db.scalar(select(Organization).where(Organization.slug == _default_org_slug()))
     team = None
     if org is not None:
         team = await db.scalar(

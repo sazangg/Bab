@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
-import type { ProjectResponse } from "@/shared/api/generated/schemas";
+import type { ProjectResponse, UpdateProjectRequest } from "@/shared/api/generated/schemas";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -35,7 +35,7 @@ export function EditProjectDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   project: ProjectResponse;
-  onSubmit: (values: EditValues) => void;
+  onSubmit: (data: UpdateProjectRequest) => void;
   isPending: boolean;
 }) {
   const form = useForm<EditValues>({
@@ -49,6 +49,19 @@ export function EditProjectDialog({
     }
   }, [open, project, form]);
 
+  const handleSubmit = form.handleSubmit((values) => {
+    const dirty = form.formState.dirtyFields;
+    const payload: UpdateProjectRequest = {};
+    if (dirty.name) payload.name = values.name;
+    if (dirty.description)
+      payload.description = values.description?.trim() ? values.description : null;
+    if (Object.keys(payload).length === 0) {
+      onOpenChange(false);
+      return;
+    }
+    onSubmit(payload);
+  });
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -56,7 +69,7 @@ export function EditProjectDialog({
           <DialogTitle>Edit project</DialogTitle>
           <DialogDescription>Rename or update the description.</DialogDescription>
         </DialogHeader>
-        <form id="edit-project-form" className="grid gap-4" onSubmit={form.handleSubmit(onSubmit)}>
+        <form id="edit-project-form" className="grid gap-4" onSubmit={handleSubmit}>
           <div className="space-y-1.5">
             <Label htmlFor="edit-project-name">Name</Label>
             <Input id="edit-project-name" autoFocus {...form.register("name")} />
@@ -67,6 +80,11 @@ export function EditProjectDialog({
           <div className="space-y-1.5">
             <Label htmlFor="edit-project-description">Description</Label>
             <Textarea id="edit-project-description" rows={4} {...form.register("description")} />
+            {form.formState.errors.description ? (
+              <p className="text-xs text-destructive">
+                {form.formState.errors.description.message}
+              </p>
+            ) : null}
           </div>
         </form>
         <DialogFooter>

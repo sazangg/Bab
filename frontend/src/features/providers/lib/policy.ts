@@ -80,7 +80,6 @@ export function buildProviderUpdatePayload(values: EditProviderValues) {
     ...(values.slug ? { slug: values.slug } : {}),
     base_url: values.base_url,
     description: values.description ? values.description : null,
-    credential_routing_policy: values.credential_routing_policy,
     request_timeout_seconds: values.request_timeout_seconds,
     max_body_bytes: values.max_body_bytes_kb !== undefined ? values.max_body_bytes_kb * 1024 : null,
     max_concurrent_requests:

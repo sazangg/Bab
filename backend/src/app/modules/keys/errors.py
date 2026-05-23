@@ -2,15 +2,7 @@ class ProjectNotFoundError(Exception):
     pass
 
 
-class ProjectAllocationNotFoundError(Exception):
-    pass
-
-
-class ModelAliasNotFoundError(Exception):
-    pass
-
-
-class ModelAliasAlreadyExistsError(Exception):
+class AllocationNotFoundError(Exception):
     pass
 
 
@@ -24,4 +16,3 @@ class InvalidVirtualKeyError(Exception):
 
 class AccessDeniedError(Exception):
     pass
-

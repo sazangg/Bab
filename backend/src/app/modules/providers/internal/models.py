@@ -31,7 +31,6 @@ class Provider(Base):
     fallback_policy: Mapped[dict] = mapped_column(JSON, default=dict)
     circuit_breaker_policy: Mapped[dict] = mapped_column(JSON, default=dict)
     max_concurrent_requests: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    credential_routing_policy: Mapped[str] = mapped_column(String(100), default="priority")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -60,7 +59,6 @@ class ProviderCredential(Base):
     name: Mapped[str] = mapped_column(String(255))
     key_prefix: Mapped[str] = mapped_column(String(20))
     api_key_encrypted: Mapped[str] = mapped_column(String(1000))
-    priority: Mapped[int] = mapped_column(Integer, default=100)
     health_status: Mapped[str] = mapped_column(String(50), default="unchecked")
     last_validation_error: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     last_successful_request_at: Mapped[datetime | None] = mapped_column(
@@ -69,6 +67,70 @@ class ProviderCredential(Base):
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+
+class CredentialPool(Base):
+    __tablename__ = "credential_pools"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        index=True,
+    )
+    provider_id: Mapped[UUID] = mapped_column(
+        ForeignKey("providers.id", ondelete="CASCADE"),
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    selection_policy: Mapped[str] = mapped_column(String(100), default="priority")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+
+class CredentialPoolCredential(Base):
+    __tablename__ = "credential_pool_credentials"
+    __table_args__ = (
+        UniqueConstraint(
+            "pool_id",
+            "provider_credential_id",
+            name="uq_credential_pool_credential",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        index=True,
+    )
+    pool_id: Mapped[UUID] = mapped_column(
+        ForeignKey("credential_pools.id", ondelete="CASCADE"),
+        index=True,
+    )
+    provider_credential_id: Mapped[UUID] = mapped_column(
+        ForeignKey("provider_credentials.id", ondelete="CASCADE"),
+        index=True,
+    )
+    priority: Mapped[int] = mapped_column(Integer, default=100)
+    weight: Mapped[int] = mapped_column(Integer, default=1)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),

@@ -1,22 +1,31 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, KeyRound, Plus } from "lucide-react";
 import { useState } from "react";
-import { useForm, useWatch } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import {
   useCreateVirtualKeyApiV1ProjectsProjectIdKeysPost,
+  getVirtualKeyUsageApiV1ProjectsProjectIdKeysKeyIdUsageGet,
+  useListProjectAllocationsApiV1ProjectsProjectIdAllocationsGet,
   useRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete,
 } from "@/shared/api/generated/projects/projects";
+import { useListTeamAllocationsApiV1TeamsTeamIdAllocationsGet } from "@/shared/api/generated/teams/teams";
 import type {
   CreatedVirtualKeyResponse,
   ProjectResponse,
-  ProviderResponse,
   VirtualKeyResponse,
 } from "@/shared/api/generated/schemas";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   Dialog,
   DialogClose,
@@ -28,13 +37,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Sheet,
   SheetClose,
@@ -59,7 +61,6 @@ import { StatusBadge } from "@/shared/components/StatusBadge";
 const keySchema = z.object({
   name: z.string().min(1).max(255),
   expires_at: z.string().optional(),
-  provider_id: z.string().optional(),
   allowed_models: z.string().optional(),
 });
 
@@ -68,14 +69,12 @@ type KeyValues = z.infer<typeof keySchema>;
 export function ProjectKeysSection({
   projectId,
   project,
-  providers,
   keys,
   isLoading,
   onView,
 }: {
   projectId: string;
   project: ProjectResponse;
-  providers: ProviderResponse[];
   keys: VirtualKeyResponse[];
   isLoading: boolean;
   onView: (keyId: string) => void;
@@ -88,16 +87,37 @@ export function ProjectKeysSection({
 
   const form = useForm<KeyValues>({
     resolver: zodResolver(keySchema),
-    defaultValues: { name: "", expires_at: "", provider_id: "", allowed_models: "" },
+    defaultValues: { name: "", expires_at: "", allowed_models: "" },
   });
-  const providerId = useWatch({ control: form.control, name: "provider_id" });
+  const allocationsQuery = useListProjectAllocationsApiV1ProjectsProjectIdAllocationsGet(
+    projectId,
+    { query: { enabled: Boolean(projectId) } },
+  );
+  const teamAllocationsQuery = useListTeamAllocationsApiV1TeamsTeamIdAllocationsGet(
+    project.team_id,
+    { query: { enabled: Boolean(project.team_id) } },
+  );
+  const allocations = allocationsQuery.data?.status === 200 ? allocationsQuery.data.data : [];
+  const teamAllocations =
+    teamAllocationsQuery.data?.status === 200 ? teamAllocationsQuery.data.data : [];
+  const availableAllocations = [...allocations, ...teamAllocations];
+  const effectiveAllocation =
+    allocations.find((allocation) => allocation.is_default && allocation.is_active) ??
+    teamAllocations.find((allocation) => allocation.is_default && allocation.is_active);
+  const keyUsageQueries = useQueries({
+    queries: keys.map((key) => ({
+      queryKey: ["project-key-usage", projectId, key.id],
+      queryFn: () => getVirtualKeyUsageApiV1ProjectsProjectIdKeysKeyIdUsageGet(projectId, key.id),
+      enabled: Boolean(projectId && key.id),
+    })),
+  });
 
   const createMutation = useCreateVirtualKeyApiV1ProjectsProjectIdKeysPost({
     mutation: {
       onSuccess: async (response) => {
         if (response.status === 201) {
           setCreatedKey(response.data);
-          form.reset();
+          form.reset({ name: "", expires_at: "", allowed_models: "" });
           setCreateOpen(false);
           await queryClient.invalidateQueries();
         }
@@ -113,22 +133,13 @@ export function ProjectKeysSection({
     },
   });
 
-  const accessibleProviders = providers.filter((provider) => provider.is_active);
-
   const submit = (values: KeyValues) =>
     createMutation.mutate({
       projectId,
       data: {
         name: values.name,
         expires_at: values.expires_at ? new Date(values.expires_at).toISOString() : null,
-        restrictions: values.provider_id
-          ? [
-              {
-                provider_id: values.provider_id,
-                allowed_models: parseModels(values.allowed_models),
-              },
-            ]
-          : null,
+        allowed_models: parseModels(values.allowed_models),
       },
     });
 
@@ -136,16 +147,14 @@ export function ProjectKeysSection({
     <>
       <Card>
         <CardHeader>
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <CardTitle>Virtual keys</CardTitle>
-              <CardDescription>
-                Each key inherits this project's access. Restrictions can only narrow it.
-              </CardDescription>
-            </div>
+          <CardTitle>Virtual keys</CardTitle>
+          <CardDescription>
+            Each key inherits this project's access. Restrictions can only narrow it.
+          </CardDescription>
+          <CardAction>
             <Sheet open={createOpen} onOpenChange={setCreateOpen}>
               <SheetTrigger asChild>
-                <Button size="sm" disabled={!project.is_active}>
+                <Button size="sm" disabled={!project.is_active || !effectiveAllocation}>
                   <Plus />
                   New key
                 </Button>
@@ -153,7 +162,11 @@ export function ProjectKeysSection({
               <SheetContent>
                 <SheetHeader>
                   <SheetTitle>New virtual key</SheetTitle>
-                  <SheetDescription>The raw key is shown once after creation.</SheetDescription>
+                  <SheetDescription>
+                    {effectiveAllocation
+                      ? `Uses allocation: ${effectiveAllocation.name}. The raw key is shown once.`
+                      : "Create a team or project allocation before issuing a key."}
+                  </SheetDescription>
                 </SheetHeader>
                 <form className="grid gap-4 px-4" onSubmit={form.handleSubmit(submit)}>
                   <div className="space-y-1.5">
@@ -174,26 +187,9 @@ export function ProjectKeysSection({
                     />
                     <p className="text-xs text-muted-foreground">Optional. Blank means never.</p>
                   </div>
-                  <div className="space-y-1.5">
-                    <Label>Narrow to provider</Label>
-                    <Select
-                      value={providerId ?? ""}
-                      onValueChange={(value) =>
-                        form.setValue("provider_id", value === "__all" ? "" : value)
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="No restriction" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__all">No restriction (all project access)</SelectItem>
-                        {accessibleProviders.map((provider) => (
-                          <SelectItem key={provider.id} value={provider.id}>
-                            {provider.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                  <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                    <span className="text-xs text-muted-foreground">Effective allocation</span>
+                    <p className="font-medium">{effectiveAllocation?.name ?? "None configured"}</p>
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="key-models">Allowed models</Label>
@@ -203,14 +199,14 @@ export function ProjectKeysSection({
                       {...form.register("allowed_models")}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Comma-separated. Only used when a provider is selected.
+                      Optional comma-separated subset of the selected allocation.
                     </p>
                   </div>
                 </form>
                 <SheetFooter>
                   <Button
                     type="submit"
-                    disabled={createMutation.isPending}
+                    disabled={createMutation.isPending || !effectiveAllocation}
                     onClick={form.handleSubmit(submit)}
                   >
                     {createMutation.isPending ? "Creating..." : "Create key"}
@@ -221,7 +217,7 @@ export function ProjectKeysSection({
                 </SheetFooter>
               </SheetContent>
             </Sheet>
-          </div>
+          </CardAction>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -233,49 +229,75 @@ export function ProjectKeysSection({
               description="Create a key to issue this project's first credential."
             />
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Label</TableHead>
-                  <TableHead>Prefix</TableHead>
-                  <TableHead>Restrictions</TableHead>
-                  <TableHead>Expires</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-[1%]" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {keys.map((key) => (
-                  <TableRow key={key.id} className="cursor-pointer" onClick={() => onView(key.id)}>
-                    <TableCell className="font-medium">{key.name}</TableCell>
-                    <TableCell className="font-mono text-xs">{key.key_prefix}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {key.restrictions && key.restrictions.length > 0
-                        ? `${key.restrictions.length} restriction${
-                            key.restrictions.length === 1 ? "" : "s"
-                          }`
-                        : "Inherits project access"}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {key.expires_at ? new Date(key.expires_at).toLocaleDateString() : "Never"}
-                    </TableCell>
-                    <TableCell>
-                      <KeyStatusBadge virtualKey={key} />
-                    </TableCell>
-                    <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={Boolean(key.revoked_at)}
-                        onClick={() => setRevokeId(key.id)}
-                      >
-                        Revoke
-                      </Button>
-                    </TableCell>
+            <div className="overflow-hidden rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Label</TableHead>
+                    <TableHead>Prefix</TableHead>
+                    <TableHead>Allocation</TableHead>
+                    <TableHead>Usage</TableHead>
+                    <TableHead>Expires</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="w-[1%]" />
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {keys.map((key, index) => {
+                    const usageResponse = keyUsageQueries[index]?.data;
+                    const usage = usageResponse?.status === 200 ? usageResponse.data : undefined;
+                    return (
+                      <TableRow
+                        key={key.id}
+                        className="cursor-pointer"
+                        onClick={() => onView(key.id)}
+                      >
+                        <TableCell className="font-medium">{key.name}</TableCell>
+                        <TableCell className="font-mono text-xs">{key.key_prefix}</TableCell>
+                        <TableCell className="text-muted-foreground">
+                          <div className="flex flex-col gap-1">
+                            <span>
+                              {availableAllocations.find(
+                                (allocation) => allocation.id === key.allocation_id,
+                              )?.name ?? key.allocation_id}
+                            </span>
+                            <span className="text-xs">
+                              {key.allocation_mode === "custom" ? "Custom" : "Inherited"}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          <KeyUsageInline
+                            requests={usage?.totals.requests ?? 0}
+                            tokens={usage?.totals.total_tokens ?? 0}
+                            errors={usage?.totals.failed_requests ?? 0}
+                          />
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {key.expires_at ? new Date(key.expires_at).toLocaleDateString() : "Never"}
+                        </TableCell>
+                        <TableCell>
+                          <KeyStatusBadge virtualKey={key} />
+                        </TableCell>
+                        <TableCell
+                          className="text-right"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={Boolean(key.revoked_at)}
+                            onClick={() => setRevokeId(key.id)}
+                          >
+                            Revoke
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -352,6 +374,29 @@ function KeyStatusBadge({ virtualKey }: { virtualKey: VirtualKeyResponse }) {
     return <StatusBadge variant="expired">Expired</StatusBadge>;
   }
   return <StatusBadge variant="active">Active</StatusBadge>;
+}
+
+function KeyUsageInline({
+  requests,
+  tokens,
+  errors,
+}: {
+  requests: number;
+  tokens: number;
+  errors: number;
+}) {
+  const hasUsage = requests > 0;
+  return (
+    <div className="flex flex-col gap-1 text-xs">
+      <span className="font-medium text-foreground">
+        {hasUsage ? `${requests.toLocaleString()} req` : "No usage"}
+      </span>
+      <span>
+        {tokens.toLocaleString()} tok
+        {errors > 0 ? ` · ${errors.toLocaleString()} err` : ""}
+      </span>
+    </div>
+  );
 }
 
 function parseModels(value: string | undefined): string[] | null {

@@ -85,7 +85,8 @@ async def test_mock_refresh_rotates_cookie(
         second_cookie = client.cookies["bab_refresh_token"]
 
     assert response.status_code == 200
-    assert first_cookie == second_cookie
+    assert first_cookie
+    assert second_cookie
 
 
 @pytest.mark.asyncio

@@ -4,7 +4,7 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { ValidationErrorCtx } from './validationErrorCtx';
+import type { ValidationErrorCtx } from "./validationErrorCtx";
 
 export interface ValidationError {
   loc: (string | number)[];

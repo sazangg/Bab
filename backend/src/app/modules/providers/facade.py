@@ -7,9 +7,13 @@ from app.core.database import Scope
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.providers.internal import service
 from app.modules.providers.schemas import (
+    AddCredentialPoolCredentialRequest,
+    CreateCredentialPoolRequest,
     CreateModelOfferingRequest,
     CreateProviderCredentialRequest,
     CreateProviderRequest,
+    CredentialPoolCredentialResponse,
+    CredentialPoolResponse,
     ModelMetadataSyncMode,
     ModelOfferingPageResponse,
     ModelOfferingResponse,
@@ -18,10 +22,11 @@ from app.modules.providers.schemas import (
     ProviderChatCompletionStream,
     ProviderCredentialResponse,
     ProviderResponse,
-    ReorderProviderCredentialsRequest,
     TestModelOfferingRequest,
     TestModelOfferingResponse,
     TestProviderCredentialResponse,
+    UpdateCredentialPoolCredentialRequest,
+    UpdateCredentialPoolRequest,
     UpdateModelOfferingRequest,
     UpdateProviderCredentialRequest,
     UpdateProviderRequest,
@@ -44,6 +49,134 @@ async def list_providers(*, scope: Scope, db: AsyncSession) -> list[ProviderResp
 
 async def get_provider(*, provider_id: UUID, scope: Scope, db: AsyncSession) -> ProviderResponse:
     return await service.get_provider(provider_id=provider_id, scope=scope, db=db)
+
+
+async def create_credential_pool(
+    *,
+    provider_id: UUID,
+    payload: CreateCredentialPoolRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> CredentialPoolResponse:
+    return await service.create_credential_pool(
+        provider_id=provider_id,
+        payload=payload,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def list_credential_pools(
+    *,
+    provider_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[CredentialPoolResponse]:
+    return await service.list_credential_pools(provider_id=provider_id, scope=scope, db=db)
+
+
+async def get_credential_pool(
+    *,
+    pool_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> CredentialPoolResponse:
+    return await service.get_credential_pool(pool_id=pool_id, scope=scope, db=db)
+
+
+async def update_credential_pool(
+    *,
+    provider_id: UUID,
+    pool_id: UUID,
+    payload: UpdateCredentialPoolRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> CredentialPoolResponse:
+    return await service.update_credential_pool(
+        provider_id=provider_id,
+        pool_id=pool_id,
+        payload=payload,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def list_credential_pool_credentials(
+    *,
+    provider_id: UUID,
+    pool_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[CredentialPoolCredentialResponse]:
+    return await service.list_credential_pool_credentials(
+        provider_id=provider_id,
+        pool_id=pool_id,
+        scope=scope,
+        db=db,
+    )
+
+
+async def add_credential_pool_credential(
+    *,
+    provider_id: UUID,
+    pool_id: UUID,
+    payload: AddCredentialPoolCredentialRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> CredentialPoolCredentialResponse:
+    return await service.add_credential_pool_credential(
+        provider_id=provider_id,
+        pool_id=pool_id,
+        payload=payload,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def update_credential_pool_credential(
+    *,
+    provider_id: UUID,
+    pool_id: UUID,
+    pool_credential_id: UUID,
+    payload: UpdateCredentialPoolCredentialRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> CredentialPoolCredentialResponse:
+    return await service.update_credential_pool_credential(
+        provider_id=provider_id,
+        pool_id=pool_id,
+        pool_credential_id=pool_credential_id,
+        payload=payload,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def delete_credential_pool_credential(
+    *,
+    provider_id: UUID,
+    pool_id: UUID,
+    pool_credential_id: UUID,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> None:
+    await service.delete_credential_pool_credential(
+        provider_id=provider_id,
+        pool_id=pool_id,
+        pool_credential_id=pool_credential_id,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
 
 
 async def create_provider_credential(
@@ -97,23 +230,6 @@ async def update_provider_credential(
     return await service.update_provider_credential(
         provider_id=provider_id,
         provider_credential_id=provider_credential_id,
-        payload=payload,
-        actor=actor,
-        scope=scope,
-        db=db,
-    )
-
-
-async def reorder_provider_credentials(
-    *,
-    provider_id: UUID,
-    payload: ReorderProviderCredentialsRequest,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    db: AsyncSession,
-) -> list[ProviderCredentialResponse]:
-    return await service.reorder_provider_credentials(
-        provider_id=provider_id,
         payload=payload,
         actor=actor,
         scope=scope,
@@ -316,6 +432,7 @@ async def deactivate_provider(
 async def create_chat_completion(
     *,
     provider_id: UUID,
+    pool_id: UUID | None = None,
     provider_credential_id: UUID | None = None,
     payload: ProviderChatCompletionRequest,
     scope: Scope,
@@ -324,6 +441,7 @@ async def create_chat_completion(
 ) -> ProviderChatCompletionResponse:
     return await service.create_chat_completion(
         provider_id=provider_id,
+        pool_id=pool_id,
         provider_credential_id=provider_credential_id,
         payload=payload,
         scope=scope,
@@ -335,6 +453,7 @@ async def create_chat_completion(
 async def stream_chat_completion(
     *,
     provider_id: UUID,
+    pool_id: UUID | None = None,
     provider_credential_id: UUID | None = None,
     payload: ProviderChatCompletionRequest,
     scope: Scope,
@@ -343,10 +462,10 @@ async def stream_chat_completion(
 ) -> ProviderChatCompletionStream:
     return await service.stream_chat_completion(
         provider_id=provider_id,
+        pool_id=pool_id,
         provider_credential_id=provider_credential_id,
         payload=payload,
         scope=scope,
         db=db,
         http_client=http_client,
     )
-

@@ -46,16 +46,7 @@ import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { EditProviderSheet } from "@/features/providers/components/EditProviderSheet";
 import { ProviderResourcesPanel } from "@/features/providers/components/ProviderResourcesPanel";
-import { ProviderHealthSummary } from "@/features/providers/sections/ProviderHealthSummary";
-
-const routingPolicyLabels: Record<string, string> = {
-  priority: "Priority",
-  round_robin: "Round robin",
-  least_recently_used: "Least recently used",
-  health_based: "Health based",
-  weighted: "Weighted",
-  fallback: "Fallback",
-};
+import { formatRelativeFromNow } from "@/features/providers/lib/format";
 
 export function ProviderDetailPage() {
   const { providerId } = useParams();
@@ -77,8 +68,11 @@ export function ProviderDetailPage() {
   const credentials = credentialsQuery.data?.status === 200 ? credentialsQuery.data.data : [];
   const topActiveCredential = [...credentials]
     .filter((credential) => credential.is_active)
-    .sort((a, b) => a.priority - b.priority)[0];
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())[0];
   const provider = providerQuery.data?.status === 200 ? providerQuery.data.data : null;
+  const activeCredentials = credentials.filter((credential) => credential.is_active);
+  const healthCounts = countByHealth(activeCredentials);
+  const lastSuccess = lastSuccessfulRequestAt(credentials);
 
   const updateProvider = useUpdateProviderApiV1ProvidersProviderIdPatch({
     mutation: {
@@ -209,7 +203,7 @@ export function ProviderDetailPage() {
               disabled={!topActiveCredential || testCredential.isPending}
               title={
                 topActiveCredential
-                  ? "Probes the highest-priority active credential."
+                  ? "Probes the first active provider credential."
                   : "Add an active credential first."
               }
             >
@@ -236,11 +230,9 @@ export function ProviderDetailPage() {
         }
       />
 
-      <ProviderHealthSummary provider={provider} />
-
       <Card>
         <CardHeader>
-          <CardTitle>Provider summary</CardTitle>
+          <CardTitle>Provider metadata</CardTitle>
           <CardDescription>{provider.base_url}</CardDescription>
           <CardAction>
             <StatusBadge variant={provider.is_active ? "active" : "inactive"}>
@@ -248,12 +240,13 @@ export function ProviderDetailPage() {
             </StatusBadge>
           </CardAction>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-4">
+        <CardContent className="grid gap-x-6 gap-y-4 md:grid-cols-4">
           <Fact label="Integration" value={provider.supported_integration} />
           <Fact label="Adapter" value={provider.adapter_type} />
+          <Fact label="Active credentials" value={`${activeCredentials.length}`} />
           <Fact
-            label="Credential routing"
-            value={formatRoutingPolicy(provider.credential_routing_policy)}
+            label="Last successful request"
+            value={lastSuccess ? formatRelativeFromNow(lastSuccess) : "Never"}
           />
           <Fact label="Request timeout" value={`${provider.request_timeout_seconds ?? 30}s`} />
           <Fact
@@ -268,6 +261,22 @@ export function ProviderDetailPage() {
             label="Concurrency"
             value={provider.max_concurrent_requests?.toString() ?? "No cap"}
           />
+          <div className="flex flex-col gap-1 md:col-span-2">
+            <p className="text-xs text-muted-foreground">Credential health</p>
+            {activeCredentials.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Add a credential to start routing.</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {(Object.keys(healthCounts) as Array<keyof typeof healthCounts>).map((key) =>
+                  healthCounts[key] > 0 ? (
+                    <StatusBadge key={key} variant={healthLabels[key]?.variant ?? "muted"}>
+                      {healthCounts[key]} {healthLabels[key]?.label ?? key}
+                    </StatusBadge>
+                  ) : null,
+                )}
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -282,8 +291,7 @@ export function ProviderDetailPage() {
         <CardHeader>
           <CardTitle className="text-muted-foreground">Usage metrics</CardTitle>
           <CardDescription>
-            Provider and model analytics will appear here once request logging captures provider,
-            credential, and model dimensions.
+            Provider and model metrics will appear here once usage records are exposed for querying.
           </CardDescription>
           <CardAction>
             <StatusBadge variant="muted">Coming soon</StatusBadge>
@@ -337,6 +345,38 @@ function Fact({ label, value, muted }: { label: string; value: string; muted?: b
   );
 }
 
-function formatRoutingPolicy(value: string) {
-  return routingPolicyLabels[value] ?? value.replaceAll("_", " ");
+type HealthVariant = "active" | "inactive" | "error" | "muted";
+
+const healthLabels: Record<string, { label: string; variant: HealthVariant }> = {
+  valid: { label: "Valid", variant: "active" },
+  unchecked: { label: "Unchecked", variant: "muted" },
+  invalid: { label: "Invalid", variant: "error" },
+  degraded: { label: "Degraded", variant: "error" },
+};
+
+function countByHealth(credentials: { health_status: string }[]) {
+  const counts: Record<string, number> = {
+    valid: 0,
+    unchecked: 0,
+    invalid: 0,
+    degraded: 0,
+  };
+  for (const credential of credentials) {
+    const status = credential.health_status in counts ? credential.health_status : "unchecked";
+    counts[status] = (counts[status] ?? 0) + 1;
+  }
+  return counts;
+}
+
+function lastSuccessfulRequestAt(
+  credentials: { last_successful_request_at: string | null }[],
+): Date | null {
+  let latest: Date | null = null;
+  for (const credential of credentials) {
+    if (!credential.last_successful_request_at) continue;
+    const parsed = new Date(credential.last_successful_request_at);
+    if (Number.isNaN(parsed.getTime())) continue;
+    if (!latest || parsed > latest) latest = parsed;
+  }
+  return latest;
 }

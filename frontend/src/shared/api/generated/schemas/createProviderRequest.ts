@@ -4,36 +4,34 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { CreateProviderRequestCapabilities } from './createProviderRequestCapabilities';
-import type { CreateProviderRequestCircuitBreakerPolicy } from './createProviderRequestCircuitBreakerPolicy';
-import type { CreateProviderRequestFallbackPolicy } from './createProviderRequestFallbackPolicy';
-import type { CreateProviderRequestRetryPolicy } from './createProviderRequestRetryPolicy';
-import type { ProviderCredentialRoutingPolicy } from './providerCredentialRoutingPolicy';
+import type { CreateProviderRequestCapabilities } from "./createProviderRequestCapabilities";
+import type { CreateProviderRequestCircuitBreakerPolicy } from "./createProviderRequestCircuitBreakerPolicy";
+import type { CreateProviderRequestFallbackPolicy } from "./createProviderRequestFallbackPolicy";
+import type { CreateProviderRequestRetryPolicy } from "./createProviderRequestRetryPolicy";
 
 export interface CreateProviderRequest {
   /**
-     * @minLength 1
-     * @maxLength 255
-     */
+   * @minLength 1
+   * @maxLength 255
+   */
   name: string;
   slug?: string | null;
   /**
-     * @minLength 1
-     * @maxLength 2083
-     */
+   * @minLength 1
+   * @maxLength 2083
+   */
   base_url: string;
   api_key?: string | null;
   description?: string | null;
   capabilities?: CreateProviderRequestCapabilities;
   /**
-     * @minimum 1
-     * @maximum 300
-     */
+   * @minimum 1
+   * @maximum 300
+   */
   request_timeout_seconds?: number;
   max_body_bytes?: number | null;
   retry_policy?: CreateProviderRequestRetryPolicy;
   fallback_policy?: CreateProviderRequestFallbackPolicy;
   circuit_breaker_policy?: CreateProviderRequestCircuitBreakerPolicy;
   max_concurrent_requests?: number | null;
-  credential_routing_policy?: ProviderCredentialRoutingPolicy;
 }

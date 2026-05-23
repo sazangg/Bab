@@ -4,9 +4,7 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import {
-  useQuery
-} from '@tanstack/react-query';
+import { useQuery } from "@tanstack/react-query";
 import type {
   DataTag,
   DefinedInitialDataOptions,
@@ -16,127 +14,140 @@ import type {
   QueryKey,
   UndefinedInitialDataOptions,
   UseQueryOptions,
-  UseQueryResult
-} from '@tanstack/react-query';
+  UseQueryResult,
+} from "@tanstack/react-query";
 
-import type {
-  HealthCheckApiV1HealthGet200
-} from '../schemas';
+import type { HealthCheckApiV1HealthGet200 } from "../schemas";
 
-import { apiMutator } from '../../orval-mutator';
-
-
-
+import { apiMutator } from "../../orval-mutator";
 
 export type healthCheckApiV1HealthGetResponse200 = {
-  data: HealthCheckApiV1HealthGet200
-  status: 200
-}
+  data: HealthCheckApiV1HealthGet200;
+  status: 200;
+};
 
-export type healthCheckApiV1HealthGetResponseSuccess = (healthCheckApiV1HealthGetResponse200) & {
+export type healthCheckApiV1HealthGetResponseSuccess = healthCheckApiV1HealthGetResponse200 & {
   headers: Headers;
 };
-;
-
-export type healthCheckApiV1HealthGetResponse = (healthCheckApiV1HealthGetResponseSuccess)
+export type healthCheckApiV1HealthGetResponse = healthCheckApiV1HealthGetResponseSuccess;
 
 export const getHealthCheckApiV1HealthGetUrl = () => {
-
-
-
-
-  return `/api/v1/health`
-}
+  return `/api/v1/health`;
+};
 
 /**
  * @summary Health Check
  */
-export const healthCheckApiV1HealthGet = async ( options?: RequestInit): Promise<healthCheckApiV1HealthGetResponse> => {
-
-  return apiMutator<healthCheckApiV1HealthGetResponse>(getHealthCheckApiV1HealthGetUrl(),
-  {
+export const healthCheckApiV1HealthGet = async (
+  options?: RequestInit,
+): Promise<healthCheckApiV1HealthGetResponse> => {
+  return apiMutator<healthCheckApiV1HealthGetResponse>(getHealthCheckApiV1HealthGetUrl(), {
     ...options,
-    method: 'GET'
-
-
-  }
-);}
-
-
-
-
+    method: "GET",
+  });
+};
 
 export const getHealthCheckApiV1HealthGetQueryKey = () => {
-    return [
-    `/api/v1/health`
-    ] as const;
-    }
+  return [`/api/v1/health`] as const;
+};
 
+export const getHealthCheckApiV1HealthGetQueryOptions = <
+  TData = Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError, TData>
+  >;
+}) => {
+  const { query: queryOptions } = options ?? {};
 
-export const getHealthCheckApiV1HealthGetQueryOptions = <TData = Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError, TData>>, }
-) => {
+  const queryKey = queryOptions?.queryKey ?? getHealthCheckApiV1HealthGetQueryKey();
 
-const {query: queryOptions} = options ?? {};
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>> = ({
+    signal,
+  }) => healthCheckApiV1HealthGet({ signal });
 
-  const queryKey =  queryOptions?.queryKey ?? getHealthCheckApiV1HealthGetQueryKey();
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
 
+export type HealthCheckApiV1HealthGetQueryResult = NonNullable<
+  Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>
+>;
+export type HealthCheckApiV1HealthGetQueryError = unknown;
 
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>> = ({ signal }) => healthCheckApiV1HealthGet({ signal });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type HealthCheckApiV1HealthGetQueryResult = NonNullable<Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>>
-export type HealthCheckApiV1HealthGetQueryError = unknown
-
-
-export function useHealthCheckApiV1HealthGet<TData = Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError = unknown>(
-  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError, TData>> & Pick<
+export function useHealthCheckApiV1HealthGet<
+  TData = Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError, TData>
+    > &
+      Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>,
           TError,
           Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useHealthCheckApiV1HealthGet<TData = Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError, TData>> & Pick<
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useHealthCheckApiV1HealthGet<
+  TData = Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError, TData>
+    > &
+      Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>,
           TError,
           Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useHealthCheckApiV1HealthGet<TData = Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useHealthCheckApiV1HealthGet<
+  TData = Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
  * @summary Health Check
  */
 
-export function useHealthCheckApiV1HealthGet<TData = Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+export function useHealthCheckApiV1HealthGet<
+  TData = Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getHealthCheckApiV1HealthGetQueryOptions(options);
 
-  const queryOptions = getHealthCheckApiV1HealthGetQueryOptions(options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
-
-
-
-
-
-

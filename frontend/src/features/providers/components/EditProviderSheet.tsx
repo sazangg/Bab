@@ -4,12 +4,6 @@ import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -36,7 +30,6 @@ import { useListProvidersApiV1ProvidersGet } from "@/shared/api/generated/provid
 import type { ProviderResponse, UpdateProviderRequest } from "@/shared/api/generated/schemas";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 
-import { formatRoutingPolicy } from "../lib/format";
 import {
   buildProviderUpdatePayload,
   mergeCircuitBreakerPolicy,
@@ -48,13 +41,11 @@ import {
   defaultFallbackPolicy,
   defaultRetryPolicy,
   editProviderSchema,
-  routingPolicyOptions,
   STATUS_CODE_MAX,
   STATUS_CODE_MIN,
   type EditProviderInput,
   type EditProviderValues,
   type RetryPolicyValues,
-  type RoutingPolicyValue,
 } from "../lib/schemas";
 
 export function EditProviderSheet({
@@ -75,7 +66,6 @@ export function EditProviderSheet({
       slug: "",
       base_url: "",
       description: "",
-      credential_routing_policy: "priority",
       request_timeout_seconds: 30,
       max_body_bytes_kb: undefined,
       max_concurrent_requests: undefined,
@@ -84,7 +74,6 @@ export function EditProviderSheet({
       circuit_breaker_policy: defaultCircuitBreakerPolicy,
     },
   });
-  const routingPolicy = useWatch({ control: form.control, name: "credential_routing_policy" });
   const retryPolicy = useWatch({ control: form.control, name: "retry_policy" });
   const fallbackPolicy = useWatch({ control: form.control, name: "fallback_policy" });
   const circuitBreakerPolicy = useWatch({
@@ -105,7 +94,6 @@ export function EditProviderSheet({
       slug: provider.slug ?? "",
       base_url: provider.base_url,
       description: provider.description ?? "",
-      credential_routing_policy: provider.credential_routing_policy as RoutingPolicyValue,
       request_timeout_seconds: provider.request_timeout_seconds ?? 30,
       max_body_bytes_kb:
         provider.max_body_bytes != null
@@ -126,8 +114,8 @@ export function EditProviderSheet({
         <SheetHeader>
           <SheetTitle>Edit provider</SheetTitle>
           <SheetDescription>
-            Identity, routing, limits, and resilience policies. Credentials are managed on the
-            detail page.
+            Identity, routing, request controls, and resilience policies. Credentials are managed on
+            the detail page.
           </SheetDescription>
         </SheetHeader>
         <div className="flex-1 overflow-y-auto px-4">
@@ -165,18 +153,9 @@ export function EditProviderSheet({
 
             <Separator />
 
-            <FormSection title="Routing">
-              <RoutingPolicyField
-                value={routingPolicy}
-                onValueChange={(value) => form.setValue("credential_routing_policy", value)}
-              />
-            </FormSection>
-
-            <Separator />
-
             <FormSection
-              title="Limits"
-              description="Per-request defaults. Optional limits inherit gateway defaults when blank."
+              title="Request controls"
+              description="Per-request controls inherit gateway defaults when blank."
             >
               <FormField
                 label="Request timeout (seconds)"
@@ -420,47 +399,6 @@ export function FormField({
       {children}
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
-    </div>
-  );
-}
-
-export function RoutingPolicyField({
-  value,
-  onValueChange,
-  disabled = false,
-}: {
-  value: string;
-  onValueChange: (value: RoutingPolicyValue) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <Label htmlFor="provider-key-routing-policy">Routing strategy</Label>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild disabled={disabled}>
-          <Button
-            id="provider-key-routing-policy"
-            type="button"
-            variant="outline"
-            className="w-full justify-between"
-          >
-            {formatRoutingPolicy(value)}
-            <ChevronDown />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-80">
-          {routingPolicyOptions.map((option) => (
-            <DropdownMenuItem
-              key={option.value}
-              className="flex flex-col items-start gap-0.5"
-              onSelect={() => onValueChange(option.value)}
-            >
-              <span>{option.label}</span>
-              <span className="text-xs text-muted-foreground">{option.description}</span>
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
     </div>
   );
 }

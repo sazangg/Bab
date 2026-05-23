@@ -29,9 +29,6 @@ class CreateProviderRequest(BaseModel):
     fallback_policy: dict[str, Any] = Field(default_factory=dict)
     circuit_breaker_policy: dict[str, Any] = Field(default_factory=dict)
     max_concurrent_requests: int | None = Field(default=None, ge=1)
-    credential_routing_policy: ProviderCredentialRoutingPolicy = (
-        ProviderCredentialRoutingPolicy.priority
-    )
 
 
 class UpdateProviderRequest(BaseModel):
@@ -47,30 +44,31 @@ class UpdateProviderRequest(BaseModel):
     fallback_policy: dict[str, Any] | None = None
     circuit_breaker_policy: dict[str, Any] | None = None
     max_concurrent_requests: int | None = Field(default=None, ge=1)
-    credential_routing_policy: ProviderCredentialRoutingPolicy | None = None
     is_active: bool | None = None
 
 
 class CreateProviderCredentialRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     api_key: str = Field(min_length=1)
-    priority: int = Field(default=100, ge=0)
 
 
 class UpdateProviderCredentialRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     api_key: str | None = Field(default=None, min_length=1)
-    priority: int | None = Field(default=None, ge=0)
     is_active: bool | None = None
 
 
-class ProviderCredentialPriorityUpdate(BaseModel):
+class AddCredentialPoolCredentialRequest(BaseModel):
     provider_credential_id: UUID
-    priority: int = Field(ge=0)
+    priority: int = Field(default=100, ge=0)
+    weight: int = Field(default=1, ge=1)
+    is_active: bool = True
 
 
-class ReorderProviderCredentialsRequest(BaseModel):
-    updates: list[ProviderCredentialPriorityUpdate] = Field(min_length=1)
+class UpdateCredentialPoolCredentialRequest(BaseModel):
+    priority: int | None = Field(default=None, ge=0)
+    weight: int | None = Field(default=None, ge=1)
+    is_active: bool | None = None
 
 
 class ProviderCredentialResponse(BaseModel):
@@ -82,7 +80,6 @@ class ProviderCredentialResponse(BaseModel):
     created_by: UUID | None
     name: str
     key_prefix: str
-    priority: int
     health_status: str
     last_validation_error: str | None
     last_successful_request_at: datetime | None
@@ -90,6 +87,48 @@ class ProviderCredentialResponse(BaseModel):
     last_used_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class CreateCredentialPoolRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=1000)
+    selection_policy: ProviderCredentialRoutingPolicy = ProviderCredentialRoutingPolicy.priority
+
+
+class UpdateCredentialPoolRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=1000)
+    selection_policy: ProviderCredentialRoutingPolicy | None = None
+    is_active: bool | None = None
+
+
+class CredentialPoolResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    org_id: UUID
+    provider_id: UUID
+    name: str
+    description: str | None
+    selection_policy: str
+    is_active: bool
+    credential_count: int = 0
+    active_credential_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+
+class CredentialPoolCredentialResponse(BaseModel):
+    id: UUID
+    org_id: UUID
+    pool_id: UUID
+    provider_credential_id: UUID
+    priority: int
+    weight: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+    credential: ProviderCredentialResponse
 
 
 class ProviderCredentialSummary(BaseModel):
@@ -211,11 +250,11 @@ class ProviderResponse(BaseModel):
     fallback_policy: dict[str, Any]
     circuit_breaker_policy: dict[str, Any]
     max_concurrent_requests: int | None
-    credential_routing_policy: str
     credential_summary: ProviderCredentialSummary = Field(default_factory=ProviderCredentialSummary)
     is_active: bool
     created_at: datetime
     updated_at: datetime
+
 
 class ProviderChatCompletionRequest(BaseModel):
     model: str = Field(min_length=1, max_length=255)
@@ -241,4 +280,3 @@ class ProviderChatCompletionStream:
         self.chunks = chunks
         self.close = close
         self.media_type = media_type
-

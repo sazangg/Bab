@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { Archive, KeyRound, MoreHorizontal, Pencil, RotateCcw } from "lucide-react";
+import { Archive, Building2, KeyRound, MoreHorizontal, Pencil, RotateCcw } from "lucide-react";
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
   useDeactivateProjectApiV1ProjectsProjectIdDelete,
@@ -9,7 +9,7 @@ import {
   useListVirtualKeysApiV1ProjectsProjectIdKeysGet,
   useUpdateProjectApiV1ProjectsProjectIdPatch,
 } from "@/shared/api/generated/projects/projects";
-import { useListProvidersApiV1ProvidersGet } from "@/shared/api/generated/providers/providers";
+import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -31,8 +31,6 @@ import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { ProjectAccessSection } from "@/features/projects/sections/ProjectAccessSection";
 import { ProjectKeysSection } from "@/features/projects/sections/ProjectKeysSection";
-import { ProjectLimitsSection } from "@/features/projects/sections/ProjectLimitsSection";
-import { ProjectActivitySection } from "@/features/projects/sections/ProjectActivitySection";
 import { EditProjectDialog } from "@/features/projects/components/EditProjectDialog";
 
 export function ProjectDetailPage() {
@@ -43,7 +41,7 @@ export function ProjectDetailPage() {
   const [archiveOpen, setArchiveOpen] = useState(false);
 
   const projectsQuery = useListProjectsApiV1ProjectsGet();
-  const providersQuery = useListProvidersApiV1ProvidersGet();
+  const teamsQuery = useListTeamsApiV1TeamsGet();
   const keysQuery = useListVirtualKeysApiV1ProjectsProjectIdKeysGet(projectId, {
     query: { enabled: Boolean(projectId) },
   });
@@ -52,7 +50,8 @@ export function ProjectDetailPage() {
     projectsQuery.data?.status === 200
       ? projectsQuery.data.data.find((p) => p.id === projectId)
       : undefined;
-  const providers = providersQuery.data?.status === 200 ? providersQuery.data.data : [];
+  const teams = teamsQuery.data?.status === 200 ? teamsQuery.data.data : [];
+  const team = project ? teams.find((item) => item.id === project.team_id) : undefined;
   const keys = keysQuery.data?.status === 200 ? keysQuery.data.data : [];
 
   const updateMutation = useUpdateProjectApiV1ProjectsProjectIdPatch({
@@ -87,12 +86,20 @@ export function ProjectDetailPage() {
   }
 
   return (
-    <>
+    <div className="flex flex-col gap-6">
       <PageHeader
         title={project.name}
         description={project.description ?? "No description."}
         actions={
           <>
+            {team ? (
+              <Button asChild variant="ghost" size="sm">
+                <Link to={`/teams/${team.id}`}>
+                  <Building2 />
+                  {team.name}
+                </Link>
+              </Button>
+            ) : null}
             <StatusBadge variant={project.is_active ? "active" : "inactive"}>
               {project.is_active ? "Active" : "Archived"}
             </StatusBadge>
@@ -139,27 +146,18 @@ export function ProjectDetailPage() {
             Keys ({keys.length})
           </TabsTrigger>
           <TabsTrigger value="access">Allocations</TabsTrigger>
-          <TabsTrigger value="limits">Limits</TabsTrigger>
-          <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
         <TabsContent value="keys" className="space-y-4">
           <ProjectKeysSection
             projectId={projectId}
             project={project}
-            providers={providers}
             keys={keys}
             isLoading={keysQuery.isPending}
             onView={(keyId) => navigate(`/projects/${projectId}/keys/${keyId}`)}
           />
         </TabsContent>
         <TabsContent value="access" className="space-y-4">
-          <ProjectAccessSection />
-        </TabsContent>
-        <TabsContent value="limits" className="space-y-4">
-          <ProjectLimitsSection projectId={projectId} keys={keys} providers={providers} />
-        </TabsContent>
-        <TabsContent value="activity" className="space-y-4">
-          <ProjectActivitySection projectId={projectId} />
+          <ProjectAccessSection projectId={projectId} teamId={project.team_id} />
         </TabsContent>
       </Tabs>
 
@@ -167,12 +165,7 @@ export function ProjectDetailPage() {
         open={editOpen}
         onOpenChange={setEditOpen}
         project={project}
-        onSubmit={(values) =>
-          updateMutation.mutate({
-            projectId: project.id,
-            data: { name: values.name, description: values.description || null },
-          })
-        }
+        onSubmit={(data) => updateMutation.mutate({ projectId: project.id, data })}
         isPending={updateMutation.isPending}
       />
 
@@ -199,6 +192,6 @@ export function ProjectDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   );
 }

@@ -4,289 +4,311 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import {
-  useMutation
-} from '@tanstack/react-query';
+import { useMutation } from "@tanstack/react-query";
 import type {
   MutationFunction,
   QueryClient,
   UseMutationOptions,
-  UseMutationResult
-} from '@tanstack/react-query';
+  UseMutationResult,
+} from "@tanstack/react-query";
 
-import type {
-  HTTPValidationError,
-  LoginRequest,
-  TokenResponse
-} from '../schemas';
+import type { HTTPValidationError, LoginRequest, TokenResponse } from "../schemas";
 
-import { apiMutator } from '../../orval-mutator';
-
-
-
+import { apiMutator } from "../../orval-mutator";
 
 export type loginApiV1AuthLoginPostResponse200 = {
-  data: TokenResponse
-  status: 200
-}
+  data: TokenResponse;
+  status: 200;
+};
 
 export type loginApiV1AuthLoginPostResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type loginApiV1AuthLoginPostResponseSuccess = (loginApiV1AuthLoginPostResponse200) & {
-  headers: Headers;
-};
-export type loginApiV1AuthLoginPostResponseError = (loginApiV1AuthLoginPostResponse422) & {
-  headers: Headers;
+  data: HTTPValidationError;
+  status: 422;
 };
 
-export type loginApiV1AuthLoginPostResponse = (loginApiV1AuthLoginPostResponseSuccess | loginApiV1AuthLoginPostResponseError)
+export type loginApiV1AuthLoginPostResponseSuccess = loginApiV1AuthLoginPostResponse200 & {
+  headers: Headers;
+};
+export type loginApiV1AuthLoginPostResponseError = loginApiV1AuthLoginPostResponse422 & {
+  headers: Headers;
+};
+
+export type loginApiV1AuthLoginPostResponse =
+  | loginApiV1AuthLoginPostResponseSuccess
+  | loginApiV1AuthLoginPostResponseError;
 
 export const getLoginApiV1AuthLoginPostUrl = () => {
-
-
-
-
-  return `/api/v1/auth/login`
-}
+  return `/api/v1/auth/login`;
+};
 
 /**
  * @summary Login
  */
-export const loginApiV1AuthLoginPost = async (loginRequest: LoginRequest, options?: RequestInit): Promise<loginApiV1AuthLoginPostResponse> => {
-
-  return apiMutator<loginApiV1AuthLoginPostResponse>(getLoginApiV1AuthLoginPostUrl(),
-  {
+export const loginApiV1AuthLoginPost = async (
+  loginRequest: LoginRequest,
+  options?: RequestInit,
+): Promise<loginApiV1AuthLoginPostResponse> => {
+  return apiMutator<loginApiV1AuthLoginPostResponse>(getLoginApiV1AuthLoginPostUrl(), {
     ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(
-      loginRequest,)
-  }
-);}
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(loginRequest),
+  });
+};
 
+export const getLoginApiV1AuthLoginPostMutationOptions = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>,
+    TError,
+    { data: LoginRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>,
+  TError,
+  { data: LoginRequest },
+  TContext
+> => {
+  const mutationKey = ["loginApiV1AuthLoginPost"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
 
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>,
+    { data: LoginRequest }
+  > = (props) => {
+    const { data } = props ?? {};
 
+    return loginApiV1AuthLoginPost(data);
+  };
 
-export const getLoginApiV1AuthLoginPostMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>, TError,{data: LoginRequest}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>, TError,{data: LoginRequest}, TContext> => {
+  return { mutationFn, ...mutationOptions };
+};
 
-const mutationKey = ['loginApiV1AuthLoginPost'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
+export type LoginApiV1AuthLoginPostMutationResult = NonNullable<
+  Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>
+>;
+export type LoginApiV1AuthLoginPostMutationBody = LoginRequest;
+export type LoginApiV1AuthLoginPostMutationError = HTTPValidationError;
 
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>, {data: LoginRequest}> = (props) => {
-          const {data} = props ?? {};
-
-          return  loginApiV1AuthLoginPost(data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type LoginApiV1AuthLoginPostMutationResult = NonNullable<Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>>
-    export type LoginApiV1AuthLoginPostMutationBody = LoginRequest
-    export type LoginApiV1AuthLoginPostMutationError = HTTPValidationError
-
-    /**
+/**
  * @summary Login
  */
-export const useLoginApiV1AuthLoginPost = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>, TError,{data: LoginRequest}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>,
-        TError,
-        {data: LoginRequest},
-        TContext
-      > => {
-      return useMutation(getLoginApiV1AuthLoginPostMutationOptions(options), queryClient);
-    }
-    export type refreshApiV1AuthRefreshPostResponse200 = {
-  data: TokenResponse
-  status: 200
-}
+export const useLoginApiV1AuthLoginPost = <TError = HTTPValidationError, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>,
+      TError,
+      { data: LoginRequest },
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>,
+  TError,
+  { data: LoginRequest },
+  TContext
+> => {
+  return useMutation(getLoginApiV1AuthLoginPostMutationOptions(options), queryClient);
+};
+export type refreshApiV1AuthRefreshPostResponse200 = {
+  data: TokenResponse;
+  status: 200;
+};
 
 export type refreshApiV1AuthRefreshPostResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type refreshApiV1AuthRefreshPostResponseSuccess = (refreshApiV1AuthRefreshPostResponse200) & {
-  headers: Headers;
-};
-export type refreshApiV1AuthRefreshPostResponseError = (refreshApiV1AuthRefreshPostResponse422) & {
-  headers: Headers;
+  data: HTTPValidationError;
+  status: 422;
 };
 
-export type refreshApiV1AuthRefreshPostResponse = (refreshApiV1AuthRefreshPostResponseSuccess | refreshApiV1AuthRefreshPostResponseError)
+export type refreshApiV1AuthRefreshPostResponseSuccess = refreshApiV1AuthRefreshPostResponse200 & {
+  headers: Headers;
+};
+export type refreshApiV1AuthRefreshPostResponseError = refreshApiV1AuthRefreshPostResponse422 & {
+  headers: Headers;
+};
+
+export type refreshApiV1AuthRefreshPostResponse =
+  | refreshApiV1AuthRefreshPostResponseSuccess
+  | refreshApiV1AuthRefreshPostResponseError;
 
 export const getRefreshApiV1AuthRefreshPostUrl = () => {
-
-
-
-
-  return `/api/v1/auth/refresh`
-}
+  return `/api/v1/auth/refresh`;
+};
 
 /**
  * @summary Refresh
  */
-export const refreshApiV1AuthRefreshPost = async ( options?: RequestInit): Promise<refreshApiV1AuthRefreshPostResponse> => {
-
-  return apiMutator<refreshApiV1AuthRefreshPostResponse>(getRefreshApiV1AuthRefreshPostUrl(),
-  {
+export const refreshApiV1AuthRefreshPost = async (
+  options?: RequestInit,
+): Promise<refreshApiV1AuthRefreshPostResponse> => {
+  return apiMutator<refreshApiV1AuthRefreshPostResponse>(getRefreshApiV1AuthRefreshPostUrl(), {
     ...options,
-    method: 'POST'
+    method: "POST",
+  });
+};
 
+export const getRefreshApiV1AuthRefreshPostMutationOptions = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>,
+    TError,
+    void,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["refreshApiV1AuthRefreshPost"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
 
-  }
-);}
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>,
+    void
+  > = () => {
+    return refreshApiV1AuthRefreshPost();
+  };
 
+  return { mutationFn, ...mutationOptions };
+};
 
+export type RefreshApiV1AuthRefreshPostMutationResult = NonNullable<
+  Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>
+>;
 
+export type RefreshApiV1AuthRefreshPostMutationError = HTTPValidationError;
 
-export const getRefreshApiV1AuthRefreshPostMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>, TError,void, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>, TError,void, TContext> => {
-
-const mutationKey = ['refreshApiV1AuthRefreshPost'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>, void> = () => {
-
-
-          return  refreshApiV1AuthRefreshPost()
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type RefreshApiV1AuthRefreshPostMutationResult = NonNullable<Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>>
-
-    export type RefreshApiV1AuthRefreshPostMutationError = HTTPValidationError
-
-    /**
+/**
  * @summary Refresh
  */
-export const useRefreshApiV1AuthRefreshPost = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>, TError,void, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>,
-        TError,
-        void,
-        TContext
-      > => {
-      return useMutation(getRefreshApiV1AuthRefreshPostMutationOptions(options), queryClient);
-    }
-    export type logoutApiV1AuthLogoutPostResponse204 = {
-  data: void
-  status: 204
-}
+export const useRefreshApiV1AuthRefreshPost = <TError = HTTPValidationError, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>,
+      TError,
+      void,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getRefreshApiV1AuthRefreshPostMutationOptions(options), queryClient);
+};
+export type logoutApiV1AuthLogoutPostResponse204 = {
+  data: void;
+  status: 204;
+};
 
 export type logoutApiV1AuthLogoutPostResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type logoutApiV1AuthLogoutPostResponseSuccess = (logoutApiV1AuthLogoutPostResponse204) & {
-  headers: Headers;
-};
-export type logoutApiV1AuthLogoutPostResponseError = (logoutApiV1AuthLogoutPostResponse422) & {
-  headers: Headers;
+  data: HTTPValidationError;
+  status: 422;
 };
 
-export type logoutApiV1AuthLogoutPostResponse = (logoutApiV1AuthLogoutPostResponseSuccess | logoutApiV1AuthLogoutPostResponseError)
+export type logoutApiV1AuthLogoutPostResponseSuccess = logoutApiV1AuthLogoutPostResponse204 & {
+  headers: Headers;
+};
+export type logoutApiV1AuthLogoutPostResponseError = logoutApiV1AuthLogoutPostResponse422 & {
+  headers: Headers;
+};
+
+export type logoutApiV1AuthLogoutPostResponse =
+  | logoutApiV1AuthLogoutPostResponseSuccess
+  | logoutApiV1AuthLogoutPostResponseError;
 
 export const getLogoutApiV1AuthLogoutPostUrl = () => {
-
-
-
-
-  return `/api/v1/auth/logout`
-}
+  return `/api/v1/auth/logout`;
+};
 
 /**
  * @summary Logout
  */
-export const logoutApiV1AuthLogoutPost = async ( options?: RequestInit): Promise<logoutApiV1AuthLogoutPostResponse> => {
-
-  return apiMutator<logoutApiV1AuthLogoutPostResponse>(getLogoutApiV1AuthLogoutPostUrl(),
-  {
+export const logoutApiV1AuthLogoutPost = async (
+  options?: RequestInit,
+): Promise<logoutApiV1AuthLogoutPostResponse> => {
+  return apiMutator<logoutApiV1AuthLogoutPostResponse>(getLogoutApiV1AuthLogoutPostUrl(), {
     ...options,
-    method: 'POST'
+    method: "POST",
+  });
+};
 
+export const getLogoutApiV1AuthLogoutPostMutationOptions = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>,
+    TError,
+    void,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["logoutApiV1AuthLogoutPost"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
 
-  }
-);}
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>,
+    void
+  > = () => {
+    return logoutApiV1AuthLogoutPost();
+  };
 
+  return { mutationFn, ...mutationOptions };
+};
 
+export type LogoutApiV1AuthLogoutPostMutationResult = NonNullable<
+  Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>
+>;
 
+export type LogoutApiV1AuthLogoutPostMutationError = HTTPValidationError;
 
-export const getLogoutApiV1AuthLogoutPostMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>, TError,void, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>, TError,void, TContext> => {
-
-const mutationKey = ['logoutApiV1AuthLogoutPost'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>, void> = () => {
-
-
-          return  logoutApiV1AuthLogoutPost()
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type LogoutApiV1AuthLogoutPostMutationResult = NonNullable<Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>>
-
-    export type LogoutApiV1AuthLogoutPostMutationError = HTTPValidationError
-
-    /**
+/**
  * @summary Logout
  */
-export const useLogoutApiV1AuthLogoutPost = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>, TError,void, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>,
-        TError,
-        void,
-        TContext
-      > => {
-      return useMutation(getLogoutApiV1AuthLogoutPostMutationOptions(options), queryClient);
-    }
+export const useLogoutApiV1AuthLogoutPost = <TError = HTTPValidationError, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>,
+      TError,
+      void,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getLogoutApiV1AuthLogoutPostMutationOptions(options), queryClient);
+};

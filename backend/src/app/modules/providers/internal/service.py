@@ -12,8 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope, transaction
 from app.core.security import decrypt, encrypt
-from app.modules.audit import facade as audit_facade
-from app.modules.audit.schemas import RecordAuditEvent
+from app.modules.activity import facade as activity_facade
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.providers.errors import (
     ProviderCredentialRequiredError,
@@ -31,11 +30,21 @@ from app.modules.providers.internal.model_metadata import (
     ModelMetadata,
     default_model_metadata_registry,
 )
-from app.modules.providers.internal.models import ModelOffering, Provider, ProviderCredential
+from app.modules.providers.internal.models import (
+    CredentialPool,
+    CredentialPoolCredential,
+    ModelOffering,
+    Provider,
+    ProviderCredential,
+)
 from app.modules.providers.schemas import (
+    AddCredentialPoolCredentialRequest,
+    CreateCredentialPoolRequest,
     CreateModelOfferingRequest,
     CreateProviderCredentialRequest,
     CreateProviderRequest,
+    CredentialPoolCredentialResponse,
+    CredentialPoolResponse,
     ModelMetadataSyncMode,
     ModelOfferingPageResponse,
     ModelOfferingResponse,
@@ -46,10 +55,11 @@ from app.modules.providers.schemas import (
     ProviderCredentialRoutingPolicy,
     ProviderCredentialSummary,
     ProviderResponse,
-    ReorderProviderCredentialsRequest,
     TestModelOfferingRequest,
     TestModelOfferingResponse,
     TestProviderCredentialResponse,
+    UpdateCredentialPoolCredentialRequest,
+    UpdateCredentialPoolRequest,
     UpdateModelOfferingRequest,
     UpdateProviderCredentialRequest,
     UpdateProviderRequest,
@@ -85,19 +95,15 @@ async def create_provider(
             fallback_policy=payload.fallback_policy,
             circuit_breaker_policy=payload.circuit_breaker_policy,
             max_concurrent_requests=payload.max_concurrent_requests,
-            credential_routing_policy=payload.credential_routing_policy,
             db=db,
         )
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="provider.created",
-                target_type="provider",
-                target_id=provider.id,
-                event_metadata={"name": provider.name},
-            ),
-            db,
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="provider",
+            action="provider.created",
+            message=f"Created provider {provider.name}.",
+            provider_id=provider.id,
+            db=db,
         )
 
     logger.info("provider_created", provider_id=str(provider.id), org_id=str(scope.org_id))
@@ -121,6 +127,308 @@ async def get_provider(*, provider_id: UUID, scope: Scope, db: AsyncSession) -> 
     return _to_response(provider, _credential_summary(credentials))
 
 
+async def create_credential_pool(
+    *,
+    provider_id: UUID,
+    payload: CreateCredentialPoolRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> CredentialPoolResponse:
+    async with transaction(db):
+        await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
+        pool = await repository.create_credential_pool(
+            org_id=scope.org_id,
+            provider_id=provider_id,
+            name=payload.name,
+            description=payload.description,
+            selection_policy=payload.selection_policy,
+            db=db,
+        )
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="provider",
+            action="credential_pool.created",
+            message=f"Created credential pool {pool.name}.",
+            provider_id=provider_id,
+            pool_id=pool.id,
+            db=db,
+        )
+    logger.info(
+        "credential_pool_created",
+        provider_id=str(provider_id),
+        pool_id=str(pool.id),
+        org_id=str(scope.org_id),
+        actor_user_id=str(actor.id),
+    )
+    return _credential_pool_response(pool)
+
+
+async def list_credential_pools(
+    *,
+    provider_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[CredentialPoolResponse]:
+    await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
+    pools = await repository.list_credential_pools(
+        org_id=scope.org_id,
+        provider_id=provider_id,
+        db=db,
+    )
+    counts: dict[UUID, tuple[int, int]] = {}
+    for pool in pools:
+        rows = await repository.list_pool_credentials(org_id=scope.org_id, pool_id=pool.id, db=db)
+        active_count = sum(
+            1 for membership, credential in rows if membership.is_active and credential.is_active
+        )
+        counts[pool.id] = (len(rows), active_count)
+    return [
+        _credential_pool_response(
+            pool,
+            credential_count=counts.get(pool.id, (0, 0))[0],
+            active_credential_count=counts.get(pool.id, (0, 0))[1],
+        )
+        for pool in pools
+    ]
+
+
+async def get_credential_pool(
+    *,
+    pool_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> CredentialPoolResponse:
+    pool = await repository.get_credential_pool(
+        org_id=scope.org_id,
+        pool_id=pool_id,
+        db=db,
+    )
+    if pool is None:
+        raise ProviderNotFoundError
+    return _credential_pool_response(pool)
+
+
+async def update_credential_pool(
+    *,
+    provider_id: UUID,
+    pool_id: UUID,
+    payload: UpdateCredentialPoolRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> CredentialPoolResponse:
+    async with transaction(db):
+        await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
+        pool = await _get_credential_pool_or_raise(
+            provider_id=provider_id,
+            pool_id=pool_id,
+            scope=scope,
+            db=db,
+        )
+        if payload.name is not None:
+            pool.name = payload.name
+        if "description" in payload.model_fields_set:
+            pool.description = payload.description
+        if payload.selection_policy is not None:
+            pool.selection_policy = payload.selection_policy
+        if payload.is_active is not None:
+            pool.is_active = payload.is_active
+        await db.flush()
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="provider",
+            action="credential_pool.updated",
+            message=f"Updated credential pool {pool.name}.",
+            provider_id=provider_id,
+            pool_id=pool.id,
+            db=db,
+        )
+    logger.info(
+        "credential_pool_updated",
+        provider_id=str(provider_id),
+        pool_id=str(pool.id),
+        org_id=str(scope.org_id),
+        actor_user_id=str(actor.id),
+    )
+    return _credential_pool_response(pool)
+
+
+async def list_credential_pool_credentials(
+    *,
+    provider_id: UUID,
+    pool_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[CredentialPoolCredentialResponse]:
+    await _get_credential_pool_or_raise(
+        provider_id=provider_id,
+        pool_id=pool_id,
+        scope=scope,
+        db=db,
+    )
+    rows = await repository.list_pool_credentials(
+        org_id=scope.org_id,
+        pool_id=pool_id,
+        db=db,
+    )
+    return [_pool_credential_response(membership, credential) for membership, credential in rows]
+
+
+async def add_credential_pool_credential(
+    *,
+    provider_id: UUID,
+    pool_id: UUID,
+    payload: AddCredentialPoolCredentialRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> CredentialPoolCredentialResponse:
+    async with transaction(db):
+        await _get_credential_pool_or_raise(
+            provider_id=provider_id,
+            pool_id=pool_id,
+            scope=scope,
+            db=db,
+        )
+        credential = await _get_provider_credential_or_raise(
+            provider_id=provider_id,
+            provider_credential_id=payload.provider_credential_id,
+            scope=scope,
+            db=db,
+        )
+        membership = await repository.create_pool_credential(
+            org_id=scope.org_id,
+            pool_id=pool_id,
+            provider_credential_id=payload.provider_credential_id,
+            priority=payload.priority,
+            weight=payload.weight,
+            is_active=payload.is_active,
+            db=db,
+        )
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="provider",
+            action="credential_pool_credential.added",
+            message=f"Added credential {credential.name} to credential pool.",
+            provider_id=provider_id,
+            pool_id=pool_id,
+            metadata={"provider_credential_id": str(payload.provider_credential_id)},
+            db=db,
+        )
+    logger.info(
+        "credential_pool_credential_added",
+        provider_id=str(provider_id),
+        pool_id=str(pool_id),
+        provider_credential_id=str(payload.provider_credential_id),
+        org_id=str(scope.org_id),
+        actor_user_id=str(actor.id),
+    )
+    return _pool_credential_response(membership, credential)
+
+
+async def update_credential_pool_credential(
+    *,
+    provider_id: UUID,
+    pool_id: UUID,
+    pool_credential_id: UUID,
+    payload: UpdateCredentialPoolCredentialRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> CredentialPoolCredentialResponse:
+    async with transaction(db):
+        await _get_credential_pool_or_raise(
+            provider_id=provider_id,
+            pool_id=pool_id,
+            scope=scope,
+            db=db,
+        )
+        membership = await repository.get_pool_credential(
+            org_id=scope.org_id,
+            pool_credential_id=pool_credential_id,
+            db=db,
+        )
+        if membership is None or membership.pool_id != pool_id:
+            raise ProviderNotFoundError
+        if payload.priority is not None:
+            membership.priority = payload.priority
+        if payload.weight is not None:
+            membership.weight = payload.weight
+        if payload.is_active is not None:
+            membership.is_active = payload.is_active
+        credential = await _get_provider_credential_or_raise(
+            provider_id=provider_id,
+            provider_credential_id=membership.provider_credential_id,
+            scope=scope,
+            db=db,
+        )
+        await db.flush()
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="provider",
+            action="credential_pool_credential.updated",
+            message=f"Updated pool membership for credential {credential.name}.",
+            provider_id=provider_id,
+            pool_id=pool_id,
+            metadata={"pool_credential_id": str(pool_credential_id)},
+            db=db,
+        )
+    logger.info(
+        "credential_pool_credential_updated",
+        provider_id=str(provider_id),
+        pool_id=str(pool_id),
+        pool_credential_id=str(pool_credential_id),
+        org_id=str(scope.org_id),
+        actor_user_id=str(actor.id),
+    )
+    return _pool_credential_response(membership, credential)
+
+
+async def delete_credential_pool_credential(
+    *,
+    provider_id: UUID,
+    pool_id: UUID,
+    pool_credential_id: UUID,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> None:
+    async with transaction(db):
+        await _get_credential_pool_or_raise(
+            provider_id=provider_id,
+            pool_id=pool_id,
+            scope=scope,
+            db=db,
+        )
+        membership = await repository.get_pool_credential(
+            org_id=scope.org_id,
+            pool_credential_id=pool_credential_id,
+            db=db,
+        )
+        if membership is None or membership.pool_id != pool_id:
+            raise ProviderNotFoundError
+        await repository.delete_pool_credential(pool_credential=membership, db=db)
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="provider",
+            action="credential_pool_credential.removed",
+            message="Removed credential from credential pool.",
+            provider_id=provider_id,
+            pool_id=pool_id,
+            metadata={"pool_credential_id": str(pool_credential_id)},
+            db=db,
+        )
+    logger.info(
+        "credential_pool_credential_deleted",
+        provider_id=str(provider_id),
+        pool_id=str(pool_id),
+        pool_credential_id=str(pool_credential_id),
+        org_id=str(scope.org_id),
+        actor_user_id=str(actor.id),
+    )
+
+
 async def create_provider_credential(
     *,
     provider_id: UUID,
@@ -139,19 +447,16 @@ async def create_provider_credential(
             name=payload.name,
             key_prefix=_key_prefix(api_key),
             api_key_encrypted=encrypt(api_key),
-            priority=payload.priority,
             db=db,
         )
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="provider_credential.created",
-                target_type="provider_credential",
-                target_id=provider_credential.id,
-                event_metadata={"provider_id": str(provider_id), "name": provider_credential.name},
-            ),
-            db,
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="provider",
+            action="provider_credential.created",
+            message=f"Created provider credential {provider_credential.name}.",
+            provider_id=provider_id,
+            metadata={"provider_credential_id": str(provider_credential.id)},
+            db=db,
         )
     return ProviderCredentialResponse.model_validate(provider_credential)
 
@@ -207,7 +512,6 @@ async def update_provider_credential(
             scope=scope,
             db=db,
         )
-        credential_changed = payload.api_key is not None
         if payload.name is not None:
             provider_credential.name = payload.name
         if payload.api_key is not None:
@@ -216,80 +520,21 @@ async def update_provider_credential(
             provider_credential.api_key_encrypted = encrypt(api_key)
             provider_credential.health_status = "unchecked"
             provider_credential.last_validation_error = None
-        if payload.priority is not None:
-            provider_credential.priority = payload.priority
         if payload.is_active is not None:
             provider_credential.is_active = payload.is_active
 
         await db.flush()
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="provider_credential.updated",
-                target_type="provider_credential",
-                target_id=provider_credential.id,
-                event_metadata={"provider_id": str(provider_id)},
-            ),
-            db,
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="provider",
+            action="provider_credential.updated",
+            message=f"Updated provider credential {provider_credential.name}.",
+            provider_id=provider_id,
+            metadata={"provider_credential_id": str(provider_credential.id)},
+            db=db,
         )
-        if credential_changed:
-            await audit_facade.record_event(
-                RecordAuditEvent(
-                    org_id=scope.org_id,
-                    actor_user_id=actor.id,
-                    event="provider_credential.secret_changed",
-                    target_type="provider_credential",
-                    target_id=provider_credential.id,
-                    event_metadata={"provider_id": str(provider_id)},
-                ),
-                db,
-            )
 
     return ProviderCredentialResponse.model_validate(provider_credential)
-
-
-async def reorder_provider_credentials(
-    *,
-    provider_id: UUID,
-    payload: ReorderProviderCredentialsRequest,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    db: AsyncSession,
-) -> list[ProviderCredentialResponse]:
-    async with transaction(db):
-        await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
-        seen_ids: set[UUID] = set()
-        credentials: list[ProviderCredential] = []
-        for item in payload.updates:
-            if item.provider_credential_id in seen_ids:
-                raise ProviderNotFoundError
-            seen_ids.add(item.provider_credential_id)
-            credential = await _get_provider_credential_or_raise(
-                provider_id=provider_id,
-                provider_credential_id=item.provider_credential_id,
-                scope=scope,
-                db=db,
-            )
-            credential.priority = item.priority
-            credentials.append(credential)
-
-        await db.flush()
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="provider_credentials.reordered",
-                target_type="provider",
-                target_id=provider_id,
-                event_metadata={"credential_count": len(credentials)},
-            ),
-            db,
-        )
-    return [
-        ProviderCredentialResponse.model_validate(credential)
-        for credential in sorted(credentials, key=_provider_credential_priority_key)
-    ]
 
 
 async def test_provider_credential(
@@ -331,17 +576,6 @@ async def test_provider_credential(
             error = str(exc)
             last_successful_request_at = provider_credential.last_successful_request_at
         await db.flush()
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="provider_credential.tested",
-                target_type="provider_credential",
-                target_id=provider_credential.id,
-                event_metadata={"provider_id": str(provider_id), "health_status": health_status},
-            ),
-            db,
-        )
 
     return TestProviderCredentialResponse(
         id=provider_credential.id,
@@ -369,16 +603,14 @@ async def deactivate_provider_credential(
         )
         provider_credential.is_active = False
         await db.flush()
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="provider_credential.deactivated",
-                target_type="provider_credential",
-                target_id=provider_credential.id,
-                event_metadata={"provider_id": str(provider_id)},
-            ),
-            db,
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="provider",
+            action="provider_credential.deactivated",
+            message=f"Deactivated provider credential {provider_credential.name}.",
+            provider_id=provider_id,
+            metadata={"provider_credential_id": str(provider_credential.id)},
+            db=db,
         )
 
 
@@ -410,20 +642,14 @@ async def create_model_offering(
             metadata_source="manual",
             db=db,
         )
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="model_offering.created",
-                target_type="model_offering",
-                target_id=model_offering.id,
-                event_metadata={
-                    "provider_id": str(provider_id),
-                    "provider_model_name": model_offering.provider_model_name,
-                    "alias": model_offering.alias,
-                },
-            ),
-            db,
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="provider",
+            action="model_offering.created",
+            message=f"Created model offering {model_offering.provider_model_name}.",
+            provider_id=provider_id,
+            model_offering_id=model_offering.id,
+            db=db,
         )
     return ModelOfferingResponse.model_validate(model_offering)
 
@@ -524,17 +750,14 @@ async def sync_model_offerings(
                         )
                 await db.flush()
             synced_models.append(model_offering)
-
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="model_offerings.synced",
-                target_type="provider",
-                target_id=provider.id,
-                event_metadata={"model_count": len(synced_models)},
-            ),
-            db,
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="provider",
+            action="model_offerings.synced",
+            message=f"Synced {len(synced_models)} model offerings.",
+            provider_id=provider_id,
+            metadata={"model_count": len(synced_models)},
+            db=db,
         )
 
     logger.info(
@@ -544,8 +767,7 @@ async def sync_model_offerings(
         org_id=str(scope.org_id),
     )
     return [
-        ModelOfferingResponse.model_validate(model_offering)
-        for model_offering in synced_models
+        ModelOfferingResponse.model_validate(model_offering) for model_offering in synced_models
     ]
 
 
@@ -673,9 +895,8 @@ async def test_model_offering(
                         error=exc,
                         db=db,
                     )
-                if (
-                    payload.provider_credential_id is not None
-                    or not _should_try_next_credential(exc)
+                if payload.provider_credential_id is not None or not _should_try_next_credential(
+                    exc
                 ):
                     break
             except Exception as exc:  # noqa: BLE001 - surfaced as model validation result.
@@ -684,25 +905,6 @@ async def test_model_offering(
 
         if last_error is not None and error is None:
             error = str(last_error.body)
-
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="model_offering.tested",
-                target_type="model_offering",
-                target_id=model_offering.id,
-                event_metadata={
-                    "provider_id": str(provider_id),
-                    "provider_credential_id": (
-                        str(tested_credential_id) if tested_credential_id is not None else None
-                    ),
-                    "health_status": health_status,
-                    "upstream_status_code": upstream_status_code,
-                },
-            ),
-            db,
-        )
 
     return TestModelOfferingResponse(
         id=model_offering.id,
@@ -766,16 +968,14 @@ async def update_model_offering(
         model_offering.metadata_source = "manual"
 
         await db.flush()
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="model_offering.updated",
-                target_type="model_offering",
-                target_id=model_offering.id,
-                event_metadata={"provider_id": str(provider_id)},
-            ),
-            db,
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="provider",
+            action="model_offering.updated",
+            message=f"Updated model offering {model_offering.provider_model_name}.",
+            provider_id=provider_id,
+            model_offering_id=model_offering.id,
+            db=db,
         )
 
     return ModelOfferingResponse.model_validate(model_offering)
@@ -799,16 +999,14 @@ async def deactivate_model_offering(
         )
         model_offering.is_active = False
         await db.flush()
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="model_offering.deactivated",
-                target_type="model_offering",
-                target_id=model_offering.id,
-                event_metadata={"provider_id": str(provider_id)},
-            ),
-            db,
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="provider",
+            action="model_offering.deactivated",
+            message=f"Deactivated model offering {model_offering.provider_model_name}.",
+            provider_id=provider_id,
+            model_offering_id=model_offering.id,
+            db=db,
         )
 
 
@@ -822,8 +1020,6 @@ async def update_provider(
 ) -> ProviderResponse:
     async with transaction(db):
         provider = await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
-        credential_changed = payload.api_key is not None
-
         if payload.name is not None:
             provider.name = payload.name
         if payload.slug is not None:
@@ -846,35 +1042,20 @@ async def update_provider(
             provider.circuit_breaker_policy = payload.circuit_breaker_policy
         if "max_concurrent_requests" in payload.model_fields_set:
             provider.max_concurrent_requests = payload.max_concurrent_requests
-        if payload.credential_routing_policy is not None:
-            provider.credential_routing_policy = payload.credential_routing_policy
         if payload.is_active is not None:
             provider.is_active = payload.is_active
         if payload.api_key is not None:
             provider.api_key_encrypted = encrypt(payload.api_key)
 
         await db.flush()
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="provider.updated",
-                target_type="provider",
-                target_id=provider.id,
-            ),
-            db,
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="provider",
+            action="provider.updated",
+            message=f"Updated provider {provider.name}.",
+            provider_id=provider.id,
+            db=db,
         )
-        if credential_changed:
-            await audit_facade.record_event(
-                RecordAuditEvent(
-                    org_id=scope.org_id,
-                    actor_user_id=actor.id,
-                    event="provider.credential_changed",
-                    target_type="provider",
-                    target_id=provider.id,
-                ),
-                db,
-            )
 
     logger.info("provider_updated", provider_id=str(provider.id), org_id=str(scope.org_id))
     return _to_response(provider)
@@ -891,15 +1072,13 @@ async def deactivate_provider(
         provider = await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
         provider.is_active = False
         await db.flush()
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="provider.deactivated",
-                target_type="provider",
-                target_id=provider.id,
-            ),
-            db,
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="provider",
+            action="provider.deactivated",
+            message=f"Deactivated provider {provider.name}.",
+            provider_id=provider.id,
+            db=db,
         )
 
     logger.info("provider_deactivated", provider_id=str(provider_id), org_id=str(scope.org_id))
@@ -908,6 +1087,7 @@ async def deactivate_provider(
 async def create_chat_completion(
     *,
     provider_id: UUID,
+    pool_id: UUID | None = None,
     provider_credential_id: UUID | None = None,
     payload: ProviderChatCompletionRequest,
     scope: Scope,
@@ -916,6 +1096,7 @@ async def create_chat_completion(
 ) -> ProviderChatCompletionResponse:
     return await _create_chat_completion_with_policy(
         provider_id=provider_id,
+        pool_id=pool_id,
         provider_credential_id=provider_credential_id,
         payload=payload,
         scope=scope,
@@ -928,6 +1109,7 @@ async def create_chat_completion(
 async def _create_chat_completion_with_policy(
     *,
     provider_id: UUID,
+    pool_id: UUID | None,
     provider_credential_id: UUID | None,
     payload: ProviderChatCompletionRequest,
     scope: Scope,
@@ -943,6 +1125,7 @@ async def _create_chat_completion_with_policy(
     adapter = default_adapter_registry.get(provider.adapter_type)
     routed_credentials = await _resolve_provider_credential_route(
         provider=provider,
+        pool_id=pool_id,
         provider_credential_id=provider_credential_id,
         scope=scope,
         db=db,
@@ -950,6 +1133,7 @@ async def _create_chat_completion_with_policy(
     last_error: ProviderUpstreamError | None = None
     async with _provider_concurrency_slot(provider):
         for credential in routed_credentials:
+
             async def call_upstream(
                 routed_credential: ProviderCredential | None = credential,
             ) -> ProviderChatCompletionResponse:
@@ -1027,6 +1211,7 @@ async def _try_provider_fallbacks(
         try:
             return await _create_chat_completion_with_policy(
                 provider_id=fallback_provider_id,
+                pool_id=None,
                 provider_credential_id=None,
                 payload=payload,
                 scope=scope,
@@ -1064,10 +1249,7 @@ async def _call_with_retries(
                 raise last_error from exc
         except ProviderUpstreamError as exc:
             last_error = exc
-            if (
-                attempt >= max_attempts
-                or exc.status_code not in retry_policy["retry_on_status"]
-            ):
+            if attempt >= max_attempts or exc.status_code not in retry_policy["retry_on_status"]:
                 raise
         await asyncio.sleep(_retry_delay_seconds(retry_policy, attempt))
     if last_error is not None:
@@ -1129,9 +1311,7 @@ def _fallback_policy(provider: Provider) -> dict:
 
 def _circuit_breaker_policy(provider: Provider) -> dict:
     stored = (
-        provider.circuit_breaker_policy
-        if isinstance(provider.circuit_breaker_policy, dict)
-        else {}
+        provider.circuit_breaker_policy if isinstance(provider.circuit_breaker_policy, dict) else {}
     )
     return {
         "enabled": bool(stored.get("enabled", False)),
@@ -1254,6 +1434,7 @@ def _status_policy_values(value: object, *, fallback: set[int]) -> set[int]:
 async def stream_chat_completion(
     *,
     provider_id: UUID,
+    pool_id: UUID | None = None,
     provider_credential_id: UUID | None = None,
     payload: ProviderChatCompletionRequest,
     scope: Scope,
@@ -1267,6 +1448,7 @@ async def stream_chat_completion(
     adapter = default_adapter_registry.get(provider.adapter_type)
     routed_credentials = await _resolve_provider_credential_route(
         provider=provider,
+        pool_id=pool_id,
         provider_credential_id=provider_credential_id,
         scope=scope,
         db=db,
@@ -1349,6 +1531,23 @@ async def _get_provider_credential_or_raise(
     return provider_credential
 
 
+async def _get_credential_pool_or_raise(
+    *,
+    provider_id: UUID,
+    pool_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> CredentialPool:
+    pool = await repository.get_credential_pool(
+        org_id=scope.org_id,
+        pool_id=pool_id,
+        db=db,
+    )
+    if pool is None or pool.provider_id != provider_id:
+        raise ProviderNotFoundError
+    return pool
+
+
 async def _get_model_offering_or_raise(
     *,
     provider_id: UUID,
@@ -1404,27 +1603,91 @@ def _credential_summary(credentials: list[ProviderCredential]) -> ProviderCreden
     return summary
 
 
+def _credential_pool_response(
+    pool: CredentialPool,
+    *,
+    credential_count: int = 0,
+    active_credential_count: int = 0,
+) -> CredentialPoolResponse:
+    return CredentialPoolResponse(
+        id=pool.id,
+        org_id=pool.org_id,
+        provider_id=pool.provider_id,
+        name=pool.name,
+        description=pool.description,
+        selection_policy=pool.selection_policy,
+        is_active=pool.is_active,
+        credential_count=credential_count,
+        active_credential_count=active_credential_count,
+        created_at=pool.created_at,
+        updated_at=pool.updated_at,
+    )
+
+
+def _pool_credential_response(
+    membership: CredentialPoolCredential,
+    credential: ProviderCredential,
+) -> CredentialPoolCredentialResponse:
+    return CredentialPoolCredentialResponse(
+        id=membership.id,
+        org_id=membership.org_id,
+        pool_id=membership.pool_id,
+        provider_credential_id=membership.provider_credential_id,
+        priority=membership.priority,
+        weight=membership.weight,
+        is_active=membership.is_active,
+        created_at=membership.created_at,
+        updated_at=membership.updated_at,
+        credential=ProviderCredentialResponse.model_validate(credential),
+    )
+
+
 async def _resolve_provider_credential_route(
     *,
     provider: Provider,
-    provider_credential_id: UUID | None,
+    pool_id: UUID | None = None,
+    provider_credential_id: UUID | None = None,
     scope: Scope,
     db: AsyncSession,
 ) -> list[ProviderCredential | None]:
     if provider_credential_id is None:
-        provider_credentials = await repository.list_provider_credentials(
-            org_id=scope.org_id,
-            provider_id=provider.id,
-            db=db,
-        )
-        active_credentials = [
-            credential for credential in provider_credentials if credential.is_active
-        ]
-        if active_credentials:
-            return _route_provider_credentials(
-                active_credentials,
-                routing_policy=_provider_routing_policy(provider),
+        if pool_id is not None:
+            pool = await _get_credential_pool_or_raise(
+                provider_id=provider.id,
+                pool_id=pool_id,
+                scope=scope,
+                db=db,
             )
+            if not pool.is_active:
+                raise ProviderCredentialRequiredError
+            pool_credentials = await repository.list_pool_credentials(
+                org_id=scope.org_id,
+                pool_id=pool_id,
+                db=db,
+            )
+            routing_policy = ProviderCredentialRoutingPolicy(pool.selection_policy)
+            active_pool_credentials = [
+                (membership, credential)
+                for membership, credential in pool_credentials
+                if membership.is_active and credential.is_active
+            ]
+            if active_pool_credentials:
+                return _route_pool_credentials(
+                    active_pool_credentials,
+                    routing_policy=routing_policy,
+                )
+            raise ProviderCredentialRequiredError
+        else:
+            provider_credentials = await repository.list_provider_credentials(
+                org_id=scope.org_id,
+                provider_id=provider.id,
+                db=db,
+            )
+            active_credentials = [
+                credential for credential in provider_credentials if credential.is_active
+            ]
+            if active_credentials:
+                return sorted(active_credentials, key=lambda credential: credential.created_at)
         if provider.api_key_encrypted is not None:
             return [None]
         raise ProviderCredentialRequiredError
@@ -1444,74 +1707,70 @@ async def _resolve_provider_credential_route(
     return [provider_credential]
 
 
-def _route_provider_credentials(
-    credentials: list[ProviderCredential],
+def _route_pool_credentials(
+    pool_credentials: list[tuple[CredentialPoolCredential, ProviderCredential]],
     *,
     routing_policy: ProviderCredentialRoutingPolicy,
 ) -> list[ProviderCredential]:
-    ordered = sorted(credentials, key=_provider_credential_priority_key)
+    ordered = sorted(pool_credentials, key=_pool_credential_priority_key)
     if routing_policy == ProviderCredentialRoutingPolicy.priority:
-        return [ordered[0]]
+        return [ordered[0][1]]
     if routing_policy == ProviderCredentialRoutingPolicy.round_robin:
-        return [sorted(credentials, key=_provider_credential_lru_key)[0]]
+        return [sorted(pool_credentials, key=_pool_credential_lru_key)[0][1]]
     if routing_policy == ProviderCredentialRoutingPolicy.least_recently_used:
-        return [sorted(credentials, key=_provider_credential_lru_key)[0]]
+        return [sorted(pool_credentials, key=_pool_credential_lru_key)[0][1]]
     if routing_policy == ProviderCredentialRoutingPolicy.health_based:
-        return [sorted(credentials, key=_provider_credential_health_key)[0]]
+        return [sorted(pool_credentials, key=_pool_credential_health_key)[0][1]]
     if routing_policy == ProviderCredentialRoutingPolicy.weighted:
-        return [_weighted_provider_credential_route(credentials)[0]]
+        return [_weighted_pool_credential_route(pool_credentials)[0]]
     if routing_policy == ProviderCredentialRoutingPolicy.fallback:
-        return ordered
-    return ordered
+        return [credential for _, credential in ordered]
+    return [credential for _, credential in ordered]
 
 
-def _provider_routing_policy(provider: Provider) -> ProviderCredentialRoutingPolicy:
-    try:
-        return ProviderCredentialRoutingPolicy(provider.credential_routing_policy)
-    except ValueError:
-        return ProviderCredentialRoutingPolicy.priority
-
-
-def _provider_credential_priority_key(
-    credential: ProviderCredential,
+def _pool_credential_priority_key(
+    item: tuple[CredentialPoolCredential, ProviderCredential],
 ) -> tuple[int, datetime]:
-    return (credential.priority, credential.created_at)
+    membership, credential = item
+    return (membership.priority, membership.created_at, credential.created_at)
 
 
-def _provider_credential_lru_key(
-    credential: ProviderCredential,
+def _pool_credential_lru_key(
+    item: tuple[CredentialPoolCredential, ProviderCredential],
 ) -> tuple[datetime, int, datetime]:
+    membership, credential = item
     return (
         credential.last_used_at or datetime.min.replace(tzinfo=UTC),
-        credential.priority,
+        membership.priority,
         credential.created_at,
     )
 
 
-def _provider_credential_health_key(
-    credential: ProviderCredential,
+def _pool_credential_health_key(
+    item: tuple[CredentialPoolCredential, ProviderCredential],
 ) -> tuple[int, int, datetime]:
+    membership, credential = item
     health_rank = {
         "valid": 0,
         "unchecked": 1,
         "degraded": 2,
         "invalid": 3,
     }.get(credential.health_status, 2)
-    return (health_rank, credential.priority, credential.created_at)
+    return (health_rank, membership.priority, credential.created_at)
 
 
-def _weighted_provider_credential_route(
-    credentials: list[ProviderCredential],
+def _weighted_pool_credential_route(
+    pool_credentials: list[tuple[CredentialPoolCredential, ProviderCredential]],
 ) -> list[ProviderCredential]:
-    weighted_pool: list[ProviderCredential] = []
-    for credential in credentials:
-        weight = max(1, 101 - credential.priority)
-        weighted_pool.extend([credential] * weight)
-    selected = secrets.choice(weighted_pool)
+    weighted_pool: list[tuple[CredentialPoolCredential, ProviderCredential]] = []
+    for item in pool_credentials:
+        membership, _credential = item
+        weighted_pool.extend([item] * max(1, membership.weight))
+    selected_membership, selected = secrets.choice(weighted_pool)
     rest = [
         credential
-        for credential in sorted(credentials, key=_provider_credential_priority_key)
-        if credential.id != selected.id
+        for membership, credential in sorted(pool_credentials, key=_pool_credential_priority_key)
+        if membership.id != selected_membership.id
     ]
     return [selected, *rest]
 
@@ -1628,9 +1887,7 @@ def _overwrite_model_offering_from_metadata(
     )
     model_offering.capabilities = metadata.capabilities
     model_offering.context_window = metadata.context_window
-    model_offering.input_price_per_million_tokens = (
-        metadata.pricing.input_price_per_million_tokens
-    )
+    model_offering.input_price_per_million_tokens = metadata.pricing.input_price_per_million_tokens
     model_offering.output_price_per_million_tokens = (
         metadata.pricing.output_price_per_million_tokens
     )
@@ -1648,4 +1905,3 @@ def _combined_modality(input_modalities: list[str], output_modalities: list[str]
         if normalized and normalized not in ordered:
             ordered.append(normalized)
     return "+".join(ordered) or "text"
-

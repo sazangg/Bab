@@ -9,21 +9,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.database import Base, get_db
 from app.main import create_app
-from app.modules.audit.internal.models import AuditLog  # noqa: F401
+from app.modules.activity.internal.models import ActivityEvent  # noqa: F401
 from app.modules.auth.internal.models import Organization, Team  # noqa: F401
-from app.modules.keys.internal.models import (  # noqa: F401
-    ModelAlias,
-    Project,
-    ProjectAllocation,
-    VirtualKey,
-)
-from app.modules.limits.internal.models import LimitCounter, LimitPolicy  # noqa: F401
+from app.modules.keys.internal.models import Allocation, Project, VirtualKey  # noqa: F401
 from app.modules.providers.internal.models import (  # noqa: F401
+    CredentialPool,
     ModelOffering,
     Provider,
     ProviderCredential,
 )
-from app.modules.request_logs.internal.models import RequestLog  # noqa: F401
+from app.modules.usage.internal.models import UsageRecord  # noqa: F401
 
 
 @pytest.fixture

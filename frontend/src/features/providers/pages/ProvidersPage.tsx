@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { MoreHorizontal, Pencil, Plug, Plus, Power, RotateCcw, Search } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useForm, useWatch } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -48,9 +48,8 @@ import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 
-import { EditProviderSheet, RoutingPolicyField } from "../components/EditProviderSheet";
+import { EditProviderSheet } from "../components/EditProviderSheet";
 import { ProviderLogo } from "../components/ProviderLogo";
-import { formatRoutingPolicy } from "../lib/format";
 import { providerPresets, type ProviderCatalogEntry } from "../lib/presets";
 import {
   createProviderSchema,
@@ -160,7 +159,6 @@ export function ProvidersPage() {
                   name: values.name,
                   ...(values.slug ? { slug: values.slug } : {}),
                   base_url: values.base_url,
-                  credential_routing_policy: values.credential_routing_policy,
                 },
               })
             }
@@ -338,11 +336,6 @@ function ProviderCatalogRow({
                     {activeCredentialCount === 1 ? "credential" : "credentials"}
                   </span>
                 ) : null}
-                {entry.provider ? (
-                  <span className="text-xs text-muted-foreground">
-                    {formatRoutingPolicy(entry.provider.credential_routing_policy)}
-                  </span>
-                ) : null}
               </div>
               <p className="text-sm text-muted-foreground">{entry.description}</p>
             </div>
@@ -420,7 +413,6 @@ function AddProviderCredentialDialog({
     defaultValues: {
       name: entry ? `${entry.name} credential` : "",
       api_key: "",
-      priority: 100,
     },
   });
   const isNewProvider = Boolean(entry && !entry.provider);
@@ -451,7 +443,6 @@ function AddProviderCredentialDialog({
         {
           name: values.name,
           api_key: values.api_key,
-          priority: values.priority,
         },
       );
       if (keyResponse.status !== 201) {
@@ -536,17 +527,6 @@ function AddProviderCredentialDialog({
               {...form.register("api_key")}
             />
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="provider-key-priority">Routing priority</Label>
-            <Input
-              id="provider-key-priority"
-              type="number"
-              {...form.register("priority", { valueAsNumber: true })}
-            />
-            <p className="text-xs text-muted-foreground">
-              Lower numbers are preferred when multiple active credentials exist for this provider.
-            </p>
-          </div>
           {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
         </form>
         <SheetFooter>
@@ -585,10 +565,8 @@ function CreateProviderSheet({
       name: "",
       slug: "",
       base_url: "",
-      credential_routing_policy: "priority",
     },
   });
-  const routingPolicy = useWatch({ control: form.control, name: "credential_routing_policy" });
 
   useEffect(() => {
     if (open) {
@@ -596,7 +574,6 @@ function CreateProviderSheet({
         name: "",
         slug: "",
         base_url: "",
-        credential_routing_policy: "priority",
       });
     }
   }, [open, form]);
@@ -644,10 +621,6 @@ function CreateProviderSheet({
               <p className="text-xs text-destructive">{form.formState.errors.base_url.message}</p>
             ) : null}
           </div>
-          <RoutingPolicyField
-            value={routingPolicy}
-            onValueChange={(value) => form.setValue("credential_routing_policy", value)}
-          />
           {isError ? <p className="text-sm text-destructive">Provider was not created.</p> : null}
         </form>
         <SheetFooter>

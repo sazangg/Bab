@@ -4,21 +4,17 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal, Base, engine, transaction
-from app.modules.audit.internal.models import AuditLog  # noqa: F401
+from app.modules.activity.internal.models import ActivityEvent  # noqa: F401
 from app.modules.auth.internal.models import Organization, Team  # noqa: F401
-from app.modules.keys.internal.models import (  # noqa: F401
-    ModelAlias,
-    Project,
-    ProjectAllocation,
-    VirtualKey,
-)
-from app.modules.limits.internal.models import LimitCounter, LimitPolicy  # noqa: F401
+from app.modules.keys.internal.models import Allocation, Project, VirtualKey  # noqa: F401
 from app.modules.providers.internal.models import (  # noqa: F401
+    CredentialPool,
+    CredentialPoolCredential,
     ModelOffering,
     Provider,
     ProviderCredential,
 )
-from app.modules.request_logs.internal.models import RequestLog  # noqa: F401
+from app.modules.usage.internal.models import UsageRecord  # noqa: F401
 
 
 async def create_development_database() -> None:
@@ -35,8 +31,6 @@ async def _sqlite_schema_is_stale(connection) -> bool:
     provider_column_names = {row[1] for row in providers_columns}
     if "display_name" not in provider_column_names:
         return True
-        if "credential_routing_policy" not in provider_column_names:
-            return True
     teams_columns = await connection.exec_driver_sql("PRAGMA table_info(teams)")
     team_column_names = {row[1] for row in teams_columns}
     if "updated_at" not in team_column_names:
@@ -47,27 +41,46 @@ async def _sqlite_schema_is_stale(connection) -> bool:
     if "team_id" not in project_column_names:
         return True
 
-    provider_credentials = await connection.exec_driver_sql(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='provider_credentials'"
-    )
-    if provider_credentials.first() is None:
-        return True
-
-    model_offerings = await connection.exec_driver_sql(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='model_offerings'"
-    )
-    if model_offerings.first() is None:
-        return True
-
-    model_offering_columns = await connection.exec_driver_sql("PRAGMA table_info(model_offerings)")
-    model_offering_column_names = {row[1] for row in model_offering_columns}
-    required_model_offering_columns = {
-        "input_modalities",
-        "output_modalities",
-        "metadata_source",
-        "metadata_last_synced_at",
+    required_tables = {
+        "provider_credentials",
+        "credential_pools",
+        "credential_pool_credentials",
+        "allocations",
+        "activity_events",
+        "usage_records",
     }
-    return not required_model_offering_columns.issubset(model_offering_column_names)
+    for table_name in required_tables:
+        existing = await connection.exec_driver_sql(
+            f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'"
+        )
+        if existing.first() is None:
+            return True
+
+    provider_credentials_columns = await connection.exec_driver_sql(
+        "PRAGMA table_info(provider_credentials)"
+    )
+    provider_credentials_column_info = {row[1]: row for row in provider_credentials_columns}
+    if (
+        "pool_id" in provider_credentials_column_info
+        or "priority" in provider_credentials_column_info
+    ):
+        return True
+
+    virtual_key_columns = await connection.exec_driver_sql("PRAGMA table_info(virtual_keys)")
+    virtual_key_column_names = {row[1] for row in virtual_key_columns}
+    if "allocation_id" not in virtual_key_column_names:
+        return True
+    if "custom_allocation_id" not in virtual_key_column_names:
+        return True
+
+    allocation_columns = await connection.exec_driver_sql("PRAGMA table_info(allocations)")
+    allocation_column_names = {row[1] for row in allocation_columns}
+    if "is_default" not in allocation_column_names or "budget_cents" not in allocation_column_names:
+        return True
+
+    usage_columns = await connection.exec_driver_sql("PRAGMA table_info(usage_records)")
+    usage_column_names = {row[1] for row in usage_columns}
+    return "cost_cents" not in usage_column_names
 
 
 async def ensure_default_workspace() -> None:
@@ -154,6 +167,20 @@ def _provider_catalog_entries() -> list[dict]:
             "capabilities": default_capabilities,
         },
         {
+            "name": "Anthropic",
+            "slug": "anthropic",
+            "base_url": "https://api.anthropic.com/v1",
+            "description": "Anthropic Claude models via the OpenAI-compatible endpoint.",
+            "capabilities": default_capabilities,
+        },
+        {
+            "name": "Google AI",
+            "slug": "google-ai",
+            "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+            "description": "Gemini models via Google AI Studio.",
+            "capabilities": default_capabilities,
+        },
+        {
             "name": "Mistral AI",
             "slug": "mistral",
             "base_url": "https://api.mistral.ai/v1",
@@ -165,6 +192,55 @@ def _provider_catalog_entries() -> list[dict]:
             "slug": "groq",
             "base_url": "https://api.groq.com/openai/v1",
             "description": "Groq OpenAI-compatible inference endpoint.",
+            "capabilities": default_capabilities,
+        },
+        {
+            "name": "DeepSeek",
+            "slug": "deepseek",
+            "base_url": "https://api.deepseek.com/v1",
+            "description": "DeepSeek chat and reasoning models.",
+            "capabilities": default_capabilities,
+        },
+        {
+            "name": "Perplexity",
+            "slug": "perplexity",
+            "base_url": "https://api.perplexity.ai",
+            "description": "Perplexity sonar models with built-in search.",
+            "capabilities": default_capabilities,
+        },
+        {
+            "name": "Together AI",
+            "slug": "together",
+            "base_url": "https://api.together.xyz/v1",
+            "description": "Open-source models hosted by Together.",
+            "capabilities": default_capabilities,
+        },
+        {
+            "name": "Fireworks",
+            "slug": "fireworks",
+            "base_url": "https://api.fireworks.ai/inference/v1",
+            "description": "Fast open-source inference hosted by Fireworks.",
+            "capabilities": default_capabilities,
+        },
+        {
+            "name": "Cerebras",
+            "slug": "cerebras",
+            "base_url": "https://api.cerebras.ai/v1",
+            "description": "Cerebras wafer-scale inference.",
+            "capabilities": default_capabilities,
+        },
+        {
+            "name": "Hugging Face",
+            "slug": "huggingface",
+            "base_url": "https://api-inference.huggingface.co/v1",
+            "description": "Inference Endpoints on the Hugging Face Hub.",
+            "capabilities": default_capabilities,
+        },
+        {
+            "name": "Ollama",
+            "slug": "ollama",
+            "base_url": "http://localhost:11434/v1",
+            "description": "Local Ollama runtime exposed on this machine.",
             "capabilities": default_capabilities,
         },
     ]

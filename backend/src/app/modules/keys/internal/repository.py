@@ -3,12 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.keys.internal.models import (
-    ModelAlias,
-    Project,
-    ProjectAllocation,
-    VirtualKey,
-)
+from app.modules.keys.internal.models import Allocation, Project, VirtualKey
 
 
 async def create_project(
@@ -54,33 +49,66 @@ async def get_project(*, project_id: UUID, org_id: UUID, db: AsyncSession) -> Pr
     )
 
 
-async def upsert_project_allocation(
+async def create_allocation(
     *,
     org_id: UUID,
-    project_id: UUID,
-    provider_id: UUID,
-    model_offering_ids: list[str] | None,
+    parent_allocation_id: UUID | None,
+    target_type: str,
+    team_id: UUID | None,
+    project_id: UUID | None,
+    name: str,
+    description: str | None,
+    offerings: list[dict[str, str]],
+    is_default: bool,
+    budget_cents: int | None,
+    max_requests: int | None,
+    max_input_tokens: int | None,
+    max_output_tokens: int | None,
+    max_tokens_per_request: int | None,
+    window: str,
     db: AsyncSession,
-) -> ProjectAllocation:
-    allocation = await get_project_allocation(
+) -> Allocation:
+    allocation = Allocation(
         org_id=org_id,
+        parent_allocation_id=parent_allocation_id,
+        target_type=target_type,
+        team_id=team_id,
         project_id=project_id,
-        provider_id=provider_id,
-        db=db,
+        name=name,
+        description=description,
+        offerings=offerings,
+        is_default=is_default,
+        budget_cents=budget_cents,
+        max_requests=max_requests,
+        max_input_tokens=max_input_tokens,
+        max_output_tokens=max_output_tokens,
+        max_tokens_per_request=max_tokens_per_request,
+        window=window,
     )
-    if allocation is None:
-        allocation = ProjectAllocation(
-            org_id=org_id,
-            project_id=project_id,
-            provider_id=provider_id,
-            model_offering_ids=model_offering_ids,
-        )
-        db.add(allocation)
-    else:
-        allocation.model_offering_ids = model_offering_ids
-        allocation.is_active = True
+    db.add(allocation)
     await db.flush()
     return allocation
+
+
+async def list_allocations(*, org_id: UUID, db: AsyncSession) -> list[Allocation]:
+    result = await db.scalars(
+        select(Allocation).where(Allocation.org_id == org_id).order_by(Allocation.created_at.desc())
+    )
+    return list(result)
+
+
+async def list_team_allocations(
+    *,
+    org_id: UUID,
+    team_id: UUID,
+    db: AsyncSession,
+) -> list[Allocation]:
+    result = await db.scalars(
+        select(Allocation)
+        .where(Allocation.org_id == org_id, Allocation.team_id == team_id)
+        .order_by(Allocation.created_at.desc())
+    )
+    return list(result)
 
 
 async def list_project_allocations(
@@ -88,119 +116,119 @@ async def list_project_allocations(
     org_id: UUID,
     project_id: UUID,
     db: AsyncSession,
-) -> list[ProjectAllocation]:
+) -> list[Allocation]:
     result = await db.scalars(
-        select(ProjectAllocation)
-        .where(
-            ProjectAllocation.org_id == org_id,
-            ProjectAllocation.project_id == project_id,
-        )
-        .order_by(ProjectAllocation.created_at.desc())
+        select(Allocation)
+        .where(Allocation.org_id == org_id, Allocation.project_id == project_id)
+        .order_by(Allocation.created_at.desc())
     )
     return list(result)
 
 
-async def get_project_allocation(
+async def get_allocation(
+    *,
+    allocation_id: UUID,
+    org_id: UUID,
+    db: AsyncSession,
+) -> Allocation | None:
+    return await db.scalar(
+        select(Allocation).where(Allocation.id == allocation_id, Allocation.org_id == org_id)
+    )
+
+
+async def get_parent_allocations(
+    *,
+    allocation: Allocation,
+    org_id: UUID,
+    db: AsyncSession,
+) -> list[Allocation]:
+    parents: list[Allocation] = []
+    parent_id = allocation.parent_allocation_id
+    seen_ids = {allocation.id}
+    while parent_id is not None and parent_id not in seen_ids:
+        parent = await get_allocation(allocation_id=parent_id, org_id=org_id, db=db)
+        if parent is None:
+            break
+        parents.append(parent)
+        seen_ids.add(parent.id)
+        parent_id = parent.parent_allocation_id
+    return parents
+
+
+async def get_default_team_allocation(
+    *,
+    org_id: UUID,
+    team_id: UUID,
+    db: AsyncSession,
+) -> Allocation | None:
+    return await db.scalar(
+        select(Allocation).where(
+            Allocation.org_id == org_id,
+            Allocation.team_id == team_id,
+            Allocation.project_id.is_(None),
+            Allocation.is_default.is_(True),
+            Allocation.is_active.is_(True),
+        )
+    )
+
+
+async def get_default_project_allocation(
     *,
     org_id: UUID,
     project_id: UUID,
-    provider_id: UUID,
     db: AsyncSession,
-) -> ProjectAllocation | None:
+) -> Allocation | None:
     return await db.scalar(
-        select(ProjectAllocation).where(
-            ProjectAllocation.org_id == org_id,
-            ProjectAllocation.project_id == project_id,
-            ProjectAllocation.provider_id == provider_id,
+        select(Allocation).where(
+            Allocation.org_id == org_id,
+            Allocation.project_id == project_id,
+            Allocation.is_default.is_(True),
+            Allocation.is_active.is_(True),
         )
     )
 
 
-async def delete_project_allocation(
+async def clear_default_allocations(
     *,
-    allocation: ProjectAllocation,
+    org_id: UUID,
+    team_id: UUID | None,
+    project_id: UUID | None,
     db: AsyncSession,
 ) -> None:
-    await db.delete(allocation)
-    await db.flush()
-
-
-async def create_model_alias(
-    *,
-    org_id: UUID,
-    alias: str,
-    provider_id: UUID,
-    provider_model: str,
-    db: AsyncSession,
-) -> ModelAlias:
-    model_alias = ModelAlias(
-        org_id=org_id,
-        alias=alias,
-        provider_id=provider_id,
-        provider_model=provider_model,
-    )
-    db.add(model_alias)
-    await db.flush()
-    return model_alias
-
-
-async def list_model_aliases(*, org_id: UUID, db: AsyncSession) -> list[ModelAlias]:
     result = await db.scalars(
-        select(ModelAlias).where(ModelAlias.org_id == org_id).order_by(ModelAlias.alias)
-    )
-    return list(result)
-
-
-async def get_model_alias(*, alias_id: UUID, org_id: UUID, db: AsyncSession) -> ModelAlias | None:
-    return await db.scalar(
-        select(ModelAlias).where(ModelAlias.id == alias_id, ModelAlias.org_id == org_id)
-    )
-
-
-async def get_model_alias_by_name(
-    *,
-    alias: str,
-    org_id: UUID,
-    db: AsyncSession,
-) -> ModelAlias | None:
-    return await db.scalar(
-        select(ModelAlias).where(ModelAlias.alias == alias, ModelAlias.org_id == org_id)
-    )
-
-
-async def get_active_model_alias_by_name(
-    *,
-    alias: str,
-    org_id: UUID,
-    db: AsyncSession,
-) -> ModelAlias | None:
-    return await db.scalar(
-        select(ModelAlias).where(
-            ModelAlias.alias == alias,
-            ModelAlias.org_id == org_id,
-            ModelAlias.is_active.is_(True),
+        select(Allocation).where(
+            Allocation.org_id == org_id,
+            Allocation.team_id == team_id,
+            Allocation.project_id == project_id,
+            Allocation.is_default.is_(True),
         )
     )
+    for allocation in result:
+        allocation.is_default = False
 
 
 async def create_virtual_key(
     *,
     org_id: UUID,
     project_id: UUID,
+    allocation_id: UUID,
+    custom_allocation_id: UUID | None,
     name: str,
     key_hash: str,
     key_prefix: str,
-    restrictions: list[dict[str, object]] | None,
+    allowed_models: list[str] | None,
     expires_at,
     db: AsyncSession,
 ) -> VirtualKey:
     virtual_key = VirtualKey(
         org_id=org_id,
         project_id=project_id,
+        allocation_id=allocation_id,
+        custom_allocation_id=custom_allocation_id,
         name=name,
         key_hash=key_hash,
         key_prefix=key_prefix,
-        restrictions=restrictions,
+        allowed_models=allowed_models,
         expires_at=expires_at,
     )
     db.add(virtual_key)

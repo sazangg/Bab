@@ -15,18 +15,23 @@ from app.modules.providers.errors import (
     ProviderUpstreamError,
 )
 from app.modules.providers.schemas import (
+    AddCredentialPoolCredentialRequest,
+    CreateCredentialPoolRequest,
     CreateModelOfferingRequest,
     CreateProviderCredentialRequest,
     CreateProviderRequest,
+    CredentialPoolCredentialResponse,
+    CredentialPoolResponse,
     ModelOfferingPageResponse,
     ModelOfferingResponse,
     ProviderCredentialResponse,
     ProviderResponse,
-    ReorderProviderCredentialsRequest,
     SyncModelOfferingsRequest,
     TestModelOfferingRequest,
     TestModelOfferingResponse,
     TestProviderCredentialResponse,
+    UpdateCredentialPoolCredentialRequest,
+    UpdateCredentialPoolRequest,
     UpdateModelOfferingRequest,
     UpdateProviderCredentialRequest,
     UpdateProviderRequest,
@@ -69,6 +74,154 @@ async def get_provider(
         return await facade.get_provider(provider_id=provider_id, scope=scope, db=db)
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc
+
+
+@router.get("/{provider_id}/pools")
+async def list_credential_pools(
+    provider_id: UUID,
+    scope: RequestScope,
+    db: DatabaseSession,
+    _: CurrentUser,
+) -> list[CredentialPoolResponse]:
+    try:
+        return await facade.list_credential_pools(provider_id=provider_id, scope=scope, db=db)
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="provider not found") from exc
+
+
+@router.post("/{provider_id}/pools", status_code=status.HTTP_201_CREATED)
+async def create_credential_pool(
+    provider_id: UUID,
+    payload: CreateCredentialPoolRequest,
+    actor: ProviderAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> CredentialPoolResponse:
+    try:
+        return await facade.create_credential_pool(
+            provider_id=provider_id,
+            payload=payload,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="provider not found") from exc
+
+
+@router.patch("/{provider_id}/pools/{pool_id}")
+async def update_credential_pool(
+    provider_id: UUID,
+    pool_id: UUID,
+    payload: UpdateCredentialPoolRequest,
+    actor: ProviderAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> CredentialPoolResponse:
+    try:
+        return await facade.update_credential_pool(
+            provider_id=provider_id,
+            pool_id=pool_id,
+            payload=payload,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="credential pool not found") from exc
+
+
+@router.get("/{provider_id}/pools/{pool_id}/credentials")
+async def list_credential_pool_credentials(
+    provider_id: UUID,
+    pool_id: UUID,
+    scope: RequestScope,
+    db: DatabaseSession,
+    _: CurrentUser,
+) -> list[CredentialPoolCredentialResponse]:
+    try:
+        return await facade.list_credential_pool_credentials(
+            provider_id=provider_id,
+            pool_id=pool_id,
+            scope=scope,
+            db=db,
+        )
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="credential pool not found") from exc
+
+
+@router.post("/{provider_id}/pools/{pool_id}/credentials", status_code=status.HTTP_201_CREATED)
+async def add_credential_pool_credential(
+    provider_id: UUID,
+    pool_id: UUID,
+    payload: AddCredentialPoolCredentialRequest,
+    actor: ProviderAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> CredentialPoolCredentialResponse:
+    try:
+        return await facade.add_credential_pool_credential(
+            provider_id=provider_id,
+            pool_id=pool_id,
+            payload=payload,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
+    except ProviderNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="credential pool or credential not found",
+        ) from exc
+
+
+@router.patch("/{provider_id}/pools/{pool_id}/credentials/{pool_credential_id}")
+async def update_credential_pool_credential(
+    provider_id: UUID,
+    pool_id: UUID,
+    pool_credential_id: UUID,
+    payload: UpdateCredentialPoolCredentialRequest,
+    actor: ProviderAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> CredentialPoolCredentialResponse:
+    try:
+        return await facade.update_credential_pool_credential(
+            provider_id=provider_id,
+            pool_id=pool_id,
+            pool_credential_id=pool_credential_id,
+            payload=payload,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="pool credential not found") from exc
+
+
+@router.delete(
+    "/{provider_id}/pools/{pool_id}/credentials/{pool_credential_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_credential_pool_credential(
+    provider_id: UUID,
+    pool_id: UUID,
+    pool_credential_id: UUID,
+    actor: ProviderAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> None:
+    try:
+        await facade.delete_credential_pool_credential(
+            provider_id=provider_id,
+            pool_id=pool_id,
+            pool_credential_id=pool_credential_id,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="pool credential not found") from exc
 
 
 @router.get("/{provider_id}/credentials")
@@ -117,26 +270,6 @@ async def update_provider_credential(
         return await facade.update_provider_credential(
             provider_id=provider_id,
             provider_credential_id=provider_credential_id,
-            payload=payload,
-            actor=actor,
-            scope=scope,
-            db=db,
-        )
-    except ProviderNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="provider credential not found") from exc
-
-
-@router.post("/{provider_id}/credentials/reorder")
-async def reorder_provider_credentials(
-    provider_id: UUID,
-    payload: ReorderProviderCredentialsRequest,
-    actor: ProviderAdmin,
-    scope: RequestScope,
-    db: DatabaseSession,
-) -> list[ProviderCredentialResponse]:
-    try:
-        return await facade.reorder_provider_credentials(
-            provider_id=provider_id,
             payload=payload,
             actor=actor,
             scope=scope,
@@ -380,4 +513,3 @@ async def deactivate_provider(
         await facade.deactivate_provider(provider_id=provider_id, actor=actor, scope=scope, db=db)
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc
-

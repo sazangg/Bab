@@ -5,4 +5,4 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type HealthCheckApiV1HealthGet200 = {[key: string]: string};
+export type HealthCheckApiV1HealthGet200 = { [key: string]: string };

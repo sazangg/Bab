@@ -5,10 +5,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type ModelMetadataSyncMode = typeof ModelMetadataSyncMode[keyof typeof ModelMetadataSyncMode];
-
+export type ModelMetadataSyncMode =
+  (typeof ModelMetadataSyncMode)[keyof typeof ModelMetadataSyncMode];
 
 export const ModelMetadataSyncMode = {
-  fill_missing: 'fill_missing',
-  overwrite_catalog: 'overwrite_catalog',
+  fill_missing: "fill_missing",
+  overwrite_catalog: "overwrite_catalog",
 } as const;

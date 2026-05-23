@@ -12,7 +12,6 @@ export interface ProviderCredentialResponse {
   created_by: string | null;
   name: string;
   key_prefix: string;
-  priority: number;
   health_status: string;
   last_validation_error: string | null;
   last_successful_request_at: string | null;

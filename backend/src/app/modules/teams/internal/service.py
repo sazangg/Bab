@@ -5,8 +5,7 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope, transaction
-from app.modules.audit import facade as audit_facade
-from app.modules.audit.schemas import RecordAuditEvent
+from app.modules.activity import facade as activity_facade
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.teams.errors import TeamNotFoundError, TeamSlugAlreadyExistsError
 from app.modules.teams.internal import repository
@@ -32,19 +31,21 @@ async def create_team(
             description=payload.description,
             db=db,
         )
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="team.created",
-                target_type="team",
-                target_id=team.id,
-                event_metadata={"name": team.name, "slug": team.slug},
-            ),
-            db,
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="workspace",
+            action="team.created",
+            message=f"Created team {team.name}.",
+            team_id=team.id,
+            db=db,
         )
 
-    logger.info("team_created", team_id=str(team.id), org_id=str(scope.org_id))
+    logger.info(
+        "team_created",
+        team_id=str(team.id),
+        org_id=str(scope.org_id),
+        actor_user_id=str(actor.id),
+    )
     return TeamResponse.model_validate(team)
 
 
@@ -80,18 +81,21 @@ async def update_team(
         if payload.is_active is not None:
             team.is_active = payload.is_active
         await db.flush()
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="team.updated",
-                target_type="team",
-                target_id=team.id,
-            ),
-            db,
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="workspace",
+            action="team.updated",
+            message=f"Updated team {team.name}.",
+            team_id=team.id,
+            db=db,
         )
 
-    logger.info("team_updated", team_id=str(team.id), org_id=str(scope.org_id))
+    logger.info(
+        "team_updated",
+        team_id=str(team.id),
+        org_id=str(scope.org_id),
+        actor_user_id=str(actor.id),
+    )
     return TeamResponse.model_validate(team)
 
 
@@ -106,18 +110,21 @@ async def deactivate_team(
         team = await _get_team_or_raise(team_id=team_id, scope=scope, db=db)
         team.is_active = False
         await db.flush()
-        await audit_facade.record_event(
-            RecordAuditEvent(
-                org_id=scope.org_id,
-                actor_user_id=actor.id,
-                event="team.deactivated",
-                target_type="team",
-                target_id=team.id,
-            ),
-            db,
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="workspace",
+            action="team.deactivated",
+            message=f"Deactivated team {team.name}.",
+            team_id=team.id,
+            db=db,
         )
 
-    logger.info("team_deactivated", team_id=str(team_id), org_id=str(scope.org_id))
+    logger.info(
+        "team_deactivated",
+        team_id=str(team_id),
+        org_id=str(scope.org_id),
+        actor_user_id=str(actor.id),
+    )
 
 
 async def _get_team_or_raise(*, team_id: UUID, scope: Scope, db: AsyncSession):

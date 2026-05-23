@@ -4,14 +4,14 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { VirtualKeyRestriction } from './virtualKeyRestriction';
 
 export interface CreateVirtualKeyRequest {
+  allocation_id?: string | null;
   /**
-     * @minLength 1
-     * @maxLength 255
-     */
+   * @minLength 1
+   * @maxLength 255
+   */
   name: string;
   expires_at?: string | null;
-  restrictions?: VirtualKeyRestriction[] | null;
+  allowed_models?: string[] | null;
 }

@@ -1,13 +1,15 @@
 import {
-  BarChart3,
-  ChevronsUpDown,
+  Activity,
+  Building2,
+  ChartNoAxesCombined,
+  FolderKanban,
   Gauge,
-  Landmark,
-  LayoutDashboard,
   LogOut,
   Moon,
+  Palette,
   Plug,
-  ScrollText,
+  Route,
+  Settings,
   ShieldCheck,
   Sun,
 } from "lucide-react";
@@ -46,25 +48,56 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
-  SidebarTrigger,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuthStore } from "@/features/auth/model/auth-store";
 import { useBreadcrumbs } from "@/app/shell/breadcrumbs";
 
-const primaryNav = [
-  { to: "/", label: "Summary", icon: LayoutDashboard },
+const organizationNav = [
+  { to: "/", label: "Home", icon: Gauge, end: true },
   { to: "/providers", label: "Providers", icon: Plug },
+  { to: "/usage", label: "Usage", icon: ChartNoAxesCombined },
+  { to: "/activity", label: "Activity", icon: Activity },
+  { to: "/settings", label: "Settings", icon: Settings },
 ];
 
-const upcomingNav = [
-  { label: "Allocations", icon: Landmark },
-  { label: "Projects", icon: Landmark },
-  { label: "Usage", icon: BarChart3 },
-  { label: "Limits", icon: Gauge },
-  { label: "Audit logs", icon: ScrollText },
-  { label: "Security", icon: ShieldCheck },
+const workspaceNav = [
+  { to: "/teams", label: "Teams", icon: Building2 },
+  { to: "/projects", label: "Projects", icon: FolderKanban },
+  { to: "/allocations", label: "Allocations", icon: Route },
+  { to: "/guardrails", label: "Guardrails", icon: ShieldCheck },
 ];
+
+const internalNav = [{ to: "/design-system", label: "Design system", icon: Palette }];
+const organizationName = import.meta.env.VITE_BAB_ORGANIZATION_NAME ?? "Default organization";
+
+function LogoSidebarTrigger() {
+  const { toggleSidebar, state } = useSidebar();
+  const collapsed = state === "collapsed";
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={toggleSidebar}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-expanded={!collapsed}
+          aria-controls="primary-sidebar"
+          className="group/logo -mx-2 flex size-11 cursor-pointer items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+        >
+          <span
+            aria-hidden="true"
+            className="flex size-7 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground transition-[opacity,transform] duration-150 group-hover/logo:opacity-90 group-active/logo:scale-95"
+          >
+            B
+          </span>
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{collapsed ? "Expand sidebar" : "Collapse sidebar"}</TooltipContent>
+    </Tooltip>
+  );
+}
 
 export function DashboardLayout() {
   const location = useLocation();
@@ -80,44 +113,46 @@ export function DashboardLayout() {
   const breadcrumbs = useBreadcrumbs();
   const isDark = resolvedTheme === "dark";
 
-  const isActive = (path: string) =>
-    path === "/" ? location.pathname === "/" : location.pathname.startsWith(path);
+  const isActive = (path: string, end?: boolean) =>
+    end || path === "/" ? location.pathname === path : location.pathname.startsWith(path);
 
   return (
-    <SidebarProvider className="bab-dashboard-shell h-svh overflow-hidden">
-      <div className="fixed inset-x-0 top-0 z-30 flex h-14 items-center border-b bg-background px-4">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <div className="flex size-8 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
-            B
-          </div>
+    <SidebarProvider className="bab-dashboard-shell h-svh overflow-hidden bg-sidebar">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-primary focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground focus:shadow-md focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-sidebar"
+      >
+        Skip to main content
+      </a>
+      <header className="fixed inset-x-0 top-0 z-30 flex h-12 items-center border-b bg-sidebar px-4">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <LogoSidebarTrigger />
           <span className="font-semibold">Bab</span>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="max-w-48">
-                <span className="truncate">Default organization</span>
-                <ChevronsUpDown data-icon="inline-end" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56">
-              <DropdownMenuLabel>Organization</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem disabled>Default organization</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <span className="text-muted-foreground">/</span>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="max-w-40">
-                <span className="truncate">Admin view</span>
-                <ChevronsUpDown data-icon="inline-end" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-48">
-              <DropdownMenuLabel>View</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem disabled>Admin view</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <span className="hidden max-w-48 truncate text-sm text-muted-foreground sm:inline">
+            {organizationName}
+          </span>
+          <span className="hidden text-muted-foreground sm:inline">/</span>
+          <Breadcrumb className="min-w-0">
+            <BreadcrumbList>
+              {breadcrumbs.map((crumb, index) => {
+                const isLast = index === breadcrumbs.length - 1;
+                return (
+                  <Fragment key={`${crumb.label}-${index}`}>
+                    <BreadcrumbItem>
+                      {isLast || !crumb.to ? (
+                        <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
+                      ) : (
+                        <BreadcrumbLink asChild>
+                          <Link to={crumb.to}>{crumb.label}</Link>
+                        </BreadcrumbLink>
+                      )}
+                    </BreadcrumbItem>
+                    {!isLast ? <BreadcrumbSeparator /> : null}
+                  </Fragment>
+                );
+              })}
+            </BreadcrumbList>
+          </Breadcrumb>
         </div>
         <div className="flex items-center gap-2">
           <Button asChild variant="ghost" size="sm">
@@ -159,15 +194,36 @@ export function DashboardLayout() {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-      </div>
-      <Sidebar collapsible="icon">
-        <SidebarHeader className="h-14" />
+      </header>
+      <Sidebar collapsible="icon" id="primary-sidebar" aria-label="Primary navigation">
+        <SidebarHeader className="h-12" />
         <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupLabel>Organization</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {organizationNav.map((item) => (
+                  <SidebarMenuItem key={item.to}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={isActive(item.to, item.end)}
+                      tooltip={item.label}
+                    >
+                      <Link to={item.to}>
+                        <item.icon />
+                        <span>{item.label}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
           <SidebarGroup>
             <SidebarGroupLabel>Workspace</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {primaryNav.map((item) => (
+                {workspaceNav.map((item) => (
                   <SidebarMenuItem key={item.to}>
                     <SidebarMenuButton asChild isActive={isActive(item.to)} tooltip={item.label}>
                       <Link to={item.to}>
@@ -180,65 +236,56 @@ export function DashboardLayout() {
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
-          <SidebarGroup>
-            <SidebarGroupLabel>Admin</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {upcomingNav.map((item) => (
-                  <SidebarMenuItem key={item.label}>
-                    <SidebarMenuButton disabled tooltip={`${item.label} - not available yet`}>
-                      <item.icon />
-                      <span>{item.label}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
         </SidebarContent>
-        <SidebarFooter>
+        <SidebarFooter className="mb-7 border-t p-2">
           <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton disabled>
-                <span className="text-xs text-muted-foreground">Local development</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
+            {internalNav.map((item) => (
+              <SidebarMenuItem key={item.to}>
+                <SidebarMenuButton asChild isActive={isActive(item.to)} tooltip={item.label}>
+                  <Link to={item.to}>
+                    <item.icon />
+                    <span>{item.label}</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            ))}
           </SidebarMenu>
         </SidebarFooter>
       </Sidebar>
-      <SidebarInset className="mt-14 min-h-[calc(100svh-3.5rem)] bg-muted/30">
-        <header className="flex h-11 shrink-0 items-center gap-2 border-b bg-background px-4">
-          <SidebarTrigger />
-          <Breadcrumb>
-            <BreadcrumbList>
-              {breadcrumbs.map((crumb, index) => {
-                const isLast = index === breadcrumbs.length - 1;
-                return (
-                  <Fragment key={`${crumb.label}-${index}`}>
-                    <BreadcrumbItem>
-                      {isLast || !crumb.to ? (
-                        <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
-                      ) : (
-                        <BreadcrumbLink asChild>
-                          <Link to={crumb.to}>{crumb.label}</Link>
-                        </BreadcrumbLink>
-                      )}
-                    </BreadcrumbItem>
-                    {!isLast ? <BreadcrumbSeparator /> : null}
-                  </Fragment>
-                );
-              })}
-            </BreadcrumbList>
-          </Breadcrumb>
-        </header>
-        <div className="flex min-h-0 flex-1 flex-col p-3">
-          <main className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-background">
-            <div className="min-h-0 flex-1 overflow-auto p-6">
-              <Outlet />
-            </div>
-          </main>
+      <SidebarInset
+        id="main-content"
+        aria-label="Main content"
+        tabIndex={-1}
+        className="mt-12 mb-7 min-h-[calc(100svh-4.75rem)] overflow-hidden bg-background focus:outline-none"
+      >
+        <div className="flex min-h-0 flex-1 flex-col overflow-auto">
+          <div className="px-6 py-6">
+            <Outlet />
+          </div>
         </div>
       </SidebarInset>
+      <footer
+        role="contentinfo"
+        className="fixed inset-x-0 bottom-0 z-30 flex h-7 items-center justify-between border-t bg-sidebar px-3 text-xs text-muted-foreground"
+      >
+        <div
+          className="flex items-center gap-1.5"
+          role="status"
+          aria-live="polite"
+          aria-label="System status: all systems operational"
+        >
+          <span className="relative flex size-2 shrink-0" aria-hidden="true">
+            <span className="absolute inset-0 rounded-full bg-emerald-500/60 motion-safe:animate-ping" />
+            <span className="relative size-2 rounded-full bg-emerald-500" />
+          </span>
+          <span>All systems operational</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="tabular-nums">v0.1.0</span>
+          <span aria-hidden="true">·</span>
+          <span>Local development</span>
+        </div>
+      </footer>
     </SidebarProvider>
   );
 }

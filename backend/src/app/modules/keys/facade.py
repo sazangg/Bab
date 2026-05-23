@@ -6,18 +6,15 @@ from app.core.database import Scope
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys.internal import service
 from app.modules.keys.schemas import (
+    AllocationResponse,
+    CreateAllocationRequest,
     CreatedVirtualKeyResponse,
-    CreateModelAliasRequest,
-    CreateProjectAllocationRequest,
     CreateProjectRequest,
     CreateVirtualKeyRequest,
-    ModelAliasResponse,
-    ProjectAllocationResponse,
     ProjectResponse,
     ResolveAccessRequest,
     ResolvedAccess,
-    UpdateModelAliasRequest,
-    UpdateProjectAllocationRequest,
+    UpdateAllocationRequest,
     UpdateProjectRequest,
     UpdateVirtualKeyRequest,
     VirtualKeyResponse,
@@ -81,21 +78,27 @@ async def deactivate_project(
     await service.deactivate_project(project_id=project_id, actor=actor, scope=scope, db=db)
 
 
-async def create_project_allocation(
+async def create_allocation(
     *,
-    project_id: UUID,
-    payload: CreateProjectAllocationRequest,
+    payload: CreateAllocationRequest,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
-) -> ProjectAllocationResponse:
-    return await service.create_project_allocation(
-        project_id=project_id,
-        payload=payload,
-        actor=actor,
-        scope=scope,
-        db=db,
-    )
+) -> AllocationResponse:
+    return await service.create_allocation(payload=payload, actor=actor, scope=scope, db=db)
+
+
+async def list_allocations(*, scope: Scope, db: AsyncSession) -> list[AllocationResponse]:
+    return await service.list_allocations(scope=scope, db=db)
+
+
+async def list_team_allocations(
+    *,
+    team_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[AllocationResponse]:
+    return await service.list_team_allocations(team_id=team_id, scope=scope, db=db)
 
 
 async def list_project_allocations(
@@ -103,85 +106,25 @@ async def list_project_allocations(
     project_id: UUID,
     scope: Scope,
     db: AsyncSession,
-) -> list[ProjectAllocationResponse]:
+) -> list[AllocationResponse]:
     return await service.list_project_allocations(project_id=project_id, scope=scope, db=db)
 
 
-async def update_project_allocation(
+async def update_allocation(
     *,
-    project_id: UUID,
-    provider_id: UUID,
-    payload: UpdateProjectAllocationRequest,
+    allocation_id: UUID,
+    payload: UpdateAllocationRequest,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
-) -> ProjectAllocationResponse:
-    return await service.update_project_allocation(
-        project_id=project_id,
-        provider_id=provider_id,
+) -> AllocationResponse:
+    return await service.update_allocation(
+        allocation_id=allocation_id,
         payload=payload,
         actor=actor,
         scope=scope,
         db=db,
     )
-
-
-async def revoke_project_allocation(
-    *,
-    project_id: UUID,
-    provider_id: UUID,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    db: AsyncSession,
-) -> None:
-    await service.revoke_project_allocation(
-        project_id=project_id,
-        provider_id=provider_id,
-        actor=actor,
-        scope=scope,
-        db=db,
-    )
-
-
-async def create_model_alias(
-    *,
-    payload: CreateModelAliasRequest,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    db: AsyncSession,
-) -> ModelAliasResponse:
-    return await service.create_model_alias(payload=payload, actor=actor, scope=scope, db=db)
-
-
-async def list_model_aliases(*, scope: Scope, db: AsyncSession) -> list[ModelAliasResponse]:
-    return await service.list_model_aliases(scope=scope, db=db)
-
-
-async def update_model_alias(
-    *,
-    alias_id: UUID,
-    payload: UpdateModelAliasRequest,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    db: AsyncSession,
-) -> ModelAliasResponse:
-    return await service.update_model_alias(
-        alias_id=alias_id,
-        payload=payload,
-        actor=actor,
-        scope=scope,
-        db=db,
-    )
-
-
-async def deactivate_model_alias(
-    *,
-    alias_id: UUID,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    db: AsyncSession,
-) -> None:
-    await service.deactivate_model_alias(alias_id=alias_id, actor=actor, scope=scope, db=db)
 
 
 async def create_virtual_key(

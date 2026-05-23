@@ -4,110 +4,123 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import {
-  useMutation
-} from '@tanstack/react-query';
+import { useMutation } from "@tanstack/react-query";
 import type {
   MutationFunction,
   QueryClient,
   UseMutationOptions,
-  UseMutationResult
-} from '@tanstack/react-query';
+  UseMutationResult,
+} from "@tanstack/react-query";
 
-import type {
-  HTTPValidationError
-} from '../schemas';
+import type { HTTPValidationError } from "../schemas";
 
-import { apiMutator } from '../../orval-mutator';
-
-
-
+import { apiMutator } from "../../orval-mutator";
 
 export type createChatCompletionV1ChatCompletionsPostResponse200 = {
-  data: unknown
-  status: 200
-}
+  data: unknown;
+  status: 200;
+};
 
 export type createChatCompletionV1ChatCompletionsPostResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type createChatCompletionV1ChatCompletionsPostResponseSuccess = (createChatCompletionV1ChatCompletionsPostResponse200) & {
-  headers: Headers;
-};
-export type createChatCompletionV1ChatCompletionsPostResponseError = (createChatCompletionV1ChatCompletionsPostResponse422) & {
-  headers: Headers;
+  data: HTTPValidationError;
+  status: 422;
 };
 
-export type createChatCompletionV1ChatCompletionsPostResponse = (createChatCompletionV1ChatCompletionsPostResponseSuccess | createChatCompletionV1ChatCompletionsPostResponseError)
+export type createChatCompletionV1ChatCompletionsPostResponseSuccess =
+  createChatCompletionV1ChatCompletionsPostResponse200 & {
+    headers: Headers;
+  };
+export type createChatCompletionV1ChatCompletionsPostResponseError =
+  createChatCompletionV1ChatCompletionsPostResponse422 & {
+    headers: Headers;
+  };
+
+export type createChatCompletionV1ChatCompletionsPostResponse =
+  | createChatCompletionV1ChatCompletionsPostResponseSuccess
+  | createChatCompletionV1ChatCompletionsPostResponseError;
 
 export const getCreateChatCompletionV1ChatCompletionsPostUrl = () => {
-
-
-
-
-  return `/v1/chat/completions`
-}
+  return `/v1/chat/completions`;
+};
 
 /**
  * @summary Create Chat Completion
  */
-export const createChatCompletionV1ChatCompletionsPost = async ( options?: RequestInit): Promise<createChatCompletionV1ChatCompletionsPostResponse> => {
+export const createChatCompletionV1ChatCompletionsPost = async (
+  options?: RequestInit,
+): Promise<createChatCompletionV1ChatCompletionsPostResponse> => {
+  return apiMutator<createChatCompletionV1ChatCompletionsPostResponse>(
+    getCreateChatCompletionV1ChatCompletionsPostUrl(),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
 
-  return apiMutator<createChatCompletionV1ChatCompletionsPostResponse>(getCreateChatCompletionV1ChatCompletionsPostUrl(),
-  {
-    ...options,
-    method: 'POST'
+export const getCreateChatCompletionV1ChatCompletionsPostMutationOptions = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>,
+    TError,
+    void,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["createChatCompletionV1ChatCompletionsPost"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
 
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>,
+    void
+  > = () => {
+    return createChatCompletionV1ChatCompletionsPost();
+  };
 
-  }
-);}
+  return { mutationFn, ...mutationOptions };
+};
 
+export type CreateChatCompletionV1ChatCompletionsPostMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>
+>;
 
+export type CreateChatCompletionV1ChatCompletionsPostMutationError = HTTPValidationError;
 
-
-export const getCreateChatCompletionV1ChatCompletionsPostMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>, TError,void, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>, TError,void, TContext> => {
-
-const mutationKey = ['createChatCompletionV1ChatCompletionsPost'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>, void> = () => {
-
-
-          return  createChatCompletionV1ChatCompletionsPost()
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type CreateChatCompletionV1ChatCompletionsPostMutationResult = NonNullable<Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>>
-
-    export type CreateChatCompletionV1ChatCompletionsPostMutationError = HTTPValidationError
-
-    /**
+/**
  * @summary Create Chat Completion
  */
-export const useCreateChatCompletionV1ChatCompletionsPost = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>, TError,void, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>,
-        TError,
-        void,
-        TContext
-      > => {
-      return useMutation(getCreateChatCompletionV1ChatCompletionsPostMutationOptions(options), queryClient);
-    }
+export const useCreateChatCompletionV1ChatCompletionsPost = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>,
+      TError,
+      void,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(
+    getCreateChatCompletionV1ChatCompletionsPostMutationOptions(options),
+    queryClient,
+  );
+};

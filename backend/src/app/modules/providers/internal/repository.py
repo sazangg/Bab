@@ -3,7 +3,13 @@ from uuid import UUID
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.providers.internal.models import ModelOffering, Provider, ProviderCredential
+from app.modules.providers.internal.models import (
+    CredentialPool,
+    CredentialPoolCredential,
+    ModelOffering,
+    Provider,
+    ProviderCredential,
+)
 
 
 async def create_provider(
@@ -22,7 +28,6 @@ async def create_provider(
     fallback_policy: dict,
     circuit_breaker_policy: dict,
     max_concurrent_requests: int | None,
-    credential_routing_policy: str,
     db: AsyncSession,
 ) -> Provider:
     provider = Provider(
@@ -41,7 +46,6 @@ async def create_provider(
         fallback_policy=fallback_policy,
         circuit_breaker_policy=circuit_breaker_policy,
         max_concurrent_requests=max_concurrent_requests,
-        credential_routing_policy=credential_routing_policy,
     )
     db.add(provider)
     await db.flush()
@@ -69,7 +73,6 @@ async def create_provider_credential(
     name: str,
     key_prefix: str,
     api_key_encrypted: str,
-    priority: int,
     db: AsyncSession,
 ) -> ProviderCredential:
     provider_credential = ProviderCredential(
@@ -79,11 +82,59 @@ async def create_provider_credential(
         name=name,
         key_prefix=key_prefix,
         api_key_encrypted=api_key_encrypted,
-        priority=priority,
     )
     db.add(provider_credential)
     await db.flush()
     return provider_credential
+
+
+async def create_credential_pool(
+    *,
+    org_id: UUID,
+    provider_id: UUID,
+    name: str,
+    description: str | None,
+    selection_policy: str,
+    db: AsyncSession,
+) -> CredentialPool:
+    pool = CredentialPool(
+        org_id=org_id,
+        provider_id=provider_id,
+        name=name,
+        description=description,
+        selection_policy=selection_policy,
+    )
+    db.add(pool)
+    await db.flush()
+    return pool
+
+
+async def list_credential_pools(
+    *,
+    org_id: UUID,
+    provider_id: UUID,
+    db: AsyncSession,
+) -> list[CredentialPool]:
+    result = await db.scalars(
+        select(CredentialPool)
+        .where(CredentialPool.org_id == org_id, CredentialPool.provider_id == provider_id)
+        .order_by(CredentialPool.is_active.desc(), CredentialPool.name.asc())
+    )
+    return list(result)
+
+
+async def get_credential_pool(
+    *,
+    org_id: UUID,
+    pool_id: UUID,
+    db: AsyncSession,
+) -> CredentialPool | None:
+    return await db.scalar(
+        select(CredentialPool).where(
+            CredentialPool.org_id == org_id,
+            CredentialPool.id == pool_id,
+        )
+    )
 
 
 async def list_provider_credentials(
@@ -97,11 +148,98 @@ async def list_provider_credentials(
         .where(ProviderCredential.org_id == org_id, ProviderCredential.provider_id == provider_id)
         .order_by(
             ProviderCredential.is_active.desc(),
-            ProviderCredential.priority.asc(),
             ProviderCredential.created_at.asc(),
         )
     )
     return list(result)
+
+
+async def create_pool_credential(
+    *,
+    org_id: UUID,
+    pool_id: UUID,
+    provider_credential_id: UUID,
+    priority: int,
+    weight: int,
+    is_active: bool,
+    db: AsyncSession,
+) -> CredentialPoolCredential:
+    membership = CredentialPoolCredential(
+        org_id=org_id,
+        pool_id=pool_id,
+        provider_credential_id=provider_credential_id,
+        priority=priority,
+        weight=weight,
+        is_active=is_active,
+    )
+    db.add(membership)
+    await db.flush()
+    return membership
+
+
+async def list_pool_credentials(
+    *,
+    org_id: UUID,
+    pool_id: UUID,
+    db: AsyncSession,
+) -> list[tuple[CredentialPoolCredential, ProviderCredential]]:
+    result = await db.execute(
+        select(CredentialPoolCredential, ProviderCredential)
+        .join(
+            ProviderCredential,
+            ProviderCredential.id == CredentialPoolCredential.provider_credential_id,
+        )
+        .where(
+            CredentialPoolCredential.org_id == org_id,
+            CredentialPoolCredential.pool_id == pool_id,
+        )
+        .order_by(
+            CredentialPoolCredential.is_active.desc(),
+            CredentialPoolCredential.priority.asc(),
+            CredentialPoolCredential.created_at.asc(),
+        )
+    )
+    return list(result.all())
+
+
+async def list_credential_pool_memberships(
+    *,
+    org_id: UUID,
+    provider_credential_ids: list[UUID],
+    db: AsyncSession,
+) -> list[CredentialPoolCredential]:
+    if not provider_credential_ids:
+        return []
+    result = await db.scalars(
+        select(CredentialPoolCredential).where(
+            CredentialPoolCredential.org_id == org_id,
+            CredentialPoolCredential.provider_credential_id.in_(provider_credential_ids),
+        )
+    )
+    return list(result)
+
+
+async def get_pool_credential(
+    *,
+    org_id: UUID,
+    pool_credential_id: UUID,
+    db: AsyncSession,
+) -> CredentialPoolCredential | None:
+    return await db.scalar(
+        select(CredentialPoolCredential).where(
+            CredentialPoolCredential.org_id == org_id,
+            CredentialPoolCredential.id == pool_credential_id,
+        )
+    )
+
+
+async def delete_pool_credential(
+    *,
+    pool_credential: CredentialPoolCredential,
+    db: AsyncSession,
+) -> None:
+    await db.delete(pool_credential)
+    await db.flush()
 
 
 async def list_all_provider_credentials(
@@ -109,9 +247,7 @@ async def list_all_provider_credentials(
     org_id: UUID,
     db: AsyncSession,
 ) -> list[ProviderCredential]:
-    result = await db.scalars(
-        select(ProviderCredential).where(ProviderCredential.org_id == org_id)
-    )
+    result = await db.scalars(select(ProviderCredential).where(ProviderCredential.org_id == org_id))
     return list(result)
 
 
@@ -266,4 +402,3 @@ def datetime_now():
     from datetime import UTC, datetime
 
     return datetime.now(UTC)
-

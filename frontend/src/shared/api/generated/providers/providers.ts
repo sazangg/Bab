@@ -4,10 +4,7 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import {
-  useMutation,
-  useQuery
-} from '@tanstack/react-query';
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
   DataTag,
   DefinedInitialDataOptions,
@@ -20,1688 +17,3502 @@ import type {
   UseMutationOptions,
   UseMutationResult,
   UseQueryOptions,
-  UseQueryResult
-} from '@tanstack/react-query';
+  UseQueryResult,
+} from "@tanstack/react-query";
 
 import type {
+  AddCredentialPoolCredentialRequest,
+  CreateCredentialPoolRequest,
   CreateModelOfferingRequest,
   CreateProviderCredentialRequest,
   CreateProviderRequest,
+  CredentialPoolCredentialResponse,
+  CredentialPoolResponse,
   HTTPValidationError,
   ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams,
   ModelOfferingPageResponse,
   ModelOfferingResponse,
   ProviderCredentialResponse,
   ProviderResponse,
-  ReorderProviderCredentialsRequest,
   SyncModelOfferingsRequest,
   TestModelOfferingRequest,
   TestModelOfferingResponse,
   TestProviderCredentialResponse,
+  UpdateCredentialPoolCredentialRequest,
+  UpdateCredentialPoolRequest,
   UpdateModelOfferingRequest,
   UpdateProviderCredentialRequest,
-  UpdateProviderRequest
-} from '../schemas';
+  UpdateProviderRequest,
+} from "../schemas";
 
-import { apiMutator } from '../../orval-mutator';
-
-
-
+import { apiMutator } from "../../orval-mutator";
 
 export type listProvidersApiV1ProvidersGetResponse200 = {
-  data: ProviderResponse[]
-  status: 200
-}
-
-export type listProvidersApiV1ProvidersGetResponseSuccess = (listProvidersApiV1ProvidersGetResponse200) & {
-  headers: Headers;
+  data: ProviderResponse[];
+  status: 200;
 };
-;
 
-export type listProvidersApiV1ProvidersGetResponse = (listProvidersApiV1ProvidersGetResponseSuccess)
+export type listProvidersApiV1ProvidersGetResponseSuccess =
+  listProvidersApiV1ProvidersGetResponse200 & {
+    headers: Headers;
+  };
+export type listProvidersApiV1ProvidersGetResponse = listProvidersApiV1ProvidersGetResponseSuccess;
 
 export const getListProvidersApiV1ProvidersGetUrl = () => {
-
-
-
-
-  return `/api/v1/providers`
-}
+  return `/api/v1/providers`;
+};
 
 /**
  * @summary List Providers
  */
-export const listProvidersApiV1ProvidersGet = async ( options?: RequestInit): Promise<listProvidersApiV1ProvidersGetResponse> => {
-
-  return apiMutator<listProvidersApiV1ProvidersGetResponse>(getListProvidersApiV1ProvidersGetUrl(),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-);}
-
-
-
-
+export const listProvidersApiV1ProvidersGet = async (
+  options?: RequestInit,
+): Promise<listProvidersApiV1ProvidersGetResponse> => {
+  return apiMutator<listProvidersApiV1ProvidersGetResponse>(
+    getListProvidersApiV1ProvidersGetUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
 
 export const getListProvidersApiV1ProvidersGetQueryKey = () => {
-    return [
-    `/api/v1/providers`
-    ] as const;
-    }
+  return [`/api/v1/providers`] as const;
+};
 
+export const getListProvidersApiV1ProvidersGetQueryOptions = <
+  TData = Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError, TData>
+  >;
+}) => {
+  const { query: queryOptions } = options ?? {};
 
-export const getListProvidersApiV1ProvidersGetQueryOptions = <TData = Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError, TData>>, }
-) => {
+  const queryKey = queryOptions?.queryKey ?? getListProvidersApiV1ProvidersGetQueryKey();
 
-const {query: queryOptions} = options ?? {};
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>> = ({
+    signal,
+  }) => listProvidersApiV1ProvidersGet({ signal });
 
-  const queryKey =  queryOptions?.queryKey ?? getListProvidersApiV1ProvidersGetQueryKey();
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
 
+export type ListProvidersApiV1ProvidersGetQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>
+>;
+export type ListProvidersApiV1ProvidersGetQueryError = unknown;
 
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>> = ({ signal }) => listProvidersApiV1ProvidersGet({ signal });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type ListProvidersApiV1ProvidersGetQueryResult = NonNullable<Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>>
-export type ListProvidersApiV1ProvidersGetQueryError = unknown
-
-
-export function useListProvidersApiV1ProvidersGet<TData = Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError = unknown>(
-  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError, TData>> & Pick<
+export function useListProvidersApiV1ProvidersGet<
+  TData = Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError, TData>
+    > &
+      Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>,
           TError,
           Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListProvidersApiV1ProvidersGet<TData = Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError, TData>> & Pick<
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListProvidersApiV1ProvidersGet<
+  TData = Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError, TData>
+    > &
+      Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>,
           TError,
           Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListProvidersApiV1ProvidersGet<TData = Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListProvidersApiV1ProvidersGet<
+  TData = Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
  * @summary List Providers
  */
 
-export function useListProvidersApiV1ProvidersGet<TData = Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+export function useListProvidersApiV1ProvidersGet<
+  TData = Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListProvidersApiV1ProvidersGetQueryOptions(options);
 
-  const queryOptions = getListProvidersApiV1ProvidersGetQueryOptions(options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
-
-
-
-
-
 
 export type createProviderApiV1ProvidersPostResponse201 = {
-  data: ProviderResponse
-  status: 201
-}
+  data: ProviderResponse;
+  status: 201;
+};
 
 export type createProviderApiV1ProvidersPostResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type createProviderApiV1ProvidersPostResponseSuccess = (createProviderApiV1ProvidersPostResponse201) & {
-  headers: Headers;
-};
-export type createProviderApiV1ProvidersPostResponseError = (createProviderApiV1ProvidersPostResponse422) & {
-  headers: Headers;
+  data: HTTPValidationError;
+  status: 422;
 };
 
-export type createProviderApiV1ProvidersPostResponse = (createProviderApiV1ProvidersPostResponseSuccess | createProviderApiV1ProvidersPostResponseError)
+export type createProviderApiV1ProvidersPostResponseSuccess =
+  createProviderApiV1ProvidersPostResponse201 & {
+    headers: Headers;
+  };
+export type createProviderApiV1ProvidersPostResponseError =
+  createProviderApiV1ProvidersPostResponse422 & {
+    headers: Headers;
+  };
+
+export type createProviderApiV1ProvidersPostResponse =
+  | createProviderApiV1ProvidersPostResponseSuccess
+  | createProviderApiV1ProvidersPostResponseError;
 
 export const getCreateProviderApiV1ProvidersPostUrl = () => {
-
-
-
-
-  return `/api/v1/providers`
-}
+  return `/api/v1/providers`;
+};
 
 /**
  * @summary Create Provider
  */
-export const createProviderApiV1ProvidersPost = async (createProviderRequest: CreateProviderRequest, options?: RequestInit): Promise<createProviderApiV1ProvidersPostResponse> => {
+export const createProviderApiV1ProvidersPost = async (
+  createProviderRequest: CreateProviderRequest,
+  options?: RequestInit,
+): Promise<createProviderApiV1ProvidersPostResponse> => {
+  return apiMutator<createProviderApiV1ProvidersPostResponse>(
+    getCreateProviderApiV1ProvidersPostUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(createProviderRequest),
+    },
+  );
+};
 
-  return apiMutator<createProviderApiV1ProvidersPostResponse>(getCreateProviderApiV1ProvidersPostUrl(),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(
-      createProviderRequest,)
-  }
-);}
+export const getCreateProviderApiV1ProvidersPostMutationOptions = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createProviderApiV1ProvidersPost>>,
+    TError,
+    { data: CreateProviderRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createProviderApiV1ProvidersPost>>,
+  TError,
+  { data: CreateProviderRequest },
+  TContext
+> => {
+  const mutationKey = ["createProviderApiV1ProvidersPost"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
 
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createProviderApiV1ProvidersPost>>,
+    { data: CreateProviderRequest }
+  > = (props) => {
+    const { data } = props ?? {};
 
+    return createProviderApiV1ProvidersPost(data);
+  };
 
+  return { mutationFn, ...mutationOptions };
+};
 
-export const getCreateProviderApiV1ProvidersPostMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProviderApiV1ProvidersPost>>, TError,{data: CreateProviderRequest}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof createProviderApiV1ProvidersPost>>, TError,{data: CreateProviderRequest}, TContext> => {
+export type CreateProviderApiV1ProvidersPostMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createProviderApiV1ProvidersPost>>
+>;
+export type CreateProviderApiV1ProvidersPostMutationBody = CreateProviderRequest;
+export type CreateProviderApiV1ProvidersPostMutationError = HTTPValidationError;
 
-const mutationKey = ['createProviderApiV1ProvidersPost'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createProviderApiV1ProvidersPost>>, {data: CreateProviderRequest}> = (props) => {
-          const {data} = props ?? {};
-
-          return  createProviderApiV1ProvidersPost(data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type CreateProviderApiV1ProvidersPostMutationResult = NonNullable<Awaited<ReturnType<typeof createProviderApiV1ProvidersPost>>>
-    export type CreateProviderApiV1ProvidersPostMutationBody = CreateProviderRequest
-    export type CreateProviderApiV1ProvidersPostMutationError = HTTPValidationError
-
-    /**
+/**
  * @summary Create Provider
  */
-export const useCreateProviderApiV1ProvidersPost = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProviderApiV1ProvidersPost>>, TError,{data: CreateProviderRequest}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof createProviderApiV1ProvidersPost>>,
-        TError,
-        {data: CreateProviderRequest},
-        TContext
-      > => {
-      return useMutation(getCreateProviderApiV1ProvidersPostMutationOptions(options), queryClient);
-    }
-    export type getProviderApiV1ProvidersProviderIdGetResponse200 = {
-  data: ProviderResponse
-  status: 200
-}
+export const useCreateProviderApiV1ProvidersPost = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createProviderApiV1ProvidersPost>>,
+      TError,
+      { data: CreateProviderRequest },
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof createProviderApiV1ProvidersPost>>,
+  TError,
+  { data: CreateProviderRequest },
+  TContext
+> => {
+  return useMutation(getCreateProviderApiV1ProvidersPostMutationOptions(options), queryClient);
+};
+export type getProviderApiV1ProvidersProviderIdGetResponse200 = {
+  data: ProviderResponse;
+  status: 200;
+};
 
 export type getProviderApiV1ProvidersProviderIdGetResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type getProviderApiV1ProvidersProviderIdGetResponseSuccess = (getProviderApiV1ProvidersProviderIdGetResponse200) & {
-  headers: Headers;
-};
-export type getProviderApiV1ProvidersProviderIdGetResponseError = (getProviderApiV1ProvidersProviderIdGetResponse422) & {
-  headers: Headers;
+  data: HTTPValidationError;
+  status: 422;
 };
 
-export type getProviderApiV1ProvidersProviderIdGetResponse = (getProviderApiV1ProvidersProviderIdGetResponseSuccess | getProviderApiV1ProvidersProviderIdGetResponseError)
+export type getProviderApiV1ProvidersProviderIdGetResponseSuccess =
+  getProviderApiV1ProvidersProviderIdGetResponse200 & {
+    headers: Headers;
+  };
+export type getProviderApiV1ProvidersProviderIdGetResponseError =
+  getProviderApiV1ProvidersProviderIdGetResponse422 & {
+    headers: Headers;
+  };
 
-export const getGetProviderApiV1ProvidersProviderIdGetUrl = (providerId: string,) => {
+export type getProviderApiV1ProvidersProviderIdGetResponse =
+  | getProviderApiV1ProvidersProviderIdGetResponseSuccess
+  | getProviderApiV1ProvidersProviderIdGetResponseError;
 
-
-
-
-  return `/api/v1/providers/${providerId}`
-}
+export const getGetProviderApiV1ProvidersProviderIdGetUrl = (providerId: string) => {
+  return `/api/v1/providers/${providerId}`;
+};
 
 /**
  * @summary Get Provider
  */
-export const getProviderApiV1ProvidersProviderIdGet = async (providerId: string, options?: RequestInit): Promise<getProviderApiV1ProvidersProviderIdGetResponse> => {
+export const getProviderApiV1ProvidersProviderIdGet = async (
+  providerId: string,
+  options?: RequestInit,
+): Promise<getProviderApiV1ProvidersProviderIdGetResponse> => {
+  return apiMutator<getProviderApiV1ProvidersProviderIdGetResponse>(
+    getGetProviderApiV1ProvidersProviderIdGetUrl(providerId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
 
-  return apiMutator<getProviderApiV1ProvidersProviderIdGetResponse>(getGetProviderApiV1ProvidersProviderIdGetUrl(providerId),
-  {
-    ...options,
-    method: 'GET'
+export const getGetProviderApiV1ProvidersProviderIdGetQueryKey = (providerId: string) => {
+  return [`/api/v1/providers/${providerId}`] as const;
+};
 
-
-  }
-);}
-
-
-
-
-
-export const getGetProviderApiV1ProvidersProviderIdGetQueryKey = (providerId: string,) => {
-    return [
-    `/api/v1/providers/${providerId}`
-    ] as const;
-    }
-
-
-export const getGetProviderApiV1ProvidersProviderIdGetQueryOptions = <TData = Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>, TError = HTTPValidationError>(providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>, TError, TData>>, }
+export const getGetProviderApiV1ProvidersProviderIdGetQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>,
+  TError = HTTPValidationError,
+>(
+  providerId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>,
+        TError,
+        TData
+      >
+    >;
+  },
 ) => {
+  const { query: queryOptions } = options ?? {};
 
-const {query: queryOptions} = options ?? {};
+  const queryKey =
+    queryOptions?.queryKey ?? getGetProviderApiV1ProvidersProviderIdGetQueryKey(providerId);
 
-  const queryKey =  queryOptions?.queryKey ?? getGetProviderApiV1ProvidersProviderIdGetQueryKey(providerId);
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>
+  > = ({ signal }) => getProviderApiV1ProvidersProviderIdGet(providerId, { signal });
 
+  return { queryKey, queryFn, enabled: !!providerId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
 
+export type GetProviderApiV1ProvidersProviderIdGetQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>
+>;
+export type GetProviderApiV1ProvidersProviderIdGetQueryError = HTTPValidationError;
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>> = ({ signal }) => getProviderApiV1ProvidersProviderIdGet(providerId, { signal });
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: !!(providerId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type GetProviderApiV1ProvidersProviderIdGetQueryResult = NonNullable<Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>>
-export type GetProviderApiV1ProvidersProviderIdGetQueryError = HTTPValidationError
-
-
-export function useGetProviderApiV1ProvidersProviderIdGet<TData = Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>, TError = HTTPValidationError>(
- providerId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>, TError, TData>> & Pick<
+export function useGetProviderApiV1ProvidersProviderIdGet<
+  TData = Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>,
+  TError = HTTPValidationError,
+>(
+  providerId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>,
           TError,
           Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetProviderApiV1ProvidersProviderIdGet<TData = Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>, TError = HTTPValidationError>(
- providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>, TError, TData>> & Pick<
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetProviderApiV1ProvidersProviderIdGet<
+  TData = Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>,
+  TError = HTTPValidationError,
+>(
+  providerId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>,
           TError,
           Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetProviderApiV1ProvidersProviderIdGet<TData = Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>, TError = HTTPValidationError>(
- providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetProviderApiV1ProvidersProviderIdGet<
+  TData = Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>,
+  TError = HTTPValidationError,
+>(
+  providerId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>,
+        TError,
+        TData
+      >
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
  * @summary Get Provider
  */
 
-export function useGetProviderApiV1ProvidersProviderIdGet<TData = Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>, TError = HTTPValidationError>(
- providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+export function useGetProviderApiV1ProvidersProviderIdGet<
+  TData = Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>,
+  TError = HTTPValidationError,
+>(
+  providerId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>,
+        TError,
+        TData
+      >
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetProviderApiV1ProvidersProviderIdGetQueryOptions(providerId, options);
 
-  const queryOptions = getGetProviderApiV1ProvidersProviderIdGetQueryOptions(providerId,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
-
-
-
-
-
 
 export type updateProviderApiV1ProvidersProviderIdPatchResponse200 = {
-  data: ProviderResponse
-  status: 200
-}
+  data: ProviderResponse;
+  status: 200;
+};
 
 export type updateProviderApiV1ProvidersProviderIdPatchResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type updateProviderApiV1ProvidersProviderIdPatchResponseSuccess = (updateProviderApiV1ProvidersProviderIdPatchResponse200) & {
-  headers: Headers;
-};
-export type updateProviderApiV1ProvidersProviderIdPatchResponseError = (updateProviderApiV1ProvidersProviderIdPatchResponse422) & {
-  headers: Headers;
+  data: HTTPValidationError;
+  status: 422;
 };
 
-export type updateProviderApiV1ProvidersProviderIdPatchResponse = (updateProviderApiV1ProvidersProviderIdPatchResponseSuccess | updateProviderApiV1ProvidersProviderIdPatchResponseError)
+export type updateProviderApiV1ProvidersProviderIdPatchResponseSuccess =
+  updateProviderApiV1ProvidersProviderIdPatchResponse200 & {
+    headers: Headers;
+  };
+export type updateProviderApiV1ProvidersProviderIdPatchResponseError =
+  updateProviderApiV1ProvidersProviderIdPatchResponse422 & {
+    headers: Headers;
+  };
 
-export const getUpdateProviderApiV1ProvidersProviderIdPatchUrl = (providerId: string,) => {
+export type updateProviderApiV1ProvidersProviderIdPatchResponse =
+  | updateProviderApiV1ProvidersProviderIdPatchResponseSuccess
+  | updateProviderApiV1ProvidersProviderIdPatchResponseError;
 
-
-
-
-  return `/api/v1/providers/${providerId}`
-}
+export const getUpdateProviderApiV1ProvidersProviderIdPatchUrl = (providerId: string) => {
+  return `/api/v1/providers/${providerId}`;
+};
 
 /**
  * @summary Update Provider
  */
-export const updateProviderApiV1ProvidersProviderIdPatch = async (providerId: string,
-    updateProviderRequest: UpdateProviderRequest, options?: RequestInit): Promise<updateProviderApiV1ProvidersProviderIdPatchResponse> => {
+export const updateProviderApiV1ProvidersProviderIdPatch = async (
+  providerId: string,
+  updateProviderRequest: UpdateProviderRequest,
+  options?: RequestInit,
+): Promise<updateProviderApiV1ProvidersProviderIdPatchResponse> => {
+  return apiMutator<updateProviderApiV1ProvidersProviderIdPatchResponse>(
+    getUpdateProviderApiV1ProvidersProviderIdPatchUrl(providerId),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updateProviderRequest),
+    },
+  );
+};
 
-  return apiMutator<updateProviderApiV1ProvidersProviderIdPatchResponse>(getUpdateProviderApiV1ProvidersProviderIdPatchUrl(providerId),
-  {
-    ...options,
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(
-      updateProviderRequest,)
-  }
-);}
+export const getUpdateProviderApiV1ProvidersProviderIdPatchMutationOptions = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateProviderApiV1ProvidersProviderIdPatch>>,
+    TError,
+    { providerId: string; data: UpdateProviderRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateProviderApiV1ProvidersProviderIdPatch>>,
+  TError,
+  { providerId: string; data: UpdateProviderRequest },
+  TContext
+> => {
+  const mutationKey = ["updateProviderApiV1ProvidersProviderIdPatch"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
 
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateProviderApiV1ProvidersProviderIdPatch>>,
+    { providerId: string; data: UpdateProviderRequest }
+  > = (props) => {
+    const { providerId, data } = props ?? {};
 
+    return updateProviderApiV1ProvidersProviderIdPatch(providerId, data);
+  };
 
+  return { mutationFn, ...mutationOptions };
+};
 
-export const getUpdateProviderApiV1ProvidersProviderIdPatchMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProviderApiV1ProvidersProviderIdPatch>>, TError,{providerId: string;data: UpdateProviderRequest}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof updateProviderApiV1ProvidersProviderIdPatch>>, TError,{providerId: string;data: UpdateProviderRequest}, TContext> => {
+export type UpdateProviderApiV1ProvidersProviderIdPatchMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateProviderApiV1ProvidersProviderIdPatch>>
+>;
+export type UpdateProviderApiV1ProvidersProviderIdPatchMutationBody = UpdateProviderRequest;
+export type UpdateProviderApiV1ProvidersProviderIdPatchMutationError = HTTPValidationError;
 
-const mutationKey = ['updateProviderApiV1ProvidersProviderIdPatch'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateProviderApiV1ProvidersProviderIdPatch>>, {providerId: string;data: UpdateProviderRequest}> = (props) => {
-          const {providerId,data} = props ?? {};
-
-          return  updateProviderApiV1ProvidersProviderIdPatch(providerId,data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type UpdateProviderApiV1ProvidersProviderIdPatchMutationResult = NonNullable<Awaited<ReturnType<typeof updateProviderApiV1ProvidersProviderIdPatch>>>
-    export type UpdateProviderApiV1ProvidersProviderIdPatchMutationBody = UpdateProviderRequest
-    export type UpdateProviderApiV1ProvidersProviderIdPatchMutationError = HTTPValidationError
-
-    /**
+/**
  * @summary Update Provider
  */
-export const useUpdateProviderApiV1ProvidersProviderIdPatch = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProviderApiV1ProvidersProviderIdPatch>>, TError,{providerId: string;data: UpdateProviderRequest}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof updateProviderApiV1ProvidersProviderIdPatch>>,
-        TError,
-        {providerId: string;data: UpdateProviderRequest},
-        TContext
-      > => {
-      return useMutation(getUpdateProviderApiV1ProvidersProviderIdPatchMutationOptions(options), queryClient);
-    }
-    export type deactivateProviderApiV1ProvidersProviderIdDeleteResponse204 = {
-  data: void
-  status: 204
-}
+export const useUpdateProviderApiV1ProvidersProviderIdPatch = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateProviderApiV1ProvidersProviderIdPatch>>,
+      TError,
+      { providerId: string; data: UpdateProviderRequest },
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateProviderApiV1ProvidersProviderIdPatch>>,
+  TError,
+  { providerId: string; data: UpdateProviderRequest },
+  TContext
+> => {
+  return useMutation(
+    getUpdateProviderApiV1ProvidersProviderIdPatchMutationOptions(options),
+    queryClient,
+  );
+};
+export type deactivateProviderApiV1ProvidersProviderIdDeleteResponse204 = {
+  data: void;
+  status: 204;
+};
 
 export type deactivateProviderApiV1ProvidersProviderIdDeleteResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type deactivateProviderApiV1ProvidersProviderIdDeleteResponseSuccess = (deactivateProviderApiV1ProvidersProviderIdDeleteResponse204) & {
-  headers: Headers;
-};
-export type deactivateProviderApiV1ProvidersProviderIdDeleteResponseError = (deactivateProviderApiV1ProvidersProviderIdDeleteResponse422) & {
-  headers: Headers;
+  data: HTTPValidationError;
+  status: 422;
 };
 
-export type deactivateProviderApiV1ProvidersProviderIdDeleteResponse = (deactivateProviderApiV1ProvidersProviderIdDeleteResponseSuccess | deactivateProviderApiV1ProvidersProviderIdDeleteResponseError)
+export type deactivateProviderApiV1ProvidersProviderIdDeleteResponseSuccess =
+  deactivateProviderApiV1ProvidersProviderIdDeleteResponse204 & {
+    headers: Headers;
+  };
+export type deactivateProviderApiV1ProvidersProviderIdDeleteResponseError =
+  deactivateProviderApiV1ProvidersProviderIdDeleteResponse422 & {
+    headers: Headers;
+  };
 
-export const getDeactivateProviderApiV1ProvidersProviderIdDeleteUrl = (providerId: string,) => {
+export type deactivateProviderApiV1ProvidersProviderIdDeleteResponse =
+  | deactivateProviderApiV1ProvidersProviderIdDeleteResponseSuccess
+  | deactivateProviderApiV1ProvidersProviderIdDeleteResponseError;
 
-
-
-
-  return `/api/v1/providers/${providerId}`
-}
+export const getDeactivateProviderApiV1ProvidersProviderIdDeleteUrl = (providerId: string) => {
+  return `/api/v1/providers/${providerId}`;
+};
 
 /**
  * @summary Deactivate Provider
  */
-export const deactivateProviderApiV1ProvidersProviderIdDelete = async (providerId: string, options?: RequestInit): Promise<deactivateProviderApiV1ProvidersProviderIdDeleteResponse> => {
-
-  return apiMutator<deactivateProviderApiV1ProvidersProviderIdDeleteResponse>(getDeactivateProviderApiV1ProvidersProviderIdDeleteUrl(providerId),
-  {
-    ...options,
-    method: 'DELETE'
-
-
-  }
-);}
-
-
-
-
-export const getDeactivateProviderApiV1ProvidersProviderIdDeleteMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deactivateProviderApiV1ProvidersProviderIdDelete>>, TError,{providerId: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof deactivateProviderApiV1ProvidersProviderIdDelete>>, TError,{providerId: string}, TContext> => {
-
-const mutationKey = ['deactivateProviderApiV1ProvidersProviderIdDelete'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deactivateProviderApiV1ProvidersProviderIdDelete>>, {providerId: string}> = (props) => {
-          const {providerId} = props ?? {};
-
-          return  deactivateProviderApiV1ProvidersProviderIdDelete(providerId,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type DeactivateProviderApiV1ProvidersProviderIdDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof deactivateProviderApiV1ProvidersProviderIdDelete>>>
-
-    export type DeactivateProviderApiV1ProvidersProviderIdDeleteMutationError = HTTPValidationError
-
-    /**
- * @summary Deactivate Provider
- */
-export const useDeactivateProviderApiV1ProvidersProviderIdDelete = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deactivateProviderApiV1ProvidersProviderIdDelete>>, TError,{providerId: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof deactivateProviderApiV1ProvidersProviderIdDelete>>,
-        TError,
-        {providerId: string},
-        TContext
-      > => {
-      return useMutation(getDeactivateProviderApiV1ProvidersProviderIdDeleteMutationOptions(options), queryClient);
-    }
-    export type listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponse200 = {
-  data: ProviderCredentialResponse[]
-  status: 200
-}
-
-export type listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponseSuccess = (listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponse200) & {
-  headers: Headers;
-};
-export type listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponseError = (listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponse422) & {
-  headers: Headers;
+export const deactivateProviderApiV1ProvidersProviderIdDelete = async (
+  providerId: string,
+  options?: RequestInit,
+): Promise<deactivateProviderApiV1ProvidersProviderIdDeleteResponse> => {
+  return apiMutator<deactivateProviderApiV1ProvidersProviderIdDeleteResponse>(
+    getDeactivateProviderApiV1ProvidersProviderIdDeleteUrl(providerId),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
 };
 
-export type listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponse = (listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponseSuccess | listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponseError)
+export const getDeactivateProviderApiV1ProvidersProviderIdDeleteMutationOptions = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deactivateProviderApiV1ProvidersProviderIdDelete>>,
+    TError,
+    { providerId: string },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deactivateProviderApiV1ProvidersProviderIdDelete>>,
+  TError,
+  { providerId: string },
+  TContext
+> => {
+  const mutationKey = ["deactivateProviderApiV1ProvidersProviderIdDelete"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
 
-export const getListProviderCredentialsApiV1ProvidersProviderIdCredentialsGetUrl = (providerId: string,) => {
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deactivateProviderApiV1ProvidersProviderIdDelete>>,
+    { providerId: string }
+  > = (props) => {
+    const { providerId } = props ?? {};
 
+    return deactivateProviderApiV1ProvidersProviderIdDelete(providerId);
+  };
 
+  return { mutationFn, ...mutationOptions };
+};
 
+export type DeactivateProviderApiV1ProvidersProviderIdDeleteMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deactivateProviderApiV1ProvidersProviderIdDelete>>
+>;
 
-  return `/api/v1/providers/${providerId}/credentials`
-}
+export type DeactivateProviderApiV1ProvidersProviderIdDeleteMutationError = HTTPValidationError;
 
 /**
- * @summary List Provider Credentials
+ * @summary Deactivate Provider
  */
-export const listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet = async (providerId: string, options?: RequestInit): Promise<listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponse> => {
+export const useDeactivateProviderApiV1ProvidersProviderIdDelete = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof deactivateProviderApiV1ProvidersProviderIdDelete>>,
+      TError,
+      { providerId: string },
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof deactivateProviderApiV1ProvidersProviderIdDelete>>,
+  TError,
+  { providerId: string },
+  TContext
+> => {
+  return useMutation(
+    getDeactivateProviderApiV1ProvidersProviderIdDeleteMutationOptions(options),
+    queryClient,
+  );
+};
+export type listCredentialPoolsApiV1ProvidersProviderIdPoolsGetResponse200 = {
+  data: CredentialPoolResponse[];
+  status: 200;
+};
 
-  return apiMutator<listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponse>(getListProviderCredentialsApiV1ProvidersProviderIdCredentialsGetUrl(providerId),
-  {
-    ...options,
-    method: 'GET'
+export type listCredentialPoolsApiV1ProvidersProviderIdPoolsGetResponse422 = {
+  data: HTTPValidationError;
+  status: 422;
+};
 
+export type listCredentialPoolsApiV1ProvidersProviderIdPoolsGetResponseSuccess =
+  listCredentialPoolsApiV1ProvidersProviderIdPoolsGetResponse200 & {
+    headers: Headers;
+  };
+export type listCredentialPoolsApiV1ProvidersProviderIdPoolsGetResponseError =
+  listCredentialPoolsApiV1ProvidersProviderIdPoolsGetResponse422 & {
+    headers: Headers;
+  };
 
-  }
-);}
+export type listCredentialPoolsApiV1ProvidersProviderIdPoolsGetResponse =
+  | listCredentialPoolsApiV1ProvidersProviderIdPoolsGetResponseSuccess
+  | listCredentialPoolsApiV1ProvidersProviderIdPoolsGetResponseError;
 
+export const getListCredentialPoolsApiV1ProvidersProviderIdPoolsGetUrl = (providerId: string) => {
+  return `/api/v1/providers/${providerId}/pools`;
+};
 
+/**
+ * @summary List Credential Pools
+ */
+export const listCredentialPoolsApiV1ProvidersProviderIdPoolsGet = async (
+  providerId: string,
+  options?: RequestInit,
+): Promise<listCredentialPoolsApiV1ProvidersProviderIdPoolsGetResponse> => {
+  return apiMutator<listCredentialPoolsApiV1ProvidersProviderIdPoolsGetResponse>(
+    getListCredentialPoolsApiV1ProvidersProviderIdPoolsGetUrl(providerId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
 
-
-
-export const getListProviderCredentialsApiV1ProvidersProviderIdCredentialsGetQueryKey = (providerId: string,) => {
-    return [
-    `/api/v1/providers/${providerId}/credentials`
-    ] as const;
-    }
-
-
-export const getListProviderCredentialsApiV1ProvidersProviderIdCredentialsGetQueryOptions = <TData = Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>, TError = HTTPValidationError>(providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>, TError, TData>>, }
+export const getListCredentialPoolsApiV1ProvidersProviderIdPoolsGetQueryKey = (
+  providerId: string,
 ) => {
+  return [`/api/v1/providers/${providerId}/pools`] as const;
+};
 
-const {query: queryOptions} = options ?? {};
+export const getListCredentialPoolsApiV1ProvidersProviderIdPoolsGetQueryOptions = <
+  TData = Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>,
+  TError = HTTPValidationError,
+>(
+  providerId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>,
+        TError,
+        TData
+      >
+    >;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListProviderCredentialsApiV1ProvidersProviderIdCredentialsGetQueryKey(providerId);
+  const queryKey =
+    queryOptions?.queryKey ??
+    getListCredentialPoolsApiV1ProvidersProviderIdPoolsGetQueryKey(providerId);
 
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>
+  > = ({ signal }) => listCredentialPoolsApiV1ProvidersProviderIdPoolsGet(providerId, { signal });
 
+  return { queryKey, queryFn, enabled: !!providerId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>> = ({ signal }) => listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet(providerId, { signal });
+export type ListCredentialPoolsApiV1ProvidersProviderIdPoolsGetQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>
+>;
+export type ListCredentialPoolsApiV1ProvidersProviderIdPoolsGetQueryError = HTTPValidationError;
 
-
-
-
-
-   return  { queryKey, queryFn, enabled: !!(providerId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type ListProviderCredentialsApiV1ProvidersProviderIdCredentialsGetQueryResult = NonNullable<Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>>
-export type ListProviderCredentialsApiV1ProvidersProviderIdCredentialsGetQueryError = HTTPValidationError
-
-
-export function useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet<TData = Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>, TError = HTTPValidationError>(
- providerId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>, TError, TData>> & Pick<
+export function useListCredentialPoolsApiV1ProvidersProviderIdPoolsGet<
+  TData = Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>,
+  TError = HTTPValidationError,
+>(
+  providerId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
         DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>,
+          Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>,
           TError,
-          Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet<TData = Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>, TError = HTTPValidationError>(
- providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>, TError, TData>> & Pick<
+          Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListCredentialPoolsApiV1ProvidersProviderIdPoolsGet<
+  TData = Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>,
+  TError = HTTPValidationError,
+>(
+  providerId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
         UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>,
+          Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>,
           TError,
-          Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet<TData = Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>, TError = HTTPValidationError>(
- providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+          Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListCredentialPoolsApiV1ProvidersProviderIdPoolsGet<
+  TData = Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>,
+  TError = HTTPValidationError,
+>(
+  providerId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>,
+        TError,
+        TData
+      >
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * @summary List Provider Credentials
+ * @summary List Credential Pools
  */
 
-export function useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet<TData = Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>, TError = HTTPValidationError>(
- providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+export function useListCredentialPoolsApiV1ProvidersProviderIdPoolsGet<
+  TData = Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>,
+  TError = HTTPValidationError,
+>(
+  providerId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>,
+        TError,
+        TData
+      >
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListCredentialPoolsApiV1ProvidersProviderIdPoolsGetQueryOptions(
+    providerId,
+    options,
+  );
 
-  const queryOptions = getListProviderCredentialsApiV1ProvidersProviderIdCredentialsGetQueryOptions(providerId,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
+export type createCredentialPoolApiV1ProvidersProviderIdPoolsPostResponse201 = {
+  data: CredentialPoolResponse;
+  status: 201;
+};
 
+export type createCredentialPoolApiV1ProvidersProviderIdPoolsPostResponse422 = {
+  data: HTTPValidationError;
+  status: 422;
+};
 
+export type createCredentialPoolApiV1ProvidersProviderIdPoolsPostResponseSuccess =
+  createCredentialPoolApiV1ProvidersProviderIdPoolsPostResponse201 & {
+    headers: Headers;
+  };
+export type createCredentialPoolApiV1ProvidersProviderIdPoolsPostResponseError =
+  createCredentialPoolApiV1ProvidersProviderIdPoolsPostResponse422 & {
+    headers: Headers;
+  };
 
+export type createCredentialPoolApiV1ProvidersProviderIdPoolsPostResponse =
+  | createCredentialPoolApiV1ProvidersProviderIdPoolsPostResponseSuccess
+  | createCredentialPoolApiV1ProvidersProviderIdPoolsPostResponseError;
 
+export const getCreateCredentialPoolApiV1ProvidersProviderIdPoolsPostUrl = (providerId: string) => {
+  return `/api/v1/providers/${providerId}/pools`;
+};
+
+/**
+ * @summary Create Credential Pool
+ */
+export const createCredentialPoolApiV1ProvidersProviderIdPoolsPost = async (
+  providerId: string,
+  createCredentialPoolRequest: CreateCredentialPoolRequest,
+  options?: RequestInit,
+): Promise<createCredentialPoolApiV1ProvidersProviderIdPoolsPostResponse> => {
+  return apiMutator<createCredentialPoolApiV1ProvidersProviderIdPoolsPostResponse>(
+    getCreateCredentialPoolApiV1ProvidersProviderIdPoolsPostUrl(providerId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(createCredentialPoolRequest),
+    },
+  );
+};
+
+export const getCreateCredentialPoolApiV1ProvidersProviderIdPoolsPostMutationOptions = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createCredentialPoolApiV1ProvidersProviderIdPoolsPost>>,
+    TError,
+    { providerId: string; data: CreateCredentialPoolRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createCredentialPoolApiV1ProvidersProviderIdPoolsPost>>,
+  TError,
+  { providerId: string; data: CreateCredentialPoolRequest },
+  TContext
+> => {
+  const mutationKey = ["createCredentialPoolApiV1ProvidersProviderIdPoolsPost"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createCredentialPoolApiV1ProvidersProviderIdPoolsPost>>,
+    { providerId: string; data: CreateCredentialPoolRequest }
+  > = (props) => {
+    const { providerId, data } = props ?? {};
+
+    return createCredentialPoolApiV1ProvidersProviderIdPoolsPost(providerId, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateCredentialPoolApiV1ProvidersProviderIdPoolsPostMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createCredentialPoolApiV1ProvidersProviderIdPoolsPost>>
+>;
+export type CreateCredentialPoolApiV1ProvidersProviderIdPoolsPostMutationBody =
+  CreateCredentialPoolRequest;
+export type CreateCredentialPoolApiV1ProvidersProviderIdPoolsPostMutationError =
+  HTTPValidationError;
+
+/**
+ * @summary Create Credential Pool
+ */
+export const useCreateCredentialPoolApiV1ProvidersProviderIdPoolsPost = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createCredentialPoolApiV1ProvidersProviderIdPoolsPost>>,
+      TError,
+      { providerId: string; data: CreateCredentialPoolRequest },
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof createCredentialPoolApiV1ProvidersProviderIdPoolsPost>>,
+  TError,
+  { providerId: string; data: CreateCredentialPoolRequest },
+  TContext
+> => {
+  return useMutation(
+    getCreateCredentialPoolApiV1ProvidersProviderIdPoolsPostMutationOptions(options),
+    queryClient,
+  );
+};
+export type updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchResponse200 = {
+  data: CredentialPoolResponse;
+  status: 200;
+};
+
+export type updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchResponse422 = {
+  data: HTTPValidationError;
+  status: 422;
+};
+
+export type updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchResponseSuccess =
+  updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchResponse200 & {
+    headers: Headers;
+  };
+export type updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchResponseError =
+  updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchResponse422 & {
+    headers: Headers;
+  };
+
+export type updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchResponse =
+  | updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchResponseSuccess
+  | updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchResponseError;
+
+export const getUpdateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchUrl = (
+  providerId: string,
+  poolId: string,
+) => {
+  return `/api/v1/providers/${providerId}/pools/${poolId}`;
+};
+
+/**
+ * @summary Update Credential Pool
+ */
+export const updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatch = async (
+  providerId: string,
+  poolId: string,
+  updateCredentialPoolRequest: UpdateCredentialPoolRequest,
+  options?: RequestInit,
+): Promise<updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchResponse> => {
+  return apiMutator<updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchResponse>(
+    getUpdateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchUrl(providerId, poolId),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updateCredentialPoolRequest),
+    },
+  );
+};
+
+export const getUpdateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchMutationOptions = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatch>>,
+    TError,
+    { providerId: string; poolId: string; data: UpdateCredentialPoolRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatch>>,
+  TError,
+  { providerId: string; poolId: string; data: UpdateCredentialPoolRequest },
+  TContext
+> => {
+  const mutationKey = ["updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatch"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatch>>,
+    { providerId: string; poolId: string; data: UpdateCredentialPoolRequest }
+  > = (props) => {
+    const { providerId, poolId, data } = props ?? {};
+
+    return updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatch(providerId, poolId, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatch>>
+  >;
+export type UpdateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchMutationBody =
+  UpdateCredentialPoolRequest;
+export type UpdateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchMutationError =
+  HTTPValidationError;
+
+/**
+ * @summary Update Credential Pool
+ */
+export const useUpdateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatch = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatch>>,
+      TError,
+      { providerId: string; poolId: string; data: UpdateCredentialPoolRequest },
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatch>>,
+  TError,
+  { providerId: string; poolId: string; data: UpdateCredentialPoolRequest },
+  TContext
+> => {
+  return useMutation(
+    getUpdateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchMutationOptions(options),
+    queryClient,
+  );
+};
+export type listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetResponse200 =
+  {
+    data: CredentialPoolCredentialResponse[];
+    status: 200;
+  };
+
+export type listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetResponse422 =
+  {
+    data: HTTPValidationError;
+    status: 422;
+  };
+
+export type listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetResponseSuccess =
+  listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetResponse200 & {
+    headers: Headers;
+  };
+export type listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetResponseError =
+  listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetResponse422 & {
+    headers: Headers;
+  };
+
+export type listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetResponse =
+  | listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetResponseSuccess
+  | listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetResponseError;
+
+export const getListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetUrl =
+  (providerId: string, poolId: string) => {
+    return `/api/v1/providers/${providerId}/pools/${poolId}/credentials`;
+  };
+
+/**
+ * @summary List Credential Pool Credentials
+ */
+export const listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet =
+  async (
+    providerId: string,
+    poolId: string,
+    options?: RequestInit,
+  ): Promise<listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetResponse> => {
+    return apiMutator<listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetResponse>(
+      getListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetUrl(
+        providerId,
+        poolId,
+      ),
+      {
+        ...options,
+        method: "GET",
+      },
+    );
+  };
+
+export const getListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetQueryKey =
+  (providerId: string, poolId: string) => {
+    return [`/api/v1/providers/${providerId}/pools/${poolId}/credentials`] as const;
+  };
+
+export const getListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetQueryOptions =
+  <
+    TData = Awaited<
+      ReturnType<
+        typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet
+      >
+    >,
+    TError = HTTPValidationError,
+  >(
+    providerId: string,
+    poolId: string,
+    options?: {
+      query?: Partial<
+        UseQueryOptions<
+          Awaited<
+            ReturnType<
+              typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet
+            >
+          >,
+          TError,
+          TData
+        >
+      >;
+    },
+  ) => {
+    const { query: queryOptions } = options ?? {};
+
+    const queryKey =
+      queryOptions?.queryKey ??
+      getListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetQueryKey(
+        providerId,
+        poolId,
+      );
+
+    const queryFn: QueryFunction<
+      Awaited<
+        ReturnType<
+          typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet
+        >
+      >
+    > = ({ signal }) =>
+      listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet(
+        providerId,
+        poolId,
+        { signal },
+      );
+
+    return {
+      queryKey,
+      queryFn,
+      enabled: !!(providerId && poolId),
+      ...queryOptions,
+    } as UseQueryOptions<
+      Awaited<
+        ReturnType<
+          typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet
+        >
+      >,
+      TError,
+      TData
+    > & { queryKey: DataTag<QueryKey, TData, TError> };
+  };
+
+export type ListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetQueryResult =
+  NonNullable<
+    Awaited<
+      ReturnType<
+        typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet
+      >
+    >
+  >;
+export type ListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetQueryError =
+  HTTPValidationError;
+
+export function useListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet<
+  TData = Awaited<
+    ReturnType<
+      typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet
+    >
+  >,
+  TError = HTTPValidationError,
+>(
+  providerId: string,
+  poolId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<
+          ReturnType<
+            typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet
+          >
+        >,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<
+            ReturnType<
+              typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet
+            >
+          >,
+          TError,
+          Awaited<
+            ReturnType<
+              typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet
+            >
+          >
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet<
+  TData = Awaited<
+    ReturnType<
+      typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet
+    >
+  >,
+  TError = HTTPValidationError,
+>(
+  providerId: string,
+  poolId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<
+          ReturnType<
+            typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet
+          >
+        >,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<
+            ReturnType<
+              typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet
+            >
+          >,
+          TError,
+          Awaited<
+            ReturnType<
+              typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet
+            >
+          >
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet<
+  TData = Awaited<
+    ReturnType<
+      typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet
+    >
+  >,
+  TError = HTTPValidationError,
+>(
+  providerId: string,
+  poolId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<
+          ReturnType<
+            typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet
+          >
+        >,
+        TError,
+        TData
+      >
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary List Credential Pool Credentials
+ */
+
+export function useListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet<
+  TData = Awaited<
+    ReturnType<
+      typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet
+    >
+  >,
+  TError = HTTPValidationError,
+>(
+  providerId: string,
+  poolId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<
+          ReturnType<
+            typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet
+          >
+        >,
+        TError,
+        TData
+      >
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions =
+    getListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetQueryOptions(
+      providerId,
+      poolId,
+      options,
+    );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export type addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostResponse201 =
+  {
+    data: CredentialPoolCredentialResponse;
+    status: 201;
+  };
+
+export type addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostResponse422 =
+  {
+    data: HTTPValidationError;
+    status: 422;
+  };
+
+export type addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostResponseSuccess =
+  addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostResponse201 & {
+    headers: Headers;
+  };
+export type addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostResponseError =
+  addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostResponse422 & {
+    headers: Headers;
+  };
+
+export type addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostResponse =
+  | addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostResponseSuccess
+  | addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostResponseError;
+
+export const getAddCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostUrl = (
+  providerId: string,
+  poolId: string,
+) => {
+  return `/api/v1/providers/${providerId}/pools/${poolId}/credentials`;
+};
+
+/**
+ * @summary Add Credential Pool Credential
+ */
+export const addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPost = async (
+  providerId: string,
+  poolId: string,
+  addCredentialPoolCredentialRequest: AddCredentialPoolCredentialRequest,
+  options?: RequestInit,
+): Promise<addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostResponse> => {
+  return apiMutator<addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostResponse>(
+    getAddCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostUrl(
+      providerId,
+      poolId,
+    ),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(addCredentialPoolCredentialRequest),
+    },
+  );
+};
+
+export const getAddCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostMutationOptions =
+  <TError = HTTPValidationError, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<
+          typeof addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPost
+        >
+      >,
+      TError,
+      { providerId: string; poolId: string; data: AddCredentialPoolCredentialRequest },
+      TContext
+    >;
+  }): UseMutationOptions<
+    Awaited<
+      ReturnType<
+        typeof addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPost
+      >
+    >,
+    TError,
+    { providerId: string; poolId: string; data: AddCredentialPoolCredentialRequest },
+    TContext
+  > => {
+    const mutationKey = [
+      "addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPost",
+    ];
+    const { mutation: mutationOptions } = options
+      ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+        ? options
+        : { ...options, mutation: { ...options.mutation, mutationKey } }
+      : { mutation: { mutationKey } };
+
+    const mutationFn: MutationFunction<
+      Awaited<
+        ReturnType<
+          typeof addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPost
+        >
+      >,
+      { providerId: string; poolId: string; data: AddCredentialPoolCredentialRequest }
+    > = (props) => {
+      const { providerId, poolId, data } = props ?? {};
+
+      return addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPost(
+        providerId,
+        poolId,
+        data,
+      );
+    };
+
+    return { mutationFn, ...mutationOptions };
+  };
+
+export type AddCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostMutationResult =
+  NonNullable<
+    Awaited<
+      ReturnType<
+        typeof addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPost
+      >
+    >
+  >;
+export type AddCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostMutationBody =
+  AddCredentialPoolCredentialRequest;
+export type AddCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostMutationError =
+  HTTPValidationError;
+
+/**
+ * @summary Add Credential Pool Credential
+ */
+export const useAddCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPost = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<
+          typeof addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPost
+        >
+      >,
+      TError,
+      { providerId: string; poolId: string; data: AddCredentialPoolCredentialRequest },
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<
+    ReturnType<typeof addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPost>
+  >,
+  TError,
+  { providerId: string; poolId: string; data: AddCredentialPoolCredentialRequest },
+  TContext
+> => {
+  return useMutation(
+    getAddCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostMutationOptions(
+      options,
+    ),
+    queryClient,
+  );
+};
+export type updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchResponse200 =
+  {
+    data: CredentialPoolCredentialResponse;
+    status: 200;
+  };
+
+export type updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchResponse422 =
+  {
+    data: HTTPValidationError;
+    status: 422;
+  };
+
+export type updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchResponseSuccess =
+  updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchResponse200 & {
+    headers: Headers;
+  };
+export type updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchResponseError =
+  updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchResponse422 & {
+    headers: Headers;
+  };
+
+export type updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchResponse =
+
+    | updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchResponseSuccess
+    | updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchResponseError;
+
+export const getUpdateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchUrl =
+  (providerId: string, poolId: string, poolCredentialId: string) => {
+    return `/api/v1/providers/${providerId}/pools/${poolId}/credentials/${poolCredentialId}`;
+  };
+
+/**
+ * @summary Update Credential Pool Credential
+ */
+export const updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatch =
+  async (
+    providerId: string,
+    poolId: string,
+    poolCredentialId: string,
+    updateCredentialPoolCredentialRequest: UpdateCredentialPoolCredentialRequest,
+    options?: RequestInit,
+  ): Promise<updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchResponse> => {
+    return apiMutator<updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchResponse>(
+      getUpdateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchUrl(
+        providerId,
+        poolId,
+        poolCredentialId,
+      ),
+      {
+        ...options,
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...options?.headers },
+        body: JSON.stringify(updateCredentialPoolCredentialRequest),
+      },
+    );
+  };
+
+export const getUpdateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchMutationOptions =
+  <TError = HTTPValidationError, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<
+          typeof updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatch
+        >
+      >,
+      TError,
+      {
+        providerId: string;
+        poolId: string;
+        poolCredentialId: string;
+        data: UpdateCredentialPoolCredentialRequest;
+      },
+      TContext
+    >;
+  }): UseMutationOptions<
+    Awaited<
+      ReturnType<
+        typeof updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatch
+      >
+    >,
+    TError,
+    {
+      providerId: string;
+      poolId: string;
+      poolCredentialId: string;
+      data: UpdateCredentialPoolCredentialRequest;
+    },
+    TContext
+  > => {
+    const mutationKey = [
+      "updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatch",
+    ];
+    const { mutation: mutationOptions } = options
+      ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+        ? options
+        : { ...options, mutation: { ...options.mutation, mutationKey } }
+      : { mutation: { mutationKey } };
+
+    const mutationFn: MutationFunction<
+      Awaited<
+        ReturnType<
+          typeof updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatch
+        >
+      >,
+      {
+        providerId: string;
+        poolId: string;
+        poolCredentialId: string;
+        data: UpdateCredentialPoolCredentialRequest;
+      }
+    > = (props) => {
+      const { providerId, poolId, poolCredentialId, data } = props ?? {};
+
+      return updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatch(
+        providerId,
+        poolId,
+        poolCredentialId,
+        data,
+      );
+    };
+
+    return { mutationFn, ...mutationOptions };
+  };
+
+export type UpdateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchMutationResult =
+  NonNullable<
+    Awaited<
+      ReturnType<
+        typeof updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatch
+      >
+    >
+  >;
+export type UpdateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchMutationBody =
+  UpdateCredentialPoolCredentialRequest;
+export type UpdateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchMutationError =
+  HTTPValidationError;
+
+/**
+ * @summary Update Credential Pool Credential
+ */
+export const useUpdateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatch =
+  <TError = HTTPValidationError, TContext = unknown>(
+    options?: {
+      mutation?: UseMutationOptions<
+        Awaited<
+          ReturnType<
+            typeof updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatch
+          >
+        >,
+        TError,
+        {
+          providerId: string;
+          poolId: string;
+          poolCredentialId: string;
+          data: UpdateCredentialPoolCredentialRequest;
+        },
+        TContext
+      >;
+    },
+    queryClient?: QueryClient,
+  ): UseMutationResult<
+    Awaited<
+      ReturnType<
+        typeof updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatch
+      >
+    >,
+    TError,
+    {
+      providerId: string;
+      poolId: string;
+      poolCredentialId: string;
+      data: UpdateCredentialPoolCredentialRequest;
+    },
+    TContext
+  > => {
+    return useMutation(
+      getUpdateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchMutationOptions(
+        options,
+      ),
+      queryClient,
+    );
+  };
+export type deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteResponse204 =
+  {
+    data: void;
+    status: 204;
+  };
+
+export type deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteResponse422 =
+  {
+    data: HTTPValidationError;
+    status: 422;
+  };
+
+export type deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteResponseSuccess =
+  deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteResponse204 & {
+    headers: Headers;
+  };
+export type deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteResponseError =
+  deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteResponse422 & {
+    headers: Headers;
+  };
+
+export type deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteResponse =
+
+    | deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteResponseSuccess
+    | deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteResponseError;
+
+export const getDeleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteUrl =
+  (providerId: string, poolId: string, poolCredentialId: string) => {
+    return `/api/v1/providers/${providerId}/pools/${poolId}/credentials/${poolCredentialId}`;
+  };
+
+/**
+ * @summary Delete Credential Pool Credential
+ */
+export const deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDelete =
+  async (
+    providerId: string,
+    poolId: string,
+    poolCredentialId: string,
+    options?: RequestInit,
+  ): Promise<deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteResponse> => {
+    return apiMutator<deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteResponse>(
+      getDeleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteUrl(
+        providerId,
+        poolId,
+        poolCredentialId,
+      ),
+      {
+        ...options,
+        method: "DELETE",
+      },
+    );
+  };
+
+export const getDeleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteMutationOptions =
+  <TError = HTTPValidationError, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<
+          typeof deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDelete
+        >
+      >,
+      TError,
+      { providerId: string; poolId: string; poolCredentialId: string },
+      TContext
+    >;
+  }): UseMutationOptions<
+    Awaited<
+      ReturnType<
+        typeof deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDelete
+      >
+    >,
+    TError,
+    { providerId: string; poolId: string; poolCredentialId: string },
+    TContext
+  > => {
+    const mutationKey = [
+      "deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDelete",
+    ];
+    const { mutation: mutationOptions } = options
+      ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+        ? options
+        : { ...options, mutation: { ...options.mutation, mutationKey } }
+      : { mutation: { mutationKey } };
+
+    const mutationFn: MutationFunction<
+      Awaited<
+        ReturnType<
+          typeof deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDelete
+        >
+      >,
+      { providerId: string; poolId: string; poolCredentialId: string }
+    > = (props) => {
+      const { providerId, poolId, poolCredentialId } = props ?? {};
+
+      return deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDelete(
+        providerId,
+        poolId,
+        poolCredentialId,
+      );
+    };
+
+    return { mutationFn, ...mutationOptions };
+  };
+
+export type DeleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteMutationResult =
+  NonNullable<
+    Awaited<
+      ReturnType<
+        typeof deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDelete
+      >
+    >
+  >;
+
+export type DeleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteMutationError =
+  HTTPValidationError;
+
+/**
+ * @summary Delete Credential Pool Credential
+ */
+export const useDeleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDelete =
+  <TError = HTTPValidationError, TContext = unknown>(
+    options?: {
+      mutation?: UseMutationOptions<
+        Awaited<
+          ReturnType<
+            typeof deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDelete
+          >
+        >,
+        TError,
+        { providerId: string; poolId: string; poolCredentialId: string },
+        TContext
+      >;
+    },
+    queryClient?: QueryClient,
+  ): UseMutationResult<
+    Awaited<
+      ReturnType<
+        typeof deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDelete
+      >
+    >,
+    TError,
+    { providerId: string; poolId: string; poolCredentialId: string },
+    TContext
+  > => {
+    return useMutation(
+      getDeleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteMutationOptions(
+        options,
+      ),
+      queryClient,
+    );
+  };
+export type listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponse200 = {
+  data: ProviderCredentialResponse[];
+  status: 200;
+};
+
+export type listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponse422 = {
+  data: HTTPValidationError;
+  status: 422;
+};
+
+export type listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponseSuccess =
+  listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponse200 & {
+    headers: Headers;
+  };
+export type listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponseError =
+  listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponse422 & {
+    headers: Headers;
+  };
+
+export type listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponse =
+  | listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponseSuccess
+  | listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponseError;
+
+export const getListProviderCredentialsApiV1ProvidersProviderIdCredentialsGetUrl = (
+  providerId: string,
+) => {
+  return `/api/v1/providers/${providerId}/credentials`;
+};
+
+/**
+ * @summary List Provider Credentials
+ */
+export const listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet = async (
+  providerId: string,
+  options?: RequestInit,
+): Promise<listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponse> => {
+  return apiMutator<listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponse>(
+    getListProviderCredentialsApiV1ProvidersProviderIdCredentialsGetUrl(providerId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListProviderCredentialsApiV1ProvidersProviderIdCredentialsGetQueryKey = (
+  providerId: string,
+) => {
+  return [`/api/v1/providers/${providerId}/credentials`] as const;
+};
+
+export const getListProviderCredentialsApiV1ProvidersProviderIdCredentialsGetQueryOptions = <
+  TData = Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>,
+  TError = HTTPValidationError,
+>(
+  providerId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>,
+        TError,
+        TData
+      >
+    >;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getListProviderCredentialsApiV1ProvidersProviderIdCredentialsGetQueryKey(providerId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>
+  > = ({ signal }) =>
+    listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet(providerId, { signal });
+
+  return { queryKey, queryFn, enabled: !!providerId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ListProviderCredentialsApiV1ProvidersProviderIdCredentialsGetQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>
+>;
+export type ListProviderCredentialsApiV1ProvidersProviderIdCredentialsGetQueryError =
+  HTTPValidationError;
+
+export function useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet<
+  TData = Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>,
+  TError = HTTPValidationError,
+>(
+  providerId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>,
+          TError,
+          Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet<
+  TData = Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>,
+  TError = HTTPValidationError,
+>(
+  providerId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>,
+          TError,
+          Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet<
+  TData = Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>,
+  TError = HTTPValidationError,
+>(
+  providerId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>,
+        TError,
+        TData
+      >
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary List Provider Credentials
+ */
+
+export function useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet<
+  TData = Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>,
+  TError = HTTPValidationError,
+>(
+  providerId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>,
+        TError,
+        TData
+      >
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListProviderCredentialsApiV1ProvidersProviderIdCredentialsGetQueryOptions(
+    providerId,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 export type createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponse201 = {
-  data: ProviderCredentialResponse
-  status: 201
-}
+  data: ProviderCredentialResponse;
+  status: 201;
+};
 
 export type createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponseSuccess = (createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponse201) & {
-  headers: Headers;
-};
-export type createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponseError = (createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponse422) & {
-  headers: Headers;
+  data: HTTPValidationError;
+  status: 422;
 };
 
-export type createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponse = (createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponseSuccess | createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponseError)
+export type createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponseSuccess =
+  createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponse201 & {
+    headers: Headers;
+  };
+export type createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponseError =
+  createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponse422 & {
+    headers: Headers;
+  };
 
-export const getCreateProviderCredentialApiV1ProvidersProviderIdCredentialsPostUrl = (providerId: string,) => {
+export type createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponse =
+  | createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponseSuccess
+  | createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponseError;
 
-
-
-
-  return `/api/v1/providers/${providerId}/credentials`
-}
+export const getCreateProviderCredentialApiV1ProvidersProviderIdCredentialsPostUrl = (
+  providerId: string,
+) => {
+  return `/api/v1/providers/${providerId}/credentials`;
+};
 
 /**
  * @summary Create Provider Credential
  */
-export const createProviderCredentialApiV1ProvidersProviderIdCredentialsPost = async (providerId: string,
-    createProviderCredentialRequest: CreateProviderCredentialRequest, options?: RequestInit): Promise<createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponse> => {
+export const createProviderCredentialApiV1ProvidersProviderIdCredentialsPost = async (
+  providerId: string,
+  createProviderCredentialRequest: CreateProviderCredentialRequest,
+  options?: RequestInit,
+): Promise<createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponse> => {
+  return apiMutator<createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponse>(
+    getCreateProviderCredentialApiV1ProvidersProviderIdCredentialsPostUrl(providerId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(createProviderCredentialRequest),
+    },
+  );
+};
 
-  return apiMutator<createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponse>(getCreateProviderCredentialApiV1ProvidersProviderIdCredentialsPostUrl(providerId),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(
-      createProviderCredentialRequest,)
-  }
-);}
+export const getCreateProviderCredentialApiV1ProvidersProviderIdCredentialsPostMutationOptions = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createProviderCredentialApiV1ProvidersProviderIdCredentialsPost>>,
+    TError,
+    { providerId: string; data: CreateProviderCredentialRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createProviderCredentialApiV1ProvidersProviderIdCredentialsPost>>,
+  TError,
+  { providerId: string; data: CreateProviderCredentialRequest },
+  TContext
+> => {
+  const mutationKey = ["createProviderCredentialApiV1ProvidersProviderIdCredentialsPost"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
 
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createProviderCredentialApiV1ProvidersProviderIdCredentialsPost>>,
+    { providerId: string; data: CreateProviderCredentialRequest }
+  > = (props) => {
+    const { providerId, data } = props ?? {};
 
+    return createProviderCredentialApiV1ProvidersProviderIdCredentialsPost(providerId, data);
+  };
 
+  return { mutationFn, ...mutationOptions };
+};
 
-export const getCreateProviderCredentialApiV1ProvidersProviderIdCredentialsPostMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProviderCredentialApiV1ProvidersProviderIdCredentialsPost>>, TError,{providerId: string;data: CreateProviderCredentialRequest}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof createProviderCredentialApiV1ProvidersProviderIdCredentialsPost>>, TError,{providerId: string;data: CreateProviderCredentialRequest}, TContext> => {
+export type CreateProviderCredentialApiV1ProvidersProviderIdCredentialsPostMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof createProviderCredentialApiV1ProvidersProviderIdCredentialsPost>>
+  >;
+export type CreateProviderCredentialApiV1ProvidersProviderIdCredentialsPostMutationBody =
+  CreateProviderCredentialRequest;
+export type CreateProviderCredentialApiV1ProvidersProviderIdCredentialsPostMutationError =
+  HTTPValidationError;
 
-const mutationKey = ['createProviderCredentialApiV1ProvidersProviderIdCredentialsPost'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createProviderCredentialApiV1ProvidersProviderIdCredentialsPost>>, {providerId: string;data: CreateProviderCredentialRequest}> = (props) => {
-          const {providerId,data} = props ?? {};
-
-          return  createProviderCredentialApiV1ProvidersProviderIdCredentialsPost(providerId,data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type CreateProviderCredentialApiV1ProvidersProviderIdCredentialsPostMutationResult = NonNullable<Awaited<ReturnType<typeof createProviderCredentialApiV1ProvidersProviderIdCredentialsPost>>>
-    export type CreateProviderCredentialApiV1ProvidersProviderIdCredentialsPostMutationBody = CreateProviderCredentialRequest
-    export type CreateProviderCredentialApiV1ProvidersProviderIdCredentialsPostMutationError = HTTPValidationError
-
-    /**
+/**
  * @summary Create Provider Credential
  */
-export const useCreateProviderCredentialApiV1ProvidersProviderIdCredentialsPost = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProviderCredentialApiV1ProvidersProviderIdCredentialsPost>>, TError,{providerId: string;data: CreateProviderCredentialRequest}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof createProviderCredentialApiV1ProvidersProviderIdCredentialsPost>>,
-        TError,
-        {providerId: string;data: CreateProviderCredentialRequest},
-        TContext
-      > => {
-      return useMutation(getCreateProviderCredentialApiV1ProvidersProviderIdCredentialsPostMutationOptions(options), queryClient);
-    }
-    export type updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponse200 = {
-  data: ProviderCredentialResponse
-  status: 200
-}
-
-export type updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponseSuccess = (updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponse200) & {
-  headers: Headers;
+export const useCreateProviderCredentialApiV1ProvidersProviderIdCredentialsPost = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createProviderCredentialApiV1ProvidersProviderIdCredentialsPost>>,
+      TError,
+      { providerId: string; data: CreateProviderCredentialRequest },
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof createProviderCredentialApiV1ProvidersProviderIdCredentialsPost>>,
+  TError,
+  { providerId: string; data: CreateProviderCredentialRequest },
+  TContext
+> => {
+  return useMutation(
+    getCreateProviderCredentialApiV1ProvidersProviderIdCredentialsPostMutationOptions(options),
+    queryClient,
+  );
 };
-export type updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponseError = (updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponse422) & {
-  headers: Headers;
-};
+export type updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponse200 =
+  {
+    data: ProviderCredentialResponse;
+    status: 200;
+  };
 
-export type updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponse = (updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponseSuccess | updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponseError)
+export type updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponse422 =
+  {
+    data: HTTPValidationError;
+    status: 422;
+  };
 
-export const getUpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchUrl = (providerId: string,
-    providerCredentialId: string,) => {
+export type updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponseSuccess =
+  updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponse200 & {
+    headers: Headers;
+  };
+export type updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponseError =
+  updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponse422 & {
+    headers: Headers;
+  };
 
+export type updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponse =
 
+    | updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponseSuccess
+    | updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponseError;
 
-
-  return `/api/v1/providers/${providerId}/credentials/${providerCredentialId}`
-}
+export const getUpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchUrl =
+  (providerId: string, providerCredentialId: string) => {
+    return `/api/v1/providers/${providerId}/credentials/${providerCredentialId}`;
+  };
 
 /**
  * @summary Update Provider Credential
  */
-export const updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch = async (providerId: string,
+export const updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch =
+  async (
+    providerId: string,
     providerCredentialId: string,
-    updateProviderCredentialRequest: UpdateProviderCredentialRequest, options?: RequestInit): Promise<updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponse> => {
+    updateProviderCredentialRequest: UpdateProviderCredentialRequest,
+    options?: RequestInit,
+  ): Promise<updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponse> => {
+    return apiMutator<updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponse>(
+      getUpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchUrl(
+        providerId,
+        providerCredentialId,
+      ),
+      {
+        ...options,
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...options?.headers },
+        body: JSON.stringify(updateProviderCredentialRequest),
+      },
+    );
+  };
 
-  return apiMutator<updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponse>(getUpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchUrl(providerId,providerCredentialId),
-  {
-    ...options,
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(
-      updateProviderCredentialRequest,)
-  }
-);}
+export const getUpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchMutationOptions =
+  <TError = HTTPValidationError, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<
+          typeof updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch
+        >
+      >,
+      TError,
+      { providerId: string; providerCredentialId: string; data: UpdateProviderCredentialRequest },
+      TContext
+    >;
+  }): UseMutationOptions<
+    Awaited<
+      ReturnType<
+        typeof updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch
+      >
+    >,
+    TError,
+    { providerId: string; providerCredentialId: string; data: UpdateProviderCredentialRequest },
+    TContext
+  > => {
+    const mutationKey = [
+      "updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch",
+    ];
+    const { mutation: mutationOptions } = options
+      ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+        ? options
+        : { ...options, mutation: { ...options.mutation, mutationKey } }
+      : { mutation: { mutationKey } };
 
+    const mutationFn: MutationFunction<
+      Awaited<
+        ReturnType<
+          typeof updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch
+        >
+      >,
+      { providerId: string; providerCredentialId: string; data: UpdateProviderCredentialRequest }
+    > = (props) => {
+      const { providerId, providerCredentialId, data } = props ?? {};
 
+      return updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch(
+        providerId,
+        providerCredentialId,
+        data,
+      );
+    };
 
+    return { mutationFn, ...mutationOptions };
+  };
 
-export const getUpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch>>, TError,{providerId: string;providerCredentialId: string;data: UpdateProviderCredentialRequest}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch>>, TError,{providerId: string;providerCredentialId: string;data: UpdateProviderCredentialRequest}, TContext> => {
+export type UpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchMutationResult =
+  NonNullable<
+    Awaited<
+      ReturnType<
+        typeof updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch
+      >
+    >
+  >;
+export type UpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchMutationBody =
+  UpdateProviderCredentialRequest;
+export type UpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchMutationError =
+  HTTPValidationError;
 
-const mutationKey = ['updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch>>, {providerId: string;providerCredentialId: string;data: UpdateProviderCredentialRequest}> = (props) => {
-          const {providerId,providerCredentialId,data} = props ?? {};
-
-          return  updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch(providerId,providerCredentialId,data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type UpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchMutationResult = NonNullable<Awaited<ReturnType<typeof updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch>>>
-    export type UpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchMutationBody = UpdateProviderCredentialRequest
-    export type UpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchMutationError = HTTPValidationError
-
-    /**
+/**
  * @summary Update Provider Credential
  */
-export const useUpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch>>, TError,{providerId: string;providerCredentialId: string;data: UpdateProviderCredentialRequest}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch>>,
+export const useUpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch =
+  <TError = HTTPValidationError, TContext = unknown>(
+    options?: {
+      mutation?: UseMutationOptions<
+        Awaited<
+          ReturnType<
+            typeof updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch
+          >
+        >,
         TError,
-        {providerId: string;providerCredentialId: string;data: UpdateProviderCredentialRequest},
+        { providerId: string; providerCredentialId: string; data: UpdateProviderCredentialRequest },
         TContext
-      > => {
-      return useMutation(getUpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchMutationOptions(options), queryClient);
-    }
-    export type deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponse204 = {
-  data: void
-  status: 204
-}
+      >;
+    },
+    queryClient?: QueryClient,
+  ): UseMutationResult<
+    Awaited<
+      ReturnType<
+        typeof updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch
+      >
+    >,
+    TError,
+    { providerId: string; providerCredentialId: string; data: UpdateProviderCredentialRequest },
+    TContext
+  > => {
+    return useMutation(
+      getUpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchMutationOptions(
+        options,
+      ),
+      queryClient,
+    );
+  };
+export type deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponse204 =
+  {
+    data: void;
+    status: 204;
+  };
 
-export type deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
+export type deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponse422 =
+  {
+    data: HTTPValidationError;
+    status: 422;
+  };
 
-export type deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponseSuccess = (deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponse204) & {
-  headers: Headers;
-};
-export type deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponseError = (deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponse422) & {
-  headers: Headers;
-};
+export type deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponseSuccess =
+  deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponse204 & {
+    headers: Headers;
+  };
+export type deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponseError =
+  deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponse422 & {
+    headers: Headers;
+  };
 
-export type deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponse = (deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponseSuccess | deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponseError)
+export type deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponse =
 
-export const getDeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteUrl = (providerId: string,
-    providerCredentialId: string,) => {
+    | deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponseSuccess
+    | deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponseError;
 
-
-
-
-  return `/api/v1/providers/${providerId}/credentials/${providerCredentialId}`
-}
+export const getDeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteUrl =
+  (providerId: string, providerCredentialId: string) => {
+    return `/api/v1/providers/${providerId}/credentials/${providerCredentialId}`;
+  };
 
 /**
  * @summary Deactivate Provider Credential
  */
-export const deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete = async (providerId: string,
-    providerCredentialId: string, options?: RequestInit): Promise<deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponse> => {
+export const deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete =
+  async (
+    providerId: string,
+    providerCredentialId: string,
+    options?: RequestInit,
+  ): Promise<deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponse> => {
+    return apiMutator<deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponse>(
+      getDeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteUrl(
+        providerId,
+        providerCredentialId,
+      ),
+      {
+        ...options,
+        method: "DELETE",
+      },
+    );
+  };
 
-  return apiMutator<deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponse>(getDeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteUrl(providerId,providerCredentialId),
-  {
-    ...options,
-    method: 'DELETE'
+export const getDeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteMutationOptions =
+  <TError = HTTPValidationError, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<
+          typeof deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete
+        >
+      >,
+      TError,
+      { providerId: string; providerCredentialId: string },
+      TContext
+    >;
+  }): UseMutationOptions<
+    Awaited<
+      ReturnType<
+        typeof deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete
+      >
+    >,
+    TError,
+    { providerId: string; providerCredentialId: string },
+    TContext
+  > => {
+    const mutationKey = [
+      "deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete",
+    ];
+    const { mutation: mutationOptions } = options
+      ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+        ? options
+        : { ...options, mutation: { ...options.mutation, mutationKey } }
+      : { mutation: { mutationKey } };
 
+    const mutationFn: MutationFunction<
+      Awaited<
+        ReturnType<
+          typeof deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete
+        >
+      >,
+      { providerId: string; providerCredentialId: string }
+    > = (props) => {
+      const { providerId, providerCredentialId } = props ?? {};
 
-  }
-);}
+      return deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete(
+        providerId,
+        providerCredentialId,
+      );
+    };
 
+    return { mutationFn, ...mutationOptions };
+  };
 
+export type DeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteMutationResult =
+  NonNullable<
+    Awaited<
+      ReturnType<
+        typeof deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete
+      >
+    >
+  >;
 
+export type DeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteMutationError =
+  HTTPValidationError;
 
-export const getDeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete>>, TError,{providerId: string;providerCredentialId: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete>>, TError,{providerId: string;providerCredentialId: string}, TContext> => {
-
-const mutationKey = ['deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete>>, {providerId: string;providerCredentialId: string}> = (props) => {
-          const {providerId,providerCredentialId} = props ?? {};
-
-          return  deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete(providerId,providerCredentialId,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type DeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete>>>
-
-    export type DeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteMutationError = HTTPValidationError
-
-    /**
+/**
  * @summary Deactivate Provider Credential
  */
-export const useDeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete>>, TError,{providerId: string;providerCredentialId: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete>>,
+export const useDeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete =
+  <TError = HTTPValidationError, TContext = unknown>(
+    options?: {
+      mutation?: UseMutationOptions<
+        Awaited<
+          ReturnType<
+            typeof deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete
+          >
+        >,
         TError,
-        {providerId: string;providerCredentialId: string},
+        { providerId: string; providerCredentialId: string },
         TContext
-      > => {
-      return useMutation(getDeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteMutationOptions(options), queryClient);
-    }
-    export type reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostResponse200 = {
-  data: ProviderCredentialResponse[]
-  status: 200
-}
-
-export type reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostResponseSuccess = (reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostResponse200) & {
-  headers: Headers;
-};
-export type reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostResponseError = (reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostResponse422) & {
-  headers: Headers;
-};
-
-export type reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostResponse = (reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostResponseSuccess | reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostResponseError)
-
-export const getReorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostUrl = (providerId: string,) => {
-
-
-
-
-  return `/api/v1/providers/${providerId}/credentials/reorder`
-}
-
-/**
- * @summary Reorder Provider Credentials
- */
-export const reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPost = async (providerId: string,
-    reorderProviderCredentialsRequest: ReorderProviderCredentialsRequest, options?: RequestInit): Promise<reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostResponse> => {
-
-  return apiMutator<reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostResponse>(getReorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostUrl(providerId),
+      >;
+    },
+    queryClient?: QueryClient,
+  ): UseMutationResult<
+    Awaited<
+      ReturnType<
+        typeof deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete
+      >
+    >,
+    TError,
+    { providerId: string; providerCredentialId: string },
+    TContext
+  > => {
+    return useMutation(
+      getDeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteMutationOptions(
+        options,
+      ),
+      queryClient,
+    );
+  };
+export type testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponse200 =
   {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(
-      reorderProviderCredentialsRequest,)
-  }
-);}
+    data: TestProviderCredentialResponse;
+    status: 200;
+  };
 
+export type testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponse422 =
+  {
+    data: HTTPValidationError;
+    status: 422;
+  };
 
+export type testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponseSuccess =
+  testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponse200 & {
+    headers: Headers;
+  };
+export type testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponseError =
+  testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponse422 & {
+    headers: Headers;
+  };
 
+export type testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponse =
 
-export const getReorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPost>>, TError,{providerId: string;data: ReorderProviderCredentialsRequest}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPost>>, TError,{providerId: string;data: ReorderProviderCredentialsRequest}, TContext> => {
+    | testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponseSuccess
+    | testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponseError;
 
-const mutationKey = ['reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPost'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPost>>, {providerId: string;data: ReorderProviderCredentialsRequest}> = (props) => {
-          const {providerId,data} = props ?? {};
-
-          return  reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPost(providerId,data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type ReorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostMutationResult = NonNullable<Awaited<ReturnType<typeof reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPost>>>
-    export type ReorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostMutationBody = ReorderProviderCredentialsRequest
-    export type ReorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostMutationError = HTTPValidationError
-
-    /**
- * @summary Reorder Provider Credentials
- */
-export const useReorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPost = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPost>>, TError,{providerId: string;data: ReorderProviderCredentialsRequest}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof reorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPost>>,
-        TError,
-        {providerId: string;data: ReorderProviderCredentialsRequest},
-        TContext
-      > => {
-      return useMutation(getReorderProviderCredentialsApiV1ProvidersProviderIdCredentialsReorderPostMutationOptions(options), queryClient);
-    }
-    export type testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponse200 = {
-  data: TestProviderCredentialResponse
-  status: 200
-}
-
-export type testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponseSuccess = (testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponse200) & {
-  headers: Headers;
-};
-export type testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponseError = (testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponse422) & {
-  headers: Headers;
-};
-
-export type testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponse = (testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponseSuccess | testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponseError)
-
-export const getTestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostUrl = (providerId: string,
-    providerCredentialId: string,) => {
-
-
-
-
-  return `/api/v1/providers/${providerId}/credentials/${providerCredentialId}/test`
-}
+export const getTestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostUrl =
+  (providerId: string, providerCredentialId: string) => {
+    return `/api/v1/providers/${providerId}/credentials/${providerCredentialId}/test`;
+  };
 
 /**
  * @summary Test Provider Credential
  */
-export const testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost = async (providerId: string,
-    providerCredentialId: string, options?: RequestInit): Promise<testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponse> => {
+export const testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost =
+  async (
+    providerId: string,
+    providerCredentialId: string,
+    options?: RequestInit,
+  ): Promise<testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponse> => {
+    return apiMutator<testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponse>(
+      getTestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostUrl(
+        providerId,
+        providerCredentialId,
+      ),
+      {
+        ...options,
+        method: "POST",
+      },
+    );
+  };
 
-  return apiMutator<testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponse>(getTestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostUrl(providerId,providerCredentialId),
-  {
-    ...options,
-    method: 'POST'
+export const getTestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostMutationOptions =
+  <TError = HTTPValidationError, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<
+          typeof testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost
+        >
+      >,
+      TError,
+      { providerId: string; providerCredentialId: string },
+      TContext
+    >;
+  }): UseMutationOptions<
+    Awaited<
+      ReturnType<
+        typeof testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost
+      >
+    >,
+    TError,
+    { providerId: string; providerCredentialId: string },
+    TContext
+  > => {
+    const mutationKey = [
+      "testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost",
+    ];
+    const { mutation: mutationOptions } = options
+      ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+        ? options
+        : { ...options, mutation: { ...options.mutation, mutationKey } }
+      : { mutation: { mutationKey } };
 
+    const mutationFn: MutationFunction<
+      Awaited<
+        ReturnType<
+          typeof testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost
+        >
+      >,
+      { providerId: string; providerCredentialId: string }
+    > = (props) => {
+      const { providerId, providerCredentialId } = props ?? {};
 
-  }
-);}
+      return testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost(
+        providerId,
+        providerCredentialId,
+      );
+    };
 
+    return { mutationFn, ...mutationOptions };
+  };
 
+export type TestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostMutationResult =
+  NonNullable<
+    Awaited<
+      ReturnType<
+        typeof testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost
+      >
+    >
+  >;
 
+export type TestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostMutationError =
+  HTTPValidationError;
 
-export const getTestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost>>, TError,{providerId: string;providerCredentialId: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost>>, TError,{providerId: string;providerCredentialId: string}, TContext> => {
-
-const mutationKey = ['testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost>>, {providerId: string;providerCredentialId: string}> = (props) => {
-          const {providerId,providerCredentialId} = props ?? {};
-
-          return  testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost(providerId,providerCredentialId,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type TestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostMutationResult = NonNullable<Awaited<ReturnType<typeof testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost>>>
-
-    export type TestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostMutationError = HTTPValidationError
-
-    /**
+/**
  * @summary Test Provider Credential
  */
-export const useTestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost>>, TError,{providerId: string;providerCredentialId: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost>>,
+export const useTestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost =
+  <TError = HTTPValidationError, TContext = unknown>(
+    options?: {
+      mutation?: UseMutationOptions<
+        Awaited<
+          ReturnType<
+            typeof testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost
+          >
+        >,
         TError,
-        {providerId: string;providerCredentialId: string},
+        { providerId: string; providerCredentialId: string },
         TContext
-      > => {
-      return useMutation(getTestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostMutationOptions(options), queryClient);
-    }
-    export type listModelOfferingsApiV1ProvidersProviderIdOfferingsGetResponse200 = {
-  data: ModelOfferingPageResponse
-  status: 200
-}
+      >;
+    },
+    queryClient?: QueryClient,
+  ): UseMutationResult<
+    Awaited<
+      ReturnType<
+        typeof testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost
+      >
+    >,
+    TError,
+    { providerId: string; providerCredentialId: string },
+    TContext
+  > => {
+    return useMutation(
+      getTestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostMutationOptions(
+        options,
+      ),
+      queryClient,
+    );
+  };
+export type listModelOfferingsApiV1ProvidersProviderIdOfferingsGetResponse200 = {
+  data: ModelOfferingPageResponse;
+  status: 200;
+};
 
 export type listModelOfferingsApiV1ProvidersProviderIdOfferingsGetResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type listModelOfferingsApiV1ProvidersProviderIdOfferingsGetResponseSuccess = (listModelOfferingsApiV1ProvidersProviderIdOfferingsGetResponse200) & {
-  headers: Headers;
-};
-export type listModelOfferingsApiV1ProvidersProviderIdOfferingsGetResponseError = (listModelOfferingsApiV1ProvidersProviderIdOfferingsGetResponse422) & {
-  headers: Headers;
+  data: HTTPValidationError;
+  status: 422;
 };
 
-export type listModelOfferingsApiV1ProvidersProviderIdOfferingsGetResponse = (listModelOfferingsApiV1ProvidersProviderIdOfferingsGetResponseSuccess | listModelOfferingsApiV1ProvidersProviderIdOfferingsGetResponseError)
+export type listModelOfferingsApiV1ProvidersProviderIdOfferingsGetResponseSuccess =
+  listModelOfferingsApiV1ProvidersProviderIdOfferingsGetResponse200 & {
+    headers: Headers;
+  };
+export type listModelOfferingsApiV1ProvidersProviderIdOfferingsGetResponseError =
+  listModelOfferingsApiV1ProvidersProviderIdOfferingsGetResponse422 & {
+    headers: Headers;
+  };
 
-export const getListModelOfferingsApiV1ProvidersProviderIdOfferingsGetUrl = (providerId: string,
-    params?: ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams,) => {
+export type listModelOfferingsApiV1ProvidersProviderIdOfferingsGetResponse =
+  | listModelOfferingsApiV1ProvidersProviderIdOfferingsGetResponseSuccess
+  | listModelOfferingsApiV1ProvidersProviderIdOfferingsGetResponseError;
+
+export const getListModelOfferingsApiV1ProvidersProviderIdOfferingsGetUrl = (
+  providerId: string,
+  params?: ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams,
+) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-
     if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : value.toString())
+      normalizedParams.append(key, value === null ? "null" : value.toString());
     }
   });
 
   const stringifiedParams = normalizedParams.toString();
 
-  return stringifiedParams.length > 0 ? `/api/v1/providers/${providerId}/offerings?${stringifiedParams}` : `/api/v1/providers/${providerId}/offerings`
-}
+  return stringifiedParams.length > 0
+    ? `/api/v1/providers/${providerId}/offerings?${stringifiedParams}`
+    : `/api/v1/providers/${providerId}/offerings`;
+};
 
 /**
  * @summary List Model Offerings
  */
-export const listModelOfferingsApiV1ProvidersProviderIdOfferingsGet = async (providerId: string,
-    params?: ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams, options?: RequestInit): Promise<listModelOfferingsApiV1ProvidersProviderIdOfferingsGetResponse> => {
+export const listModelOfferingsApiV1ProvidersProviderIdOfferingsGet = async (
+  providerId: string,
+  params?: ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams,
+  options?: RequestInit,
+): Promise<listModelOfferingsApiV1ProvidersProviderIdOfferingsGetResponse> => {
+  return apiMutator<listModelOfferingsApiV1ProvidersProviderIdOfferingsGetResponse>(
+    getListModelOfferingsApiV1ProvidersProviderIdOfferingsGetUrl(providerId, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
 
-  return apiMutator<listModelOfferingsApiV1ProvidersProviderIdOfferingsGetResponse>(getListModelOfferingsApiV1ProvidersProviderIdOfferingsGetUrl(providerId,params),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-);}
-
-
-
-
-
-export const getListModelOfferingsApiV1ProvidersProviderIdOfferingsGetQueryKey = (providerId: string,
-    params?: ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams,) => {
-    return [
-    `/api/v1/providers/${providerId}/offerings`, ...(params ? [params] : [])
-    ] as const;
-    }
-
-
-export const getListModelOfferingsApiV1ProvidersProviderIdOfferingsGetQueryOptions = <TData = Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>, TError = HTTPValidationError>(providerId: string,
-    params?: ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>, TError, TData>>, }
+export const getListModelOfferingsApiV1ProvidersProviderIdOfferingsGetQueryKey = (
+  providerId: string,
+  params?: ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams,
 ) => {
+  return [`/api/v1/providers/${providerId}/offerings`, ...(params ? [params] : [])] as const;
+};
 
-const {query: queryOptions} = options ?? {};
+export const getListModelOfferingsApiV1ProvidersProviderIdOfferingsGetQueryOptions = <
+  TData = Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>,
+  TError = HTTPValidationError,
+>(
+  providerId: string,
+  params?: ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>,
+        TError,
+        TData
+      >
+    >;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListModelOfferingsApiV1ProvidersProviderIdOfferingsGetQueryKey(providerId,params);
+  const queryKey =
+    queryOptions?.queryKey ??
+    getListModelOfferingsApiV1ProvidersProviderIdOfferingsGetQueryKey(providerId, params);
 
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>
+  > = ({ signal }) =>
+    listModelOfferingsApiV1ProvidersProviderIdOfferingsGet(providerId, params, { signal });
 
+  return { queryKey, queryFn, enabled: !!providerId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>> = ({ signal }) => listModelOfferingsApiV1ProvidersProviderIdOfferingsGet(providerId,params, { signal });
+export type ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>
+>;
+export type ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetQueryError = HTTPValidationError;
 
-
-
-
-
-   return  { queryKey, queryFn, enabled: !!(providerId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetQueryResult = NonNullable<Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>>
-export type ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetQueryError = HTTPValidationError
-
-
-export function useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet<TData = Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>, TError = HTTPValidationError>(
- providerId: string,
-    params: undefined |  ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>, TError, TData>> & Pick<
+export function useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet<
+  TData = Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>,
+  TError = HTTPValidationError,
+>(
+  providerId: string,
+  params: undefined | ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>,
           TError,
           Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet<TData = Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>, TError = HTTPValidationError>(
- providerId: string,
-    params?: ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>, TError, TData>> & Pick<
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet<
+  TData = Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>,
+  TError = HTTPValidationError,
+>(
+  providerId: string,
+  params?: ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>,
           TError,
           Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet<TData = Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>, TError = HTTPValidationError>(
- providerId: string,
-    params?: ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet<
+  TData = Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>,
+  TError = HTTPValidationError,
+>(
+  providerId: string,
+  params?: ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>,
+        TError,
+        TData
+      >
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
  * @summary List Model Offerings
  */
 
-export function useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet<TData = Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>, TError = HTTPValidationError>(
- providerId: string,
-    params?: ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+export function useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet<
+  TData = Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>,
+  TError = HTTPValidationError,
+>(
+  providerId: string,
+  params?: ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof listModelOfferingsApiV1ProvidersProviderIdOfferingsGet>>,
+        TError,
+        TData
+      >
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListModelOfferingsApiV1ProvidersProviderIdOfferingsGetQueryOptions(
+    providerId,
+    params,
+    options,
+  );
 
-  const queryOptions = getListModelOfferingsApiV1ProvidersProviderIdOfferingsGetQueryOptions(providerId,params,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
-
-
-
-
-
 export type createModelOfferingApiV1ProvidersProviderIdOfferingsPostResponse201 = {
-  data: ModelOfferingResponse
-  status: 201
-}
+  data: ModelOfferingResponse;
+  status: 201;
+};
 
 export type createModelOfferingApiV1ProvidersProviderIdOfferingsPostResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type createModelOfferingApiV1ProvidersProviderIdOfferingsPostResponseSuccess = (createModelOfferingApiV1ProvidersProviderIdOfferingsPostResponse201) & {
-  headers: Headers;
-};
-export type createModelOfferingApiV1ProvidersProviderIdOfferingsPostResponseError = (createModelOfferingApiV1ProvidersProviderIdOfferingsPostResponse422) & {
-  headers: Headers;
+  data: HTTPValidationError;
+  status: 422;
 };
 
-export type createModelOfferingApiV1ProvidersProviderIdOfferingsPostResponse = (createModelOfferingApiV1ProvidersProviderIdOfferingsPostResponseSuccess | createModelOfferingApiV1ProvidersProviderIdOfferingsPostResponseError)
+export type createModelOfferingApiV1ProvidersProviderIdOfferingsPostResponseSuccess =
+  createModelOfferingApiV1ProvidersProviderIdOfferingsPostResponse201 & {
+    headers: Headers;
+  };
+export type createModelOfferingApiV1ProvidersProviderIdOfferingsPostResponseError =
+  createModelOfferingApiV1ProvidersProviderIdOfferingsPostResponse422 & {
+    headers: Headers;
+  };
 
-export const getCreateModelOfferingApiV1ProvidersProviderIdOfferingsPostUrl = (providerId: string,) => {
+export type createModelOfferingApiV1ProvidersProviderIdOfferingsPostResponse =
+  | createModelOfferingApiV1ProvidersProviderIdOfferingsPostResponseSuccess
+  | createModelOfferingApiV1ProvidersProviderIdOfferingsPostResponseError;
 
-
-
-
-  return `/api/v1/providers/${providerId}/offerings`
-}
+export const getCreateModelOfferingApiV1ProvidersProviderIdOfferingsPostUrl = (
+  providerId: string,
+) => {
+  return `/api/v1/providers/${providerId}/offerings`;
+};
 
 /**
  * @summary Create Model Offering
  */
-export const createModelOfferingApiV1ProvidersProviderIdOfferingsPost = async (providerId: string,
-    createModelOfferingRequest: CreateModelOfferingRequest, options?: RequestInit): Promise<createModelOfferingApiV1ProvidersProviderIdOfferingsPostResponse> => {
+export const createModelOfferingApiV1ProvidersProviderIdOfferingsPost = async (
+  providerId: string,
+  createModelOfferingRequest: CreateModelOfferingRequest,
+  options?: RequestInit,
+): Promise<createModelOfferingApiV1ProvidersProviderIdOfferingsPostResponse> => {
+  return apiMutator<createModelOfferingApiV1ProvidersProviderIdOfferingsPostResponse>(
+    getCreateModelOfferingApiV1ProvidersProviderIdOfferingsPostUrl(providerId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(createModelOfferingRequest),
+    },
+  );
+};
 
-  return apiMutator<createModelOfferingApiV1ProvidersProviderIdOfferingsPostResponse>(getCreateModelOfferingApiV1ProvidersProviderIdOfferingsPostUrl(providerId),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(
-      createModelOfferingRequest,)
-  }
-);}
+export const getCreateModelOfferingApiV1ProvidersProviderIdOfferingsPostMutationOptions = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createModelOfferingApiV1ProvidersProviderIdOfferingsPost>>,
+    TError,
+    { providerId: string; data: CreateModelOfferingRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createModelOfferingApiV1ProvidersProviderIdOfferingsPost>>,
+  TError,
+  { providerId: string; data: CreateModelOfferingRequest },
+  TContext
+> => {
+  const mutationKey = ["createModelOfferingApiV1ProvidersProviderIdOfferingsPost"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
 
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createModelOfferingApiV1ProvidersProviderIdOfferingsPost>>,
+    { providerId: string; data: CreateModelOfferingRequest }
+  > = (props) => {
+    const { providerId, data } = props ?? {};
 
+    return createModelOfferingApiV1ProvidersProviderIdOfferingsPost(providerId, data);
+  };
 
+  return { mutationFn, ...mutationOptions };
+};
 
-export const getCreateModelOfferingApiV1ProvidersProviderIdOfferingsPostMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createModelOfferingApiV1ProvidersProviderIdOfferingsPost>>, TError,{providerId: string;data: CreateModelOfferingRequest}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof createModelOfferingApiV1ProvidersProviderIdOfferingsPost>>, TError,{providerId: string;data: CreateModelOfferingRequest}, TContext> => {
+export type CreateModelOfferingApiV1ProvidersProviderIdOfferingsPostMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createModelOfferingApiV1ProvidersProviderIdOfferingsPost>>
+>;
+export type CreateModelOfferingApiV1ProvidersProviderIdOfferingsPostMutationBody =
+  CreateModelOfferingRequest;
+export type CreateModelOfferingApiV1ProvidersProviderIdOfferingsPostMutationError =
+  HTTPValidationError;
 
-const mutationKey = ['createModelOfferingApiV1ProvidersProviderIdOfferingsPost'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createModelOfferingApiV1ProvidersProviderIdOfferingsPost>>, {providerId: string;data: CreateModelOfferingRequest}> = (props) => {
-          const {providerId,data} = props ?? {};
-
-          return  createModelOfferingApiV1ProvidersProviderIdOfferingsPost(providerId,data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type CreateModelOfferingApiV1ProvidersProviderIdOfferingsPostMutationResult = NonNullable<Awaited<ReturnType<typeof createModelOfferingApiV1ProvidersProviderIdOfferingsPost>>>
-    export type CreateModelOfferingApiV1ProvidersProviderIdOfferingsPostMutationBody = CreateModelOfferingRequest
-    export type CreateModelOfferingApiV1ProvidersProviderIdOfferingsPostMutationError = HTTPValidationError
-
-    /**
+/**
  * @summary Create Model Offering
  */
-export const useCreateModelOfferingApiV1ProvidersProviderIdOfferingsPost = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createModelOfferingApiV1ProvidersProviderIdOfferingsPost>>, TError,{providerId: string;data: CreateModelOfferingRequest}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof createModelOfferingApiV1ProvidersProviderIdOfferingsPost>>,
-        TError,
-        {providerId: string;data: CreateModelOfferingRequest},
-        TContext
-      > => {
-      return useMutation(getCreateModelOfferingApiV1ProvidersProviderIdOfferingsPostMutationOptions(options), queryClient);
-    }
-    export type updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchResponse200 = {
-  data: ModelOfferingResponse
-  status: 200
-}
+export const useCreateModelOfferingApiV1ProvidersProviderIdOfferingsPost = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createModelOfferingApiV1ProvidersProviderIdOfferingsPost>>,
+      TError,
+      { providerId: string; data: CreateModelOfferingRequest },
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof createModelOfferingApiV1ProvidersProviderIdOfferingsPost>>,
+  TError,
+  { providerId: string; data: CreateModelOfferingRequest },
+  TContext
+> => {
+  return useMutation(
+    getCreateModelOfferingApiV1ProvidersProviderIdOfferingsPostMutationOptions(options),
+    queryClient,
+  );
+};
+export type updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchResponse200 = {
+  data: ModelOfferingResponse;
+  status: 200;
+};
 
 export type updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchResponseSuccess = (updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchResponse200) & {
-  headers: Headers;
-};
-export type updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchResponseError = (updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchResponse422) & {
-  headers: Headers;
+  data: HTTPValidationError;
+  status: 422;
 };
 
-export type updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchResponse = (updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchResponseSuccess | updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchResponseError)
+export type updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchResponseSuccess =
+  updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchResponse200 & {
+    headers: Headers;
+  };
+export type updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchResponseError =
+  updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchResponse422 & {
+    headers: Headers;
+  };
 
-export const getUpdateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchUrl = (providerId: string,
-    modelOfferingId: string,) => {
+export type updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchResponse =
+  | updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchResponseSuccess
+  | updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchResponseError;
 
-
-
-
-  return `/api/v1/providers/${providerId}/offerings/${modelOfferingId}`
-}
+export const getUpdateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchUrl = (
+  providerId: string,
+  modelOfferingId: string,
+) => {
+  return `/api/v1/providers/${providerId}/offerings/${modelOfferingId}`;
+};
 
 /**
  * @summary Update Model Offering
  */
-export const updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatch = async (providerId: string,
-    modelOfferingId: string,
-    updateModelOfferingRequest: UpdateModelOfferingRequest, options?: RequestInit): Promise<updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchResponse> => {
+export const updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatch = async (
+  providerId: string,
+  modelOfferingId: string,
+  updateModelOfferingRequest: UpdateModelOfferingRequest,
+  options?: RequestInit,
+): Promise<updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchResponse> => {
+  return apiMutator<updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchResponse>(
+    getUpdateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchUrl(
+      providerId,
+      modelOfferingId,
+    ),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updateModelOfferingRequest),
+    },
+  );
+};
 
-  return apiMutator<updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchResponse>(getUpdateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchUrl(providerId,modelOfferingId),
-  {
-    ...options,
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(
-      updateModelOfferingRequest,)
-  }
-);}
+export const getUpdateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchMutationOptions =
+  <TError = HTTPValidationError, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<typeof updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatch>
+      >,
+      TError,
+      { providerId: string; modelOfferingId: string; data: UpdateModelOfferingRequest },
+      TContext
+    >;
+  }): UseMutationOptions<
+    Awaited<
+      ReturnType<typeof updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatch>
+    >,
+    TError,
+    { providerId: string; modelOfferingId: string; data: UpdateModelOfferingRequest },
+    TContext
+  > => {
+    const mutationKey = [
+      "updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatch",
+    ];
+    const { mutation: mutationOptions } = options
+      ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+        ? options
+        : { ...options, mutation: { ...options.mutation, mutationKey } }
+      : { mutation: { mutationKey } };
 
+    const mutationFn: MutationFunction<
+      Awaited<
+        ReturnType<typeof updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatch>
+      >,
+      { providerId: string; modelOfferingId: string; data: UpdateModelOfferingRequest }
+    > = (props) => {
+      const { providerId, modelOfferingId, data } = props ?? {};
 
+      return updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatch(
+        providerId,
+        modelOfferingId,
+        data,
+      );
+    };
 
+    return { mutationFn, ...mutationOptions };
+  };
 
-export const getUpdateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatch>>, TError,{providerId: string;modelOfferingId: string;data: UpdateModelOfferingRequest}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatch>>, TError,{providerId: string;modelOfferingId: string;data: UpdateModelOfferingRequest}, TContext> => {
+export type UpdateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchMutationResult =
+  NonNullable<
+    Awaited<
+      ReturnType<typeof updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatch>
+    >
+  >;
+export type UpdateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchMutationBody =
+  UpdateModelOfferingRequest;
+export type UpdateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchMutationError =
+  HTTPValidationError;
 
-const mutationKey = ['updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatch'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatch>>, {providerId: string;modelOfferingId: string;data: UpdateModelOfferingRequest}> = (props) => {
-          const {providerId,modelOfferingId,data} = props ?? {};
-
-          return  updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatch(providerId,modelOfferingId,data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type UpdateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchMutationResult = NonNullable<Awaited<ReturnType<typeof updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatch>>>
-    export type UpdateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchMutationBody = UpdateModelOfferingRequest
-    export type UpdateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchMutationError = HTTPValidationError
-
-    /**
+/**
  * @summary Update Model Offering
  */
-export const useUpdateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatch = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatch>>, TError,{providerId: string;modelOfferingId: string;data: UpdateModelOfferingRequest}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatch>>,
-        TError,
-        {providerId: string;modelOfferingId: string;data: UpdateModelOfferingRequest},
-        TContext
-      > => {
-      return useMutation(getUpdateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchMutationOptions(options), queryClient);
-    }
-    export type deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteResponse204 = {
-  data: void
-  status: 204
-}
-
-export type deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteResponseSuccess = (deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteResponse204) & {
-  headers: Headers;
+export const useUpdateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatch = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<typeof updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatch>
+      >,
+      TError,
+      { providerId: string; modelOfferingId: string; data: UpdateModelOfferingRequest },
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<
+    ReturnType<typeof updateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatch>
+  >,
+  TError,
+  { providerId: string; modelOfferingId: string; data: UpdateModelOfferingRequest },
+  TContext
+> => {
+  return useMutation(
+    getUpdateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatchMutationOptions(
+      options,
+    ),
+    queryClient,
+  );
 };
-export type deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteResponseError = (deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteResponse422) & {
-  headers: Headers;
+export type deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteResponse204 =
+  {
+    data: void;
+    status: 204;
+  };
+
+export type deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteResponse422 =
+  {
+    data: HTTPValidationError;
+    status: 422;
+  };
+
+export type deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteResponseSuccess =
+  deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteResponse204 & {
+    headers: Headers;
+  };
+export type deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteResponseError =
+  deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteResponse422 & {
+    headers: Headers;
+  };
+
+export type deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteResponse =
+  | deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteResponseSuccess
+  | deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteResponseError;
+
+export const getDeactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteUrl = (
+  providerId: string,
+  modelOfferingId: string,
+) => {
+  return `/api/v1/providers/${providerId}/offerings/${modelOfferingId}`;
 };
-
-export type deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteResponse = (deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteResponseSuccess | deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteResponseError)
-
-export const getDeactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteUrl = (providerId: string,
-    modelOfferingId: string,) => {
-
-
-
-
-  return `/api/v1/providers/${providerId}/offerings/${modelOfferingId}`
-}
 
 /**
  * @summary Deactivate Model Offering
  */
-export const deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDelete = async (providerId: string,
-    modelOfferingId: string, options?: RequestInit): Promise<deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteResponse> => {
+export const deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDelete = async (
+  providerId: string,
+  modelOfferingId: string,
+  options?: RequestInit,
+): Promise<deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteResponse> => {
+  return apiMutator<deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteResponse>(
+    getDeactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteUrl(
+      providerId,
+      modelOfferingId,
+    ),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
 
-  return apiMutator<deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteResponse>(getDeactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteUrl(providerId,modelOfferingId),
-  {
-    ...options,
-    method: 'DELETE'
+export const getDeactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteMutationOptions =
+  <TError = HTTPValidationError, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<
+          typeof deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDelete
+        >
+      >,
+      TError,
+      { providerId: string; modelOfferingId: string },
+      TContext
+    >;
+  }): UseMutationOptions<
+    Awaited<
+      ReturnType<
+        typeof deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDelete
+      >
+    >,
+    TError,
+    { providerId: string; modelOfferingId: string },
+    TContext
+  > => {
+    const mutationKey = [
+      "deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDelete",
+    ];
+    const { mutation: mutationOptions } = options
+      ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+        ? options
+        : { ...options, mutation: { ...options.mutation, mutationKey } }
+      : { mutation: { mutationKey } };
 
+    const mutationFn: MutationFunction<
+      Awaited<
+        ReturnType<
+          typeof deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDelete
+        >
+      >,
+      { providerId: string; modelOfferingId: string }
+    > = (props) => {
+      const { providerId, modelOfferingId } = props ?? {};
 
-  }
-);}
+      return deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDelete(
+        providerId,
+        modelOfferingId,
+      );
+    };
 
+    return { mutationFn, ...mutationOptions };
+  };
 
+export type DeactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteMutationResult =
+  NonNullable<
+    Awaited<
+      ReturnType<
+        typeof deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDelete
+      >
+    >
+  >;
 
+export type DeactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteMutationError =
+  HTTPValidationError;
 
-export const getDeactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDelete>>, TError,{providerId: string;modelOfferingId: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDelete>>, TError,{providerId: string;modelOfferingId: string}, TContext> => {
-
-const mutationKey = ['deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDelete'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDelete>>, {providerId: string;modelOfferingId: string}> = (props) => {
-          const {providerId,modelOfferingId} = props ?? {};
-
-          return  deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDelete(providerId,modelOfferingId,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type DeactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDelete>>>
-
-    export type DeactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteMutationError = HTTPValidationError
-
-    /**
+/**
  * @summary Deactivate Model Offering
  */
-export const useDeactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDelete = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDelete>>, TError,{providerId: string;modelOfferingId: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDelete>>,
-        TError,
-        {providerId: string;modelOfferingId: string},
-        TContext
-      > => {
-      return useMutation(getDeactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteMutationOptions(options), queryClient);
-    }
-    export type testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostResponse200 = {
-  data: TestModelOfferingResponse
-  status: 200
-}
+export const useDeactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDelete = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<
+          typeof deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDelete
+        >
+      >,
+      TError,
+      { providerId: string; modelOfferingId: string },
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<
+    ReturnType<typeof deactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDelete>
+  >,
+  TError,
+  { providerId: string; modelOfferingId: string },
+  TContext
+> => {
+  return useMutation(
+    getDeactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDeleteMutationOptions(
+      options,
+    ),
+    queryClient,
+  );
+};
+export type testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostResponse200 = {
+  data: TestModelOfferingResponse;
+  status: 200;
+};
 
 export type testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostResponseSuccess = (testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostResponse200) & {
-  headers: Headers;
-};
-export type testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostResponseError = (testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostResponse422) & {
-  headers: Headers;
+  data: HTTPValidationError;
+  status: 422;
 };
 
-export type testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostResponse = (testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostResponseSuccess | testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostResponseError)
+export type testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostResponseSuccess =
+  testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostResponse200 & {
+    headers: Headers;
+  };
+export type testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostResponseError =
+  testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostResponse422 & {
+    headers: Headers;
+  };
 
-export const getTestModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostUrl = (providerId: string,
-    modelOfferingId: string,) => {
+export type testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostResponse =
+  | testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostResponseSuccess
+  | testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostResponseError;
 
-
-
-
-  return `/api/v1/providers/${providerId}/offerings/${modelOfferingId}/test`
-}
+export const getTestModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostUrl = (
+  providerId: string,
+  modelOfferingId: string,
+) => {
+  return `/api/v1/providers/${providerId}/offerings/${modelOfferingId}/test`;
+};
 
 /**
  * @summary Test Model Offering
  */
-export const testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPost = async (providerId: string,
-    modelOfferingId: string,
-    testModelOfferingRequestNull?: TestModelOfferingRequest | null, options?: RequestInit): Promise<testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostResponse> => {
+export const testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPost = async (
+  providerId: string,
+  modelOfferingId: string,
+  testModelOfferingRequestNull?: TestModelOfferingRequest | null,
+  options?: RequestInit,
+): Promise<testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostResponse> => {
+  return apiMutator<testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostResponse>(
+    getTestModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostUrl(
+      providerId,
+      modelOfferingId,
+    ),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(testModelOfferingRequestNull),
+    },
+  );
+};
 
-  return apiMutator<testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostResponse>(getTestModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostUrl(providerId,modelOfferingId),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(
-      testModelOfferingRequestNull,)
-  }
-);}
+export const getTestModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostMutationOptions =
+  <TError = HTTPValidationError, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<typeof testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPost>
+      >,
+      TError,
+      { providerId: string; modelOfferingId: string; data?: TestModelOfferingRequest | null },
+      TContext
+    >;
+  }): UseMutationOptions<
+    Awaited<
+      ReturnType<typeof testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPost>
+    >,
+    TError,
+    { providerId: string; modelOfferingId: string; data?: TestModelOfferingRequest | null },
+    TContext
+  > => {
+    const mutationKey = [
+      "testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPost",
+    ];
+    const { mutation: mutationOptions } = options
+      ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+        ? options
+        : { ...options, mutation: { ...options.mutation, mutationKey } }
+      : { mutation: { mutationKey } };
 
+    const mutationFn: MutationFunction<
+      Awaited<
+        ReturnType<typeof testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPost>
+      >,
+      { providerId: string; modelOfferingId: string; data?: TestModelOfferingRequest | null }
+    > = (props) => {
+      const { providerId, modelOfferingId, data } = props ?? {};
 
+      return testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPost(
+        providerId,
+        modelOfferingId,
+        data,
+      );
+    };
 
+    return { mutationFn, ...mutationOptions };
+  };
 
-export const getTestModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPost>>, TError,{providerId: string;modelOfferingId: string;data?: TestModelOfferingRequest | null}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPost>>, TError,{providerId: string;modelOfferingId: string;data?: TestModelOfferingRequest | null}, TContext> => {
+export type TestModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostMutationResult =
+  NonNullable<
+    Awaited<
+      ReturnType<typeof testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPost>
+    >
+  >;
+export type TestModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostMutationBody =
+  | TestModelOfferingRequest
+  | null
+  | undefined;
+export type TestModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostMutationError =
+  HTTPValidationError;
 
-const mutationKey = ['testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPost'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPost>>, {providerId: string;modelOfferingId: string;data?: TestModelOfferingRequest | null}> = (props) => {
-          const {providerId,modelOfferingId,data} = props ?? {};
-
-          return  testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPost(providerId,modelOfferingId,data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type TestModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostMutationResult = NonNullable<Awaited<ReturnType<typeof testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPost>>>
-    export type TestModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostMutationBody = TestModelOfferingRequest | null | undefined
-    export type TestModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostMutationError = HTTPValidationError
-
-    /**
+/**
  * @summary Test Model Offering
  */
-export const useTestModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPost = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPost>>, TError,{providerId: string;modelOfferingId: string;data?: TestModelOfferingRequest | null}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPost>>,
-        TError,
-        {providerId: string;modelOfferingId: string;data?: TestModelOfferingRequest | null},
-        TContext
-      > => {
-      return useMutation(getTestModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostMutationOptions(options), queryClient);
-    }
-    export type syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostResponse200 = {
-  data: ModelOfferingResponse[]
-  status: 200
-}
+export const useTestModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPost = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<typeof testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPost>
+      >,
+      TError,
+      { providerId: string; modelOfferingId: string; data?: TestModelOfferingRequest | null },
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<
+    ReturnType<typeof testModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPost>
+  >,
+  TError,
+  { providerId: string; modelOfferingId: string; data?: TestModelOfferingRequest | null },
+  TContext
+> => {
+  return useMutation(
+    getTestModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostMutationOptions(
+      options,
+    ),
+    queryClient,
+  );
+};
+export type syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostResponse200 = {
+  data: ModelOfferingResponse[];
+  status: 200;
+};
 
 export type syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostResponseSuccess = (syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostResponse200) & {
-  headers: Headers;
-};
-export type syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostResponseError = (syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostResponse422) & {
-  headers: Headers;
+  data: HTTPValidationError;
+  status: 422;
 };
 
-export type syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostResponse = (syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostResponseSuccess | syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostResponseError)
+export type syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostResponseSuccess =
+  syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostResponse200 & {
+    headers: Headers;
+  };
+export type syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostResponseError =
+  syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostResponse422 & {
+    headers: Headers;
+  };
 
-export const getSyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostUrl = (providerId: string,) => {
+export type syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostResponse =
+  | syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostResponseSuccess
+  | syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostResponseError;
 
-
-
-
-  return `/api/v1/providers/${providerId}/offerings/sync`
-}
+export const getSyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostUrl = (
+  providerId: string,
+) => {
+  return `/api/v1/providers/${providerId}/offerings/sync`;
+};
 
 /**
  * @summary Sync Model Offerings
  */
-export const syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost = async (providerId: string,
-    syncModelOfferingsRequestNull?: SyncModelOfferingsRequest | null, options?: RequestInit): Promise<syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostResponse> => {
+export const syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost = async (
+  providerId: string,
+  syncModelOfferingsRequestNull?: SyncModelOfferingsRequest | null,
+  options?: RequestInit,
+): Promise<syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostResponse> => {
+  return apiMutator<syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostResponse>(
+    getSyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostUrl(providerId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(syncModelOfferingsRequestNull),
+    },
+  );
+};
 
-  return apiMutator<syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostResponse>(getSyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostUrl(providerId),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(
-      syncModelOfferingsRequestNull,)
-  }
-);}
+export const getSyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostMutationOptions = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost>>,
+    TError,
+    { providerId: string; data?: SyncModelOfferingsRequest | null },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost>>,
+  TError,
+  { providerId: string; data?: SyncModelOfferingsRequest | null },
+  TContext
+> => {
+  const mutationKey = ["syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
 
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost>>,
+    { providerId: string; data?: SyncModelOfferingsRequest | null }
+  > = (props) => {
+    const { providerId, data } = props ?? {};
 
+    return syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost(providerId, data);
+  };
 
+  return { mutationFn, ...mutationOptions };
+};
 
-export const getSyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost>>, TError,{providerId: string;data?: SyncModelOfferingsRequest | null}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost>>, TError,{providerId: string;data?: SyncModelOfferingsRequest | null}, TContext> => {
+export type SyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostMutationResult = NonNullable<
+  Awaited<ReturnType<typeof syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost>>
+>;
+export type SyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostMutationBody =
+  | SyncModelOfferingsRequest
+  | null
+  | undefined;
+export type SyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostMutationError =
+  HTTPValidationError;
 
-const mutationKey = ['syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost>>, {providerId: string;data?: SyncModelOfferingsRequest | null}> = (props) => {
-          const {providerId,data} = props ?? {};
-
-          return  syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost(providerId,data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type SyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostMutationResult = NonNullable<Awaited<ReturnType<typeof syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost>>>
-    export type SyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostMutationBody = SyncModelOfferingsRequest | null | undefined
-    export type SyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostMutationError = HTTPValidationError
-
-    /**
+/**
  * @summary Sync Model Offerings
  */
-export const useSyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost>>, TError,{providerId: string;data?: SyncModelOfferingsRequest | null}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost>>,
-        TError,
-        {providerId: string;data?: SyncModelOfferingsRequest | null},
-        TContext
-      > => {
-      return useMutation(getSyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostMutationOptions(options), queryClient);
-    }
+export const useSyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost>>,
+      TError,
+      { providerId: string; data?: SyncModelOfferingsRequest | null },
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost>>,
+  TError,
+  { providerId: string; data?: SyncModelOfferingsRequest | null },
+  TContext
+> => {
+  return useMutation(
+    getSyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostMutationOptions(options),
+    queryClient,
+  );
+};

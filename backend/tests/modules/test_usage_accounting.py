@@ -1,4 +1,4 @@
-from app.modules.request_logs.usage import unknown_usage, usage_from_provider_response
+from app.modules.usage.accounting import unknown_usage, usage_from_provider_response
 
 
 def test_usage_from_provider_response_uses_reported_usage() -> None:
