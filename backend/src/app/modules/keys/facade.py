@@ -6,6 +6,7 @@ from app.core.database import Scope
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys.internal import service
 from app.modules.keys.schemas import (
+    AccessibleModel,
     AllocationResponse,
     CreateAllocationRequest,
     CreatedVirtualKeyResponse,
@@ -40,6 +41,10 @@ async def create_project(
 
 async def list_projects(*, scope: Scope, db: AsyncSession) -> list[ProjectResponse]:
     return await service.list_projects(scope=scope, db=db)
+
+
+async def get_project(*, project_id: UUID, scope: Scope, db: AsyncSession) -> ProjectResponse:
+    return await service.get_project(project_id=project_id, scope=scope, db=db)
 
 
 async def list_team_projects(
@@ -201,3 +206,7 @@ async def revoke_virtual_key(
 
 async def resolve_access(*, payload: ResolveAccessRequest, db: AsyncSession) -> ResolvedAccess:
     return await service.resolve_access(payload=payload, db=db)
+
+
+async def list_accessible_models(*, raw_key: str, db: AsyncSession) -> list[AccessibleModel]:
+    return await service.list_accessible_models(raw_key=raw_key, db=db)

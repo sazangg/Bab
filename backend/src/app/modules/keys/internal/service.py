@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import structlog
@@ -18,6 +18,7 @@ from app.modules.keys.errors import (
 from app.modules.keys.internal import repository
 from app.modules.keys.internal.models import Allocation, Project, VirtualKey
 from app.modules.keys.schemas import (
+    AccessibleModel,
     AllocationOffering,
     AllocationResponse,
     CreateAllocationRequest,
@@ -35,6 +36,7 @@ from app.modules.keys.schemas import (
 )
 from app.modules.providers import facade as providers_facade
 from app.modules.providers.errors import ProviderNotFoundError
+from app.modules.settings import facade as settings_facade
 from app.modules.teams import facade as teams_facade
 
 logger = structlog.get_logger(__name__)
@@ -74,6 +76,11 @@ async def create_project(
 async def list_projects(*, scope: Scope, db: AsyncSession) -> list[ProjectResponse]:
     projects = await repository.list_projects(org_id=scope.org_id, db=db)
     return [_to_project_response(project) for project in projects]
+
+
+async def get_project(*, project_id: UUID, scope: Scope, db: AsyncSession) -> ProjectResponse:
+    project = await _get_project_or_raise(project_id=project_id, scope=scope, db=db)
+    return _to_project_response(project)
 
 
 async def list_team_projects(
@@ -324,6 +331,7 @@ async def create_virtual_key(
     scope: Scope,
     db: AsyncSession,
 ) -> CreatedVirtualKeyResponse:
+    org_settings = await settings_facade.get_organization_settings(scope=scope, db=db)
     async with transaction(db):
         project = await _get_project_or_raise(project_id=project_id, scope=scope, db=db)
         if payload.allocation_id is not None:
@@ -338,7 +346,12 @@ async def create_virtual_key(
             allocation = await _resolve_effective_allocation(project=project, scope=scope, db=db)
             if allocation is None:
                 raise AllocationNotFoundError
-        raw_key = generate_virtual_key()
+        raw_key = generate_virtual_key(prefix=org_settings.virtual_key_prefix)
+        expires_at = payload.expires_at
+        if expires_at is None and org_settings.default_virtual_key_expiration_days is not None:
+            expires_at = datetime.now(UTC) + timedelta(
+                days=org_settings.default_virtual_key_expiration_days
+            )
         virtual_key = await repository.create_virtual_key(
             org_id=scope.org_id,
             project_id=project.id,
@@ -348,7 +361,7 @@ async def create_virtual_key(
             key_hash=hash_token(raw_key),
             key_prefix=_key_prefix(raw_key),
             allowed_models=payload.allowed_models,
-            expires_at=payload.expires_at,
+            expires_at=expires_at,
             db=db,
         )
         await activity_facade.record_admin_event(
@@ -371,7 +384,7 @@ async def create_virtual_key(
     )
     return CreatedVirtualKeyResponse(
         **_to_virtual_key_response(virtual_key).model_dump(),
-        key=raw_key,
+        key=raw_key if org_settings.allow_secret_copy else None,
     )
 
 
@@ -590,6 +603,71 @@ async def resolve_access(*, payload: ResolveAccessRequest, db: AsyncSession) -> 
         input_price_per_million_tokens=input_price,
         output_price_per_million_tokens=output_price,
     )
+
+
+async def list_accessible_models(*, raw_key: str, db: AsyncSession) -> list[AccessibleModel]:
+    virtual_key = await repository.get_virtual_key_by_hash(key_hash=hash_token(raw_key), db=db)
+    if virtual_key is None:
+        raise InvalidVirtualKeyError
+    if virtual_key.revoked_at is not None:
+        raise InvalidVirtualKeyError
+    if virtual_key.expires_at is not None and _as_utc(virtual_key.expires_at) <= datetime.now(UTC):
+        raise InvalidVirtualKeyError
+
+    project = await repository.get_project(
+        project_id=virtual_key.project_id,
+        org_id=virtual_key.org_id,
+        db=db,
+    )
+    if project is None or not project.is_active:
+        raise InvalidVirtualKeyError
+    allocation = await repository.get_allocation(
+        allocation_id=virtual_key.custom_allocation_id or virtual_key.allocation_id,
+        org_id=virtual_key.org_id,
+        db=db,
+    )
+    if allocation is None or not allocation.is_active:
+        raise AccessDeniedError
+
+    models: list[AccessibleModel] = []
+    seen: set[str] = set()
+    for offering in allocation.offerings:
+        pool_id = UUID(str(offering["pool_id"]))
+        model_offering_id = UUID(str(offering["model_offering_id"]))
+        try:
+            pool = await providers_facade.get_credential_pool(
+                pool_id=pool_id,
+                scope=Scope(org_id=virtual_key.org_id),
+                db=db,
+            )
+            model = await providers_facade.get_model_offering(
+                model_offering_id=model_offering_id,
+                scope=Scope(org_id=virtual_key.org_id),
+                db=db,
+            )
+        except ProviderNotFoundError:
+            continue
+        if not pool.is_active or not model.is_active or pool.provider_id != model.provider_id:
+            continue
+        if (
+            virtual_key.allowed_models is not None
+            and model.provider_model_name not in virtual_key.allowed_models
+        ):
+            continue
+        if model.provider_model_name in seen:
+            continue
+        seen.add(model.provider_model_name)
+        models.append(
+            AccessibleModel(
+                id=model.provider_model_name,
+                owned_by=model.provider_id.hex,
+                provider_id=model.provider_id,
+                allocation_id=allocation.id,
+                pool_id=pool.id,
+                alias=model.alias,
+            )
+        )
+    return models
 
 
 async def _match_offering(

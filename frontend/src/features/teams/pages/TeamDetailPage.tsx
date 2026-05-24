@@ -296,7 +296,7 @@ export function TeamDetailPage() {
                 </SheetHeader>
                 <form
                   id="create-project-form"
-                  className="grid gap-4 px-4"
+                  className="grid gap-4 overflow-y-auto px-6 py-5"
                   onSubmit={projectForm.handleSubmit((values) =>
                     createProject.mutate({
                       teamId,
@@ -386,13 +386,17 @@ export function TeamDetailPage() {
         </CardContent>
       </Card>
 
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit team</DialogTitle>
-            <DialogDescription>Rename or update this team.</DialogDescription>
-          </DialogHeader>
-          <form id="edit-team-form" className="grid gap-4" onSubmit={submitEdit}>
+      <Sheet open={editOpen} onOpenChange={setEditOpen}>
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>Edit team</SheetTitle>
+            <SheetDescription>Rename or update this team.</SheetDescription>
+          </SheetHeader>
+          <form
+            id="edit-team-form"
+            className="grid gap-4 overflow-y-auto px-6 py-5"
+            onSubmit={submitEdit}
+          >
             <div className="space-y-1.5">
               <Label htmlFor="edit-team-name">Name</Label>
               <Input id="edit-team-name" autoFocus {...editTeamForm.register("name")} />
@@ -432,16 +436,16 @@ export function TeamDetailPage() {
               ) : null}
             </div>
           </form>
-          <DialogFooter>
+          <SheetFooter>
             <Button type="submit" form="edit-team-form" disabled={updateTeam.isPending}>
               {updateTeam.isPending ? "Saving..." : "Save changes"}
             </Button>
-            <DialogClose asChild>
+            <SheetClose asChild>
               <Button variant="outline">Cancel</Button>
-            </DialogClose>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </SheetClose>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
 
       <Dialog open={archiveOpen} onOpenChange={setArchiveOpen}>
         <DialogContent>

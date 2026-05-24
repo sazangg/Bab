@@ -4,6 +4,7 @@ import {
   ChartNoAxesCombined,
   FolderKanban,
   Gauge,
+  KeyRound,
   LogOut,
   Moon,
   Palette,
@@ -53,6 +54,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuthStore } from "@/features/auth/model/auth-store";
 import { useBreadcrumbs } from "@/app/shell/breadcrumbs";
+import { useGetSettingsApiV1SettingsGet } from "@/shared/api/generated/settings/settings";
 
 const organizationNav = [
   { to: "/", label: "Home", icon: Gauge, end: true },
@@ -66,15 +68,18 @@ const workspaceNav = [
   { to: "/teams", label: "Teams", icon: Building2 },
   { to: "/projects", label: "Projects", icon: FolderKanban },
   { to: "/allocations", label: "Allocations", icon: Route },
+  { to: "/virtual-keys", label: "Virtual keys", icon: KeyRound },
   { to: "/guardrails", label: "Guardrails", icon: ShieldCheck },
 ];
 
 const internalNav = [{ to: "/design-system", label: "Design system", icon: Palette }];
-const organizationName = import.meta.env.VITE_BAB_ORGANIZATION_NAME ?? "Default organization";
+const fallbackOrganizationName =
+  import.meta.env.VITE_BAB_ORGANIZATION_NAME ?? "Default organization";
 
-function LogoSidebarTrigger() {
+function LogoSidebarTrigger({ logoUrl }: { logoUrl?: string | null }) {
   const { toggleSidebar, state } = useSidebar();
   const collapsed = state === "collapsed";
+  const resolvedLogoUrl = logoUrl ? resolveAssetUrl(logoUrl) : null;
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -86,12 +91,20 @@ function LogoSidebarTrigger() {
           aria-controls="primary-sidebar"
           className="group/logo -mx-2 flex size-11 cursor-pointer items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
         >
-          <span
-            aria-hidden="true"
-            className="flex size-7 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground transition-[opacity,transform] duration-150 group-hover/logo:opacity-90 group-active/logo:scale-95"
-          >
-            B
-          </span>
+          {resolvedLogoUrl ? (
+            <img
+              src={resolvedLogoUrl}
+              alt=""
+              className="size-7 rounded-full object-cover transition-[opacity,transform] duration-150 group-hover/logo:opacity-90 group-active/logo:scale-95"
+            />
+          ) : (
+            <span
+              aria-hidden="true"
+              className="flex size-7 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground transition-[opacity,transform] duration-150 group-hover/logo:opacity-90 group-active/logo:scale-95"
+            >
+              B
+            </span>
+          )}
         </button>
       </TooltipTrigger>
       <TooltipContent>{collapsed ? "Expand sidebar" : "Collapse sidebar"}</TooltipContent>
@@ -102,6 +115,9 @@ function LogoSidebarTrigger() {
 export function DashboardLayout() {
   const location = useLocation();
   const { resolvedTheme, setTheme } = useTheme();
+  const settingsQuery = useGetSettingsApiV1SettingsGet();
+  const settings = settingsQuery.data?.status === 200 ? settingsQuery.data.data : undefined;
+  const organizationName = settings?.organization_name ?? fallbackOrganizationName;
   const clearSession = useAuthStore((state) => state.clearSession);
   const logoutMutation = useLogoutApiV1AuthLogoutPost({
     mutation: {
@@ -126,7 +142,7 @@ export function DashboardLayout() {
       </a>
       <header className="fixed inset-x-0 top-0 z-30 flex h-12 items-center border-b bg-sidebar px-4">
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <LogoSidebarTrigger />
+          <LogoSidebarTrigger logoUrl={settings?.organization_logo_url} />
           <span className="font-semibold">Bab</span>
           <span className="hidden max-w-48 truncate text-sm text-muted-foreground sm:inline">
             {organizationName}
@@ -158,8 +174,8 @@ export function DashboardLayout() {
           <Button asChild variant="ghost" size="sm">
             <Link to="/">Dashboard</Link>
           </Button>
-          <Button variant="ghost" size="sm" disabled>
-            API Docs
+          <Button asChild variant="ghost" size="sm">
+            <Link to="/api-docs">API Docs</Link>
           </Button>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -288,4 +304,10 @@ export function DashboardLayout() {
       </footer>
     </SidebarProvider>
   );
+}
+
+function resolveAssetUrl(url: string) {
+  if (/^https?:\/\//i.test(url)) return url;
+  const apiBaseUrl = import.meta.env.VITE_BAB_API_URL as string | undefined;
+  return apiBaseUrl ? new URL(url, apiBaseUrl).toString() : url;
 }

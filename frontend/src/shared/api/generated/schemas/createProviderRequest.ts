@@ -21,7 +21,6 @@ export interface CreateProviderRequest {
    * @maxLength 2083
    */
   base_url: string;
-  api_key?: string | null;
   description?: string | null;
   capabilities?: CreateProviderRequestCapabilities;
   /**

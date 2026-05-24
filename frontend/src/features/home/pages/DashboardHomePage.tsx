@@ -44,17 +44,17 @@ const setupSteps = [
 const attentionItems = [
   {
     label: "Allocation usage",
-    description: "Consumption summaries are the next backend/UI slice.",
+    description: "Review budget and limit pressure from allocation cards.",
     icon: WalletCards,
   },
   {
     label: "Activity stream",
-    description: "Structured admin events are planned after usage visibility.",
+    description: "Audit admin changes and runtime gateway events.",
     icon: Activity,
   },
   {
     label: "Guardrails",
-    description: "Safety and data policies will sit beside allocation controls.",
+    description: "Assign model, provider, and pool policies across scopes.",
     icon: ShieldCheck,
   },
 ];
@@ -151,7 +151,7 @@ export function DashboardHomePage() {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-medium">{item.label}</span>
-                    <Badge variant="outline">Next</Badge>
+                    <Badge variant="outline">Live</Badge>
                   </div>
                   <p className="mt-1 text-sm leading-5 text-muted-foreground">{item.description}</p>
                 </div>
@@ -193,7 +193,8 @@ export function DashboardHomePage() {
             <div className="flex items-center gap-2 rounded-lg border bg-amber-500/10 p-3 text-amber-700 dark:text-amber-300">
               <AlertTriangle className="size-4 shrink-0" />
               <span>
-                Placeholder entries mark product direction without claiming feature depth.
+                Navigation entries now point to wired product surfaces. Deeper compatibility and
+                analytics views will continue to expand inside those surfaces.
               </span>
             </div>
           </CardContent>

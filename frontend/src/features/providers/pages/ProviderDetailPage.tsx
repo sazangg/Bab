@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Activity, ChevronsUpDown, Pencil } from "lucide-react";
+import { Activity, CheckCircle2, ChevronsUpDown, Circle, Pencil } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -40,6 +40,7 @@ import {
   useTestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost,
   useUpdateProviderApiV1ProvidersProviderIdPatch,
 } from "@/shared/api/generated/providers/providers";
+import { useGetOrganizationUsageSummaryApiV1UsageSummaryGet } from "@/shared/api/generated/usage/usage";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
@@ -65,6 +66,10 @@ export function ProviderDetailPage() {
     providerId ?? "",
     { query: { enabled: Boolean(providerId) } },
   );
+  const usageQuery = useGetOrganizationUsageSummaryApiV1UsageSummaryGet(
+    { window: "30d" },
+    { query: { enabled: Boolean(providerId) } },
+  );
   const credentials = credentialsQuery.data?.status === 200 ? credentialsQuery.data.data : [];
   const topActiveCredential = [...credentials]
     .filter((credential) => credential.is_active)
@@ -73,6 +78,14 @@ export function ProviderDetailPage() {
   const activeCredentials = credentials.filter((credential) => credential.is_active);
   const healthCounts = countByHealth(activeCredentials);
   const lastSuccess = lastSuccessfulRequestAt(credentials);
+  const usageSummary = usageQuery.data?.status === 200 ? usageQuery.data.data : null;
+  const providerUsage = usageSummary?.by_provider.find((row) => row.id === providerId);
+  const providerRequests = providerUsage?.requests ?? 0;
+  const providerFailedRequests = providerUsage?.failed_requests ?? 0;
+  const providerErrorRate =
+    providerRequests > 0
+      ? `${Math.round((providerFailedRequests / providerRequests) * 1000) / 10}%`
+      : "0%";
 
   const updateProvider = useUpdateProviderApiV1ProvidersProviderIdPatch({
     mutation: {
@@ -280,6 +293,39 @@ export function ProviderDetailPage() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Readiness chain</CardTitle>
+          <CardDescription>
+            A provider is routable only when every step below is ready.
+          </CardDescription>
+          <CardAction>
+            <StatusBadge variant={provider.readiness?.is_ready ? "active" : "expired"}>
+              {provider.readiness?.is_ready ? "Ready" : "Incomplete"}
+            </StatusBadge>
+          </CardAction>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-5">
+          <ReadinessStep
+            label="Provider enabled"
+            ready={Boolean(provider.readiness?.has_active_provider)}
+          />
+          <ReadinessStep
+            label="Active credential"
+            ready={Boolean(provider.readiness?.has_active_credential)}
+          />
+          <ReadinessStep label="Active pool" ready={Boolean(provider.readiness?.has_active_pool)} />
+          <ReadinessStep
+            label="Credential in pool"
+            ready={Boolean(provider.readiness?.has_active_pool_credential)}
+          />
+          <ReadinessStep
+            label="Active models"
+            ready={Boolean(provider.readiness?.has_active_model)}
+          />
+        </CardContent>
+      </Card>
+
       <EditProviderSheet
         provider={isEditOpen ? provider : null}
         onClose={() => setIsEditOpen(false)}
@@ -287,21 +333,28 @@ export function ProviderDetailPage() {
         onSubmit={(data) => updateProvider.mutate({ providerId: provider.id, data })}
       />
 
-      <Card className="border-dashed">
+      <Card>
         <CardHeader>
-          <CardTitle className="text-muted-foreground">Usage metrics</CardTitle>
-          <CardDescription>
-            Provider and model metrics will appear here once usage records are exposed for querying.
-          </CardDescription>
+          <CardTitle>Usage metrics</CardTitle>
+          <CardDescription>Provider usage across the last 30 days.</CardDescription>
           <CardAction>
-            <StatusBadge variant="muted">Coming soon</StatusBadge>
+            <StatusBadge variant={providerRequests > 0 ? "active" : "muted"}>
+              {usageQuery.isPending ? "Loading" : providerRequests > 0 ? "Observed" : "No usage"}
+            </StatusBadge>
           </CardAction>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-4">
-          <Fact label="Requests" value="—" muted />
-          <Fact label="Error rate" value="—" muted />
-          <Fact label="Latency" value="—" muted />
-          <Fact label="Estimated spend" value="—" muted />
+          <Fact label="Requests" value={providerRequests.toLocaleString()} />
+          <Fact label="Error rate" value={providerErrorRate} />
+          <Fact
+            label="Latency"
+            value={
+              providerUsage?.average_latency_ms == null
+                ? "-"
+                : `${providerUsage.average_latency_ms}ms`
+            }
+          />
+          <Fact label="Estimated spend" value={formatCents(providerUsage?.cost_cents ?? 0)} />
         </CardContent>
       </Card>
 
@@ -345,6 +398,18 @@ function Fact({ label, value, muted }: { label: string; value: string; muted?: b
   );
 }
 
+function ReadinessStep({ label, ready }: { label: string; ready: boolean }) {
+  const Icon = ready ? CheckCircle2 : Circle;
+  return (
+    <div className="flex items-center gap-2 rounded-md border bg-muted/20 p-3">
+      <Icon
+        className={cn("size-4 shrink-0", ready ? "text-emerald-600" : "text-muted-foreground")}
+      />
+      <span className={cn("text-sm font-medium", !ready && "text-muted-foreground")}>{label}</span>
+    </div>
+  );
+}
+
 type HealthVariant = "active" | "inactive" | "error" | "muted";
 
 const healthLabels: Record<string, { label: string; variant: HealthVariant }> = {
@@ -379,4 +444,8 @@ function lastSuccessfulRequestAt(
     if (!latest || parsed > latest) latest = parsed;
   }
   return latest;
+}
+
+function formatCents(value: number) {
+  return `$${(value / 100).toLocaleString()}`;
 }

@@ -1,4 +1,5 @@
 import re
+from pathlib import Path
 
 from sqlalchemy import select
 
@@ -6,6 +7,12 @@ from app.core.config import settings
 from app.core.database import AsyncSessionLocal, Base, engine, transaction
 from app.modules.activity.internal.models import ActivityEvent  # noqa: F401
 from app.modules.auth.internal.models import Organization, Team  # noqa: F401
+from app.modules.guardrails.internal.models import (  # noqa: F401
+    GuardrailAssignment,
+    GuardrailEvent,
+    GuardrailPolicy,
+    GuardrailRule,
+)
 from app.modules.keys.internal.models import Allocation, Project, VirtualKey  # noqa: F401
 from app.modules.providers.internal.models import (  # noqa: F401
     CredentialPool,
@@ -14,10 +21,12 @@ from app.modules.providers.internal.models import (  # noqa: F401
     Provider,
     ProviderCredential,
 )
+from app.modules.settings.internal.models import OrganizationSettings  # noqa: F401
 from app.modules.usage.internal.models import UsageRecord  # noqa: F401
 
 
 async def create_development_database() -> None:
+    Path(settings.assets_dir).mkdir(parents=True, exist_ok=True)
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
         if engine.url.get_backend_name() == "sqlite":
@@ -48,6 +57,11 @@ async def _sqlite_schema_is_stale(connection) -> bool:
         "allocations",
         "activity_events",
         "usage_records",
+        "organization_settings",
+        "guardrail_policies",
+        "guardrail_rules",
+        "guardrail_assignments",
+        "guardrail_events",
     }
     for table_name in required_tables:
         existing = await connection.exec_driver_sql(
@@ -80,7 +94,15 @@ async def _sqlite_schema_is_stale(connection) -> bool:
 
     usage_columns = await connection.exec_driver_sql("PRAGMA table_info(usage_records)")
     usage_column_names = {row[1] for row in usage_columns}
-    return "cost_cents" not in usage_column_names
+    if "cost_cents" not in usage_column_names:
+        return True
+
+    settings_columns = await connection.exec_driver_sql("PRAGMA table_info(organization_settings)")
+    settings_column_names = {row[1] for row in settings_columns}
+    return (
+        "default_max_body_bytes" not in settings_column_names
+        or "organization_logo_url" not in settings_column_names
+    )
 
 
 async def ensure_default_workspace() -> None:
@@ -96,6 +118,18 @@ async def sync_default_workspace(db) -> None:
             org = Organization(name=settings.default_organization_name, slug=org_slug)
             db.add(org)
             await db.flush()
+
+        org_settings = await db.scalar(
+            select(OrganizationSettings).where(OrganizationSettings.org_id == org.id)
+        )
+        if org_settings is None:
+            db.add(
+                OrganizationSettings(
+                    org_id=org.id,
+                    organization_name=org.name,
+                    default_max_body_bytes=settings.proxy_max_body_bytes,
+                )
+            )
 
         team_slug = _slugify(settings.default_team_name)
         team = await db.scalar(
@@ -132,9 +166,17 @@ async def sync_default_workspace(db) -> None:
                         adapter_type="openai_compat",
                         description=entry["description"],
                         capabilities=entry["capabilities"],
-                        supported_integration="openai_compatible",
+                        supported_integration="openai_compatible_default",
                     )
                 )
+            else:
+                provider.name = entry["name"]
+                provider.display_name = entry["name"]
+                provider.base_url = entry["base_url"]
+                provider.adapter_type = "openai_compat"
+                provider.description = entry["description"]
+                provider.capabilities = entry["capabilities"]
+                provider.supported_integration = "openai_compatible_default"
 
 
 def _slugify(value: str) -> str:
@@ -164,13 +206,6 @@ def _provider_catalog_entries() -> list[dict]:
             "slug": "openrouter",
             "base_url": "https://openrouter.ai/api/v1",
             "description": "Multi-provider OpenAI-compatible model router.",
-            "capabilities": default_capabilities,
-        },
-        {
-            "name": "Anthropic",
-            "slug": "anthropic",
-            "base_url": "https://api.anthropic.com/v1",
-            "description": "Anthropic Claude models via the OpenAI-compatible endpoint.",
             "capabilities": default_capabilities,
         },
         {

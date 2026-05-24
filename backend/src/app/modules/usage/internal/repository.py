@@ -25,6 +25,34 @@ async def create_usage_record(*, payload: RecordUsage, db: AsyncSession) -> Usag
     return usage_record
 
 
+async def list_usage_records(
+    *,
+    org_id: UUID,
+    since: datetime | None,
+    provider_id: UUID | None,
+    project_id: UUID | None,
+    allocation_id: UUID | None,
+    virtual_key_id: UUID | None,
+    limit: int,
+    db: AsyncSession,
+) -> list[UsageRecord]:
+    filters = [UsageRecord.org_id == org_id]
+    if since is not None:
+        filters.append(UsageRecord.created_at >= since)
+    if provider_id is not None:
+        filters.append(UsageRecord.provider_id == provider_id)
+    if project_id is not None:
+        filters.append(UsageRecord.project_id == project_id)
+    if allocation_id is not None:
+        filters.append(UsageRecord.allocation_id == allocation_id)
+    if virtual_key_id is not None:
+        filters.append(UsageRecord.virtual_key_id == virtual_key_id)
+    result = await db.scalars(
+        select(UsageRecord).where(*filters).order_by(UsageRecord.created_at.desc()).limit(limit)
+    )
+    return list(result)
+
+
 async def summarize_allocation_usage(
     *,
     allocation_id: UUID,
@@ -47,11 +75,17 @@ async def get_allocation_usage_summary(
     *,
     allocation_id: UUID,
     org_id: UUID,
+    window: str,
+    since: datetime | None,
     db: AsyncSession,
 ) -> AllocationUsageSummary:
-    base_filters = (UsageRecord.org_id == org_id, UsageRecord.allocation_id == allocation_id)
+    base_filters_list = [UsageRecord.org_id == org_id, UsageRecord.allocation_id == allocation_id]
+    if since is not None:
+        base_filters_list.append(UsageRecord.created_at >= since)
+    base_filters = tuple(base_filters_list)
     return AllocationUsageSummary(
         allocation_id=allocation_id,
+        window=window,
         totals=await _totals(*base_filters, db=db),
         by_virtual_key=await _breakdown(
             UsageRecord.virtual_key_id,

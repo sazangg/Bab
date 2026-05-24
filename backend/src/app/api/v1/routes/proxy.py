@@ -18,6 +18,9 @@ from app.core.config import settings
 from app.core.database import Scope, get_db
 from app.modules.activity import facade as activity_facade
 from app.modules.activity.schemas import RecordActivityEvent
+from app.modules.guardrails import facade as guardrails_facade
+from app.modules.guardrails.errors import GuardrailDeniedError
+from app.modules.guardrails.schemas import GuardrailEvaluationContext
 from app.modules.keys import facade as keys_facade
 from app.modules.keys.errors import (
     AccessDeniedError,
@@ -32,6 +35,7 @@ from app.modules.providers.errors import (
     ProviderUpstreamError,
 )
 from app.modules.providers.schemas import ProviderChatCompletionRequest
+from app.modules.settings import facade as settings_facade
 from app.modules.usage import facade as usage_facade
 from app.modules.usage.accounting import (
     UsageAccounting,
@@ -56,6 +60,84 @@ async def get_proxy_http_client() -> AsyncGenerator[httpx.AsyncClient]:
 ProxyHttpClient = Annotated[httpx.AsyncClient, Depends(get_proxy_http_client)]
 
 
+@router.get("/models")
+async def list_models(
+    db: DatabaseSession,
+    authorization: VirtualKeyAuthorization = None,
+) -> dict[str, Any]:
+    raw_key = _extract_bearer_token(authorization)
+    try:
+        models = await keys_facade.list_accessible_models(raw_key=raw_key, db=db)
+    except InvalidVirtualKeyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid virtual key",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+    except AccessDeniedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="no active allocation",
+        ) from exc
+    return {"object": "list", "data": [model.model_dump(mode="json") for model in models]}
+
+
+@router.post("/completions", response_model=None)
+async def create_completion(
+    request: Request,
+    db: DatabaseSession,
+    http_client: ProxyHttpClient,
+    authorization: VirtualKeyAuthorization = None,
+    provider_id: ProviderIdHeader = None,
+) -> Response:
+    started_at = perf_counter()
+    _enforce_content_length(request, settings.proxy_max_body_bytes)
+    raw_body = await request.body()
+    _enforce_body_size(raw_body, settings.proxy_max_body_bytes)
+    body = _decode_json_body(raw_body)
+    if body.get("stream") is True:
+        raise HTTPException(status_code=400, detail="streaming completions are not supported")
+    chat_body = _completion_body_to_chat_body(body)
+    return await _execute_chat_proxy(
+        body=chat_body,
+        raw_body=raw_body,
+        started_at=started_at,
+        db=db,
+        http_client=http_client,
+        authorization=authorization,
+        provider_id=provider_id,
+        response_transform=lambda response_body: _chat_response_to_completion(response_body, body),
+    )
+
+
+@router.post("/responses", response_model=None)
+async def create_response(
+    request: Request,
+    db: DatabaseSession,
+    http_client: ProxyHttpClient,
+    authorization: VirtualKeyAuthorization = None,
+    provider_id: ProviderIdHeader = None,
+) -> Response:
+    started_at = perf_counter()
+    _enforce_content_length(request, settings.proxy_max_body_bytes)
+    raw_body = await request.body()
+    _enforce_body_size(raw_body, settings.proxy_max_body_bytes)
+    body = _decode_json_body(raw_body)
+    if body.get("stream") is True:
+        raise HTTPException(status_code=400, detail="streaming responses are not supported")
+    chat_body = _responses_body_to_chat_body(body)
+    return await _execute_chat_proxy(
+        body=chat_body,
+        raw_body=raw_body,
+        started_at=started_at,
+        db=db,
+        http_client=http_client,
+        authorization=authorization,
+        provider_id=provider_id,
+        response_transform=lambda response_body: _chat_response_to_response(response_body, body),
+    )
+
+
 @router.post("/chat/completions", response_model=None)
 async def create_chat_completion(
     request: Request,
@@ -65,9 +147,9 @@ async def create_chat_completion(
     provider_id: ProviderIdHeader = None,
 ) -> Response:
     started_at = perf_counter()
-    _enforce_content_length(request)
+    _enforce_content_length(request, settings.proxy_max_body_bytes)
     raw_body = await request.body()
-    _enforce_body_size(raw_body)
+    _enforce_body_size(raw_body, settings.proxy_max_body_bytes)
     body = _decode_json_body(raw_body)
     is_streaming = body.get("stream") is True
 
@@ -83,6 +165,11 @@ async def create_chat_completion(
             ),
             db=db,
         )
+        org_settings = await settings_facade.get_organization_settings(
+            scope=Scope(org_id=resolved.org_id),
+            db=db,
+        )
+        _enforce_body_size(raw_body, org_settings.default_max_body_bytes)
         if provider_id is not None and provider_id != resolved.provider_id:
             raise AccessDeniedError
         resolved_provider = await providers_facade.get_provider(
@@ -96,6 +183,21 @@ async def create_chat_completion(
             resolved=resolved,
             estimated_input_tokens=estimated_tokens,
             requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
+            db=db,
+        )
+        await guardrails_facade.evaluate_request(
+            context=GuardrailEvaluationContext(
+                org_id=resolved.org_id,
+                team_id=resolved.team_id,
+                project_id=resolved.project_id,
+                allocation_id=resolved.allocation_id,
+                allocation_chain_ids=resolved.allocation_chain_ids,
+                virtual_key_id=resolved.virtual_key_id,
+                provider_id=resolved.provider_id,
+                pool_id=resolved.pool_id,
+                requested_model=resolved.requested_model,
+                provider_model=resolved.provider_model,
+            ),
             db=db,
         )
         upstream_extra_body = _normalize_provider_extra_body(
@@ -159,6 +261,24 @@ async def create_chat_completion(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="model or provider is not allowed for this key",
         ) from exc
+    except GuardrailDeniedError as exc:
+        if resolved is not None:
+            await _record_proxy_activity(
+                resolved=resolved,
+                action="proxy.guardrail_denied",
+                message=exc.detail,
+                severity="warning",
+                metadata={
+                    "reason": "guardrail_denied",
+                    "policy_id": str(exc.policy_id) if exc.policy_id else None,
+                    "rule_id": str(exc.rule_id) if exc.rule_id else None,
+                },
+                db=db,
+            )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=exc.detail,
+        ) from exc
     except (ProviderInactiveError, ProviderAdapterNotFoundError, ProviderNotFoundError) as exc:
         if resolved is not None:
             await _record_proxy_request(
@@ -217,6 +337,156 @@ async def create_chat_completion(
     return JSONResponse(status_code=upstream.status_code, content=upstream.body)
 
 
+async def _execute_chat_proxy(
+    *,
+    body: dict[str, Any],
+    raw_body: bytes,
+    started_at: float,
+    db: AsyncSession,
+    http_client: httpx.AsyncClient,
+    authorization: str | None,
+    provider_id: UUID | None,
+    response_transform,
+) -> Response:
+    provider_payload = _to_provider_payload(body)
+    raw_key = _extract_bearer_token(authorization)
+    resolved = None
+    try:
+        resolved = await keys_facade.resolve_access(
+            payload=ResolveAccessRequest(
+                raw_key=raw_key,
+                requested_model=provider_payload.model,
+            ),
+            db=db,
+        )
+        org_settings = await settings_facade.get_organization_settings(
+            scope=Scope(org_id=resolved.org_id),
+            db=db,
+        )
+        _enforce_body_size(raw_body, org_settings.default_max_body_bytes)
+        if provider_id is not None and provider_id != resolved.provider_id:
+            raise AccessDeniedError
+        resolved_provider = await providers_facade.get_provider(
+            provider_id=resolved.provider_id,
+            scope=Scope(org_id=resolved.org_id),
+            db=db,
+        )
+        _enforce_provider_body_size(raw_body, resolved_provider.max_body_bytes)
+        estimated_tokens = estimate_request_tokens(provider_payload.messages)
+        await _enforce_allocation_limits(
+            resolved=resolved,
+            estimated_input_tokens=estimated_tokens,
+            requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
+            db=db,
+        )
+        await guardrails_facade.evaluate_request(
+            context=GuardrailEvaluationContext(
+                org_id=resolved.org_id,
+                team_id=resolved.team_id,
+                project_id=resolved.project_id,
+                allocation_id=resolved.allocation_id,
+                allocation_chain_ids=resolved.allocation_chain_ids,
+                virtual_key_id=resolved.virtual_key_id,
+                provider_id=resolved.provider_id,
+                pool_id=resolved.pool_id,
+                requested_model=resolved.requested_model,
+                provider_model=resolved.provider_model,
+            ),
+            db=db,
+        )
+        upstream_extra_body = _normalize_provider_extra_body(
+            extra_body=provider_payload.extra_body,
+            provider_model=resolved.provider_model,
+        )
+        upstream = await providers_facade.create_chat_completion(
+            provider_id=resolved.provider_id,
+            pool_id=resolved.pool_id,
+            provider_credential_id=resolved.provider_key_id,
+            payload=ProviderChatCompletionRequest(
+                model=resolved.provider_model,
+                messages=provider_payload.messages,
+                extra_body=upstream_extra_body,
+            ),
+            scope=Scope(org_id=resolved.org_id),
+            db=db,
+            http_client=http_client,
+        )
+    except InvalidVirtualKeyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid virtual key",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+    except AccessDeniedError as exc:
+        if resolved is not None:
+            await _record_proxy_activity(
+                resolved=resolved,
+                action="proxy.denied",
+                message="Proxy request denied by allocation or provider routing policy.",
+                severity="warning",
+                metadata={"reason": "access_denied"},
+                db=db,
+            )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="model or provider is not allowed for this key",
+        ) from exc
+    except GuardrailDeniedError as exc:
+        if resolved is not None:
+            await _record_proxy_activity(
+                resolved=resolved,
+                action="proxy.guardrail_denied",
+                message=exc.detail,
+                severity="warning",
+                metadata={
+                    "reason": "guardrail_denied",
+                    "policy_id": str(exc.policy_id) if exc.policy_id else None,
+                    "rule_id": str(exc.rule_id) if exc.rule_id else None,
+                },
+                db=db,
+            )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.detail) from exc
+    except (ProviderInactiveError, ProviderAdapterNotFoundError, ProviderNotFoundError) as exc:
+        if resolved is not None:
+            await _record_proxy_request(
+                resolved=resolved,
+                http_status=status.HTTP_502_BAD_GATEWAY,
+                latency_ms=_elapsed_ms(started_at),
+                usage=unknown_usage(),
+                error_code="provider_unavailable",
+                db=db,
+            )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="provider is not available",
+        ) from exc
+    except ProviderUpstreamError as exc:
+        if resolved is not None:
+            await _record_proxy_request(
+                resolved=resolved,
+                http_status=exc.status_code,
+                latency_ms=_elapsed_ms(started_at),
+                usage=unknown_usage(),
+                error_code="provider_upstream_error",
+                db=db,
+            )
+        return JSONResponse(status_code=exc.status_code, content=exc.body)
+
+    usage = usage_from_provider_response(
+        request_messages=provider_payload.messages,
+        response_body=upstream.body,
+    )
+    await _record_proxy_request(
+        resolved=resolved,
+        http_status=upstream.status_code,
+        latency_ms=_elapsed_ms(started_at),
+        usage=usage,
+        error_code=None,
+        db=db,
+    )
+    return JSONResponse(status_code=upstream.status_code, content=response_transform(upstream.body))
+
+
 async def _stream_proxy_response(
     *,
     upstream,
@@ -251,7 +521,7 @@ async def _stream_proxy_response(
         )
 
 
-def _enforce_content_length(request: Request) -> None:
+def _enforce_content_length(request: Request, max_body_bytes: int) -> None:
     content_length = request.headers.get("content-length")
     if content_length is None:
         return
@@ -259,12 +529,12 @@ def _enforce_content_length(request: Request) -> None:
         body_size = int(content_length)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="invalid content-length header") from exc
-    if body_size > settings.proxy_max_body_bytes:
+    if body_size > max_body_bytes:
         raise HTTPException(status_code=413, detail="request body is too large")
 
 
-def _enforce_body_size(raw_body: bytes) -> None:
-    if len(raw_body) > settings.proxy_max_body_bytes:
+def _enforce_body_size(raw_body: bytes, max_body_bytes: int) -> None:
+    if len(raw_body) > max_body_bytes:
         raise HTTPException(status_code=413, detail="request body is too large")
 
 
@@ -295,6 +565,110 @@ def _to_provider_payload(body: dict[str, Any]) -> ProviderChatCompletionRequest:
         )
     except ValidationError as exc:
         raise RequestValidationError(exc.errors()) from exc
+
+
+def _completion_body_to_chat_body(body: dict[str, Any]) -> dict[str, Any]:
+    prompt = body.get("prompt")
+    if isinstance(prompt, list):
+        content = "\n".join(str(item) for item in prompt)
+    elif prompt is None:
+        raise HTTPException(status_code=400, detail="prompt is required")
+    else:
+        content = str(prompt)
+    extra_body = {
+        key: value
+        for key, value in body.items()
+        if key not in {"prompt", "suffix", "echo", "best_of"}
+    }
+    return {
+        **extra_body,
+        "messages": [{"role": "user", "content": content}],
+    }
+
+
+def _responses_body_to_chat_body(body: dict[str, Any]) -> dict[str, Any]:
+    input_value = body.get("input")
+    if input_value is None:
+        raise HTTPException(status_code=400, detail="input is required")
+    if isinstance(input_value, str):
+        messages = [{"role": "user", "content": input_value}]
+    elif isinstance(input_value, list):
+        messages = input_value
+    else:
+        messages = [{"role": "user", "content": str(input_value)}]
+    extra_body = {
+        key: value
+        for key, value in body.items()
+        if key not in {"input", "instructions", "text", "reasoning"}
+    }
+    if isinstance(body.get("instructions"), str):
+        messages = [{"role": "system", "content": body["instructions"]}, *messages]
+    if "max_output_tokens" in extra_body and "max_completion_tokens" not in extra_body:
+        extra_body["max_completion_tokens"] = extra_body.pop("max_output_tokens")
+    return {
+        **extra_body,
+        "messages": messages,
+    }
+
+
+def _chat_response_to_completion(
+    response_body: dict[str, Any],
+    request_body: dict[str, Any],
+) -> dict[str, Any]:
+    choices = response_body.get("choices") if isinstance(response_body, dict) else None
+    completion_choices = []
+    if isinstance(choices, list):
+        for index, choice in enumerate(choices):
+            message = choice.get("message") if isinstance(choice, dict) else None
+            text = message.get("content") if isinstance(message, dict) else None
+            completion_choices.append(
+                {
+                    "text": text or "",
+                    "index": choice.get("index", index) if isinstance(choice, dict) else index,
+                    "logprobs": None,
+                    "finish_reason": choice.get("finish_reason")
+                    if isinstance(choice, dict)
+                    else None,
+                }
+            )
+    return {
+        "id": response_body.get("id", "cmpl-bab")
+        if isinstance(response_body, dict)
+        else "cmpl-bab",
+        "object": "text_completion",
+        "created": response_body.get("created") if isinstance(response_body, dict) else None,
+        "model": request_body.get("model"),
+        "choices": completion_choices,
+        "usage": response_body.get("usage") if isinstance(response_body, dict) else None,
+    }
+
+
+def _chat_response_to_response(
+    response_body: dict[str, Any],
+    request_body: dict[str, Any],
+) -> dict[str, Any]:
+    choices = response_body.get("choices") if isinstance(response_body, dict) else None
+    first_choice = choices[0] if isinstance(choices, list) and choices else {}
+    message = first_choice.get("message") if isinstance(first_choice, dict) else {}
+    text = message.get("content") if isinstance(message, dict) else ""
+    return {
+        "id": response_body.get("id", "resp_bab")
+        if isinstance(response_body, dict)
+        else "resp_bab",
+        "object": "response",
+        "created_at": response_body.get("created") if isinstance(response_body, dict) else None,
+        "model": request_body.get("model"),
+        "status": "completed",
+        "output": [
+            {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": text or ""}],
+            }
+        ],
+        "output_text": text or "",
+        "usage": response_body.get("usage") if isinstance(response_body, dict) else None,
+    }
 
 
 def _normalize_provider_extra_body(

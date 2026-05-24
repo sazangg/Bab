@@ -20,7 +20,6 @@ class CreateProviderRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     slug: str | None = Field(default=None, min_length=1, max_length=100)
     base_url: HttpUrl
-    api_key: str | None = Field(default=None, min_length=1)
     description: str | None = Field(default=None, max_length=1000)
     capabilities: dict[str, bool] = Field(default_factory=dict)
     request_timeout_seconds: int = Field(default=30, ge=1, le=300)
@@ -35,7 +34,6 @@ class UpdateProviderRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     slug: str | None = Field(default=None, min_length=1, max_length=100)
     base_url: HttpUrl | None = None
-    api_key: str | None = Field(default=None, min_length=1)
     description: str | None = Field(default=None, max_length=1000)
     capabilities: dict[str, bool] | None = None
     request_timeout_seconds: int | None = Field(default=None, ge=1, le=300)
@@ -138,6 +136,15 @@ class ProviderCredentialSummary(BaseModel):
     degraded: int = 0
     invalid: int = 0
     unchecked: int = 0
+
+
+class ProviderReadiness(BaseModel):
+    has_active_provider: bool = False
+    has_active_credential: bool = False
+    has_active_pool: bool = False
+    has_active_pool_credential: bool = False
+    has_active_model: bool = False
+    is_ready: bool = False
 
 
 class TestProviderCredentialResponse(BaseModel):
@@ -244,6 +251,7 @@ class ProviderResponse(BaseModel):
     description: str | None
     capabilities: dict[str, Any]
     supported_integration: str
+    catalog_type: str = "custom"
     request_timeout_seconds: int
     max_body_bytes: int | None
     retry_policy: dict[str, Any]
@@ -251,6 +259,7 @@ class ProviderResponse(BaseModel):
     circuit_breaker_policy: dict[str, Any]
     max_concurrent_requests: int | None
     credential_summary: ProviderCredentialSummary = Field(default_factory=ProviderCredentialSummary)
+    readiness: ProviderReadiness = Field(default_factory=ProviderReadiness)
     is_active: bool
     created_at: datetime
     updated_at: datetime

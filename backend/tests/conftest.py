@@ -11,6 +11,12 @@ from app.core.database import Base, get_db
 from app.main import create_app
 from app.modules.activity.internal.models import ActivityEvent  # noqa: F401
 from app.modules.auth.internal.models import Organization, Team  # noqa: F401
+from app.modules.guardrails.internal.models import (  # noqa: F401
+    GuardrailAssignment,
+    GuardrailEvent,
+    GuardrailPolicy,
+    GuardrailRule,
+)
 from app.modules.keys.internal.models import Allocation, Project, VirtualKey  # noqa: F401
 from app.modules.providers.internal.models import (  # noqa: F401
     CredentialPool,
@@ -18,6 +24,7 @@ from app.modules.providers.internal.models import (  # noqa: F401
     Provider,
     ProviderCredential,
 )
+from app.modules.settings.internal.models import OrganizationSettings  # noqa: F401
 from app.modules.usage.internal.models import UsageRecord  # noqa: F401
 
 

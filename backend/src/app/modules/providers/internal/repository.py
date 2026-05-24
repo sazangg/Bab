@@ -1,6 +1,7 @@
+from collections import defaultdict
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.providers.internal.models import (
@@ -57,6 +58,75 @@ async def list_providers(*, org_id: UUID, db: AsyncSession) -> list[Provider]:
         select(Provider).where(Provider.org_id == org_id).order_by(Provider.created_at.desc())
     )
     return list(result)
+
+
+async def list_active_model_capabilities_by_provider(
+    *,
+    org_id: UUID,
+    db: AsyncSession,
+) -> dict[UUID, list[dict]]:
+    rows = await db.execute(
+        select(ModelOffering.provider_id, ModelOffering.capabilities)
+        .where(ModelOffering.org_id == org_id, ModelOffering.is_active.is_(True))
+        .order_by(ModelOffering.provider_model_name)
+    )
+    grouped: dict[UUID, list[dict]] = defaultdict(list)
+    for provider_id, capabilities in rows:
+        grouped[provider_id].append(capabilities or {})
+    return grouped
+
+
+async def list_active_model_counts_by_provider(
+    *,
+    org_id: UUID,
+    db: AsyncSession,
+) -> dict[UUID, int]:
+    rows = await db.execute(
+        select(ModelOffering.provider_id, func.count(ModelOffering.id))
+        .where(ModelOffering.org_id == org_id, ModelOffering.is_active.is_(True))
+        .group_by(ModelOffering.provider_id)
+    )
+    return {provider_id: int(count or 0) for provider_id, count in rows}
+
+
+async def list_pool_readiness_by_provider(
+    *,
+    org_id: UUID,
+    db: AsyncSession,
+) -> dict[UUID, dict[str, int]]:
+    rows = await db.execute(
+        select(
+            CredentialPool.provider_id,
+            func.sum(case((CredentialPool.is_active.is_(True), 1), else_=0)),
+            func.sum(
+                case(
+                    (
+                        and_(
+                            CredentialPool.is_active.is_(True),
+                            CredentialPoolCredential.is_active.is_(True),
+                            ProviderCredential.is_active.is_(True),
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ),
+        )
+        .outerjoin(CredentialPoolCredential, CredentialPoolCredential.pool_id == CredentialPool.id)
+        .outerjoin(
+            ProviderCredential,
+            ProviderCredential.id == CredentialPoolCredential.provider_credential_id,
+        )
+        .where(CredentialPool.org_id == org_id)
+        .group_by(CredentialPool.provider_id)
+    )
+    return {
+        provider_id: {
+            "active_pool_count": int(active_pool_count or 0),
+            "active_pool_credential_count": int(active_pool_credential_count or 0),
+        }
+        for provider_id, active_pool_count, active_pool_credential_count in rows
+    }
 
 
 async def get_provider(*, provider_id: UUID, org_id: UUID, db: AsyncSession) -> Provider | None:

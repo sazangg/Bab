@@ -110,7 +110,7 @@ export function EditProviderSheet({
 
   return (
     <Sheet open={Boolean(provider)} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent className="sm:max-w-lg">
+      <SheetContent>
         <SheetHeader>
           <SheetTitle>Edit provider</SheetTitle>
           <SheetDescription>
@@ -118,8 +118,8 @@ export function EditProviderSheet({
             the detail page.
           </SheetDescription>
         </SheetHeader>
-        <div className="flex-1 overflow-y-auto px-4">
-          <form className="grid gap-6 pb-2" onSubmit={submit}>
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          <form className="grid gap-6" onSubmit={submit}>
             <FormSection title="Identity">
               <FormField
                 label="Name"

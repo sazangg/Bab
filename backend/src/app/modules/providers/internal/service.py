@@ -54,6 +54,7 @@ from app.modules.providers.schemas import (
     ProviderCredentialResponse,
     ProviderCredentialRoutingPolicy,
     ProviderCredentialSummary,
+    ProviderReadiness,
     ProviderResponse,
     TestModelOfferingRequest,
     TestModelOfferingResponse,
@@ -85,7 +86,7 @@ async def create_provider(
             name=payload.name,
             slug=_slugify(payload.slug or payload.name),
             base_url=str(payload.base_url).rstrip("/"),
-            api_key_encrypted=encrypt(payload.api_key) if payload.api_key is not None else None,
+            api_key_encrypted=None,
             adapter_type=OPENAI_COMPAT_ADAPTER,
             description=payload.description,
             capabilities=payload.capabilities or _default_capabilities(),
@@ -114,6 +115,7 @@ async def list_providers(*, scope: Scope, db: AsyncSession) -> list[ProviderResp
     providers = await repository.list_providers(org_id=scope.org_id, db=db)
     credentials = await repository.list_all_provider_credentials(org_id=scope.org_id, db=db)
     summaries = _credential_summaries(credentials)
+    await _attach_provider_readiness_data(providers=providers, org_id=scope.org_id, db=db)
     return [_to_response(provider, summaries.get(provider.id)) for provider in providers]
 
 
@@ -124,6 +126,7 @@ async def get_provider(*, provider_id: UUID, scope: Scope, db: AsyncSession) -> 
         provider_id=provider_id,
         db=db,
     )
+    await _attach_provider_readiness_data(providers=[provider], org_id=scope.org_id, db=db)
     return _to_response(provider, _credential_summary(credentials))
 
 
@@ -662,7 +665,10 @@ async def sync_model_offerings(
     db: AsyncSession,
     http_client: httpx.AsyncClient,
     metadata_mode: ModelMetadataSyncMode,
+    sync_mode: str,
 ) -> list[ModelOfferingResponse]:
+    if sync_mode == "disabled":
+        raise ProviderUpstreamError(status_code=409, body={"error": "model sync is disabled"})
     async with transaction(db):
         provider = await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
         provider_credentials = await repository.list_provider_credentials(
@@ -689,6 +695,21 @@ async def sync_model_offerings(
             ),
             http_client=http_client,
         )
+        synced_names = set(model_names)
+        if sync_mode == "replace":
+            existing_models, _ = await repository.list_model_offerings(
+                org_id=scope.org_id,
+                provider_id=provider_id,
+                search=None,
+                modalities=None,
+                is_active=None,
+                limit=10_000,
+                offset=0,
+                db=db,
+            )
+            for existing_model in existing_models:
+                if existing_model.provider_model_name not in synced_names:
+                    existing_model.is_active = False
         synced_models = []
         synced_at = datetime.now(UTC)
         for model_name in sorted(set(model_names)):
@@ -1044,9 +1065,6 @@ async def update_provider(
             provider.max_concurrent_requests = payload.max_concurrent_requests
         if payload.is_active is not None:
             provider.is_active = payload.is_active
-        if payload.api_key is not None:
-            provider.api_key_encrypted = encrypt(payload.api_key)
-
         await db.flush()
         await activity_facade.record_admin_event(
             actor=actor,
@@ -1571,7 +1589,80 @@ def _to_response(
 ) -> ProviderResponse:
     response = ProviderResponse.model_validate(provider)
     response.credential_summary = credential_summary or ProviderCredentialSummary()
+    response.catalog_type = _provider_catalog_type(provider)
+    response.capabilities = _aggregate_provider_capabilities(provider)
+    response.readiness = _provider_readiness(provider, response.credential_summary)
     return response
+
+
+async def _attach_provider_readiness_data(
+    *,
+    providers: list[Provider],
+    org_id: UUID,
+    db: AsyncSession,
+) -> None:
+    if not providers:
+        return
+    capabilities_by_provider = await repository.list_active_model_capabilities_by_provider(
+        org_id=org_id,
+        db=db,
+    )
+    model_counts_by_provider = await repository.list_active_model_counts_by_provider(
+        org_id=org_id,
+        db=db,
+    )
+    pool_readiness_by_provider = await repository.list_pool_readiness_by_provider(
+        org_id=org_id,
+        db=db,
+    )
+    for provider in providers:
+        provider._active_model_capabilities = capabilities_by_provider.get(provider.id, [])
+        provider._active_model_count = model_counts_by_provider.get(provider.id, 0)
+        provider._pool_summary = pool_readiness_by_provider.get(provider.id, {})
+
+
+def _provider_catalog_type(provider: Provider) -> str:
+    return "default" if provider.supported_integration == "openai_compatible_default" else "custom"
+
+
+def _aggregate_provider_capabilities(provider: Provider) -> dict:
+    model_capabilities = getattr(provider, "_active_model_capabilities", None)
+    if not model_capabilities:
+        return {}
+    aggregate: dict[str, bool] = {}
+    for capabilities in model_capabilities:
+        if not isinstance(capabilities, dict):
+            continue
+        for key, value in capabilities.items():
+            if isinstance(value, bool):
+                aggregate[key] = aggregate.get(key, False) or value
+    return aggregate
+
+
+def _provider_readiness(
+    provider: Provider,
+    credential_summary: ProviderCredentialSummary,
+) -> ProviderReadiness:
+    pool_summary = getattr(provider, "_pool_summary", {})
+    active_pool_count = int(pool_summary.get("active_pool_count", 0))
+    active_pool_credential_count = int(pool_summary.get("active_pool_credential_count", 0))
+    active_model_count = int(getattr(provider, "_active_model_count", 0) or 0)
+    return ProviderReadiness(
+        has_active_provider=provider.is_active,
+        has_active_credential=credential_summary.active > 0,
+        has_active_pool=active_pool_count > 0,
+        has_active_pool_credential=active_pool_credential_count > 0,
+        has_active_model=active_model_count > 0,
+        is_ready=all(
+            [
+                provider.is_active,
+                credential_summary.active > 0,
+                active_pool_count > 0,
+                active_pool_credential_count > 0,
+                active_model_count > 0,
+            ]
+        ),
+    )
 
 
 def _credential_summaries(

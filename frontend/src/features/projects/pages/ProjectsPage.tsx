@@ -1,7 +1,15 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
-import { Building2, FolderKanban, Plus, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  Building2,
+  FolderKanban,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -29,6 +37,12 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Table,
   TableBody,
   TableCell,
@@ -42,7 +56,11 @@ import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 
-import { useListProjectsApiV1ProjectsGet } from "@/shared/api/generated/projects/projects";
+import {
+  useDeactivateProjectApiV1ProjectsProjectIdDelete,
+  useListProjectsApiV1ProjectsGet,
+  useUpdateProjectApiV1ProjectsProjectIdPatch,
+} from "@/shared/api/generated/projects/projects";
 import {
   useCreateTeamProjectApiV1TeamsTeamIdProjectsPost,
   useListTeamsApiV1TeamsGet,
@@ -82,6 +100,7 @@ export function ProjectsPage() {
   const [segment, setSegment] = useState<ProjectSegment>("active");
   const [teamFilter, setTeamFilter] = useState<string>("all");
   const [newOpen, setNewOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState<ProjectResponse | null>(null);
 
   const segmentCounts = {
     all: projects.length,
@@ -234,6 +253,7 @@ export function ProjectsPage() {
                       <TableHead>Description</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Created</TableHead>
+                      <TableHead className="w-[1%]" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -243,6 +263,7 @@ export function ProjectsPage() {
                         project={project}
                         team={teamById[project.team_id]}
                         onOpen={() => navigate(`/projects/${project.id}`)}
+                        onEdit={() => setEditingProject(project)}
                       />
                     ))}
                   </TableBody>
@@ -252,6 +273,15 @@ export function ProjectsPage() {
           </CardContent>
         </Card>
       )}
+      <EditProjectSheet
+        project={editingProject}
+        onClose={() => setEditingProject(null)}
+        onUpdated={async () => {
+          setEditingProject(null);
+          await queryClient.invalidateQueries();
+          toast.success("Project updated.");
+        }}
+      />
     </>
   );
 }
@@ -260,11 +290,23 @@ function ProjectRow({
   project,
   team,
   onOpen,
+  onEdit,
 }: {
   project: ProjectResponse;
   team: TeamResponse | undefined;
   onOpen: () => void;
+  onEdit: () => void;
 }) {
+  const queryClient = useQueryClient();
+  const deactivateProject = useDeactivateProjectApiV1ProjectsProjectIdDelete({
+    mutation: {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries();
+        toast.success("Project archived.");
+      },
+      onError: () => toast.error("Project could not be archived."),
+    },
+  });
   return (
     <TableRow
       className={cn("cursor-pointer", !project.is_active && "opacity-60")}
@@ -302,7 +344,103 @@ function ProjectRow({
       <TableCell className="text-muted-foreground" title={formatDateTime(project.created_at)}>
         {formatRelativeFromNow(project.created_at)}
       </TableCell>
+      <TableCell onClick={(event) => event.stopPropagation()}>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon-sm" aria-label="Project actions">
+              <MoreHorizontal />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={onEdit}>
+              <Pencil data-icon="inline-start" />
+              Edit project
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              variant="destructive"
+              disabled={!project.is_active || deactivateProject.isPending}
+              onSelect={() => deactivateProject.mutate({ projectId: project.id })}
+            >
+              <Trash2 data-icon="inline-start" />
+              Archive project
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </TableCell>
     </TableRow>
+  );
+}
+
+function EditProjectSheet({
+  project,
+  onClose,
+  onUpdated,
+}: {
+  project: ProjectResponse | null;
+  onClose: () => void;
+  onUpdated: () => Promise<void>;
+}) {
+  const form = useForm<Pick<NewProjectValues, "name" | "description">>({
+    resolver: zodResolver(newProjectSchema.pick({ name: true, description: true })),
+    defaultValues: { name: "", description: "" },
+  });
+  const updateProject = useUpdateProjectApiV1ProjectsProjectIdPatch({
+    mutation: {
+      onSuccess: async (response) => {
+        if (response.status === 200) await onUpdated();
+      },
+      onError: () => toast.error("Project could not be updated."),
+    },
+  });
+
+  useEffect(() => {
+    if (!project) return;
+    form.reset({ name: project.name, description: project.description ?? "" });
+  }, [project, form]);
+
+  const submit = form.handleSubmit((values) => {
+    if (!project) return;
+    updateProject.mutate({
+      projectId: project.id,
+      data: {
+        name: values.name,
+        description: values.description?.trim() ? values.description : null,
+        is_active: project.is_active,
+      },
+    });
+  });
+
+  return (
+    <Sheet open={Boolean(project)} onOpenChange={(open) => !open && onClose()}>
+      <SheetContent>
+        <SheetHeader>
+          <SheetTitle>Edit project</SheetTitle>
+          <SheetDescription>Rename or update this project.</SheetDescription>
+        </SheetHeader>
+        <form
+          id="edit-project-form"
+          className="grid gap-4 overflow-y-auto px-6 py-5"
+          onSubmit={submit}
+        >
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-project-name">Name</Label>
+            <Input id="edit-project-name" autoFocus {...form.register("name")} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-project-description">Description</Label>
+            <Textarea id="edit-project-description" rows={4} {...form.register("description")} />
+          </div>
+        </form>
+        <SheetFooter>
+          <Button type="submit" form="edit-project-form" disabled={updateProject.isPending}>
+            {updateProject.isPending ? "Saving..." : "Save changes"}
+          </Button>
+          <SheetClose asChild>
+            <Button variant="outline">Cancel</Button>
+          </SheetClose>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -366,7 +504,11 @@ function NewProjectSheet({
           <SheetTitle>New project</SheetTitle>
           <SheetDescription>Pick a team to create this project in.</SheetDescription>
         </SheetHeader>
-        <form id="new-project-form" className="grid gap-4 px-4" onSubmit={submit}>
+        <form
+          id="new-project-form"
+          className="grid gap-4 overflow-y-auto px-6 py-5"
+          onSubmit={submit}
+        >
           <div className="space-y-1.5">
             <Label htmlFor="new-project-team">Team</Label>
             <Select

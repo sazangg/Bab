@@ -121,7 +121,10 @@ export function OverlaysFeedbackSection() {
               <SheetTitle>New team</SheetTitle>
               <SheetDescription>Create a team that will own one or more projects.</SheetDescription>
             </SheetHeader>
-            <form className="grid gap-4 px-4" onSubmit={(e) => e.preventDefault()}>
+            <form
+              className="grid gap-4 overflow-y-auto px-6 py-5"
+              onSubmit={(e) => e.preventDefault()}
+            >
               <div className="space-y-1.5">
                 <Label htmlFor="ds-sheet-name">Name</Label>
                 <Input id="ds-sheet-name" placeholder="Mobile platform" />

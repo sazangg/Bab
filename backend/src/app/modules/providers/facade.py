@@ -298,6 +298,7 @@ async def sync_model_offerings(
     db: AsyncSession,
     http_client: httpx.AsyncClient,
     metadata_mode: ModelMetadataSyncMode,
+    sync_mode: str = "merge",
 ) -> list[ModelOfferingResponse]:
     return await service.sync_model_offerings(
         provider_id=provider_id,
@@ -306,6 +307,7 @@ async def sync_model_offerings(
         db=db,
         http_client=http_client,
         metadata_mode=metadata_mode,
+        sync_mode=sync_mode,
     )
 
 

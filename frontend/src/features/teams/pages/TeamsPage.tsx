@@ -1,8 +1,8 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import { Building2, Plus, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Building2, MoreHorizontal, Pencil, Plus, Search } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -23,6 +23,12 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Table,
   TableBody,
   TableCell,
@@ -39,6 +45,7 @@ import { useListProjectsApiV1ProjectsGet } from "@/shared/api/generated/projects
 import {
   useCreateTeamApiV1TeamsPost,
   useListTeamsApiV1TeamsGet,
+  useUpdateTeamApiV1TeamsTeamIdPatch,
 } from "@/shared/api/generated/teams/teams";
 import type { TeamResponse } from "@/shared/api/generated/schemas";
 
@@ -62,6 +69,7 @@ export function TeamsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
+  const [editingTeam, setEditingTeam] = useState<TeamResponse | null>(null);
   const [search, setSearch] = useState("");
   const [segment, setSegment] = useState<TeamSegment>("active");
 
@@ -185,6 +193,7 @@ export function TeamsPage() {
                       <TableHead>Description</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Updated</TableHead>
+                      <TableHead className="w-[1%]" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -194,6 +203,7 @@ export function TeamsPage() {
                         team={team}
                         projectCount={projectCountByTeam[team.id] ?? 0}
                         onOpen={() => navigate(`/teams/${team.id}`)}
+                        onEdit={() => setEditingTeam(team)}
                       />
                     ))}
                   </TableBody>
@@ -203,6 +213,15 @@ export function TeamsPage() {
           </CardContent>
         </Card>
       )}
+      <EditTeamSheet
+        team={editingTeam}
+        onClose={() => setEditingTeam(null)}
+        onUpdated={async () => {
+          setEditingTeam(null);
+          await queryClient.invalidateQueries();
+          toast.success("Team updated.");
+        }}
+      />
     </>
   );
 }
@@ -211,10 +230,12 @@ function TeamRow({
   team,
   projectCount,
   onOpen,
+  onEdit,
 }: {
   team: TeamResponse;
   projectCount: number;
   onOpen: () => void;
+  onEdit: () => void;
 }) {
   return (
     <TableRow
@@ -244,7 +265,107 @@ function TeamRow({
       <TableCell className="text-muted-foreground" title={formatDateTime(team.updated_at)}>
         {formatRelativeFromNow(team.updated_at)}
       </TableCell>
+      <TableCell onClick={(event) => event.stopPropagation()}>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon-sm" aria-label="Team actions">
+              <MoreHorizontal />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={onEdit}>
+              <Pencil data-icon="inline-start" />
+              Edit team
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </TableCell>
     </TableRow>
+  );
+}
+
+function EditTeamSheet({
+  team,
+  onClose,
+  onUpdated,
+}: {
+  team: TeamResponse | null;
+  onClose: () => void;
+  onUpdated: () => Promise<void>;
+}) {
+  const form = useForm<TeamFormValues>({
+    resolver: zodResolver(teamSchema),
+    defaultValues: { name: "", slug: "", description: "" },
+  });
+  const updateTeam = useUpdateTeamApiV1TeamsTeamIdPatch({
+    mutation: {
+      onSuccess: async (response) => {
+        if (response.status === 200) {
+          await onUpdated();
+        }
+      },
+      onError: () => toast.error("Team could not be updated."),
+    },
+  });
+
+  useEffect(() => {
+    if (!team) return;
+    form.reset({
+      name: team.name,
+      slug: team.slug,
+      description: team.description ?? "",
+    });
+  }, [team, form]);
+
+  const submit = form.handleSubmit((values) => {
+    if (!team) return;
+    updateTeam.mutate({
+      teamId: team.id,
+      data: {
+        name: values.name,
+        slug: values.slug?.trim() ? values.slug : undefined,
+        description: values.description?.trim() ? values.description : null,
+        is_active: team.is_active,
+      },
+    });
+  });
+
+  return (
+    <Sheet open={Boolean(team)} onOpenChange={(open) => !open && onClose()}>
+      <SheetContent>
+        <SheetHeader>
+          <SheetTitle>Edit team</SheetTitle>
+          <SheetDescription>Rename or update this team.</SheetDescription>
+        </SheetHeader>
+        <form
+          id="edit-team-form"
+          className="grid gap-4 overflow-y-auto px-6 py-5"
+          onSubmit={submit}
+        >
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-team-name">Name</Label>
+            <Input id="edit-team-name" autoFocus {...form.register("name")} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-team-slug">Slug</Label>
+            <Input id="edit-team-slug" {...form.register("slug")} />
+            <p className="text-xs text-muted-foreground">Used in URLs and attribution.</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-team-description">Description</Label>
+            <Textarea id="edit-team-description" rows={4} {...form.register("description")} />
+          </div>
+        </form>
+        <SheetFooter>
+          <Button type="submit" form="edit-team-form" disabled={updateTeam.isPending}>
+            {updateTeam.isPending ? "Saving..." : "Save changes"}
+          </Button>
+          <SheetClose asChild>
+            <Button variant="outline">Cancel</Button>
+          </SheetClose>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -320,7 +441,11 @@ function CreateTeamSheet({
           <SheetTitle>New team</SheetTitle>
           <SheetDescription>Create a team that will own one or more projects.</SheetDescription>
         </SheetHeader>
-        <form id="create-team-form" className="grid gap-4 px-4" onSubmit={submit}>
+        <form
+          id="create-team-form"
+          className="grid gap-4 overflow-y-auto px-6 py-5"
+          onSubmit={submit}
+        >
           <div className="space-y-1.5">
             <Label htmlFor="team-name">Name</Label>
             <Input id="team-name" autoFocus {...form.register("name")} />

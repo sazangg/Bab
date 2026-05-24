@@ -1,8 +1,17 @@
-import { AlertTriangle, ChartNoAxesCombined, Clock, Timer, WalletCards } from "lucide-react";
+import {
+  AlertTriangle,
+  ChartNoAxesCombined,
+  Clock,
+  Download,
+  Timer,
+  WalletCards,
+} from "lucide-react";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -19,16 +28,47 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useGetOrganizationUsageSummaryApiV1UsageSummaryGet } from "@/shared/api/generated/usage/usage";
+import { apiMutator } from "@/shared/api/orval-mutator";
 import type { ActivityEventResponse, UsageBreakdownRow } from "@/shared/api/generated/schemas";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
+import { useQuery } from "@tanstack/react-query";
 
 type UsageWindow = "24h" | "7d" | "30d" | "lifetime";
+type UsageRecordResponse = {
+  id: string;
+  created_at: string;
+  provider_id: string;
+  project_id: string;
+  allocation_id: string;
+  virtual_key_id: string;
+  requested_model: string;
+  provider_model: string;
+  http_status: number;
+  latency_ms: number;
+  total_tokens: number | null;
+  cost_cents: number | null;
+  error_code: string | null;
+};
 
 export function UsagePage() {
   const [window, setWindow] = useState<UsageWindow>("30d");
+  const [recordFilter, setRecordFilter] = useState("");
   const usageQuery = useGetOrganizationUsageSummaryApiV1UsageSummaryGet({ window });
+  const recordsQuery = useQuery({
+    queryKey: ["usage-records", window],
+    queryFn: () =>
+      apiMutator<UsageRecordResponse[]>(`/api/v1/usage/records?window=${window}&limit=100`),
+  });
   const summary = usageQuery.data?.status === 200 ? usageQuery.data.data : null;
+  const records = Array.isArray(recordsQuery.data) ? recordsQuery.data : [];
+  const filteredRecords = records.filter((record) => {
+    const term = recordFilter.trim().toLowerCase();
+    if (!term) return true;
+    return `${record.requested_model} ${record.provider_model} ${record.http_status} ${record.error_code ?? ""} ${record.provider_id} ${record.project_id} ${record.allocation_id} ${record.virtual_key_id}`
+      .toLowerCase()
+      .includes(term);
+  });
   const totals = summary?.totals;
   const requests = totals?.requests ?? 0;
   const failed = totals?.failed_requests ?? 0;
@@ -104,10 +144,132 @@ export function UsagePage() {
             <BreakdownCard title="Virtual keys" rows={summary.by_virtual_key} />
             <RecentDenialsCard events={summary.recent_denials} />
           </section>
+          <UsageRecordsCard
+            records={filteredRecords}
+            isLoading={recordsQuery.isPending}
+            filter={recordFilter}
+            onFilterChange={setRecordFilter}
+          />
         </>
       )}
     </div>
   );
+}
+
+function UsageRecordsCard({
+  records,
+  isLoading,
+  filter,
+  onFilterChange,
+}: {
+  records: UsageRecordResponse[];
+  isLoading: boolean;
+  filter: string;
+  onFilterChange: (value: string) => void;
+}) {
+  return (
+    <Card>
+      <CardHeader className="border-b">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <CardTitle>Usage records</CardTitle>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              className="h-9 w-72"
+              value={filter}
+              onChange={(event) => onFilterChange(event.target.value)}
+              placeholder="Filter model, status, entity..."
+            />
+            <Button variant="outline" size="sm" onClick={() => downloadCsv(records)}>
+              <Download data-icon="inline-start" />
+              Export CSV
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading usage records...</p>
+        ) : records.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No matching usage records.</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Time</TableHead>
+                <TableHead>Model</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Tokens</TableHead>
+                <TableHead className="text-right">Spend</TableHead>
+                <TableHead className="text-right">Latency</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {records.slice(0, 20).map((record) => (
+                <TableRow key={record.id}>
+                  <TableCell className="text-muted-foreground">
+                    {new Date(record.created_at).toLocaleString()}
+                  </TableCell>
+                  <TableCell>
+                    <div className="font-medium">{record.requested_model}</div>
+                    <div className="text-xs text-muted-foreground">{record.provider_model}</div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={record.http_status >= 400 ? "destructive" : "secondary"}>
+                      {record.http_status}
+                    </Badge>
+                    {record.error_code ? (
+                      <div className="mt-1 text-xs text-muted-foreground">{record.error_code}</div>
+                    ) : null}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {(record.total_tokens ?? 0).toLocaleString()}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {formatCents(record.cost_cents ?? 0)}
+                  </TableCell>
+                  <TableCell className="text-right">{record.latency_ms}ms</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function downloadCsv(records: UsageRecordResponse[]) {
+  const header = [
+    "created_at",
+    "requested_model",
+    "provider_model",
+    "http_status",
+    "total_tokens",
+    "cost_cents",
+    "latency_ms",
+    "error_code",
+  ];
+  const rows = records.map((record) =>
+    [
+      record.created_at,
+      record.requested_model,
+      record.provider_model,
+      record.http_status,
+      record.total_tokens ?? 0,
+      record.cost_cents ?? 0,
+      record.latency_ms,
+      record.error_code ?? "",
+    ]
+      .map((value) => `"${String(value).replaceAll('"', '""')}"`)
+      .join(","),
+  );
+  const blob = new Blob([[header.join(","), ...rows].join("\n")], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "bab-usage-records.csv";
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 function MetricCard({

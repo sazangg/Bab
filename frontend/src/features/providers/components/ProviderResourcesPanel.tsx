@@ -1135,7 +1135,10 @@ function PoolMembershipSheet({
             Update this credential's routing metadata for this pool only.
           </SheetDescription>
         </SheetHeader>
-        <form className="grid gap-4 px-4" onSubmit={form.handleSubmit(onSubmit)}>
+        <form
+          className="grid gap-4 overflow-y-auto px-6 py-5"
+          onSubmit={form.handleSubmit(onSubmit)}
+        >
           <div className="space-y-1.5">
             <Label htmlFor="pool-membership-priority">Priority</Label>
             <Input
@@ -1219,7 +1222,10 @@ function CredentialPoolSheet({
           <SheetTitle>{title}</SheetTitle>
           <SheetDescription>{description}</SheetDescription>
         </SheetHeader>
-        <form className="grid gap-4 px-4" onSubmit={form.handleSubmit(onSubmit)}>
+        <form
+          className="grid gap-4 overflow-y-auto px-6 py-5"
+          onSubmit={form.handleSubmit(onSubmit)}
+        >
           <div className="space-y-1.5">
             <Label htmlFor="credential-pool-name">Name</Label>
             <Input id="credential-pool-name" autoFocus {...form.register("name")} />
@@ -1529,7 +1535,10 @@ function EditProviderCredentialSheet({
             the Pools tab.
           </SheetDescription>
         </SheetHeader>
-        <form className="grid gap-4 px-4" onSubmit={form.handleSubmit(onSubmit)}>
+        <form
+          className="grid gap-4 overflow-y-auto px-6 py-5"
+          onSubmit={form.handleSubmit(onSubmit)}
+        >
           <div className="space-y-1.5">
             <Label htmlFor="edit-provider-key-name">Name</Label>
             <Input id="edit-provider-key-name" autoFocus {...form.register("name")} />
@@ -1582,7 +1591,10 @@ function CreateProviderCredentialSheet({
             Add an encrypted upstream API key for {providerName}. Assign it to pools after saving.
           </SheetDescription>
         </SheetHeader>
-        <form className="grid gap-4 px-4" onSubmit={form.handleSubmit(onSubmit)}>
+        <form
+          className="grid gap-4 overflow-y-auto px-6 py-5"
+          onSubmit={form.handleSubmit(onSubmit)}
+        >
           <div className="space-y-1.5">
             <Label htmlFor="detail-provider-key-name">Name</Label>
             <Input id="detail-provider-key-name" autoFocus {...form.register("name")} />
@@ -1668,7 +1680,10 @@ function CreateModelOfferingSheet({
             Register a model exposed by {providerName}. Alias is optional and provider-scoped.
           </SheetDescription>
         </SheetHeader>
-        <form className="grid gap-4 px-4" onSubmit={form.handleSubmit(onSubmit)}>
+        <form
+          className="grid gap-4 overflow-y-auto px-6 py-5"
+          onSubmit={form.handleSubmit(onSubmit)}
+        >
           <div className="space-y-1.5">
             <Label htmlFor="detail-provider-model-name">Provider model name</Label>
             <Input
@@ -2129,7 +2144,7 @@ function ResourceModelTable({
             </SheetDescription>
           </SheetHeader>
           <form
-            className="grid gap-4 px-4"
+            className="grid gap-4 overflow-y-auto px-6 py-5"
             onSubmit={editForm.handleSubmit((values) => {
               if (editModel) onUpdate(editModel, values);
               setEditModel(null);

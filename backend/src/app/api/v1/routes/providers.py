@@ -36,6 +36,7 @@ from app.modules.providers.schemas import (
     UpdateProviderCredentialRequest,
     UpdateProviderRequest,
 )
+from app.modules.settings import facade as settings_facade
 
 router = APIRouter(prefix="/providers", tags=["providers"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
@@ -458,6 +459,7 @@ async def sync_model_offerings(
     payload: SyncModelOfferingsRequest | None = None,
 ) -> list[ModelOfferingResponse]:
     try:
+        org_settings = await settings_facade.get_organization_settings(scope=scope, db=db)
         async with httpx.AsyncClient(timeout=30) as http_client:
             return await facade.sync_model_offerings(
                 provider_id=provider_id,
@@ -470,12 +472,15 @@ async def sync_model_offerings(
                     if payload is not None
                     else SyncModelOfferingsRequest().metadata_mode
                 ),
+                sync_mode=org_settings.default_model_sync_mode,
             )
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc
     except ProviderCredentialRequiredError as exc:
         raise HTTPException(status_code=400, detail="active provider credential required") from exc
     except ProviderUpstreamError as exc:
+        if exc.status_code == 409:
+            raise HTTPException(status_code=409, detail="model sync is disabled") from exc
         raise HTTPException(
             status_code=502,
             detail=f"model offering sync failed with upstream status {exc.status_code}",

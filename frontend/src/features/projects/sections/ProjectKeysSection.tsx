@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, KeyRound, Plus } from "lucide-react";
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 
 import {
@@ -14,6 +14,7 @@ import {
 import { useListTeamAllocationsApiV1TeamsTeamIdAllocationsGet } from "@/shared/api/generated/teams/teams";
 import type {
   CreatedVirtualKeyResponse,
+  ModelOfferingResponse,
   ProjectResponse,
   VirtualKeyResponse,
 } from "@/shared/api/generated/schemas";
@@ -37,6 +38,15 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Sheet,
   SheetClose,
@@ -57,10 +67,15 @@ import {
 } from "@/components/ui/table";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { StatusBadge } from "@/shared/components/StatusBadge";
+import {
+  listModelOfferingsApiV1ProvidersProviderIdOfferingsGet,
+  useListProvidersApiV1ProvidersGet,
+} from "@/shared/api/generated/providers/providers";
 
 const keySchema = z.object({
   name: z.string().min(1).max(255),
   expires_at: z.string().optional(),
+  allocation_id: z.string().optional(),
   allowed_models: z.string().optional(),
 });
 
@@ -87,8 +102,10 @@ export function ProjectKeysSection({
 
   const form = useForm<KeyValues>({
     resolver: zodResolver(keySchema),
-    defaultValues: { name: "", expires_at: "", allowed_models: "" },
+    defaultValues: { name: "", expires_at: "", allocation_id: "inherited", allowed_models: "" },
   });
+  const selectedAllocationId = useWatch({ control: form.control, name: "allocation_id" });
+  const allowedModelsValue = useWatch({ control: form.control, name: "allowed_models" });
   const allocationsQuery = useListProjectAllocationsApiV1ProjectsProjectIdAllocationsGet(
     projectId,
     { query: { enabled: Boolean(projectId) } },
@@ -104,6 +121,29 @@ export function ProjectKeysSection({
   const effectiveAllocation =
     allocations.find((allocation) => allocation.is_default && allocation.is_active) ??
     teamAllocations.find((allocation) => allocation.is_default && allocation.is_active);
+  const selectedAllocation =
+    selectedAllocationId && selectedAllocationId !== "inherited"
+      ? availableAllocations.find((allocation) => allocation.id === selectedAllocationId)
+      : effectiveAllocation;
+  const selectedAllowedModels = parseModels(allowedModelsValue) ?? [];
+  const providersQuery = useListProvidersApiV1ProvidersGet();
+  const providers = providersQuery.data?.status === 200 ? providersQuery.data.data : [];
+  const modelQueries = useQueries({
+    queries: providers.map((provider) => ({
+      queryKey: ["project-key-models", provider.id],
+      queryFn: () =>
+        listModelOfferingsApiV1ProvidersProviderIdOfferingsGet(provider.id, { limit: 100 }),
+      enabled: createOpen,
+    })),
+  });
+  const modelOfferings = modelQueries.flatMap((query) =>
+    query.data?.status === 200 ? query.data.data.items : [],
+  );
+  const modelById = new Map(modelOfferings.map((model) => [model.id, model]));
+  const selectableModels =
+    selectedAllocation?.offerings
+      .map((offering) => modelById.get(offering.model_offering_id))
+      .filter((model): model is ModelOfferingResponse => Boolean(model?.is_active)) ?? [];
   const keyUsageQueries = useQueries({
     queries: keys.map((key) => ({
       queryKey: ["project-key-usage", projectId, key.id],
@@ -117,7 +157,7 @@ export function ProjectKeysSection({
       onSuccess: async (response) => {
         if (response.status === 201) {
           setCreatedKey(response.data);
-          form.reset({ name: "", expires_at: "", allowed_models: "" });
+          form.reset({ name: "", expires_at: "", allocation_id: "inherited", allowed_models: "" });
           setCreateOpen(false);
           await queryClient.invalidateQueries();
         }
@@ -139,6 +179,7 @@ export function ProjectKeysSection({
       data: {
         name: values.name,
         expires_at: values.expires_at ? new Date(values.expires_at).toISOString() : null,
+        allocation_id: values.allocation_id === "inherited" ? null : values.allocation_id,
         allowed_models: parseModels(values.allowed_models),
       },
     });
@@ -164,11 +205,14 @@ export function ProjectKeysSection({
                   <SheetTitle>New virtual key</SheetTitle>
                   <SheetDescription>
                     {effectiveAllocation
-                      ? `Uses allocation: ${effectiveAllocation.name}. The raw key is shown once.`
+                      ? `Uses allocation: ${effectiveAllocation.name} unless a custom allocation is selected.`
                       : "Create a team or project allocation before issuing a key."}
                   </SheetDescription>
                 </SheetHeader>
-                <form className="grid gap-4 px-4" onSubmit={form.handleSubmit(submit)}>
+                <form
+                  className="grid gap-4 overflow-y-auto px-6 py-5"
+                  onSubmit={form.handleSubmit(submit)}
+                >
                   <div className="space-y-1.5">
                     <Label htmlFor="key-name">Label</Label>
                     <Input id="key-name" autoFocus {...form.register("name")} />
@@ -185,22 +229,107 @@ export function ProjectKeysSection({
                       type="datetime-local"
                       {...form.register("expires_at")}
                     />
-                    <p className="text-xs text-muted-foreground">Optional. Blank means never.</p>
+                    <p className="text-xs text-muted-foreground">
+                      Optional. Blank uses the organization default if configured.
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Allocation</Label>
+                    <Select
+                      value={selectedAllocationId}
+                      onValueChange={(value) =>
+                        form.setValue("allocation_id", value, { shouldDirty: true })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="inherited">
+                          Inherit default ({effectiveAllocation?.name ?? "none"})
+                        </SelectItem>
+                        {availableAllocations
+                          .filter((allocation) => allocation.is_active)
+                          .map((allocation) => (
+                            <SelectItem key={allocation.id} value={allocation.id}>
+                              {allocation.name}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="rounded-md border bg-muted/30 p-3 text-sm">
                     <span className="text-xs text-muted-foreground">Effective allocation</span>
-                    <p className="font-medium">{effectiveAllocation?.name ?? "None configured"}</p>
+                    <p className="font-medium">{selectedAllocation?.name ?? "None configured"}</p>
                   </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="key-models">Allowed models</Label>
-                    <Input
-                      id="key-models"
-                      placeholder="gpt-4o-mini"
-                      {...form.register("allowed_models")}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Optional comma-separated subset of the selected allocation.
-                    </p>
+                  <div className="space-y-2">
+                    <div>
+                      <Label>Allowed models</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Optional subset of the selected allocation. Leave blank to allow every
+                        allocation model.
+                      </p>
+                    </div>
+                    <div className="rounded-md border">
+                      <ScrollArea className="h-60">
+                        <div className="grid gap-1 p-2">
+                          {!selectedAllocation ? (
+                            <p className="p-2 text-sm text-muted-foreground">
+                              Select an allocation to choose models.
+                            </p>
+                          ) : selectableModels.length === 0 ? (
+                            <p className="p-2 text-sm text-muted-foreground">
+                              No active models are available for this allocation.
+                            </p>
+                          ) : (
+                            selectableModels.map((model) => {
+                              const checked = selectedAllowedModels.includes(
+                                model.provider_model_name,
+                              );
+                              return (
+                                <label
+                                  key={model.id}
+                                  className="flex min-w-0 cursor-pointer items-start gap-3 rounded-md px-2 py-2 hover:bg-muted/50"
+                                >
+                                  <Checkbox
+                                    checked={checked}
+                                    onCheckedChange={(nextChecked) => {
+                                      const nextModels = nextChecked
+                                        ? [...selectedAllowedModels, model.provider_model_name]
+                                        : selectedAllowedModels.filter(
+                                            (name) => name !== model.provider_model_name,
+                                          );
+                                      form.setValue("allowed_models", nextModels.join(", "), {
+                                        shouldDirty: true,
+                                      });
+                                    }}
+                                  />
+                                  <span className="min-w-0">
+                                    <span className="block text-sm font-medium break-words">
+                                      {model.alias || model.provider_model_name}
+                                    </span>
+                                    <span className="block text-xs break-all text-muted-foreground">
+                                      {model.provider_model_name}
+                                    </span>
+                                  </span>
+                                </label>
+                              );
+                            })
+                          )}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                    {selectedAllowedModels.length > 0 ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="w-fit"
+                        onClick={() => form.setValue("allowed_models", "", { shouldDirty: true })}
+                      >
+                        Allow all allocation models
+                      </Button>
+                    ) : null}
                   </div>
                 </form>
                 <SheetFooter>
@@ -314,16 +443,20 @@ export function ProjectKeysSection({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Key created</DialogTitle>
-            <DialogDescription>Copy the key now. It cannot be displayed again.</DialogDescription>
+            <DialogDescription>
+              {createdKey?.key
+                ? "Copy the key now. It cannot be displayed again."
+                : "Secret copy is disabled in settings, so the plaintext key was not returned."}
+            </DialogDescription>
           </DialogHeader>
-          {createdKey ? (
+          {createdKey?.key ? (
             <div className="flex items-center gap-2 rounded-md border bg-muted/40 p-2">
               <code className="min-w-0 flex-1 overflow-auto text-xs">{createdKey.key}</code>
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => {
-                  navigator.clipboard.writeText(createdKey.key);
+                  navigator.clipboard.writeText(createdKey.key ?? "");
                   setCopied(true);
                 }}
               >
@@ -331,7 +464,12 @@ export function ProjectKeysSection({
                 {copied ? "Copied" : "Copy"}
               </Button>
             </div>
-          ) : null}
+          ) : (
+            <div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+              Key prefix:{" "}
+              <span className="font-mono text-foreground">{createdKey?.key_prefix}</span>
+            </div>
+          )}
           <DialogFooter>
             <DialogClose asChild>
               <Button>Done</Button>

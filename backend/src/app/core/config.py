@@ -22,6 +22,10 @@ class Settings(BaseSettings):
         default=1_000_000,
         validation_alias="BAB_PROXY_MAX_BODY_BYTES",
     )
+    assets_dir: str = Field(
+        default="./var/assets",
+        validation_alias="BAB_ASSETS_DIR",
+    )
     default_organization_name: str = Field(
         default="Default Organization",
         validation_alias="BAB_DEFAULT_ORGANIZATION_NAME",

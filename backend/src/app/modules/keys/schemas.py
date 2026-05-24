@@ -140,7 +140,7 @@ class VirtualKeyResponse(BaseModel):
 
 
 class CreatedVirtualKeyResponse(VirtualKeyResponse):
-    key: str
+    key: str | None
 
 
 class ResolveAccessRequest(BaseModel):
@@ -173,3 +173,13 @@ class ResolvedAccess(BaseModel):
     provider_model: str
     input_price_per_million_tokens: int | None = None
     output_price_per_million_tokens: int | None = None
+
+
+class AccessibleModel(BaseModel):
+    id: str
+    object: str = "model"
+    owned_by: str
+    provider_id: UUID
+    allocation_id: UUID
+    pool_id: UUID
+    alias: str | None = None

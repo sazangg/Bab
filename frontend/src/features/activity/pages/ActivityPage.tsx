@@ -1,8 +1,18 @@
-import { Activity, AlertTriangle, Info, XCircle } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  Info,
+  Search,
+  XCircle,
+} from "lucide-react";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -28,12 +38,21 @@ const ANY = "__any__";
 export function ActivityPage() {
   const [category, setCategory] = useState(ANY);
   const [severity, setSeverity] = useState(ANY);
+  const [entitySearch, setEntitySearch] = useState("");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const activityQuery = useListActivityEventsApiV1ActivityGet({
     limit: 100,
     category: category === ANY ? undefined : category,
     severity: severity === ANY ? undefined : severity,
   });
   const events = activityQuery.data?.status === 200 ? activityQuery.data.data : [];
+  const filteredEvents = events.filter((event) => {
+    const term = entitySearch.trim().toLowerCase();
+    if (!term) return true;
+    return `${event.message} ${event.action} ${event.actor_email ?? ""} ${contextLabel(event)} ${JSON.stringify(event.metadata)}`
+      .toLowerCase()
+      .includes(term);
+  });
 
   return (
     <div className="space-y-6">
@@ -45,7 +64,16 @@ export function ActivityPage() {
         <CardHeader className="border-b">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <CardTitle>Recent events</CardTitle>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
+              <div className="relative">
+                <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  className="h-9 w-64 pl-9"
+                  value={entitySearch}
+                  onChange={(event) => setEntitySearch(event.target.value)}
+                  placeholder="Filter entity, actor, metadata..."
+                />
+              </div>
               <Select value={category} onValueChange={setCategory}>
                 <SelectTrigger className="w-36">
                   <SelectValue />
@@ -55,6 +83,8 @@ export function ActivityPage() {
                   <SelectItem value="provider">Provider</SelectItem>
                   <SelectItem value="workspace">Workspace</SelectItem>
                   <SelectItem value="allocation">Allocation</SelectItem>
+                  <SelectItem value="settings">Settings</SelectItem>
+                  <SelectItem value="guardrail">Guardrail</SelectItem>
                   <SelectItem value="proxy">Proxy</SelectItem>
                 </SelectContent>
               </Select>
@@ -75,11 +105,11 @@ export function ActivityPage() {
         <CardContent>
           {activityQuery.isPending ? (
             <p className="text-sm text-muted-foreground">Loading activity...</p>
-          ) : events.length === 0 ? (
+          ) : filteredEvents.length === 0 ? (
             <EmptyState
               icon={Activity}
               title="No activity yet"
-              description="Admin changes and proxy denials will appear here."
+              description="Admin changes and proxy denials matching the filters will appear here."
             />
           ) : (
             <Table>
@@ -93,8 +123,15 @@ export function ActivityPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {events.map((event) => (
-                  <ActivityRow key={event.id} event={event} />
+                {filteredEvents.map((event) => (
+                  <ActivityRow
+                    key={event.id}
+                    event={event}
+                    expanded={expandedId === event.id}
+                    onToggle={() =>
+                      setExpandedId((current) => (current === event.id ? null : event.id))
+                    }
+                  />
                 ))}
               </TableBody>
             </Table>
@@ -105,49 +142,95 @@ export function ActivityPage() {
   );
 }
 
-function ActivityRow({ event }: { event: ActivityEventResponse }) {
+function ActivityRow({
+  event,
+  expanded,
+  onToggle,
+}: {
+  event: ActivityEventResponse;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
   const Icon =
     event.severity === "error" ? XCircle : event.severity === "warning" ? AlertTriangle : Info;
   return (
-    <TableRow>
-      <TableCell className="max-w-[28rem] whitespace-normal">
-        <div className="flex gap-2">
-          <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-          <div className="min-w-0">
-            <div className="font-medium">{event.message}</div>
-            <div className="mt-1 text-xs text-muted-foreground">{event.action}</div>
+    <>
+      <TableRow>
+        <TableCell className="max-w-[28rem] whitespace-normal">
+          <div className="flex gap-2">
+            <Button variant="ghost" size="icon" className="size-6 shrink-0" onClick={onToggle}>
+              {expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+            </Button>
+            <Icon className="mt-1 size-4 shrink-0 text-muted-foreground" />
+            <div className="min-w-0">
+              <div className="font-medium">{event.message}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{event.action}</div>
+            </div>
           </div>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-1.5">
-          <Badge variant="outline">{event.category}</Badge>
-          <Badge variant={event.severity === "error" ? "destructive" : "secondary"}>
-            {event.severity}
-          </Badge>
-        </div>
-      </TableCell>
-      <TableCell>{event.actor_email ?? "Gateway runtime"}</TableCell>
-      <TableCell className="max-w-[18rem] whitespace-normal text-xs text-muted-foreground">
-        {contextLabel(event)}
-      </TableCell>
-      <TableCell className="text-right text-muted-foreground">
-        {new Date(event.created_at).toLocaleString()}
-      </TableCell>
-    </TableRow>
+        </TableCell>
+        <TableCell>
+          <div className="flex items-center gap-1.5">
+            <Badge variant="outline">{event.category}</Badge>
+            <Badge variant={event.severity === "error" ? "destructive" : "secondary"}>
+              {event.severity}
+            </Badge>
+          </div>
+        </TableCell>
+        <TableCell>{event.actor_email ?? "Gateway runtime"}</TableCell>
+        <TableCell className="max-w-[18rem] whitespace-normal text-xs text-muted-foreground">
+          {contextLabel(event)}
+        </TableCell>
+        <TableCell className="text-right text-muted-foreground">
+          {new Date(event.created_at).toLocaleString()}
+        </TableCell>
+      </TableRow>
+      {expanded ? (
+        <TableRow>
+          <TableCell colSpan={5} className="bg-muted/20">
+            <pre className="max-h-64 overflow-auto rounded-md bg-background p-3 text-xs">
+              {JSON.stringify(
+                {
+                  id: event.id,
+                  context: eventContext(event),
+                  metadata: event.metadata,
+                },
+                null,
+                2,
+              )}
+            </pre>
+          </TableCell>
+        </TableRow>
+      ) : null}
+    </>
   );
 }
 
 function contextLabel(event: ActivityEventResponse) {
-  const parts = [
-    event.provider_id ? `Provider ${shortId(event.provider_id)}` : null,
-    event.team_id ? `Team ${shortId(event.team_id)}` : null,
-    event.project_id ? `Project ${shortId(event.project_id)}` : null,
-    event.allocation_id ? `Allocation ${shortId(event.allocation_id)}` : null,
-    event.virtual_key_id ? `Key ${shortId(event.virtual_key_id)}` : null,
-    event.pool_id ? `Pool ${shortId(event.pool_id)}` : null,
-  ].filter(Boolean);
+  const parts = Object.entries(eventContext(event)).map(
+    ([key, value]) => `${labelize(key)} ${shortId(value)}`,
+  );
   return parts.length > 0 ? parts.join(" · ") : "-";
+}
+
+function eventContext(event: ActivityEventResponse) {
+  return Object.fromEntries(
+    Object.entries({
+      provider: event.provider_id,
+      team: event.team_id,
+      project: event.project_id,
+      allocation: event.allocation_id,
+      virtual_key: event.virtual_key_id,
+      pool: event.pool_id,
+      model_offering: event.model_offering_id,
+    }).filter((entry): entry is [string, string] => Boolean(entry[1])),
+  );
+}
+
+function labelize(value: string) {
+  return value
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function shortId(value: string) {

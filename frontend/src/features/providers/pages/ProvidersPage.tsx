@@ -36,7 +36,6 @@ import {
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import {
-  createProviderApiV1ProvidersPost,
   createProviderCredentialApiV1ProvidersProviderIdCredentialsPost,
   useCreateProviderApiV1ProvidersPost,
   useDeactivateProviderApiV1ProvidersProviderIdDelete,
@@ -50,7 +49,6 @@ import { StatusBadge } from "@/shared/components/StatusBadge";
 
 import { EditProviderSheet } from "../components/EditProviderSheet";
 import { ProviderLogo } from "../components/ProviderLogo";
-import { providerPresets, type ProviderCatalogEntry } from "../lib/presets";
 import {
   createProviderSchema,
   providerCredentialSchema,
@@ -58,12 +56,12 @@ import {
   type ProviderCredentialValues,
 } from "../lib/schemas";
 
-type CatalogSegment = "all" | "configured" | "custom";
+type CatalogSegment = "all" | "default" | "custom" | "ready";
 
 export function ProvidersPage() {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
-  const [addKeyTarget, setAddKeyTarget] = useState<ProviderCatalogEntry | null>(null);
+  const [addKeyTarget, setAddKeyTarget] = useState<ProviderResponse | null>(null);
   const [editTarget, setEditTarget] = useState<ProviderResponse | null>(null);
   const [deactivateTarget, setDeactivateTarget] = useState<ProviderResponse | null>(null);
   const [search, setSearch] = useState("");
@@ -71,50 +69,21 @@ export function ProvidersPage() {
 
   const providersQuery = useListProvidersApiV1ProvidersGet();
   const providers = providersQuery.data?.status === 200 ? providersQuery.data.data : [];
-  const knownEntries = providerPresets.map((preset) => {
-    const provider = providers.find((item) => item.slug === preset.slug);
-    return {
-      key: preset.id,
-      name: provider?.name ?? preset.name,
-      slug: preset.slug,
-      baseUrl: provider?.base_url ?? preset.baseUrl,
-      description: preset.description,
-      provider,
-      preset,
-      simpleIcon: preset.simpleIcon,
-      isCustom: false,
-    } satisfies ProviderCatalogEntry;
-  });
-  const customEntries = providers
-    .filter((provider) => !providerPresets.some((preset) => preset.slug === provider.slug))
-    .map(
-      (provider) =>
-        ({
-          key: provider.id,
-          name: provider.name,
-          slug: provider.slug ?? undefined,
-          baseUrl: provider.base_url,
-          description: "Custom OpenAI-compatible upstream provider.",
-          provider,
-          isCustom: true,
-        }) satisfies ProviderCatalogEntry,
-    );
-  const allEntries = [...customEntries, ...knownEntries].sort(
-    (a, b) => Number(Boolean(b.provider)) - Number(Boolean(a.provider)),
-  );
   const segmentCounts = {
-    all: allEntries.length,
-    configured: allEntries.filter((entry) => entry.provider).length,
-    custom: allEntries.filter((entry) => entry.isCustom).length,
+    all: providers.length,
+    default: providers.filter((provider) => provider.catalog_type === "default").length,
+    custom: providers.filter((provider) => provider.catalog_type === "custom").length,
+    ready: providers.filter((provider) => provider.readiness?.is_ready).length,
   };
-  const catalogEntries = allEntries
+  const catalogEntries = providers
     .filter((entry) => {
-      if (segment === "configured") return Boolean(entry.provider);
-      if (segment === "custom") return entry.isCustom;
+      if (segment === "default") return entry.catalog_type === "default";
+      if (segment === "custom") return entry.catalog_type === "custom";
+      if (segment === "ready") return Boolean(entry.readiness?.is_ready);
       return true;
     })
     .filter((entry) =>
-      `${entry.name} ${entry.slug ?? ""} ${entry.baseUrl}`
+      `${entry.name} ${entry.slug ?? ""} ${entry.base_url}`
         .toLowerCase()
         .includes(search.toLowerCase().trim()),
     );
@@ -148,7 +117,7 @@ export function ProvidersPage() {
     <>
       <PageHeader
         title="Providers"
-        description="Add credentials to known providers, or register a custom OpenAI-compatible upstream."
+        description="Default and custom OpenAI-compatible upstream providers."
         actions={
           <CreateProviderSheet
             open={createOpen}
@@ -183,7 +152,7 @@ export function ProvidersPage() {
               />
             </div>
             <div className="flex items-center gap-1 rounded-md border bg-muted/30 p-0.5">
-              {(["all", "configured", "custom"] as const).map((value) => (
+              {(["all", "default", "custom", "ready"] as const).map((value) => (
                 <button
                   key={value}
                   type="button"
@@ -212,15 +181,14 @@ export function ProvidersPage() {
             <div className="space-y-3">
               {catalogEntries.map((entry) => (
                 <ProviderCatalogRow
-                  key={entry.key}
-                  entry={entry}
+                  key={entry.id}
+                  provider={entry}
                   onAddKey={() => setAddKeyTarget(entry)}
-                  onEdit={() => entry.provider && setEditTarget(entry.provider)}
-                  onDeactivate={() => entry.provider && setDeactivateTarget(entry.provider)}
+                  onEdit={() => setEditTarget(entry)}
+                  onDeactivate={() => setDeactivateTarget(entry)}
                   onReactivate={() =>
-                    entry.provider &&
                     updateMutation.mutate({
-                      providerId: entry.provider.id,
+                      providerId: entry.id,
                       data: { is_active: true },
                     })
                   }
@@ -242,7 +210,7 @@ export function ProvidersPage() {
         isPending={updateMutation.isPending}
       />
       <AddProviderCredentialDialog
-        key={addKeyTarget?.key ?? "closed"}
+        key={addKeyTarget?.id ?? "closed"}
         entry={addKeyTarget}
         onClose={() => setAddKeyTarget(null)}
         onCreated={async () => {
@@ -283,52 +251,48 @@ export function ProvidersPage() {
 }
 
 function ProviderCatalogRow({
-  entry,
+  provider,
   onAddKey,
   onEdit,
   onDeactivate,
   onReactivate,
   isUpdating,
 }: {
-  entry: ProviderCatalogEntry;
+  provider: ProviderResponse;
   onAddKey: () => void;
   onEdit: () => void;
   onDeactivate: () => void;
   onReactivate: () => void;
   isUpdating: boolean;
 }) {
-  const activeCredentialCount = entry.provider?.credential_summary?.active ?? 0;
-  const needsAttention = entry.provider && entry.provider.is_active && activeCredentialCount === 0;
+  const activeCredentialCount = provider.credential_summary?.active ?? 0;
+  const needsAttention = provider.is_active && !provider.readiness?.is_ready;
 
   return (
     <div
       className={cn(
         "rounded-lg border p-4 transition-colors hover:bg-muted/30",
-        entry.provider && !entry.provider.is_active && "opacity-60",
+        !provider.is_active && "opacity-60",
       )}
     >
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <Link
-          className="min-w-0 flex-1 space-y-2"
-          to={entry.provider ? `/providers/${entry.provider.id}` : "#"}
-          onClick={(event) => {
-            if (!entry.provider) event.preventDefault();
-          }}
-        >
+        <Link className="min-w-0 flex-1 space-y-2" to={`/providers/${provider.id}`}>
           <div className="flex items-center gap-3">
-            <ProviderLogo iconSlug={entry.simpleIcon} name={entry.name} />
+            <ProviderLogo iconSlug={provider.slug ?? undefined} name={provider.name} />
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="font-medium">{entry.name}</h2>
-                {entry.provider ? (
-                  <StatusBadge variant={entry.provider.is_active ? "active" : "inactive"}>
-                    {entry.provider.is_active ? "Configured" : "Disabled"}
-                  </StatusBadge>
-                ) : (
-                  <StatusBadge variant="inactive">Not configured</StatusBadge>
-                )}
+                <h2 className="font-medium">{provider.name}</h2>
+                <StatusBadge variant={provider.catalog_type === "default" ? "active" : "muted"}>
+                  {provider.catalog_type === "default" ? "Default" : "Custom"}
+                </StatusBadge>
+                <StatusBadge variant={provider.is_active ? "active" : "inactive"}>
+                  {provider.is_active ? "Enabled" : "Disabled"}
+                </StatusBadge>
+                {provider.readiness?.is_ready ? (
+                  <StatusBadge variant="active">Ready</StatusBadge>
+                ) : null}
                 {needsAttention ? (
-                  <StatusBadge variant="expired">Needs credential</StatusBadge>
+                  <StatusBadge variant="expired">Setup incomplete</StatusBadge>
                 ) : null}
                 {activeCredentialCount > 0 ? (
                   <span className="text-xs text-muted-foreground">
@@ -337,64 +301,51 @@ function ProviderCatalogRow({
                   </span>
                 ) : null}
               </div>
-              <p className="text-sm text-muted-foreground">{entry.description}</p>
+              <p className="text-sm text-muted-foreground">
+                {provider.description ?? "Custom OpenAI-compatible upstream provider."}
+              </p>
             </div>
           </div>
-          <p className="truncate font-mono text-xs text-muted-foreground">{entry.baseUrl}</p>
+          <p className="truncate font-mono text-xs text-muted-foreground">{provider.base_url}</p>
         </Link>
 
         <div className="flex shrink-0 items-center gap-2">
           <Button size="sm" onClick={onAddKey}>
             <Plus />
-            {entry.provider ? "Add credential" : "Set up"}
+            Add credential
           </Button>
-          {entry.provider ? (
-            <>
-              <Button asChild size="sm" variant="outline">
-                <Link to={`/providers/${entry.provider.id}`}>Open</Link>
+          <Button asChild size="sm" variant="outline">
+            <Link to={`/providers/${provider.id}`}>Open</Link>
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon-sm" aria-label="Provider actions">
+                <MoreHorizontal />
               </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon-sm" aria-label="Provider actions">
-                    <MoreHorizontal />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onSelect={onEdit}>
-                    <Pencil className="mr-2 size-4" />
-                    Edit provider
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={onDeactivate}
-                    disabled={!entry.provider.is_active}
-                    variant="destructive"
-                  >
-                    <Power className="mr-2 size-4" />
-                    Deactivate
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={onReactivate}
-                    disabled={entry.provider.is_active || isUpdating}
-                  >
-                    <RotateCcw className="mr-2 size-4" />
-                    Reactivate
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </>
-          ) : null}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={onEdit}>
+                <Pencil className="mr-2 size-4" />
+                Edit provider
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={onDeactivate}
+                disabled={!provider.is_active}
+                variant="destructive"
+              >
+                <Power className="mr-2 size-4" />
+                Deactivate
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={onReactivate} disabled={provider.is_active || isUpdating}>
+                <RotateCcw className="mr-2 size-4" />
+                Reactivate
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     </div>
   );
-}
-
-class ProviderStepError extends Error {
-  step: "provider" | "credential";
-  constructor(step: "provider" | "credential", message: string) {
-    super(message);
-    this.step = step;
-  }
 }
 
 function AddProviderCredentialDialog({
@@ -402,7 +353,7 @@ function AddProviderCredentialDialog({
   onClose,
   onCreated,
 }: {
-  entry: ProviderCatalogEntry | null;
+  entry: ProviderResponse | null;
   onClose: () => void;
   onCreated: () => Promise<void>;
 }) {
@@ -415,55 +366,27 @@ function AddProviderCredentialDialog({
       api_key: "",
     },
   });
-  const isNewProvider = Boolean(entry && !entry.provider);
 
   const submit = form.handleSubmit(async (values) => {
     if (!entry) return;
 
     setIsPending(true);
     setErrorMessage(null);
-    let providerCreatedHere = false;
     try {
-      let providerId = entry.provider?.id;
-      if (!providerId) {
-        const response = await createProviderApiV1ProvidersPost({
-          name: entry.name,
-          ...(entry.slug ? { slug: entry.slug } : {}),
-          base_url: entry.baseUrl,
-        });
-        if (response.status !== 201) {
-          throw new ProviderStepError("provider", "Provider could not be created.");
-        }
-        providerId = response.data.id;
-        providerCreatedHere = true;
-      }
-
       const keyResponse = await createProviderCredentialApiV1ProvidersProviderIdCredentialsPost(
-        providerId,
+        entry.id,
         {
           name: values.name,
           api_key: values.api_key,
         },
       );
       if (keyResponse.status !== 201) {
-        throw new ProviderStepError("credential", "Credential could not be created.");
+        throw new Error("Credential could not be created.");
       }
-      toast.success(
-        providerCreatedHere
-          ? `${entry.name} is set up with an initial credential.`
-          : `Credential added to ${entry.name}.`,
-      );
+      toast.success(`Credential added to ${entry.name}.`);
       await onCreated();
     } catch (error) {
-      if (
-        error instanceof ProviderStepError &&
-        error.step === "credential" &&
-        providerCreatedHere
-      ) {
-        setErrorMessage(
-          `${entry.name} was created, but the credential failed. The provider is now visible in the catalog — try adding the credential again.`,
-        );
-      } else if (error instanceof ProviderStepError) {
+      if (error instanceof Error) {
         setErrorMessage(error.message);
       } else {
         setErrorMessage("Something went wrong. Try again.");
@@ -477,43 +400,14 @@ function AddProviderCredentialDialog({
     <Sheet open={Boolean(entry)} onOpenChange={(open) => !open && onClose()}>
       <SheetContent>
         <SheetHeader>
-          <SheetTitle>{isNewProvider ? `Set up ${entry?.name}` : "Add credential"}</SheetTitle>
+          <SheetTitle>Add credential</SheetTitle>
           <SheetDescription>
-            {isNewProvider
-              ? `We'll register ${entry?.name} as a provider, then add this first credential.`
-              : entry
-                ? `Add an encrypted upstream API key for ${entry.name}.`
-                : "Add an encrypted upstream API key."}
+            {entry
+              ? `Add an encrypted upstream API key for ${entry.name}.`
+              : "Add an encrypted upstream API key."}
           </SheetDescription>
         </SheetHeader>
-        <form className="grid gap-4 px-4" onSubmit={submit}>
-          {isNewProvider && entry ? (
-            <div className="rounded-md border bg-muted/30 p-3 text-xs">
-              <p className="font-medium text-foreground">Step 1 · Provider</p>
-              <dl className="mt-1.5 space-y-0.5 text-muted-foreground">
-                <div className="flex justify-between gap-2">
-                  <dt>Name</dt>
-                  <dd className="font-medium text-foreground">{entry.name}</dd>
-                </div>
-                {entry.slug ? (
-                  <div className="flex justify-between gap-2">
-                    <dt>Slug</dt>
-                    <dd className="font-mono text-foreground">{entry.slug}</dd>
-                  </div>
-                ) : null}
-                <div className="flex justify-between gap-2">
-                  <dt>Base URL</dt>
-                  <dd className="truncate font-mono text-foreground">{entry.baseUrl}</dd>
-                </div>
-              </dl>
-              <p className="mt-2 text-muted-foreground">
-                You can edit any of these later from Settings on the provider page.
-              </p>
-            </div>
-          ) : null}
-          {isNewProvider ? (
-            <p className="-mb-1 text-xs font-medium">Step 2 · First credential</p>
-          ) : null}
+        <form className="grid gap-4 overflow-y-auto px-6 py-5" onSubmit={submit}>
           <div className="space-y-1.5">
             <Label htmlFor="provider-key-name">Name</Label>
             <Input id="provider-key-name" autoFocus {...form.register("name")} />
@@ -531,11 +425,7 @@ function AddProviderCredentialDialog({
         </form>
         <SheetFooter>
           <Button disabled={isPending} onClick={submit}>
-            {isPending
-              ? "Saving..."
-              : isNewProvider
-                ? "Set up and add credential"
-                : "Add credential"}
+            {isPending ? "Saving..." : "Add credential"}
           </Button>
           <SheetClose asChild>
             <Button variant="outline">Cancel</Button>
@@ -594,7 +484,11 @@ function CreateProviderSheet({
             directly with Add credential.
           </SheetDescription>
         </SheetHeader>
-        <form className="grid gap-4 px-4" autoComplete="off" onSubmit={form.handleSubmit(onSubmit)}>
+        <form
+          className="grid gap-4 overflow-y-auto px-6 py-5"
+          autoComplete="off"
+          onSubmit={form.handleSubmit(onSubmit)}
+        >
           <div className="space-y-1.5">
             <Label htmlFor="provider-name">Name</Label>
             <Input id="provider-name" autoFocus placeholder="Acme AI" {...form.register("name")} />

@@ -13,7 +13,6 @@ export interface UpdateProviderRequest {
   name?: string | null;
   slug?: string | null;
   base_url?: string | null;
-  api_key?: string | null;
   description?: string | null;
   capabilities?: UpdateProviderRequestCapabilities;
   request_timeout_seconds?: number | null;

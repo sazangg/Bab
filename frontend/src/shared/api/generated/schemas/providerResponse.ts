@@ -8,6 +8,7 @@ import type { ProviderCredentialSummary } from "./providerCredentialSummary";
 import type { ProviderResponseCapabilities } from "./providerResponseCapabilities";
 import type { ProviderResponseCircuitBreakerPolicy } from "./providerResponseCircuitBreakerPolicy";
 import type { ProviderResponseFallbackPolicy } from "./providerResponseFallbackPolicy";
+import type { ProviderReadiness } from "./providerReadiness";
 import type { ProviderResponseRetryPolicy } from "./providerResponseRetryPolicy";
 
 export interface ProviderResponse {
@@ -21,6 +22,7 @@ export interface ProviderResponse {
   description: string | null;
   capabilities: ProviderResponseCapabilities;
   supported_integration: string;
+  catalog_type?: string;
   request_timeout_seconds: number;
   max_body_bytes: number | null;
   retry_policy: ProviderResponseRetryPolicy;
@@ -28,6 +30,7 @@ export interface ProviderResponse {
   circuit_breaker_policy: ProviderResponseCircuitBreakerPolicy;
   max_concurrent_requests: number | null;
   credential_summary?: ProviderCredentialSummary;
+  readiness?: ProviderReadiness;
   is_active: boolean;
   created_at: string;
   updated_at: string;

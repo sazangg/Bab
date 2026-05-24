@@ -9,6 +9,7 @@ import type { UsageSummaryTotals } from "./usageSummaryTotals";
 
 export interface AllocationUsageSummary {
   allocation_id: string;
+  window: string;
   totals: UsageSummaryTotals;
   by_virtual_key: UsageBreakdownRow[];
   by_provider: UsageBreakdownRow[];

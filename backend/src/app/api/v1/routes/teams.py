@@ -135,6 +135,7 @@ async def list_team_allocation_usage(
         await usage_facade.get_allocation_usage_summary(
             allocation_id=allocation.id,
             org_id=scope.org_id,
+            window=allocation.window,
             db=db,
         )
         for allocation in allocations

@@ -50,6 +50,7 @@ class UsageBreakdownRow(UsageSummaryTotals):
 
 class AllocationUsageSummary(BaseModel):
     allocation_id: UUID
+    window: str
     totals: UsageSummaryTotals
     by_virtual_key: list[UsageBreakdownRow]
     by_provider: list[UsageBreakdownRow]

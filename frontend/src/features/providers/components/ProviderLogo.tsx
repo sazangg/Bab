@@ -1,5 +1,4 @@
 import {
-  siAnthropic,
   siDeepseek,
   siGoogle,
   siHuggingface,
@@ -13,7 +12,6 @@ import type { SimpleIcon } from "simple-icons";
 import { cn } from "@/lib/utils";
 
 const iconBySlug: Record<string, SimpleIcon> = {
-  anthropic: siAnthropic,
   deepseek: siDeepseek,
   google: siGoogle,
   huggingface: siHuggingface,

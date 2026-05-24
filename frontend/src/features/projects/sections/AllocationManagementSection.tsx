@@ -1,7 +1,8 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Gauge, Layers3, Pencil, Plus, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 
@@ -14,8 +15,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -32,7 +35,9 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   useCreateAllocationApiV1ProjectsAllocationsPost,
   useListProjectAllocationUsageApiV1ProjectsProjectIdAllocationsUsageGet,
@@ -72,6 +77,8 @@ const allocationSchema = z.object({
   max_output_tokens: z.preprocess(optionalNumber, z.number().int().min(1).optional()),
   max_tokens_per_request: z.preprocess(optionalNumber, z.number().int().min(1).optional()),
   window: z.enum(["daily", "weekly", "monthly", "lifetime"]),
+  is_default: z.boolean(),
+  is_active: z.boolean(),
 });
 
 type AllocationInput = z.input<typeof allocationSchema>;
@@ -197,7 +204,7 @@ export function AllocationManagementSection({ target }: { target: AllocationTarg
         <CardDescription>
           {target.type === "project"
             ? teamDefault
-              ? `Team default: ${teamDefault.name}. Project allocation must stay within it.`
+              ? `Team default: ${teamDefault.name}. Runtime enforcement checks both team and project limits.`
               : "No team allocation exists. A project allocation can define the effective access."
             : "Define the team-level default that projects inherit."}
         </CardDescription>
@@ -251,7 +258,6 @@ export function AllocationManagementSection({ target }: { target: AllocationTarg
                 model_offering_id: modelOfferingId,
               })),
             ],
-            is_default: true,
             budget_cents:
               values.budget_dollars === undefined ? null : Math.round(values.budget_dollars * 100),
             max_requests: values.max_requests ?? null,
@@ -259,6 +265,8 @@ export function AllocationManagementSection({ target }: { target: AllocationTarg
             max_output_tokens: values.max_output_tokens ?? null,
             max_tokens_per_request: values.max_tokens_per_request ?? null,
             window: values.window,
+            is_default: values.is_default,
+            is_active: values.is_active,
           };
           if (editingAllocation) {
             updateAllocation.mutate({ allocationId: editingAllocation.id, data });
@@ -269,7 +277,6 @@ export function AllocationManagementSection({ target }: { target: AllocationTarg
               ...data,
               team_id: target.type === "team" ? target.teamId : undefined,
               project_id: target.type === "project" ? target.projectId : undefined,
-              is_default: true,
             },
           });
         }}
@@ -393,6 +400,7 @@ function AllocationUsagePanel({
   const constrainedItems = pressureItems.filter(
     (item) => item.cap !== null && item.cap !== undefined,
   );
+  const windowLabel = formatWindowLabel(usage?.window || allocation.window);
   const hottestItem = constrainedItems
     .map((item) => ({ ...item, ratio: item.cap ? item.used / item.cap : 0 }))
     .sort((left, right) => right.ratio - left.ratio)[0];
@@ -419,8 +427,8 @@ function AllocationUsagePanel({
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
             {hottestItem
-              ? `${hottestItem.label} is the closest active constraint.`
-              : "No request, token, or budget cap is set for this allocation."}
+              ? `${hottestItem.label} is the closest active constraint in the ${windowLabel} window.`
+              : `No request, token, or budget cap is set for this ${windowLabel} allocation.`}
           </p>
         </div>
         <StatusBadge variant={pressureState.variant}>{pressureState.label}</StatusBadge>
@@ -458,8 +466,8 @@ function AllocationUsagePanel({
         <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
         <div>
           Remaining: {formatRemaining(requests, allocation.max_requests)} requests,
-          {formatRemaining(costCents, allocation.budget_cents)} budget. Token pressure is evaluated
-          against recorded input/output tokens for this allocation window.
+          {formatRemaining(costCents, allocation.budget_cents)} budget in the {windowLabel} window.
+          Token pressure uses recorded input/output tokens for that same window.
         </div>
       </div>
     </div>
@@ -579,6 +587,9 @@ function AllocationSheet({
   const poolId = useWatch({ control: form.control, name: "pool_id" });
   const modelOfferingIds = useWatch({ control: form.control, name: "model_offering_ids" }) ?? [];
   const window = useWatch({ control: form.control, name: "window" });
+  const isDefault = useWatch({ control: form.control, name: "is_default" });
+  const isActive = useWatch({ control: form.control, name: "is_active" });
+  const initializedFor = useRef<string | null>(null);
   const providersQuery = useListProvidersApiV1ProvidersGet();
   const poolsQuery = useListCredentialPoolsApiV1ProvidersProviderIdPoolsGet(providerId || "", {
     query: { enabled: Boolean(providerId) },
@@ -598,12 +609,20 @@ function AllocationSheet({
     (pool) => pool.is_active && (pool.active_credential_count ?? 0) > 0,
   );
   const activeModels = models.filter((model) => model.is_active);
+  const selectedModels = activeModels.filter((model) => modelOfferingIds.includes(model.id));
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      initializedFor.current = null;
+      return;
+    }
+    const resetKey = allocation ? `edit-${allocation.id}` : "create";
+    if (initializedFor.current === resetKey) return;
     if (allocation) {
       const firstOffering = allocation.offerings[0];
       const firstModel = firstOffering ? modelsById.get(firstOffering.model_offering_id) : null;
+      if (firstOffering && !firstModel) return;
+      initializedFor.current = resetKey;
       form.reset({
         name: allocation.name,
         description: allocation.description ?? "",
@@ -619,9 +638,12 @@ function AllocationSheet({
         max_output_tokens: allocation.max_output_tokens ?? undefined,
         max_tokens_per_request: allocation.max_tokens_per_request ?? undefined,
         window: toAllocationWindow(allocation.window),
+        is_default: allocation.is_default,
+        is_active: allocation.is_active,
       });
       return;
     }
+    initializedFor.current = resetKey;
     form.reset({
       name: "",
       description: "",
@@ -634,6 +656,8 @@ function AllocationSheet({
       max_output_tokens: undefined,
       max_tokens_per_request: undefined,
       window: "monthly",
+      is_default: true,
+      is_active: true,
     });
   }, [open, allocation, form, modelsById]);
 
@@ -643,145 +667,231 @@ function AllocationSheet({
         <SheetHeader>
           <SheetTitle>{allocation ? "Edit allocation" : "New allocation"}</SheetTitle>
           <SheetDescription>
-            Allocations grant access to model offerings through credential pools.
+            Define the pool, model access, and limits that virtual keys can consume.
           </SheetDescription>
         </SheetHeader>
-        <form className="grid gap-4 px-4" onSubmit={form.handleSubmit(onSubmit)}>
-          <div className="space-y-1.5">
-            <Label htmlFor="allocation-name">Name</Label>
-            <Input id="allocation-name" autoFocus {...form.register("name")} />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="allocation-description">Description</Label>
-            <Textarea id="allocation-description" {...form.register("description")} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Provider</Label>
-            <Select
-              value={providerId || ""}
-              onValueChange={(value) => {
-                form.setValue("provider_id", value);
-                form.setValue("pool_id", "");
-                form.setValue("model_offering_ids", []);
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select provider" />
-              </SelectTrigger>
-              <SelectContent>
-                {configuredProviders.map((provider) => (
-                  <SelectItem key={provider.id} value={provider.id}>
-                    {provider.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label>Credential pool</Label>
-              <Select
-                value={poolId || ""}
-                onValueChange={(value) => form.setValue("pool_id", value)}
-                disabled={!providerId}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select pool" />
-                </SelectTrigger>
-                <SelectContent>
-                  {activePools.map((pool) => (
-                    <SelectItem key={pool.id} value={pool.id}>
-                      {pool.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Model offerings</Label>
-              <div className="rounded-md border p-2">
-                {modelOfferingIds.length > 0 ? (
-                  <div className="mb-2 flex flex-wrap gap-1.5">
-                    {modelOfferingIds.map((id) => {
-                      const model = activeModels.find((item) => item.id === id);
-                      return (
-                        <span
-                          key={id}
-                          className="inline-flex items-center gap-1 rounded-md border bg-muted/40 px-2 py-0.5 text-xs"
-                        >
-                          {model?.provider_model_name ?? id}
-                          <button
-                            type="button"
-                            className="rounded-sm text-muted-foreground hover:text-foreground"
-                            onClick={() =>
-                              form.setValue(
-                                "model_offering_ids",
-                                modelOfferingIds.filter((value) => value !== id),
-                              )
-                            }
-                            aria-label="Remove model"
-                          >
-                            <X className="size-3" />
-                          </button>
-                        </span>
-                      );
-                    })}
+        <ScrollArea className="min-h-0 flex-1">
+          <form className="flex flex-col gap-5 px-6 py-5" onSubmit={form.handleSubmit(onSubmit)}>
+            <section className="rounded-md border p-4">
+              <div className="mb-4">
+                <h3 className="text-sm font-medium">Basics</h3>
+                <p className="text-xs text-muted-foreground">
+                  Name the allocation so it is recognizable from teams, projects, and keys.
+                </p>
+              </div>
+              <div className="grid gap-3">
+                <Field label="Name" htmlFor="allocation-name">
+                  <Input id="allocation-name" autoFocus {...form.register("name")} />
+                </Field>
+                <Field label="Description" htmlFor="allocation-description">
+                  <Textarea
+                    id="allocation-description"
+                    className="min-h-24"
+                    {...form.register("description")}
+                  />
+                </Field>
+              </div>
+            </section>
+
+            <section className="rounded-md border p-4">
+              <div className="mb-4">
+                <h3 className="text-sm font-medium">Routing access</h3>
+                <p className="text-xs text-muted-foreground">
+                  Pick a configured provider, one active credential pool, and the models this
+                  allocation can route to.
+                </p>
+              </div>
+              <div className="grid gap-4">
+                <div className="flex flex-col gap-3">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <Field label="Provider">
+                      <Select
+                        value={providerId || ""}
+                        onValueChange={(value) => {
+                          form.setValue("provider_id", value, { shouldDirty: true });
+                          form.setValue("pool_id", "", { shouldDirty: true });
+                          form.setValue("model_offering_ids", [], { shouldDirty: true });
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select provider" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {configuredProviders.map((provider) => (
+                            <SelectItem key={provider.id} value={provider.id}>
+                              {provider.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="Credential pool">
+                      <Select
+                        value={poolId || ""}
+                        onValueChange={(value) =>
+                          form.setValue("pool_id", value, { shouldDirty: true })
+                        }
+                        disabled={!providerId}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select pool" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {activePools.map((pool) => (
+                            <SelectItem key={pool.id} value={pool.id}>
+                              {pool.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {providerId && activePools.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          This provider has no active pool with active credentials.
+                        </p>
+                      ) : null}
+                    </Field>
                   </div>
-                ) : null}
-                <Select
-                  value=""
-                  onValueChange={(value) => {
-                    if (!modelOfferingIds.includes(value)) {
-                      form.setValue("model_offering_ids", [...modelOfferingIds, value]);
-                    }
-                  }}
-                  disabled={!providerId}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Add model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {activeModels
-                      .filter((model) => !modelOfferingIds.includes(model.id))
-                      .map((model) => (
-                        <SelectItem key={model.id} value={model.id}>
-                          {model.provider_model_name}
-                        </SelectItem>
+                  <p className="text-xs text-muted-foreground">
+                    {selectedModels.length} model{selectedModels.length === 1 ? "" : "s"} selected
+                    {poolId ? " for the selected pool." : "."}
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <Label>Model offerings</Label>
+                  <div className="rounded-md border">
+                    <ScrollArea className="h-72">
+                      <div className="grid gap-1 p-2 md:grid-cols-2">
+                        {!providerId ? (
+                          <p className="p-2 text-sm text-muted-foreground md:col-span-2">
+                            Select a provider to see active models.
+                          </p>
+                        ) : activeModels.length === 0 ? (
+                          <p className="p-2 text-sm text-muted-foreground md:col-span-2">
+                            No active models for this provider.
+                          </p>
+                        ) : (
+                          activeModels.map((model) => {
+                            const checked = modelOfferingIds.includes(model.id);
+                            return (
+                              <label
+                                key={model.id}
+                                className="flex min-w-0 cursor-pointer items-start gap-3 rounded-md px-2 py-2 hover:bg-muted/50"
+                              >
+                                <Checkbox
+                                  checked={checked}
+                                  onCheckedChange={(nextChecked) => {
+                                    const nextIds = nextChecked
+                                      ? [...modelOfferingIds, model.id]
+                                      : modelOfferingIds.filter((id) => id !== model.id);
+                                    form.setValue("model_offering_ids", nextIds, {
+                                      shouldDirty: true,
+                                      shouldValidate: true,
+                                    });
+                                  }}
+                                />
+                                <span className="min-w-0 break-words">
+                                  <span className="block text-sm leading-5 font-medium break-words">
+                                    {model.alias || model.provider_model_name}
+                                  </span>
+                                  <span className="block text-xs leading-4 break-all text-muted-foreground">
+                                    {model.provider_model_name}
+                                  </span>
+                                </span>
+                              </label>
+                            );
+                          })
+                        )}
+                      </div>
+                    </ScrollArea>
+                  </div>
+                  {selectedModels.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedModels.map((model) => (
+                        <Button
+                          key={model.id}
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            form.setValue(
+                              "model_offering_ids",
+                              modelOfferingIds.filter((id) => id !== model.id),
+                              { shouldDirty: true, shouldValidate: true },
+                            )
+                          }
+                        >
+                          {model.alias || model.provider_model_name}
+                          <X data-icon="inline-end" />
+                        </Button>
                       ))}
-                  </SelectContent>
-                </Select>
+                    </div>
+                  ) : null}
+                </div>
               </div>
-            </div>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <NumberField label="Budget ($)" name="budget_dollars" form={form} step="0.01" />
-            <div className="grid gap-3 md:grid-cols-2">
-              <NumberField label="Max requests" name="max_requests" form={form} />
-              <div className="space-y-1.5">
-                <Label>Window</Label>
-                <Select
-                  value={window || "monthly"}
-                  onValueChange={(value) =>
-                    form.setValue("window", value as AllocationValues["window"])
+            </section>
+
+            <section className="rounded-md border p-4">
+              <div className="mb-4">
+                <h3 className="text-sm font-medium">State</h3>
+                <p className="text-xs text-muted-foreground">
+                  Defaults are inherited by virtual keys unless a key has a custom allocation.
+                </p>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <SwitchField
+                  label="Default allocation"
+                  description="Use as the default allocation for this target."
+                  checked={isDefault}
+                  onCheckedChange={(checked) =>
+                    form.setValue("is_default", checked, { shouldDirty: true })
                   }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="daily">Daily</SelectItem>
-                    <SelectItem value="weekly">Weekly</SelectItem>
-                    <SelectItem value="monthly">Monthly</SelectItem>
-                    <SelectItem value="lifetime">Lifetime</SelectItem>
-                  </SelectContent>
-                </Select>
+                />
+                <SwitchField
+                  label="Active"
+                  description="Inactive allocations cannot be used for routing."
+                  checked={isActive}
+                  onCheckedChange={(checked) =>
+                    form.setValue("is_active", checked, { shouldDirty: true })
+                  }
+                />
               </div>
-            </div>
-            <NumberField label="Input tokens" name="max_input_tokens" form={form} />
-            <NumberField label="Output tokens" name="max_output_tokens" form={form} />
-            <NumberField label="Max tokens/request" name="max_tokens_per_request" form={form} />
-          </div>
-        </form>
+            </section>
+
+            <section className="rounded-md border p-4">
+              <div className="mb-4">
+                <h3 className="text-sm font-medium">Limits</h3>
+                <p className="text-xs text-muted-foreground">
+                  Leave a field blank when this allocation should not enforce that cap.
+                </p>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <NumberField label="Budget ($)" name="budget_dollars" form={form} step="0.01" />
+                <Field label="Window">
+                  <ToggleGroup
+                    type="single"
+                    value={window || "monthly"}
+                    onValueChange={(value) => {
+                      if (value) form.setValue("window", value as AllocationValues["window"]);
+                    }}
+                    variant="outline"
+                    size="sm"
+                    className="flex-wrap"
+                  >
+                    <ToggleGroupItem value="daily">Daily</ToggleGroupItem>
+                    <ToggleGroupItem value="weekly">Weekly</ToggleGroupItem>
+                    <ToggleGroupItem value="monthly">Monthly</ToggleGroupItem>
+                    <ToggleGroupItem value="lifetime">Lifetime</ToggleGroupItem>
+                  </ToggleGroup>
+                </Field>
+                <NumberField label="Max requests" name="max_requests" form={form} />
+                <NumberField label="Max tokens/request" name="max_tokens_per_request" form={form} />
+                <NumberField label="Input tokens" name="max_input_tokens" form={form} />
+                <NumberField label="Output tokens" name="max_output_tokens" form={form} />
+              </div>
+            </section>
+          </form>
+        </ScrollArea>
         <SheetFooter>
           <Button disabled={isPending} onClick={form.handleSubmit(onSubmit)}>
             {isPending ? "Saving..." : allocation ? "Save allocation" : "Create allocation"}
@@ -812,9 +922,47 @@ function NumberField({
   step?: string;
 }) {
   return (
-    <div className="space-y-1.5">
-      <Label htmlFor={`allocation-${name}`}>{label}</Label>
+    <Field label={label} htmlFor={`allocation-${name}`}>
       <Input id={`allocation-${name}`} type="number" step={step} {...form.register(name)} />
+    </Field>
+  );
+}
+
+function Field({
+  label,
+  htmlFor,
+  children,
+}: {
+  label: string;
+  htmlFor?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor={htmlFor}>{label}</Label>
+      {children}
+    </div>
+  );
+}
+
+function SwitchField({
+  label,
+  description,
+  checked,
+  onCheckedChange,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4 rounded-md border bg-muted/20 p-3">
+      <div className="min-w-0">
+        <div className="text-sm font-medium">{label}</div>
+        <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+      </div>
+      <Switch checked={checked} onCheckedChange={onCheckedChange} />
     </div>
   );
 }
@@ -836,6 +984,10 @@ function formatCents(value: number | null | undefined) {
 function formatRemaining(used: number, cap: number | null | undefined) {
   if (cap == null) return "no cap";
   return Math.max(0, cap - used).toLocaleString();
+}
+
+function formatWindowLabel(window: string) {
+  return window === "lifetime" ? "lifetime" : window;
 }
 
 function getPressureState(ratio: number): {

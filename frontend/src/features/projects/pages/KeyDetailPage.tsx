@@ -41,6 +41,15 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -237,17 +246,17 @@ export function KeyDetailPage() {
 
       <KeyUsageCard usage={usage} />
 
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit key</DialogTitle>
-            <DialogDescription>
+      <Sheet open={editOpen} onOpenChange={setEditOpen}>
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>Edit key</SheetTitle>
+            <SheetDescription>
               A key can narrow the selected allocation by allowed model names.
-            </DialogDescription>
-          </DialogHeader>
+            </SheetDescription>
+          </SheetHeader>
           <form
             id="edit-key-form"
-            className="grid gap-4"
+            className="grid gap-4 overflow-y-auto px-6 py-5"
             onSubmit={form.handleSubmit((values) =>
               updateMutation.mutate({
                 projectId,
@@ -321,16 +330,16 @@ export function KeyDetailPage() {
               </p>
             </div>
           </form>
-          <DialogFooter>
+          <SheetFooter>
             <Button type="submit" form="edit-key-form" disabled={updateMutation.isPending}>
               {updateMutation.isPending ? "Saving..." : "Save changes"}
             </Button>
-            <DialogClose asChild>
+            <SheetClose asChild>
               <Button variant="outline">Cancel</Button>
-            </DialogClose>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </SheetClose>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
 
       <Dialog open={revokeOpen} onOpenChange={setRevokeOpen}>
         <DialogContent>

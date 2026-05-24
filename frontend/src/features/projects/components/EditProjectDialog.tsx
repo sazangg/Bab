@@ -6,14 +6,14 @@ import { z } from "zod";
 import type { ProjectResponse, UpdateProjectRequest } from "@/shared/api/generated/schemas";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -63,13 +63,17 @@ export function EditProjectDialog({
   });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Edit project</DialogTitle>
-          <DialogDescription>Rename or update the description.</DialogDescription>
-        </DialogHeader>
-        <form id="edit-project-form" className="grid gap-4" onSubmit={handleSubmit}>
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent>
+        <SheetHeader>
+          <SheetTitle>Edit project</SheetTitle>
+          <SheetDescription>Rename or update the description.</SheetDescription>
+        </SheetHeader>
+        <form
+          id="edit-project-form"
+          className="grid gap-4 overflow-y-auto px-6 py-5"
+          onSubmit={handleSubmit}
+        >
           <div className="space-y-1.5">
             <Label htmlFor="edit-project-name">Name</Label>
             <Input id="edit-project-name" autoFocus {...form.register("name")} />
@@ -87,15 +91,15 @@ export function EditProjectDialog({
             ) : null}
           </div>
         </form>
-        <DialogFooter>
+        <SheetFooter>
           <Button type="submit" form="edit-project-form" disabled={isPending}>
             {isPending ? "Saving..." : "Save changes"}
           </Button>
-          <DialogClose asChild>
+          <SheetClose asChild>
             <Button variant="outline">Cancel</Button>
-          </DialogClose>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </SheetClose>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }

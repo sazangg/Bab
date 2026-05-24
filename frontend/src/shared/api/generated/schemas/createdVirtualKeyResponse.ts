@@ -19,5 +19,5 @@ export interface CreatedVirtualKeyResponse {
   revoked_at: string | null;
   created_at: string;
   updated_at: string;
-  key: string;
+  key: string | null;
 }

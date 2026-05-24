@@ -96,6 +96,7 @@ async def list_project_allocation_usage(
         await usage_facade.get_allocation_usage_summary(
             allocation_id=allocation.id,
             org_id=scope.org_id,
+            window=allocation.window,
             db=db,
         )
         for allocation in allocations
@@ -109,6 +110,19 @@ async def list_allocations(
     _: CurrentUser,
 ) -> list[AllocationResponse]:
     return await facade.list_allocations(scope=scope, db=db)
+
+
+@router.get("/{project_id}")
+async def get_project(
+    project_id: UUID,
+    scope: RequestScope,
+    db: DatabaseSession,
+    _: CurrentUser,
+) -> ProjectResponse:
+    try:
+        return await facade.get_project(project_id=project_id, scope=scope, db=db)
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
 
 
 @router.post("/allocations", status_code=status.HTTP_201_CREATED)
