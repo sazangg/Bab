@@ -64,6 +64,9 @@ async def test_manual_model_metadata_survives_catalog_sync(db_session: AsyncSess
             model_offering_id=model.id,
             payload=UpdateModelOfferingRequest(
                 context_window=12345,
+                input_price_per_million_tokens=123,
+                output_price_per_million_tokens=456,
+                cached_input_price_per_million_tokens=78,
                 input_modalities=["text"],
                 output_modalities=["text"],
                 capabilities={"chat": True, "streaming": False},
@@ -85,6 +88,9 @@ async def test_manual_model_metadata_survives_catalog_sync(db_session: AsyncSess
 
     model_again = synced_again[0]
     assert model_again.context_window == 12345
+    assert model_again.input_price_per_million_tokens == 123
+    assert model_again.output_price_per_million_tokens == 456
+    assert model_again.cached_input_price_per_million_tokens == 78
     assert model_again.input_modalities == ["text"]
     assert model_again.output_modalities == ["text"]
     assert model_again.capabilities["streaming"] is False

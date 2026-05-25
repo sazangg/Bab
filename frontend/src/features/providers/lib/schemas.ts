@@ -171,15 +171,15 @@ export const modelOfferingSchema = z.object({
   ),
   input_price_per_million_tokens: z.preprocess(
     (value) => (value === "" || value === null || value === undefined ? undefined : Number(value)),
-    z.number().int().min(0).optional(),
+    z.number().min(0).optional(),
   ),
   output_price_per_million_tokens: z.preprocess(
     (value) => (value === "" || value === null || value === undefined ? undefined : Number(value)),
-    z.number().int().min(0).optional(),
+    z.number().min(0).optional(),
   ),
   cached_input_price_per_million_tokens: z.preprocess(
     (value) => (value === "" || value === null || value === undefined ? undefined : Number(value)),
-    z.number().int().min(0).optional(),
+    z.number().min(0).optional(),
   ),
   capabilities: z.array(z.string()).default([]),
 });

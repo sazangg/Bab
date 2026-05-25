@@ -100,6 +100,8 @@ import {
   capabilityListToRecord,
   capabilityRecordToList,
   combinedModality,
+  centsToDollars,
+  dollarsToCents,
   formatDateTime,
   formatModalities,
   formatRelativeFromNow,
@@ -602,11 +604,15 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
                       input_modalities: values.input_modalities,
                       output_modalities: values.output_modalities,
                       context_window: values.context_window ?? null,
-                      input_price_per_million_tokens: values.input_price_per_million_tokens ?? null,
-                      output_price_per_million_tokens:
-                        values.output_price_per_million_tokens ?? null,
-                      cached_input_price_per_million_tokens:
-                        values.cached_input_price_per_million_tokens ?? null,
+                      input_price_per_million_tokens: dollarsToCents(
+                        values.input_price_per_million_tokens,
+                      ),
+                      output_price_per_million_tokens: dollarsToCents(
+                        values.output_price_per_million_tokens,
+                      ),
+                      cached_input_price_per_million_tokens: dollarsToCents(
+                        values.cached_input_price_per_million_tokens,
+                      ),
                       capabilities: capabilityListToRecord(values.capabilities),
                     },
                   })
@@ -675,9 +681,13 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
               input_modalities: values.input_modalities,
               output_modalities: values.output_modalities,
               context_window: values.context_window,
-              input_price_per_million_tokens: values.input_price_per_million_tokens,
-              output_price_per_million_tokens: values.output_price_per_million_tokens,
-              cached_input_price_per_million_tokens: values.cached_input_price_per_million_tokens,
+              input_price_per_million_tokens: dollarsToCents(values.input_price_per_million_tokens),
+              output_price_per_million_tokens: dollarsToCents(
+                values.output_price_per_million_tokens,
+              ),
+              cached_input_price_per_million_tokens: dollarsToCents(
+                values.cached_input_price_per_million_tokens,
+              ),
               capabilities: capabilityListToRecord(values.capabilities),
             },
           })
@@ -701,6 +711,13 @@ function formatHealth(status: string) {
 
 function formatRoutingPolicy(value: string) {
   return routingPolicyOptions.find((option) => option.value === value)?.label ?? value;
+}
+
+function formatMetadataSource(value: string) {
+  if (value === "manual") return "Manual override";
+  if (value === "catalog") return "Provider catalog";
+  if (value === "provider") return "Provider-reported";
+  return value;
 }
 
 function toRoutingPolicyValue(value: string): CredentialPoolValues["selection_policy"] {
@@ -1758,6 +1775,9 @@ function PricingFields({
   return (
     <div className="space-y-1.5">
       <Label>Pricing (USD per 1M tokens)</Label>
+      <p className="text-xs text-muted-foreground">
+        Enter dollars. Bab stores normalized cents for usage and budget calculations.
+      </p>
       <div className="grid gap-3 md:grid-cols-3">
         <div className="space-y-1.5">
           <Label
@@ -1770,6 +1790,7 @@ function PricingFields({
             id={`${prefix}-provider-model-input-price`}
             type="number"
             min={0}
+            step="0.0001"
             placeholder="0"
             {...register("input_price_per_million_tokens")}
           />
@@ -1785,6 +1806,7 @@ function PricingFields({
             id={`${prefix}-provider-model-output-price`}
             type="number"
             min={0}
+            step="0.0001"
             placeholder="0"
             {...register("output_price_per_million_tokens")}
           />
@@ -1800,6 +1822,7 @@ function PricingFields({
             id={`${prefix}-provider-model-cached-price`}
             type="number"
             min={0}
+            step="0.0001"
             placeholder="0"
             {...register("cached_input_price_per_million_tokens")}
           />
@@ -1891,10 +1914,11 @@ function ResourceModelTable({
         ? editModel.output_modalities
         : ["text"],
       context_window: editModel.context_window ?? undefined,
-      input_price_per_million_tokens: editModel.input_price_per_million_tokens ?? undefined,
-      output_price_per_million_tokens: editModel.output_price_per_million_tokens ?? undefined,
-      cached_input_price_per_million_tokens:
-        editModel.cached_input_price_per_million_tokens ?? undefined,
+      input_price_per_million_tokens: centsToDollars(editModel.input_price_per_million_tokens),
+      output_price_per_million_tokens: centsToDollars(editModel.output_price_per_million_tokens),
+      cached_input_price_per_million_tokens: centsToDollars(
+        editModel.cached_input_price_per_million_tokens,
+      ),
       capabilities: capabilityRecordToList(editModel.capabilities),
     });
   }, [editModel, editForm]);
@@ -2140,7 +2164,8 @@ function ResourceModelTable({
           <SheetHeader>
             <SheetTitle>Edit model</SheetTitle>
             <SheetDescription>
-              Update the model metadata Bab uses for display, filtering, and routing decisions.
+              Update the model metadata Bab uses for display, filtering, routing, and spend
+              estimates.
             </SheetDescription>
           </SheetHeader>
           <form
@@ -2150,6 +2175,21 @@ function ResourceModelTable({
               setEditModel(null);
             })}
           >
+            {editModel ? (
+              <div className="rounded-md border bg-muted/20 p-3 text-sm">
+                <div className="font-medium">Metadata source</div>
+                <div className="mt-1 text-muted-foreground">
+                  {formatMetadataSource(editModel.metadata_source)}
+                  {editModel.metadata_last_synced_at
+                    ? ` · synced ${formatRelativeFromNow(editModel.metadata_last_synced_at)}`
+                    : ""}
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Saving here marks this model as manually managed. Catalog sync will preserve these
+                  values unless overwrite mode is selected.
+                </p>
+              </div>
+            ) : null}
             <div className="space-y-1.5">
               <Label htmlFor="edit-provider-model-name">Provider model name</Label>
               <Input id="edit-provider-model-name" {...editForm.register("provider_model_name")} />

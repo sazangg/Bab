@@ -51,7 +51,24 @@ export function formatCapability(value: unknown) {
 }
 
 export function formatTokenPrice(value: number | null | undefined) {
-  return value === null || value === undefined ? "Unset" : `${value.toLocaleString()} / 1M`;
+  if (value === null || value === undefined) return "Unset";
+  return `${formatCurrency(value / 100)} / 1M`;
+}
+
+export function centsToDollars(value: number | null | undefined) {
+  return value === null || value === undefined ? undefined : value / 100;
+}
+
+export function dollarsToCents(value: number | null | undefined) {
+  return value === null || value === undefined ? null : Math.round(value * 100);
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 4,
+  }).format(value);
 }
 
 export function capabilityListToRecord(capabilities: string[]) {
