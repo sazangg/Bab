@@ -1,5 +1,4 @@
 import json
-import math
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 from time import perf_counter
@@ -44,6 +43,8 @@ from app.modules.usage.accounting import (
     usage_from_provider_response,
     usage_from_stream_chunks,
 )
+from app.modules.usage.costing.base import CostingContext
+from app.modules.usage.costing.registry import default_cost_calculator_registry
 from app.modules.usage.schemas import RecordUsage
 
 router = APIRouter(prefix="/v1", tags=["proxy"])
@@ -934,18 +935,15 @@ def _allocation_window_start(window: str) -> datetime | None:
 
 
 def _calculate_cost_cents(*, resolved, usage: UsageAccounting) -> int | None:
-    if usage.prompt_tokens is None and usage.completion_tokens is None:
-        return None
-    input_price = resolved.input_price_per_million_tokens
-    output_price = resolved.output_price_per_million_tokens
-    if input_price is None and output_price is None:
-        return None
-    input_cost = (usage.prompt_tokens or 0) * (input_price or 0)
-    output_cost = (usage.completion_tokens or 0) * (output_price or 0)
-    total_cost = input_cost + output_cost
-    if total_cost <= 0:
-        return 0
-    return math.ceil(total_cost / 1_000_000)
+    return default_cost_calculator_registry.calculate_cents(
+        context=CostingContext(
+            provider_id=str(resolved.provider_id),
+            provider_model=resolved.provider_model,
+            input_price_per_million_tokens=resolved.input_price_per_million_tokens,
+            output_price_per_million_tokens=resolved.output_price_per_million_tokens,
+        ),
+        usage=usage,
+    )
 
 
 def _elapsed_ms(started_at: float) -> int:
