@@ -23,9 +23,10 @@ async def create_provider(
     adapter_type: str,
     description: str | None,
     capabilities: dict,
-    request_timeout_seconds: int,
+    request_timeout_seconds: int | None,
     max_body_bytes: int | None,
-    retry_policy: dict,
+    retry_policy: dict | None,
+    model_sync_mode: str | None,
     fallback_policy: dict,
     circuit_breaker_policy: dict,
     max_concurrent_requests: int | None,
@@ -44,6 +45,7 @@ async def create_provider(
         request_timeout_seconds=request_timeout_seconds,
         max_body_bytes=max_body_bytes,
         retry_policy=retry_policy,
+        model_sync_mode=model_sync_mode,
         fallback_policy=fallback_policy,
         circuit_breaker_policy=circuit_breaker_policy,
         max_concurrent_requests=max_concurrent_requests,
@@ -55,7 +57,9 @@ async def create_provider(
 
 async def list_providers(*, org_id: UUID, db: AsyncSession) -> list[Provider]:
     result = await db.scalars(
-        select(Provider).where(Provider.org_id == org_id).order_by(Provider.created_at.desc())
+        select(Provider)
+        .where(Provider.org_id == org_id)
+        .order_by(Provider.is_favorite.desc(), func.lower(Provider.name).asc())
     )
     return list(result)
 

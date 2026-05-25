@@ -80,10 +80,12 @@ export function buildProviderUpdatePayload(values: EditProviderValues) {
     ...(values.slug ? { slug: values.slug } : {}),
     base_url: values.base_url,
     description: values.description ? values.description : null,
-    request_timeout_seconds: values.request_timeout_seconds,
+    request_timeout_seconds:
+      values.request_timeout_seconds !== undefined ? values.request_timeout_seconds : null,
     max_body_bytes: values.max_body_bytes_kb !== undefined ? values.max_body_bytes_kb * 1024 : null,
     max_concurrent_requests:
       values.max_concurrent_requests !== undefined ? values.max_concurrent_requests : null,
+    model_sync_mode: values.model_sync_mode === "inherit" ? null : values.model_sync_mode,
     retry_policy: values.retry_policy,
     fallback_policy: values.fallback_policy,
     circuit_breaker_policy: values.circuit_breaker_policy,

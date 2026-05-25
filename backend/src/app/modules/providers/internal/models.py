@@ -25,12 +25,14 @@ class Provider(Base):
     description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     capabilities: Mapped[dict] = mapped_column(JSON, default=dict)
     supported_integration: Mapped[str] = mapped_column(String(100), default="openai_compatible")
-    request_timeout_seconds: Mapped[int] = mapped_column(Integer, default=30)
+    request_timeout_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_body_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    retry_policy: Mapped[dict] = mapped_column(JSON, default=dict)
+    retry_policy: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    model_sync_mode: Mapped[str | None] = mapped_column(String(50), nullable=True)
     fallback_policy: Mapped[dict] = mapped_column(JSON, default=dict)
     circuit_breaker_policy: Mapped[dict] = mapped_column(JSON, default=dict)
     max_concurrent_requests: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_favorite: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

@@ -57,6 +57,8 @@ import type {
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
+import { hasPermission, isTeamAdmin } from "@/features/auth/lib/permissions";
+import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
 
 import { formatDateTime, formatRelativeFromNow } from "@/features/providers/lib/format";
 
@@ -82,6 +84,8 @@ export function AllocationsPage() {
   const [segment, setSegment] = useState<AllocationSegment>("active");
   const [targetFilter, setTargetFilter] = useState<TargetFilter>("all");
   const [editingAllocation, setEditingAllocation] = useState<AllocationResponse | null>(null);
+  const currentUserQuery = useMeApiV1AuthMeGet();
+  const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
   const updateAllocation = useUpdateAllocationApiV1ProjectsAllocationsAllocationIdPatch({
     mutation: {
       onSuccess: () => {
@@ -216,6 +220,19 @@ export function AllocationsPage() {
                           })
                         }
                         isUpdating={updateAllocation.isPending}
+                        canManage={
+                          hasPermission(currentUser, "allocations.manage") ||
+                          Boolean(
+                            allocation.team_id && isTeamAdmin(currentUser, allocation.team_id),
+                          ) ||
+                          Boolean(
+                            projectById[allocation.project_id ?? ""]?.team_id &&
+                            isTeamAdmin(
+                              currentUser,
+                              projectById[allocation.project_id ?? ""]?.team_id ?? "",
+                            ),
+                          )
+                        }
                       />
                     ))}
                   </TableBody>
@@ -249,6 +266,7 @@ function AllocationRow({
   onEdit,
   onPatch,
   isUpdating,
+  canManage,
 }: {
   allocation: AllocationResponse;
   team: TeamResponse | undefined;
@@ -257,6 +275,7 @@ function AllocationRow({
   onEdit: () => void;
   onPatch: (patch: { is_active?: boolean; is_default?: boolean }) => void;
   isUpdating: boolean;
+  canManage: boolean;
 }) {
   const targetLabel = project?.name ?? team?.name ?? "Unknown target";
   const targetHref = project ? `/projects/${project.id}` : team ? `/teams/${team.id}` : undefined;
@@ -319,36 +338,38 @@ function AllocationRow({
         {formatRelativeFromNow(allocation.updated_at)}
       </TableCell>
       <TableCell onClick={(event) => event.stopPropagation()}>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              disabled={isUpdating}
-              aria-label={`Actions for ${allocation.name}`}
-            >
-              <MoreHorizontal className="size-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={onEdit}>
-              <Pencil className="size-4" />
-              Edit allocation
-            </DropdownMenuItem>
-            {!allocation.is_default ? (
-              <DropdownMenuItem onSelect={() => onPatch({ is_default: true })}>
-                <Star className="size-4" />
-                Make default
+        {canManage ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                disabled={isUpdating}
+                aria-label={`Actions for ${allocation.name}`}
+              >
+                <MoreHorizontal className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={onEdit}>
+                <Pencil className="size-4" />
+                Edit allocation
               </DropdownMenuItem>
-            ) : null}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => onPatch({ is_active: !allocation.is_active })}>
-              <Power className="size-4" />
-              {allocation.is_active ? "Deactivate" : "Activate"}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+              {!allocation.is_default ? (
+                <DropdownMenuItem onSelect={() => onPatch({ is_default: true })}>
+                  <Star className="size-4" />
+                  Make default
+                </DropdownMenuItem>
+              ) : null}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => onPatch({ is_active: !allocation.is_active })}>
+                <Power className="size-4" />
+                {allocation.is_active ? "Deactivate" : "Activate"}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
       </TableCell>
     </TableRow>
   );

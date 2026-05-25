@@ -8,4 +8,11 @@ import type { GetOrganizationUsageSummaryApiV1UsageSummaryGetWindow } from "./ge
 
 export type GetOrganizationUsageSummaryApiV1UsageSummaryGetParams = {
   window?: GetOrganizationUsageSummaryApiV1UsageSummaryGetWindow;
+  start_at?: string | null;
+  end_at?: string | null;
+  team_id?: string | null;
+  provider_id?: string | null;
+  project_id?: string | null;
+  virtual_key_id?: string | null;
+  model?: string | null;
 };

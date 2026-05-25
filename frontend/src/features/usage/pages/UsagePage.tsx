@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  CalendarDays,
   ChartNoAxesCombined,
   Clock,
   Download,
@@ -12,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -27,41 +29,55 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useGetOrganizationUsageSummaryApiV1UsageSummaryGet } from "@/shared/api/generated/usage/usage";
-import { apiMutator } from "@/shared/api/orval-mutator";
-import type { ActivityEventResponse, UsageBreakdownRow } from "@/shared/api/generated/schemas";
+import {
+  useGetOrganizationUsageSummaryApiV1UsageSummaryGet,
+  useGetOrganizationUsageTimeseriesApiV1UsageTimeseriesGet,
+  useListUsageRecordsApiV1UsageRecordsGet,
+} from "@/shared/api/generated/usage/usage";
+import type {
+  ActivityEventResponse,
+  UsageRecordResponse,
+  UsageBreakdownRow,
+  UsageTimeSeriesPoint,
+} from "@/shared/api/generated/schemas";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
-import { useQuery } from "@tanstack/react-query";
 
-type UsageWindow = "24h" | "7d" | "30d" | "lifetime";
-type UsageRecordResponse = {
-  id: string;
-  created_at: string;
-  provider_id: string;
-  project_id: string;
-  allocation_id: string;
-  virtual_key_id: string;
-  requested_model: string;
-  provider_model: string;
-  http_status: number;
-  latency_ms: number;
-  total_tokens: number | null;
-  cost_cents: number | null;
-  error_code: string | null;
-};
+type UsageWindow = "24h" | "7d" | "30d" | "90d" | "lifetime";
+type UsageGrain = "hour" | "day" | "week";
+type UsageChartMetric = "requests" | "spend" | "tokens";
 
 export function UsagePage() {
   const [window, setWindow] = useState<UsageWindow>("30d");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [customRangeEnabled, setCustomRangeEnabled] = useState(false);
+  const [providerId, setProviderId] = useState("all");
+  const [model, setModel] = useState("all");
+  const [virtualKeyId, setVirtualKeyId] = useState("all");
   const [recordFilter, setRecordFilter] = useState("");
-  const usageQuery = useGetOrganizationUsageSummaryApiV1UsageSummaryGet({ window });
-  const recordsQuery = useQuery({
-    queryKey: ["usage-records", window],
-    queryFn: () =>
-      apiMutator<UsageRecordResponse[]>(`/api/v1/usage/records?window=${window}&limit=100`),
+  const [chartMetric, setChartMetric] = useState<UsageChartMetric>("spend");
+  const grain = getUsageGrain(window, customRangeEnabled, startDate, endDate);
+  const usageParams = buildUsageParams({
+    window,
+    startDate: customRangeEnabled ? startDate : "",
+    endDate: customRangeEnabled ? endDate : "",
+    providerId,
+    model,
+    virtualKeyId,
+  });
+  const usageQuery = useGetOrganizationUsageSummaryApiV1UsageSummaryGet(usageParams);
+  const timeseriesQuery = useGetOrganizationUsageTimeseriesApiV1UsageTimeseriesGet({
+    ...usageParams,
+    grain,
+  });
+  const recordsQuery = useListUsageRecordsApiV1UsageRecordsGet({
+    ...usageParams,
+    limit: 100,
   });
   const summary = usageQuery.data?.status === 200 ? usageQuery.data.data : null;
-  const records = Array.isArray(recordsQuery.data) ? recordsQuery.data : [];
+  const timeseries = timeseriesQuery.data?.status === 200 ? timeseriesQuery.data.data : [];
+  const records = recordsQuery.data?.status === 200 ? recordsQuery.data.data : [];
   const filteredRecords = records.filter((record) => {
     const term = recordFilter.trim().toLowerCase();
     if (!term) return true;
@@ -73,26 +89,89 @@ export function UsagePage() {
   const requests = totals?.requests ?? 0;
   const failed = totals?.failed_requests ?? 0;
   const errorRate = requests > 0 ? `${Math.round((failed / requests) * 1000) / 10}%` : "0%";
+  const providerOptions = summary?.by_provider ?? [];
+  const modelOptions = summary?.by_model ?? [];
+  const virtualKeyOptions = summary?.by_virtual_key ?? [];
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Usage"
-        description="Organization-wide gateway consumption, spend, latency, and error pressure."
+        description="Organization-wide gateway consumption, spend, latency, and errors."
         actions={
-          <Select value={window} onValueChange={(value) => setWindow(value as UsageWindow)}>
-            <SelectTrigger className="w-36">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="24h">Last 24h</SelectItem>
-              <SelectItem value="7d">Last 7d</SelectItem>
-              <SelectItem value="30d">Last 30d</SelectItem>
-              <SelectItem value="lifetime">Lifetime</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={window}
+              onValueChange={(value) => {
+                setWindow(value as UsageWindow);
+                setCustomRangeEnabled(false);
+              }}
+            >
+              <SelectTrigger className="w-36">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="24h">Last 24h</SelectItem>
+                <SelectItem value="7d">Last 7d</SelectItem>
+                <SelectItem value="30d">Last 30d</SelectItem>
+                <SelectItem value="90d">Last 90d</SelectItem>
+                <SelectItem value="lifetime">Lifetime</SelectItem>
+              </SelectContent>
+            </Select>
+            <DateRangePopover
+              startDate={startDate}
+              endDate={endDate}
+              enabled={customRangeEnabled}
+              onStartDateChange={setStartDate}
+              onEndDateChange={setEndDate}
+              onApply={() => setCustomRangeEnabled(Boolean(startDate || endDate))}
+              onClear={() => {
+                setStartDate("");
+                setEndDate("");
+                setCustomRangeEnabled(false);
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setProviderId("all");
+                setModel("all");
+                setVirtualKeyId("all");
+                setRecordFilter("");
+              }}
+            >
+              Clear filters
+            </Button>
+          </div>
         }
       />
+
+      <Card>
+        <CardContent className="grid gap-3 md:grid-cols-3">
+          <UsageSelect
+            label="Provider"
+            value={providerId}
+            placeholder="All providers"
+            options={providerOptions}
+            onChange={setProviderId}
+          />
+          <UsageSelect
+            label="Model"
+            value={model}
+            placeholder="All models"
+            options={modelOptions}
+            onChange={setModel}
+          />
+          <UsageSelect
+            label="Virtual key"
+            value={virtualKeyId}
+            placeholder="All keys"
+            options={virtualKeyOptions}
+            onChange={setVirtualKeyId}
+          />
+        </CardContent>
+      </Card>
 
       {usageQuery.isPending ? (
         <p className="text-sm text-muted-foreground">Loading usage...</p>
@@ -134,14 +213,26 @@ export function UsagePage() {
             />
           </section>
 
+          <UsageTrendCard
+            points={timeseries}
+            grain={grain}
+            metric={chartMetric}
+            onMetricChange={setChartMetric}
+            isLoading={timeseriesQuery.isPending}
+          />
+
           <section className="grid gap-4 xl:grid-cols-2">
-            <BreakdownCard title="Providers" rows={summary.by_provider} />
-            <BreakdownCard title="Models" rows={summary.by_model} />
+            <BreakdownCard title="Providers" rows={summary.by_provider} onSelect={setProviderId} />
+            <BreakdownCard title="Models" rows={summary.by_model} onSelect={setModel} />
             <BreakdownCard title="Pools" rows={summary.by_pool} />
             <BreakdownCard title="Teams" rows={summary.by_team} />
             <BreakdownCard title="Projects" rows={summary.by_project} />
             <BreakdownCard title="Allocations" rows={summary.by_allocation} />
-            <BreakdownCard title="Virtual keys" rows={summary.by_virtual_key} />
+            <BreakdownCard
+              title="Virtual keys"
+              rows={summary.by_virtual_key}
+              onSelect={setVirtualKeyId}
+            />
             <RecentDenialsCard events={summary.recent_denials} />
           </section>
           <UsageRecordsCard
@@ -152,6 +243,205 @@ export function UsagePage() {
           />
         </>
       )}
+    </div>
+  );
+}
+
+function DateRangePopover({
+  startDate,
+  endDate,
+  enabled,
+  onStartDateChange,
+  onEndDateChange,
+  onApply,
+  onClear,
+}: {
+  startDate: string;
+  endDate: string;
+  enabled: boolean;
+  onStartDateChange: (value: string) => void;
+  onEndDateChange: (value: string) => void;
+  onApply: () => void;
+  onClear: () => void;
+}) {
+  const label = enabled ? `${startDate || "Start"} - ${endDate || "Today"}` : "Custom range";
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="outline">
+          <CalendarDays data-icon="inline-start" />
+          {label}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-80">
+        <div className="flex flex-col gap-4">
+          <div>
+            <div className="font-medium">Usage date range</div>
+            <div className="text-sm text-muted-foreground">
+              Filter summaries, charts, and raw records by explicit dates.
+            </div>
+          </div>
+          <div className="grid gap-3">
+            <label className="grid gap-1.5 text-sm">
+              <span className="font-medium">Start</span>
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(event) => onStartDateChange(event.target.value)}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm">
+              <span className="font-medium">End</span>
+              <Input
+                type="date"
+                value={endDate}
+                onChange={(event) => onEndDateChange(event.target.value)}
+              />
+            </label>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={onClear}>
+              Clear
+            </Button>
+            <Button onClick={onApply}>Apply</Button>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function UsageSelect({
+  label,
+  value,
+  placeholder,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+  options: UsageBreakdownRow[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="grid gap-1.5 text-sm">
+      <span className="font-medium">{label}</span>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">{placeholder}</SelectItem>
+          {options.map((option) => (
+            <SelectItem key={option.id} value={option.id}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </label>
+  );
+}
+
+function UsageTrendCard({
+  points,
+  grain,
+  metric,
+  onMetricChange,
+  isLoading,
+}: {
+  points: UsageTimeSeriesPoint[];
+  grain: UsageGrain;
+  metric: UsageChartMetric;
+  onMetricChange: (value: UsageChartMetric) => void;
+  isLoading: boolean;
+}) {
+  return (
+    <Card>
+      <CardHeader className="border-b">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <CardTitle>Usage trend</CardTitle>
+          <div className="flex items-center gap-2">
+            <Select
+              value={metric}
+              onValueChange={(value) => onMetricChange(value as UsageChartMetric)}
+            >
+              <SelectTrigger className="h-8 w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="spend">Spend</SelectItem>
+                <SelectItem value="requests">Requests</SelectItem>
+                <SelectItem value="tokens">Tokens</SelectItem>
+              </SelectContent>
+            </Select>
+            <Badge variant="outline">{grain}</Badge>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading trend...</p>
+        ) : points.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No usage in this range.</p>
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
+            <MiniBarChart points={points} metric={metric} />
+            <div className="grid gap-2 text-sm">
+              <TrendStat
+                label="Peak requests"
+                value={Math.max(...points.map((point) => point.requests ?? 0)).toLocaleString()}
+              />
+              <TrendStat
+                label="Peak tokens"
+                value={Math.max(...points.map((point) => point.total_tokens ?? 0)).toLocaleString()}
+              />
+              <TrendStat
+                label="Known spend"
+                value={formatCents(points.reduce((sum, point) => sum + (point.cost_cents ?? 0), 0))}
+              />
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function MiniBarChart({
+  points,
+  metric,
+}: {
+  points: UsageTimeSeriesPoint[];
+  metric: UsageChartMetric;
+}) {
+  const values = points.map((point) => metricValue(point, metric));
+  const maxValue = Math.max(...values, 1);
+  return (
+    <div className="flex h-56 items-end gap-1 rounded-md border bg-muted/20 p-3">
+      {points.map((point) => {
+        const value = metricValue(point, metric);
+        const height = Math.max(4, Math.round((value / maxValue) * 100));
+        return (
+          <div key={point.bucket} className="group flex min-w-3 flex-1 items-end">
+            <div
+              className="w-full rounded-t bg-primary/70 transition-colors group-hover:bg-primary"
+              style={{ height: `${height}%` }}
+              title={`${formatBucket(point.bucket)}: ${formatMetricValue(value, metric)}`}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function TrendStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border bg-background p-3">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-1 font-medium">{value}</div>
     </div>
   );
 }
@@ -225,7 +515,7 @@ function UsageRecordsCard({
                     {(record.total_tokens ?? 0).toLocaleString()}
                   </TableCell>
                   <TableCell className="text-right">
-                    {formatCents(record.cost_cents ?? 0)}
+                    {record.cost_cents == null ? "Unpriced" : formatCents(record.cost_cents)}
                   </TableCell>
                   <TableCell className="text-right">{record.latency_ms}ms</TableCell>
                 </TableRow>
@@ -272,6 +562,72 @@ function downloadCsv(records: UsageRecordResponse[]) {
   URL.revokeObjectURL(url);
 }
 
+function buildUsageParams({
+  window,
+  startDate,
+  endDate,
+  providerId,
+  model,
+  virtualKeyId,
+}: {
+  window: UsageWindow;
+  startDate: string;
+  endDate: string;
+  providerId: string;
+  model: string;
+  virtualKeyId: string;
+}) {
+  const params: {
+    window: UsageWindow;
+    start_at?: string;
+    end_at?: string;
+    provider_id?: string;
+    model?: string;
+    virtual_key_id?: string;
+  } = { window };
+  if (startDate) {
+    params.start_at = new Date(`${startDate}T00:00:00`).toISOString();
+  }
+  if (endDate) {
+    params.end_at = new Date(`${endDate}T23:59:59`).toISOString();
+  }
+  if (providerId !== "all") {
+    params.provider_id = providerId;
+  }
+  if (model !== "all") {
+    params.model = model;
+  }
+  if (virtualKeyId !== "all") {
+    params.virtual_key_id = virtualKeyId;
+  }
+  return params;
+}
+
+function getUsageGrain(
+  window: UsageWindow,
+  customRangeEnabled: boolean,
+  startDate: string,
+  endDate: string,
+): UsageGrain {
+  if (window === "24h") return "hour";
+  if (window === "90d" || window === "lifetime") return "week";
+  if (customRangeEnabled && startDate && endDate) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const days = Math.max(1, (end.getTime() - start.getTime()) / 86_400_000);
+    if (days <= 2) return "hour";
+    if (days > 60) return "week";
+  }
+  return "day";
+}
+
+function formatBucket(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
 function MetricCard({
   label,
   value,
@@ -301,7 +657,15 @@ function MetricCard({
   );
 }
 
-function BreakdownCard({ title, rows }: { title: string; rows: UsageBreakdownRow[] }) {
+function BreakdownCard({
+  title,
+  rows,
+  onSelect,
+}: {
+  title: string;
+  rows: UsageBreakdownRow[];
+  onSelect?: (id: string) => void;
+}) {
   return (
     <Card>
       <CardHeader className="border-b">
@@ -322,7 +686,11 @@ function BreakdownCard({ title, rows }: { title: string; rows: UsageBreakdownRow
             </TableHeader>
             <TableBody>
               {rows.slice(0, 8).map((row) => (
-                <TableRow key={row.id}>
+                <TableRow
+                  key={row.id}
+                  className={onSelect ? "cursor-pointer" : undefined}
+                  onClick={() => onSelect?.(row.id)}
+                >
                   <TableCell className="max-w-64 truncate">{row.label}</TableCell>
                   <TableCell className="text-right">
                     {(row.requests ?? 0).toLocaleString()}
@@ -380,4 +748,16 @@ function RecentDenialsCard({ events }: { events: ActivityEventResponse[] }) {
 
 function formatCents(value: number) {
   return `$${(value / 100).toLocaleString()}`;
+}
+
+function metricValue(point: UsageTimeSeriesPoint, metric: UsageChartMetric) {
+  if (metric === "spend") return point.cost_cents ?? 0;
+  if (metric === "tokens") return point.total_tokens ?? 0;
+  return point.requests ?? 0;
+}
+
+function formatMetricValue(value: number, metric: UsageChartMetric) {
+  if (metric === "spend") return formatCents(value);
+  if (metric === "tokens") return `${value.toLocaleString()} tokens`;
+  return `${value.toLocaleString()} requests`;
 }

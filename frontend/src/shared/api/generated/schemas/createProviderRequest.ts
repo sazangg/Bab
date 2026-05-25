@@ -23,13 +23,10 @@ export interface CreateProviderRequest {
   base_url: string;
   description?: string | null;
   capabilities?: CreateProviderRequestCapabilities;
-  /**
-   * @minimum 1
-   * @maximum 300
-   */
-  request_timeout_seconds?: number;
+  request_timeout_seconds?: number | null;
   max_body_bytes?: number | null;
   retry_policy?: CreateProviderRequestRetryPolicy;
+  model_sync_mode?: string | null;
   fallback_policy?: CreateProviderRequestFallbackPolicy;
   circuit_breaker_policy?: CreateProviderRequestCircuitBreakerPolicy;
   max_concurrent_requests?: number | null;

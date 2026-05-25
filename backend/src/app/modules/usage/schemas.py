@@ -43,6 +43,10 @@ class UsageSummaryTotals(BaseModel):
     average_latency_ms: int | None = None
 
 
+class UsageTimeSeriesPoint(UsageSummaryTotals):
+    bucket: datetime
+
+
 class UsageBreakdownRow(UsageSummaryTotals):
     id: str
     label: str

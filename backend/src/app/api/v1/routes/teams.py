@@ -4,37 +4,64 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_current_user, get_scope, require_role
+from app.api.v1.deps import (
+    accessible_team_ids,
+    get_current_user,
+    get_scope,
+    require_permission,
+    require_team_admin_or_permission,
+    require_team_view_or_permission,
+)
 from app.core.database import Scope, get_db
-from app.modules.auth.schemas import AuthenticatedUser
+from app.modules.auth import facade as auth_facade
+from app.modules.auth.errors import InvalidAccessTokenError
+from app.modules.auth.schemas import (
+    AuthenticatedUser,
+    TeamMemberResponse,
+    UpdateTeamMemberRequest,
+    UpsertTeamMemberRequest,
+)
 from app.modules.keys import facade as projects_facade
 from app.modules.keys.schemas import AllocationResponse, CreateProjectRequest, ProjectResponse
 from app.modules.teams import facade
 from app.modules.teams.errors import TeamNotFoundError, TeamSlugAlreadyExistsError
 from app.modules.teams.schemas import CreateTeamRequest, TeamResponse, UpdateTeamRequest
 from app.modules.usage import facade as usage_facade
-from app.modules.usage.schemas import AllocationUsageSummary
+from app.modules.usage.schemas import AllocationUsageSummary, OrganizationUsageSummary
 
 router = APIRouter(prefix="/teams", tags=["teams"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RequestScope = Annotated[Scope, Depends(get_scope)]
+TeamViewer = Annotated[AuthenticatedUser, Depends(require_permission("teams.view"))]
 CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]
-TeamAdmin = Annotated[AuthenticatedUser, Depends(require_role("super_admin"))]
+OrgTeamAdmin = Annotated[AuthenticatedUser, Depends(require_permission("teams.manage"))]
+ScopedTeamAdmin = Annotated[
+    AuthenticatedUser,
+    Depends(require_team_admin_or_permission("teams.manage")),
+]
+ScopedProjectAdmin = Annotated[
+    AuthenticatedUser,
+    Depends(require_team_admin_or_permission("projects.manage")),
+]
 
 
 @router.get("")
 async def list_teams(
     scope: RequestScope,
     db: DatabaseSession,
-    _: CurrentUser,
+    user: CurrentUser,
 ) -> list[TeamResponse]:
-    return await facade.list_teams(scope=scope, db=db)
+    teams = await facade.list_teams(scope=scope, db=db)
+    if auth_facade.has_permission(user, "teams.view"):
+        return teams
+    allowed_ids = accessible_team_ids(user)
+    return [team for team in teams if team.id in allowed_ids]
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_team(
     payload: CreateTeamRequest,
-    actor: TeamAdmin,
+    actor: OrgTeamAdmin,
     scope: RequestScope,
     db: DatabaseSession,
 ) -> TeamResponse:
@@ -49,19 +76,26 @@ async def get_team(
     team_id: UUID,
     scope: RequestScope,
     db: DatabaseSession,
-    _: CurrentUser,
+    user: CurrentUser,
 ) -> TeamResponse:
     try:
-        return await facade.get_team(team_id=team_id, scope=scope, db=db)
+        team = await facade.get_team(team_id=team_id, scope=scope, db=db)
     except TeamNotFoundError as exc:
         raise HTTPException(status_code=404, detail="team not found") from exc
+    await require_team_view_or_permission(
+        team_id=str(team_id),
+        permission="teams.view",
+        user=user,
+        db=db,
+    )
+    return team
 
 
 @router.patch("/{team_id}")
 async def update_team(
     team_id: UUID,
     payload: UpdateTeamRequest,
-    actor: TeamAdmin,
+    actor: ScopedTeamAdmin,
     scope: RequestScope,
     db: DatabaseSession,
 ) -> TeamResponse:
@@ -82,7 +116,7 @@ async def update_team(
 @router.delete("/{team_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def deactivate_team(
     team_id: UUID,
-    actor: TeamAdmin,
+    actor: ScopedTeamAdmin,
     scope: RequestScope,
     db: DatabaseSession,
 ) -> None:
@@ -97,12 +131,99 @@ async def list_team_projects(
     team_id: UUID,
     scope: RequestScope,
     db: DatabaseSession,
-    _: CurrentUser,
+    user: CurrentUser,
 ) -> list[ProjectResponse]:
     try:
+        await require_team_view_or_permission(
+            team_id=str(team_id),
+            permission="teams.view",
+            user=user,
+            db=db,
+        )
         return await projects_facade.list_team_projects(team_id=team_id, scope=scope, db=db)
     except TeamNotFoundError as exc:
         raise HTTPException(status_code=404, detail="team not found") from exc
+
+
+@router.get("/{team_id}/members")
+async def list_team_members(
+    team_id: UUID,
+    scope: RequestScope,
+    db: DatabaseSession,
+    user: CurrentUser,
+) -> list[TeamMemberResponse]:
+    try:
+        await require_team_view_or_permission(
+            team_id=str(team_id),
+            permission="teams.view",
+            user=user,
+            db=db,
+        )
+        return await auth_facade.list_team_members(team_id=team_id, scope=scope, db=db)
+    except InvalidAccessTokenError as exc:
+        raise HTTPException(status_code=404, detail="team not found") from exc
+
+
+@router.post("/{team_id}/members", status_code=status.HTTP_201_CREATED)
+async def add_team_member(
+    team_id: UUID,
+    payload: UpsertTeamMemberRequest,
+    actor: ScopedTeamAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> TeamMemberResponse:
+    try:
+        return await auth_facade.upsert_team_member(
+            team_id=team_id,
+            payload=payload,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
+    except InvalidAccessTokenError as exc:
+        raise HTTPException(status_code=404, detail="team or user not found") from exc
+
+
+@router.patch("/{team_id}/members/{user_id}")
+async def update_team_member(
+    team_id: UUID,
+    user_id: UUID,
+    payload: UpdateTeamMemberRequest,
+    actor: ScopedTeamAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> TeamMemberResponse:
+    try:
+        return await auth_facade.update_team_member(
+            team_id=team_id,
+            user_id=user_id,
+            payload=payload,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
+    except InvalidAccessTokenError as exc:
+        raise HTTPException(status_code=404, detail="team member not found") from exc
+
+
+@router.delete("/{team_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_team_member(
+    team_id: UUID,
+    user_id: UUID,
+    actor: ScopedTeamAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> None:
+    try:
+        await auth_facade.remove_team_member(
+            team_id=team_id,
+            user_id=user_id,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
+    except InvalidAccessTokenError as exc:
+        raise HTTPException(status_code=404, detail="team member not found") from exc
 
 
 @router.get("/{team_id}/allocations")
@@ -110,12 +231,43 @@ async def list_team_allocations(
     team_id: UUID,
     scope: RequestScope,
     db: DatabaseSession,
-    _: CurrentUser,
+    user: CurrentUser,
 ) -> list[AllocationResponse]:
     try:
+        await require_team_view_or_permission(
+            team_id=str(team_id),
+            permission="teams.view",
+            user=user,
+            db=db,
+        )
         return await projects_facade.list_team_allocations(team_id=team_id, scope=scope, db=db)
     except TeamNotFoundError as exc:
         raise HTTPException(status_code=404, detail="team not found") from exc
+
+
+@router.get("/{team_id}/usage")
+async def get_team_usage(
+    team_id: UUID,
+    scope: RequestScope,
+    db: DatabaseSession,
+    user: CurrentUser,
+) -> OrganizationUsageSummary:
+    try:
+        await facade.get_team(team_id=team_id, scope=scope, db=db)
+    except TeamNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="team not found") from exc
+    await require_team_view_or_permission(
+        team_id=str(team_id),
+        permission="teams.view",
+        user=user,
+        db=db,
+    )
+    return await usage_facade.get_organization_usage_summary(
+        org_id=scope.org_id,
+        team_id=team_id,
+        window="30d",
+        db=db,
+    )
 
 
 @router.get("/{team_id}/allocations/usage")
@@ -123,9 +275,15 @@ async def list_team_allocation_usage(
     team_id: UUID,
     scope: RequestScope,
     db: DatabaseSession,
-    _: CurrentUser,
+    user: CurrentUser,
 ) -> list[AllocationUsageSummary]:
     try:
+        await require_team_view_or_permission(
+            team_id=str(team_id),
+            permission="teams.view",
+            user=user,
+            db=db,
+        )
         allocations = await projects_facade.list_team_allocations(
             team_id=team_id, scope=scope, db=db
         )
@@ -146,7 +304,7 @@ async def list_team_allocation_usage(
 async def create_team_project(
     team_id: UUID,
     payload: CreateProjectRequest,
-    actor: TeamAdmin,
+    actor: ScopedProjectAdmin,
     scope: RequestScope,
     db: DatabaseSession,
 ) -> ProjectResponse:

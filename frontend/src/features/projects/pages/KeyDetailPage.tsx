@@ -1,5 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
+import { isAxiosError } from "axios";
 import { ArrowLeft, Gauge, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
@@ -14,6 +15,7 @@ import {
   useRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete,
   useUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch,
 } from "@/shared/api/generated/projects/projects";
+import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -59,6 +61,9 @@ import {
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import type { UsageBreakdownRow } from "@/shared/api/generated/schemas";
+import { hasPermission, isTeamAdmin } from "@/features/auth/lib/permissions";
+import { ForbiddenPage } from "@/features/auth/components/ProtectedRoute";
+import { UsageRecordsDrilldown } from "@/features/usage/components/UsageRecordsDrilldown";
 
 const editSchema = z.object({
   name: z.string().min(1).max(255),
@@ -78,6 +83,7 @@ export function KeyDetailPage() {
   const [revokeOpen, setRevokeOpen] = useState(false);
 
   const projectsQuery = useListProjectsApiV1ProjectsGet();
+  const currentUserQuery = useMeApiV1AuthMeGet();
   const keyQuery = useGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet(projectId, keyId, {
     query: { enabled: Boolean(projectId && keyId) },
   });
@@ -95,6 +101,7 @@ export function KeyDetailPage() {
     projectsQuery.data?.status === 200
       ? projectsQuery.data.data.find((p) => p.id === projectId)
       : undefined;
+  const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
   const key = keyQuery.data?.status === 200 ? keyQuery.data.data : undefined;
   const allocations = allocationsQuery.data?.status === 200 ? allocationsQuery.data.data : [];
   const allocation = allocations.find((item) => item.id === key?.allocation_id);
@@ -105,6 +112,9 @@ export function KeyDetailPage() {
     () => allocation?.offerings.map((offering) => offering.model_offering_id) ?? [],
     [allocation],
   );
+  const canManageKey = project
+    ? hasPermission(currentUser, "keys.manage") || isTeamAdmin(currentUser, project.team_id)
+    : false;
 
   const updateMutation = useUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch({
     mutation: {
@@ -152,6 +162,9 @@ export function KeyDetailPage() {
   if (keyQuery.isPending || projectsQuery.isPending) {
     return <p className="text-sm text-muted-foreground">Loading key...</p>;
   }
+  if (isAxiosError(keyQuery.error) && keyQuery.error.response?.status === 403) {
+    return <ForbiddenPage />;
+  }
 
   if (!key || !project) {
     return (
@@ -182,29 +195,31 @@ export function KeyDetailPage() {
         title={key.name}
         description={`Project: ${project.name}`}
         actions={
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => setEditOpen(true)}>
-              <Pencil />
-              Edit key
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" aria-label="Key actions">
-                  <MoreHorizontal />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onSelect={() => setRevokeOpen(true)}
-                  disabled={Boolean(key.revoked_at)}
-                  variant="destructive"
-                >
-                  <Trash2 className="mr-2 size-4" />
-                  Revoke key
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+          canManageKey ? (
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={() => setEditOpen(true)}>
+                <Pencil />
+                Edit key
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="icon" aria-label="Key actions">
+                    <MoreHorizontal />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onSelect={() => setRevokeOpen(true)}
+                    disabled={Boolean(key.revoked_at)}
+                    variant="destructive"
+                  >
+                    <Trash2 className="mr-2 size-4" />
+                    Revoke key
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          ) : null
         }
       />
 
@@ -245,124 +260,138 @@ export function KeyDetailPage() {
       </Card>
 
       <KeyUsageCard usage={usage} />
+      <UsageRecordsDrilldown
+        title="Key usage records"
+        filters={{ project_id: project.id, virtual_key_id: key.id }}
+      />
 
-      <Sheet open={editOpen} onOpenChange={setEditOpen}>
-        <SheetContent>
-          <SheetHeader>
-            <SheetTitle>Edit key</SheetTitle>
-            <SheetDescription>
-              A key can narrow the selected allocation by allowed model names.
-            </SheetDescription>
-          </SheetHeader>
-          <form
-            id="edit-key-form"
-            className="grid gap-4 overflow-y-auto px-6 py-5"
-            onSubmit={form.handleSubmit((values) =>
-              updateMutation.mutate({
-                projectId,
-                keyId,
-                data: {
-                  name: values.name,
-                  expires_at: values.expires_at ? new Date(values.expires_at).toISOString() : null,
-                  allowed_models: parseModels(values.allowed_models),
-                  custom_allocation_id:
-                    values.allocation_mode === "custom"
-                      ? values.custom_allocation_id || null
+      {canManageKey ? (
+        <Sheet open={editOpen} onOpenChange={setEditOpen}>
+          <SheetContent>
+            <SheetHeader>
+              <SheetTitle>Edit key</SheetTitle>
+              <SheetDescription>
+                A key can narrow the selected allocation by allowed model names.
+              </SheetDescription>
+            </SheetHeader>
+            <form
+              id="edit-key-form"
+              className="grid gap-4 overflow-y-auto px-6 py-5"
+              onSubmit={form.handleSubmit((values) =>
+                updateMutation.mutate({
+                  projectId,
+                  keyId,
+                  data: {
+                    name: values.name,
+                    expires_at: values.expires_at
+                      ? new Date(values.expires_at).toISOString()
                       : null,
-                },
-              }),
-            )}
-          >
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-key-name">Label</Label>
-              <Input id="edit-key-name" autoFocus {...form.register("name")} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Allocation policy</Label>
-              <Select
-                value={allocationMode}
-                onValueChange={(value) =>
-                  form.setValue("allocation_mode", value as EditValues["allocation_mode"])
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="inherited">Use project/team default</SelectItem>
-                  <SelectItem value="custom">Use custom allocation</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {allocationMode === "custom" ? (
+                    allowed_models: parseModels(values.allowed_models),
+                    custom_allocation_id:
+                      values.allocation_mode === "custom"
+                        ? values.custom_allocation_id || null
+                        : null,
+                  },
+                }),
+              )}
+            >
               <div className="space-y-1.5">
-                <Label>Custom allocation</Label>
+                <Label htmlFor="edit-key-name">Label</Label>
+                <Input id="edit-key-name" autoFocus {...form.register("name")} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Allocation policy</Label>
                 <Select
-                  value={customAllocationId || ""}
-                  onValueChange={(value) => form.setValue("custom_allocation_id", value)}
+                  value={allocationMode}
+                  onValueChange={(value) =>
+                    form.setValue("allocation_mode", value as EditValues["allocation_mode"])
+                  }
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select allocation" />
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {activeAllocations.map((item) => (
-                      <SelectItem key={item.id} value={item.id}>
-                        {item.name}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="inherited">Use project/team default</SelectItem>
+                    <SelectItem value="custom">Use custom allocation</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-            ) : null}
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-key-expires">Expires at</Label>
-              <Input id="edit-key-expires" type="datetime-local" {...form.register("expires_at")} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-key-models">Allowed models</Label>
-              <Input
-                id="edit-key-models"
-                placeholder="gpt-4o-mini"
-                {...form.register("allowed_models")}
-              />
-              <p className="text-xs text-muted-foreground">
-                Optional comma-separated subset of the allocation.
-              </p>
-            </div>
-          </form>
-          <SheetFooter>
-            <Button type="submit" form="edit-key-form" disabled={updateMutation.isPending}>
-              {updateMutation.isPending ? "Saving..." : "Save changes"}
-            </Button>
-            <SheetClose asChild>
-              <Button variant="outline">Cancel</Button>
-            </SheetClose>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+              {allocationMode === "custom" ? (
+                <div className="space-y-1.5">
+                  <Label>Custom allocation</Label>
+                  <Select
+                    value={customAllocationId || ""}
+                    onValueChange={(value) => form.setValue("custom_allocation_id", value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select allocation" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {activeAllocations.map((item) => (
+                        <SelectItem key={item.id} value={item.id}>
+                          {item.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-key-expires">Expires at</Label>
+                <Input
+                  id="edit-key-expires"
+                  type="datetime-local"
+                  {...form.register("expires_at")}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-key-models">Allowed models</Label>
+                <Input
+                  id="edit-key-models"
+                  placeholder="gpt-4o-mini"
+                  {...form.register("allowed_models")}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Optional comma-separated subset of the allocation.
+                </p>
+              </div>
+            </form>
+            <SheetFooter>
+              <Button type="submit" form="edit-key-form" disabled={updateMutation.isPending}>
+                {updateMutation.isPending ? "Saving..." : "Save changes"}
+              </Button>
+              <SheetClose asChild>
+                <Button variant="outline">Cancel</Button>
+              </SheetClose>
+            </SheetFooter>
+          </SheetContent>
+        </Sheet>
+      ) : null}
 
-      <Dialog open={revokeOpen} onOpenChange={setRevokeOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Revoke this key?</DialogTitle>
-            <DialogDescription>
-              The key will stop authenticating immediately. This cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="destructive"
-              disabled={revokeMutation.isPending}
-              onClick={() => revokeMutation.mutate({ projectId, keyId })}
-            >
-              {revokeMutation.isPending ? "Revoking..." : "Revoke key"}
-            </Button>
-            <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
-            </DialogClose>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {canManageKey ? (
+        <Dialog open={revokeOpen} onOpenChange={setRevokeOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Revoke this key?</DialogTitle>
+              <DialogDescription>
+                The key will stop authenticating immediately. This cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="destructive"
+                disabled={revokeMutation.isPending}
+                onClick={() => revokeMutation.mutate({ projectId, keyId })}
+              >
+                {revokeMutation.isPending ? "Revoking..." : "Revoke key"}
+              </Button>
+              <DialogClose asChild>
+                <Button variant="outline">Cancel</Button>
+              </DialogClose>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : null}
     </div>
   );
 }
@@ -392,7 +421,7 @@ function KeyUsageCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Usage pressure</CardTitle>
+        <CardTitle>Usage</CardTitle>
         <CardDescription>
           Key-scoped request, spend, routing, and error attribution.
         </CardDescription>

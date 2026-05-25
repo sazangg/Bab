@@ -5,6 +5,7 @@ import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -41,13 +42,16 @@ import {
   useUpdateProviderApiV1ProvidersProviderIdPatch,
 } from "@/shared/api/generated/providers/providers";
 import { useGetOrganizationUsageSummaryApiV1UsageSummaryGet } from "@/shared/api/generated/usage/usage";
+import { useGetSettingsApiV1SettingsGet } from "@/shared/api/generated/settings/settings";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { EditProviderSheet } from "@/features/providers/components/EditProviderSheet";
+import { hasPermission } from "@/features/auth/lib/permissions";
 import { ProviderResourcesPanel } from "@/features/providers/components/ProviderResourcesPanel";
 import { formatRelativeFromNow } from "@/features/providers/lib/format";
+import { UsageRecordsDrilldown } from "@/features/usage/components/UsageRecordsDrilldown";
 
 export function ProviderDetailPage() {
   const { providerId } = useParams();
@@ -55,6 +59,11 @@ export function ProviderDetailPage() {
   const queryClient = useQueryClient();
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeactivateOpen, setIsDeactivateOpen] = useState(false);
+  const currentUserQuery = useMeApiV1AuthMeGet();
+  const settingsQuery = useGetSettingsApiV1SettingsGet();
+  const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
+  const settings = settingsQuery.data?.status === 200 ? settingsQuery.data.data : null;
+  const canManageProviders = hasPermission(currentUser, "providers.manage");
 
   const providerQuery = useGetProviderApiV1ProvidersProviderIdGet(providerId ?? "", {
     query: { enabled: Boolean(providerId) },
@@ -67,7 +76,7 @@ export function ProviderDetailPage() {
     { query: { enabled: Boolean(providerId) } },
   );
   const usageQuery = useGetOrganizationUsageSummaryApiV1UsageSummaryGet(
-    { window: "30d" },
+    { window: "30d", provider_id: providerId },
     { query: { enabled: Boolean(providerId) } },
   );
   const credentials = credentialsQuery.data?.status === 200 ? credentialsQuery.data.data : [];
@@ -79,9 +88,9 @@ export function ProviderDetailPage() {
   const healthCounts = countByHealth(activeCredentials);
   const lastSuccess = lastSuccessfulRequestAt(credentials);
   const usageSummary = usageQuery.data?.status === 200 ? usageQuery.data.data : null;
-  const providerUsage = usageSummary?.by_provider.find((row) => row.id === providerId);
-  const providerRequests = providerUsage?.requests ?? 0;
-  const providerFailedRequests = providerUsage?.failed_requests ?? 0;
+  const providerTotals = usageSummary?.totals;
+  const providerRequests = providerTotals?.requests ?? 0;
+  const providerFailedRequests = providerTotals?.failed_requests ?? 0;
   const providerErrorRate =
     providerRequests > 0
       ? `${Math.round((providerFailedRequests / providerRequests) * 1000) / 10}%`
@@ -223,22 +232,26 @@ export function ProviderDetailPage() {
               <Activity />
               {testCredential.isPending ? "Testing..." : "Test connectivity"}
             </Button>
-            <Button variant="outline" onClick={() => setIsEditOpen(true)}>
-              <Pencil />
-              Settings
-            </Button>
-            <Label
-              className="ml-1 flex items-center gap-2 text-xs font-medium text-muted-foreground"
-              htmlFor="provider-enabled-switch"
-            >
-              Enabled
-              <Switch
-                id="provider-enabled-switch"
-                checked={provider.is_active}
-                disabled={updateProvider.isPending || deactivateProvider.isPending}
-                onCheckedChange={handleEnabledChange}
-              />
-            </Label>
+            {canManageProviders ? (
+              <>
+                <Button variant="outline" onClick={() => setIsEditOpen(true)}>
+                  <Pencil />
+                  Settings
+                </Button>
+                <Label
+                  className="ml-1 flex items-center gap-2 text-xs font-medium text-muted-foreground"
+                  htmlFor="provider-enabled-switch"
+                >
+                  Enabled
+                  <Switch
+                    id="provider-enabled-switch"
+                    checked={provider.is_active}
+                    disabled={updateProvider.isPending || deactivateProvider.isPending}
+                    onCheckedChange={handleEnabledChange}
+                  />
+                </Label>
+              </>
+            ) : null}
           </div>
         }
       />
@@ -261,13 +274,27 @@ export function ProviderDetailPage() {
             label="Last successful request"
             value={lastSuccess ? formatRelativeFromNow(lastSuccess) : "Never"}
           />
-          <Fact label="Request timeout" value={`${provider.request_timeout_seconds ?? 30}s`} />
+          <Fact
+            label="Request timeout"
+            value={
+              provider.request_timeout_seconds == null
+                ? `Inherited (${settings?.default_request_timeout_seconds ?? 30}s)`
+                : `${provider.request_timeout_seconds}s`
+            }
+          />
           <Fact
             label="Max body"
             value={
               provider.max_body_bytes
                 ? `${Math.round(provider.max_body_bytes / 1024)} KB`
-                : "Unlimited"
+                : `Inherited (${Math.round((settings?.default_max_body_bytes ?? 0) / 1024).toLocaleString()} KB)`
+            }
+          />
+          <Fact
+            label="Model sync"
+            value={
+              provider.model_sync_mode ??
+              `Inherited (${settings?.default_model_sync_mode ?? "merge"})`
             }
           />
           <Fact
@@ -349,14 +376,19 @@ export function ProviderDetailPage() {
           <Fact
             label="Latency"
             value={
-              providerUsage?.average_latency_ms == null
+              providerTotals?.average_latency_ms == null
                 ? "-"
-                : `${providerUsage.average_latency_ms}ms`
+                : `${providerTotals.average_latency_ms}ms`
             }
           />
-          <Fact label="Estimated spend" value={formatCents(providerUsage?.cost_cents ?? 0)} />
+          <Fact label="Estimated spend" value={formatCents(providerTotals?.cost_cents ?? 0)} />
         </CardContent>
       </Card>
+
+      <UsageRecordsDrilldown
+        title="Provider usage records"
+        filters={{ provider_id: provider.id }}
+      />
 
       <ProviderResourcesPanel provider={provider} />
 

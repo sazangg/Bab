@@ -7,7 +7,6 @@
 
 export interface UpdateGuardrailAssignmentRequest {
   policy_id?: string | null;
-  /** @pattern ^(org|team|project|allocation|virtual_key)$ */
   scope_type?: string | null;
   team_id?: string | null;
   project_id?: string | null;

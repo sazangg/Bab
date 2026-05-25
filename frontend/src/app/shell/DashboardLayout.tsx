@@ -2,6 +2,7 @@ import {
   Activity,
   Building2,
   ChartNoAxesCombined,
+  ClipboardList,
   FolderKanban,
   Gauge,
   KeyRound,
@@ -13,13 +14,18 @@ import {
   Settings,
   ShieldCheck,
   Sun,
+  TerminalSquare,
+  Users,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Fragment } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
-import { useLogoutApiV1AuthLogoutPost } from "@/shared/api/generated/auth/auth";
+import {
+  useLogoutApiV1AuthLogoutPost,
+  useMeApiV1AuthMeGet,
+} from "@/shared/api/generated/auth/auth";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -52,24 +58,44 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  canManageKeys,
+  hasAnyTeamMembership,
+  hasPermission,
+} from "@/features/auth/lib/permissions";
 import { useAuthStore } from "@/features/auth/model/auth-store";
 import { useBreadcrumbs } from "@/app/shell/breadcrumbs";
 import { useGetSettingsApiV1SettingsGet } from "@/shared/api/generated/settings/settings";
 
 const organizationNav = [
   { to: "/", label: "Home", icon: Gauge, end: true },
-  { to: "/providers", label: "Providers", icon: Plug },
-  { to: "/usage", label: "Usage", icon: ChartNoAxesCombined },
-  { to: "/activity", label: "Activity", icon: Activity },
-  { to: "/settings", label: "Settings", icon: Settings },
+  { to: "/providers", label: "Providers", icon: Plug, permission: "providers.view" },
+  { to: "/usage", label: "Usage", icon: ChartNoAxesCombined, permission: "usage.view" },
+  { to: "/activity", label: "Activity", icon: Activity, permission: "activity.view" },
+  { to: "/audit", label: "Audit", icon: ClipboardList, permission: "audit.view" },
+  { to: "/users", label: "Users", icon: Users, permission: "members.manage" },
+  { to: "/settings", label: "Settings", icon: Settings, permission: "settings.view" },
 ];
 
 const workspaceNav = [
-  { to: "/teams", label: "Teams", icon: Building2 },
-  { to: "/projects", label: "Projects", icon: FolderKanban },
-  { to: "/allocations", label: "Allocations", icon: Route },
-  { to: "/virtual-keys", label: "Virtual keys", icon: KeyRound },
-  { to: "/guardrails", label: "Guardrails", icon: ShieldCheck },
+  { to: "/teams", label: "Teams", icon: Building2, permission: "teams.view", scoped: true },
+  {
+    to: "/projects",
+    label: "Projects",
+    icon: FolderKanban,
+    permission: "projects.view",
+    scoped: true,
+  },
+  {
+    to: "/allocations",
+    label: "Allocations",
+    icon: Route,
+    permission: "allocations.manage",
+    scoped: true,
+  },
+  { to: "/virtual-keys", label: "Virtual keys", icon: KeyRound, keyManager: true },
+  { to: "/playground", label: "Playground", icon: TerminalSquare, keyManager: true },
+  { to: "/guardrails", label: "Guardrails", icon: ShieldCheck, permission: "guardrails.view" },
 ];
 
 const internalNav = [{ to: "/design-system", label: "Design system", icon: Palette }];
@@ -116,7 +142,18 @@ export function DashboardLayout() {
   const location = useLocation();
   const { resolvedTheme, setTheme } = useTheme();
   const settingsQuery = useGetSettingsApiV1SettingsGet();
+  const currentUserQuery = useMeApiV1AuthMeGet();
   const settings = settingsQuery.data?.status === 200 ? settingsQuery.data.data : undefined;
+  const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
+  const canView = (permission?: string) => !permission || hasPermission(currentUser, permission);
+  const canViewWorkspaceItem = (item: (typeof workspaceNav)[number]) => {
+    if (item.keyManager) return canManageKeys(currentUser);
+    if (item.scoped) return canView(item.permission) || hasAnyTeamMembership(currentUser);
+    return canView(item.permission);
+  };
+  const visibleOrganizationNav = organizationNav.filter((item) => canView(item.permission));
+  const visibleWorkspaceNav = workspaceNav.filter(canViewWorkspaceItem);
+  const showApiDocs = canManageKeys(currentUser) || hasPermission(currentUser, "providers.view");
   const organizationName = settings?.organization_name ?? fallbackOrganizationName;
   const clearSession = useAuthStore((state) => state.clearSession);
   const logoutMutation = useLogoutApiV1AuthLogoutPost({
@@ -174,9 +211,11 @@ export function DashboardLayout() {
           <Button asChild variant="ghost" size="sm">
             <Link to="/">Dashboard</Link>
           </Button>
-          <Button asChild variant="ghost" size="sm">
-            <Link to="/api-docs">API Docs</Link>
-          </Button>
+          {showApiDocs ? (
+            <Button asChild variant="ghost" size="sm">
+              <Link to="/api-docs">API Docs</Link>
+            </Button>
+          ) : null}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -218,7 +257,7 @@ export function DashboardLayout() {
             <SidebarGroupLabel>Organization</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {organizationNav.map((item) => (
+                {visibleOrganizationNav.map((item) => (
                   <SidebarMenuItem key={item.to}>
                     <SidebarMenuButton
                       asChild
@@ -239,7 +278,7 @@ export function DashboardLayout() {
             <SidebarGroupLabel>Workspace</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {workspaceNav.map((item) => (
+                {visibleWorkspaceNav.map((item) => (
                   <SidebarMenuItem key={item.to}>
                     <SidebarMenuButton asChild isActive={isActive(item.to)} tooltip={item.label}>
                       <Link to={item.to}>

@@ -1,7 +1,25 @@
+from uuid import UUID
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import Scope
 from app.modules.auth.internal import service
-from app.modules.auth.schemas import AuthenticatedUser, LoginRequest, TokenResponse
+from app.modules.auth.schemas import (
+    AcceptInviteRequest,
+    AuditEventResponse,
+    AuthenticatedUser,
+    CreateInviteRequest,
+    CreateMemberRequest,
+    InviteResponse,
+    LoginRequest,
+    MemberResponse,
+    TeamMemberResponse,
+    TokenResponse,
+    UpdateMemberRequest,
+    UpdateMemberStatusRequest,
+    UpdateTeamMemberRequest,
+    UpsertTeamMemberRequest,
+)
 
 
 async def login(payload: LoginRequest, db: AsyncSession) -> tuple[TokenResponse, str]:
@@ -18,3 +36,157 @@ async def logout(raw_refresh_token: str | None, db: AsyncSession) -> None:
 
 async def verify_access_token(token: str, db: AsyncSession) -> AuthenticatedUser:
     return await service.verify_access_token(token, db)
+
+
+def has_permission(user: AuthenticatedUser, permission: str) -> bool:
+    return service.has_permission(user, permission)
+
+
+async def list_members(*, scope: Scope, db: AsyncSession) -> list[MemberResponse]:
+    return await service.list_members(scope=scope, db=db)
+
+
+async def create_member(
+    *,
+    payload: CreateMemberRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> MemberResponse:
+    return await service.create_member(payload=payload, actor=actor, scope=scope, db=db)
+
+
+async def update_member(
+    *,
+    user_id: UUID,
+    payload: UpdateMemberRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> MemberResponse:
+    return await service.update_member(
+        user_id=user_id,
+        payload=payload,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def update_member_status(
+    *,
+    user_id: UUID,
+    payload: UpdateMemberStatusRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> MemberResponse:
+    return await service.update_member_status(
+        user_id=user_id,
+        payload=payload,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def list_team_members(
+    *, team_id: UUID, scope: Scope, db: AsyncSession
+) -> list[TeamMemberResponse]:
+    return await service.list_team_members(team_id=team_id, scope=scope, db=db)
+
+
+async def upsert_team_member(
+    *,
+    team_id: UUID,
+    payload: UpsertTeamMemberRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> TeamMemberResponse:
+    return await service.upsert_team_member(
+        team_id=team_id,
+        payload=payload,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def update_team_member(
+    *,
+    team_id: UUID,
+    user_id: UUID,
+    payload: UpdateTeamMemberRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> TeamMemberResponse:
+    return await service.update_team_member(
+        team_id=team_id,
+        user_id=user_id,
+        payload=payload,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def remove_team_member(
+    *,
+    team_id: UUID,
+    user_id: UUID,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> None:
+    await service.remove_team_member(
+        team_id=team_id,
+        user_id=user_id,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def create_invite(
+    *,
+    payload: CreateInviteRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    public_base_url: str | None,
+    db: AsyncSession,
+) -> InviteResponse:
+    return await service.create_invite(
+        payload=payload,
+        actor=actor,
+        scope=scope,
+        public_base_url=public_base_url,
+        db=db,
+    )
+
+
+async def list_invites(*, scope: Scope, db: AsyncSession) -> list[InviteResponse]:
+    return await service.list_invites(scope=scope, db=db)
+
+
+async def revoke_invite(
+    *,
+    invite_id: UUID,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> None:
+    await service.revoke_invite(invite_id=invite_id, actor=actor, scope=scope, db=db)
+
+
+async def accept_invite(
+    payload: AcceptInviteRequest, db: AsyncSession
+) -> tuple[TokenResponse, str]:
+    return await service.accept_invite(payload, db)
+
+
+async def list_audit_events(
+    *, scope: Scope, db: AsyncSession, limit: int = 100
+) -> list[AuditEventResponse]:
+    return await service.list_audit_events(scope=scope, db=db, limit=limit)

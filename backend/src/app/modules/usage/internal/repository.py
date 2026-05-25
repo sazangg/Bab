@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import case, func, select
@@ -14,6 +14,7 @@ from app.modules.usage.schemas import (
     RecordUsage,
     UsageBreakdownRow,
     UsageSummaryTotals,
+    UsageTimeSeriesPoint,
     VirtualKeyUsageSummary,
 )
 
@@ -29,16 +30,23 @@ async def list_usage_records(
     *,
     org_id: UUID,
     since: datetime | None,
+    until: datetime | None,
+    team_id: UUID | None,
     provider_id: UUID | None,
     project_id: UUID | None,
     allocation_id: UUID | None,
     virtual_key_id: UUID | None,
+    model: str | None,
     limit: int,
     db: AsyncSession,
 ) -> list[UsageRecord]:
     filters = [UsageRecord.org_id == org_id]
     if since is not None:
         filters.append(UsageRecord.created_at >= since)
+    if until is not None:
+        filters.append(UsageRecord.created_at <= until)
+    if team_id is not None:
+        filters.append(UsageRecord.team_id == team_id)
     if provider_id is not None:
         filters.append(UsageRecord.provider_id == provider_id)
     if project_id is not None:
@@ -47,6 +55,8 @@ async def list_usage_records(
         filters.append(UsageRecord.allocation_id == allocation_id)
     if virtual_key_id is not None:
         filters.append(UsageRecord.virtual_key_id == virtual_key_id)
+    if model:
+        filters.append(UsageRecord.provider_model == model)
     result = await db.scalars(
         select(UsageRecord).where(*filters).order_by(UsageRecord.created_at.desc()).limit(limit)
     )
@@ -125,11 +135,29 @@ async def get_organization_usage_summary(
     org_id: UUID,
     window: str,
     since: datetime | None,
+    until: datetime | None,
+    team_id: UUID | None = None,
+    provider_id: UUID | None = None,
+    project_id: UUID | None = None,
+    virtual_key_id: UUID | None = None,
+    model: str | None = None,
     db: AsyncSession,
 ) -> OrganizationUsageSummary:
     base_filters = [UsageRecord.org_id == org_id]
     if since is not None:
         base_filters.append(UsageRecord.created_at >= since)
+    if until is not None:
+        base_filters.append(UsageRecord.created_at <= until)
+    if team_id is not None:
+        base_filters.append(UsageRecord.team_id == team_id)
+    if provider_id is not None:
+        base_filters.append(UsageRecord.provider_id == provider_id)
+    if project_id is not None:
+        base_filters.append(UsageRecord.project_id == project_id)
+    if virtual_key_id is not None:
+        base_filters.append(UsageRecord.virtual_key_id == virtual_key_id)
+    if model:
+        base_filters.append(UsageRecord.provider_model == model)
     filters = tuple(base_filters)
     return OrganizationUsageSummary(
         window=window,
@@ -189,6 +217,50 @@ async def get_organization_usage_summary(
             db=db,
         ),
     )
+
+
+async def get_organization_usage_timeseries(
+    *,
+    org_id: UUID,
+    since: datetime | None,
+    until: datetime | None,
+    grain: str,
+    team_id: UUID | None = None,
+    provider_id: UUID | None = None,
+    project_id: UUID | None = None,
+    virtual_key_id: UUID | None = None,
+    model: str | None = None,
+    db: AsyncSession,
+) -> list[UsageTimeSeriesPoint]:
+    filters = [UsageRecord.org_id == org_id]
+    if since is not None:
+        filters.append(UsageRecord.created_at >= since)
+    if until is not None:
+        filters.append(UsageRecord.created_at <= until)
+    if team_id is not None:
+        filters.append(UsageRecord.team_id == team_id)
+    if provider_id is not None:
+        filters.append(UsageRecord.provider_id == provider_id)
+    if project_id is not None:
+        filters.append(UsageRecord.project_id == project_id)
+    if virtual_key_id is not None:
+        filters.append(UsageRecord.virtual_key_id == virtual_key_id)
+    if model:
+        filters.append(UsageRecord.provider_model == model)
+    records = (
+        await db.scalars(select(UsageRecord).where(*filters).order_by(UsageRecord.created_at.asc()))
+    ).all()
+    buckets: dict[datetime, list[UsageRecord]] = {}
+    for record in records:
+        bucket = _bucket_datetime(record.created_at, grain)
+        buckets.setdefault(bucket, []).append(record)
+    return [
+        UsageTimeSeriesPoint(
+            bucket=bucket,
+            **_records_to_totals(bucket_records).model_dump(),
+        )
+        for bucket, bucket_records in sorted(buckets.items())
+    ]
 
 
 async def get_virtual_key_usage_summary(
@@ -310,4 +382,30 @@ def _row_to_breakdown(row) -> UsageBreakdownRow:
         total_tokens=int(row[7]),
         cost_cents=int(row[8]),
         average_latency_ms=None if row[9] is None else round(row[9]),
+    )
+
+
+def _bucket_datetime(value: datetime, grain: str) -> datetime:
+    if grain == "hour":
+        return value.replace(minute=0, second=0, microsecond=0)
+    if grain == "week":
+        day_start = value.replace(hour=0, minute=0, second=0, microsecond=0)
+        return day_start.replace(day=day_start.day) - timedelta(days=day_start.weekday())
+    return value.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _records_to_totals(records: list[UsageRecord]) -> UsageSummaryTotals:
+    requests = len(records)
+    successful_requests = sum(1 for record in records if record.http_status < 400)
+    failed_requests = requests - successful_requests
+    latencies = [record.latency_ms for record in records if record.latency_ms is not None]
+    return UsageSummaryTotals(
+        requests=requests,
+        successful_requests=successful_requests,
+        failed_requests=failed_requests,
+        prompt_tokens=sum(record.prompt_tokens or 0 for record in records),
+        completion_tokens=sum(record.completion_tokens or 0 for record in records),
+        total_tokens=sum(record.total_tokens or 0 for record in records),
+        cost_cents=sum(record.cost_cents or 0 for record in records),
+        average_latency_ms=round(sum(latencies) / len(latencies)) if latencies else None,
     )

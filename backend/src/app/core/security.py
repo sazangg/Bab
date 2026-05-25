@@ -41,6 +41,10 @@ def hash_token(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+def generate_secret_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
 def generate_virtual_key(*, prefix: str | None = None) -> str:
     resolved_prefix = prefix or VIRTUAL_KEY_PREFIX
     if not resolved_prefix.endswith("-sk-"):

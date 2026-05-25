@@ -44,7 +44,7 @@ const setupSteps = [
 const attentionItems = [
   {
     label: "Allocation usage",
-    description: "Review budget and limit pressure from allocation cards.",
+    description: "Review budget, limits, and usage from allocation cards.",
     icon: WalletCards,
   },
   {

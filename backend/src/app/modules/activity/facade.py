@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.activity.internal import repository
 from app.modules.activity.schemas import ActivityEventResponse, RecordActivityEvent
+from app.modules.auth.internal.models import AuditEvent
 from app.modules.auth.schemas import AuthenticatedUser
 
 
@@ -34,6 +35,34 @@ async def record_admin_event(
     model_offering_id: UUID | None = None,
     metadata: dict | None = None,
 ) -> None:
+    db.add(
+        AuditEvent(
+            org_id=actor.org_id,
+            actor_user_id=actor.id,
+            actor_email=str(actor.email),
+            actor_role=actor.role,
+            action=action,
+            entity_type=_audit_entity_type(
+                team_id=team_id,
+                project_id=project_id,
+                allocation_id=allocation_id,
+                virtual_key_id=virtual_key_id,
+                provider_id=provider_id,
+                pool_id=pool_id,
+                model_offering_id=model_offering_id,
+            ),
+            entity_id=(
+                team_id
+                or project_id
+                or allocation_id
+                or virtual_key_id
+                or provider_id
+                or pool_id
+                or model_offering_id
+            ),
+            metadata_=metadata or {},
+        )
+    )
     await record_event(
         payload=RecordActivityEvent(
             org_id=actor.org_id,
@@ -54,6 +83,33 @@ async def record_admin_event(
         ),
         db=db,
     )
+
+
+def _audit_entity_type(
+    *,
+    team_id: UUID | None,
+    project_id: UUID | None,
+    allocation_id: UUID | None,
+    virtual_key_id: UUID | None,
+    provider_id: UUID | None,
+    pool_id: UUID | None,
+    model_offering_id: UUID | None,
+) -> str:
+    if team_id:
+        return "team"
+    if project_id:
+        return "project"
+    if allocation_id:
+        return "allocation"
+    if virtual_key_id:
+        return "virtual_key"
+    if provider_id:
+        return "provider"
+    if pool_id:
+        return "credential_pool"
+    if model_offering_id:
+        return "model_offering"
+    return "organization"
 
 
 async def list_events(

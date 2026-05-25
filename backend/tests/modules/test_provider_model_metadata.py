@@ -57,3 +57,36 @@ def test_openai_model_metadata_adapter_can_match_by_base_url() -> None:
     )
 
     assert OpenAIModelMetadataAdapter().supports(provider) is True
+
+
+def test_provider_specific_metadata_uses_provider_pricing() -> None:
+    mistral = Provider(
+        id=uuid4(),
+        org_id=uuid4(),
+        name="Mistral AI",
+        slug="mistral",
+        base_url="https://api.mistral.ai/v1",
+    )
+    groq = Provider(
+        id=uuid4(),
+        org_id=uuid4(),
+        name="Groq",
+        slug="groq",
+        base_url="https://api.groq.com/openai/v1",
+    )
+
+    mistral_metadata = default_model_metadata_registry.get(
+        provider=mistral,
+        provider_model_name="mistral-small-latest",
+    )
+    groq_metadata = default_model_metadata_registry.get(
+        provider=groq,
+        provider_model_name="llama-3.3-70b-versatile",
+    )
+
+    assert mistral_metadata is not None
+    assert mistral_metadata.pricing.input_price_per_million_tokens == 10
+    assert mistral_metadata.pricing.output_price_per_million_tokens == 30
+    assert groq_metadata is not None
+    assert groq_metadata.pricing.input_price_per_million_tokens == 59
+    assert groq_metadata.pricing.output_price_per_million_tokens == 79

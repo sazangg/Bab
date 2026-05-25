@@ -91,7 +91,6 @@ export function SettingsPage() {
       onError: () => toast.error("Logo could not be uploaded."),
     },
   });
-
   useEffect(() => {
     if (!settings) return;
     form.reset({

@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_current_user, get_scope, require_role
+from app.api.v1.deps import get_scope, require_permission
 from app.core.database import Scope, get_db
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.guardrails import facade
@@ -26,15 +26,15 @@ from app.modules.guardrails.schemas import (
 router = APIRouter(prefix="/guardrails", tags=["guardrails"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RequestScope = Annotated[Scope, Depends(get_scope)]
-CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]
-GuardrailAdmin = Annotated[AuthenticatedUser, Depends(require_role("super_admin"))]
+GuardrailViewer = Annotated[AuthenticatedUser, Depends(require_permission("guardrails.view"))]
+GuardrailAdmin = Annotated[AuthenticatedUser, Depends(require_permission("guardrails.manage"))]
 
 
 @router.get("/policies")
 async def list_policies(
     scope: RequestScope,
     db: DatabaseSession,
-    _: CurrentUser,
+    _: GuardrailViewer,
 ) -> list[GuardrailPolicyResponse]:
     return await facade.list_policies(scope=scope, db=db)
 
@@ -86,7 +86,7 @@ async def delete_policy(
 async def list_assignments(
     scope: RequestScope,
     db: DatabaseSession,
-    _: CurrentUser,
+    _: GuardrailViewer,
 ) -> list[GuardrailAssignmentResponse]:
     return await facade.list_assignments(scope=scope, db=db)
 
@@ -152,7 +152,7 @@ async def delete_assignment(
 async def list_events(
     scope: RequestScope,
     db: DatabaseSession,
-    _: CurrentUser,
+    _: GuardrailViewer,
     decision: str | None = None,
     limit: int = 50,
 ) -> list[GuardrailEventResponse]:

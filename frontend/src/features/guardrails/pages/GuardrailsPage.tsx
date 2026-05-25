@@ -1,4 +1,4 @@
-import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { MoreHorizontal, Pencil, Plus, ShieldCheck, ShieldX, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
@@ -43,6 +43,8 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   useCreateAssignmentApiV1GuardrailsAssignmentsPost,
   useCreatePolicyApiV1GuardrailsPoliciesPost,
+  useDeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete,
+  useDeletePolicyApiV1GuardrailsPoliciesPolicyIdDelete,
   useListAssignmentsApiV1GuardrailsAssignmentsGet,
   useListEventsApiV1GuardrailsEventsGet,
   useListPoliciesApiV1GuardrailsPoliciesGet,
@@ -63,7 +65,6 @@ import type {
   TeamResponse,
   VirtualKeyResponse,
 } from "@/shared/api/generated/schemas";
-import { apiMutator } from "@/shared/api/orval-mutator";
 import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
@@ -214,23 +215,23 @@ export function GuardrailsPage() {
       onError: () => toast.error("Assignment could not be saved."),
     },
   });
-  const deleteAssignment = useMutation({
-    mutationFn: (assignmentId: string) =>
-      apiMutator(`/api/v1/guardrails/assignments/${assignmentId}`, { method: "DELETE" }),
-    onSuccess: async () => {
-      await invalidateGuardrails();
-      toast.success("Assignment removed.");
+  const deleteAssignment = useDeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete({
+    mutation: {
+      onSuccess: async () => {
+        await invalidateGuardrails();
+        toast.success("Assignment removed.");
+      },
+      onError: () => toast.error("Assignment could not be removed."),
     },
-    onError: () => toast.error("Assignment could not be removed."),
   });
-  const deletePolicy = useMutation({
-    mutationFn: (policyId: string) =>
-      apiMutator(`/api/v1/guardrails/policies/${policyId}`, { method: "DELETE" }),
-    onSuccess: async () => {
-      await invalidateGuardrails();
-      toast.success("Policy deleted.");
+  const deletePolicy = useDeletePolicyApiV1GuardrailsPoliciesPolicyIdDelete({
+    mutation: {
+      onSuccess: async () => {
+        await invalidateGuardrails();
+        toast.success("Policy deleted.");
+      },
+      onError: () => toast.error("Policy could not be deleted."),
     },
-    onError: () => toast.error("Policy could not be deleted."),
   });
 
   const policyRows = policies.map((policy) => ({
@@ -450,7 +451,7 @@ export function GuardrailsPage() {
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             variant="destructive"
-                            onSelect={() => deletePolicy.mutate(policy.id)}
+                            onSelect={() => deletePolicy.mutate({ policyId: policy.id })}
                             disabled={deletePolicy.isPending}
                           >
                             <Trash2 />
@@ -538,7 +539,9 @@ export function GuardrailsPage() {
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               variant="destructive"
-                              onSelect={() => deleteAssignment.mutate(assignment.id)}
+                              onSelect={() =>
+                                deleteAssignment.mutate({ assignmentId: assignment.id })
+                              }
                               disabled={deleteAssignment.isPending}
                             >
                               <Trash2 />

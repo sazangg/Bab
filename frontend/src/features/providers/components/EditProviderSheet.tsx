@@ -27,6 +27,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useListProvidersApiV1ProvidersGet } from "@/shared/api/generated/providers/providers";
+import { useGetSettingsApiV1SettingsGet } from "@/shared/api/generated/settings/settings";
 import type { ProviderResponse, UpdateProviderRequest } from "@/shared/api/generated/schemas";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 
@@ -66,9 +67,10 @@ export function EditProviderSheet({
       slug: "",
       base_url: "",
       description: "",
-      request_timeout_seconds: 30,
+      request_timeout_seconds: undefined,
       max_body_bytes_kb: undefined,
       max_concurrent_requests: undefined,
+      model_sync_mode: "inherit",
       retry_policy: defaultRetryPolicy,
       fallback_policy: defaultFallbackPolicy,
       circuit_breaker_policy: defaultCircuitBreakerPolicy,
@@ -76,12 +78,15 @@ export function EditProviderSheet({
   });
   const retryPolicy = useWatch({ control: form.control, name: "retry_policy" });
   const fallbackPolicy = useWatch({ control: form.control, name: "fallback_policy" });
+  const modelSyncMode = useWatch({ control: form.control, name: "model_sync_mode" });
   const circuitBreakerPolicy = useWatch({
     control: form.control,
     name: "circuit_breaker_policy",
   });
 
   const providersQuery = useListProvidersApiV1ProvidersGet();
+  const settingsQuery = useGetSettingsApiV1SettingsGet();
+  const settings = settingsQuery.data?.status === 200 ? settingsQuery.data.data : null;
   const otherProviders =
     providersQuery.data?.status === 200
       ? providersQuery.data.data.filter((item) => item.id !== provider?.id && item.is_active)
@@ -94,12 +99,13 @@ export function EditProviderSheet({
       slug: provider.slug ?? "",
       base_url: provider.base_url,
       description: provider.description ?? "",
-      request_timeout_seconds: provider.request_timeout_seconds ?? 30,
+      request_timeout_seconds: provider.request_timeout_seconds ?? undefined,
       max_body_bytes_kb:
         provider.max_body_bytes != null
           ? Math.max(1, Math.round(provider.max_body_bytes / 1024))
           : undefined,
       max_concurrent_requests: provider.max_concurrent_requests ?? undefined,
+      model_sync_mode: parseModelSyncMode(provider.model_sync_mode),
       retry_policy: mergeRetryPolicy(provider.retry_policy),
       fallback_policy: mergeFallbackPolicy(provider.fallback_policy),
       circuit_breaker_policy: mergeCircuitBreakerPolicy(provider.circuit_breaker_policy),
@@ -160,6 +166,7 @@ export function EditProviderSheet({
               <FormField
                 label="Request timeout (seconds)"
                 htmlFor="edit-provider-timeout"
+                hint={`Blank inherits org default (${settings?.default_request_timeout_seconds ?? 30}s).`}
                 error={form.formState.errors.request_timeout_seconds?.message}
               >
                 <Input
@@ -167,14 +174,15 @@ export function EditProviderSheet({
                   type="number"
                   min={1}
                   max={300}
-                  {...form.register("request_timeout_seconds", { valueAsNumber: true })}
+                  placeholder="Inherited"
+                  {...form.register("request_timeout_seconds")}
                 />
               </FormField>
               <div className="grid grid-cols-2 gap-3">
                 <FormField
                   label="Max body (KB)"
                   htmlFor="edit-provider-body"
-                  hint="Blank = unlimited"
+                  hint={`Blank inherits org default (${Math.round((settings?.default_max_body_bytes ?? 0) / 1024).toLocaleString()} KB).`}
                 >
                   <Input
                     id="edit-provider-body"
@@ -198,6 +206,29 @@ export function EditProviderSheet({
                   />
                 </FormField>
               </div>
+              <FormField label="Model sync mode" htmlFor="edit-provider-model-sync">
+                <Select
+                  value={modelSyncMode}
+                  onValueChange={(value) =>
+                    form.setValue(
+                      "model_sync_mode",
+                      value as "inherit" | "merge" | "replace" | "disabled",
+                    )
+                  }
+                >
+                  <SelectTrigger id="edit-provider-model-sync">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="inherit">
+                      Inherit org default ({settings?.default_model_sync_mode ?? "merge"})
+                    </SelectItem>
+                    <SelectItem value="merge">Merge</SelectItem>
+                    <SelectItem value="replace">Replace</SelectItem>
+                    <SelectItem value="disabled">Disabled</SelectItem>
+                  </SelectContent>
+                </Select>
+              </FormField>
             </FormSection>
 
             <Separator />
@@ -621,4 +652,9 @@ function FallbackProviderPicker({
       ) : null}
     </div>
   );
+}
+
+function parseModelSyncMode(value: string | null | undefined) {
+  if (value === "merge" || value === "replace" || value === "disabled") return value;
+  return "inherit";
 }

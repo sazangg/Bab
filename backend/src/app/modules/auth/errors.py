@@ -12,3 +12,7 @@ class InvalidRefreshTokenError(AuthError):
 
 class InvalidAccessTokenError(AuthError):
     pass
+
+
+class LastOwnerError(AuthError):
+    pass

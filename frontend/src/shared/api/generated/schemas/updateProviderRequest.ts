@@ -18,8 +18,10 @@ export interface UpdateProviderRequest {
   request_timeout_seconds?: number | null;
   max_body_bytes?: number | null;
   retry_policy?: UpdateProviderRequestRetryPolicy;
+  model_sync_mode?: string | null;
   fallback_policy?: UpdateProviderRequestFallbackPolicy;
   circuit_breaker_policy?: UpdateProviderRequestCircuitBreakerPolicy;
   max_concurrent_requests?: number | null;
+  is_favorite?: boolean | null;
   is_active?: boolean | null;
 }

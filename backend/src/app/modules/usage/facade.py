@@ -9,37 +9,45 @@ from app.modules.usage.schemas import (
     OrganizationUsageSummary,
     RecordUsage,
     UsageRecordResponse,
+    UsageTimeSeriesPoint,
     VirtualKeyUsageSummary,
 )
 
 
 async def record_usage(*, payload: RecordUsage, db: AsyncSession) -> None:
     await repository.create_usage_record(payload=payload, db=db)
+    await db.commit()
 
 
 async def list_usage_records(
     *,
     org_id: UUID,
     window: str,
-    provider_id: UUID | None,
-    project_id: UUID | None,
-    allocation_id: UUID | None,
-    virtual_key_id: UUID | None,
-    limit: int,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    team_id: UUID | None = None,
+    provider_id: UUID | None = None,
+    project_id: UUID | None = None,
+    allocation_id: UUID | None = None,
+    virtual_key_id: UUID | None = None,
+    model: str | None = None,
+    limit: int = 100,
     db: AsyncSession,
 ) -> list[UsageRecordResponse]:
     records = await repository.list_usage_records(
         org_id=org_id,
-        since=window_start(window),
+        since=start_at or window_start(window),
+        until=end_at,
+        team_id=team_id,
         provider_id=provider_id,
         project_id=project_id,
         allocation_id=allocation_id,
         virtual_key_id=virtual_key_id,
+        model=model,
         limit=limit,
         db=db,
     )
     return [UsageRecordResponse.model_validate(record) for record in records]
-    await db.commit()
 
 
 async def summarize_allocation_usage(
@@ -75,12 +83,53 @@ async def get_organization_usage_summary(
     *,
     org_id: UUID,
     window: str,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    team_id: UUID | None = None,
+    provider_id: UUID | None = None,
+    project_id: UUID | None = None,
+    virtual_key_id: UUID | None = None,
+    model: str | None = None,
     db: AsyncSession,
 ) -> OrganizationUsageSummary:
     return await repository.get_organization_usage_summary(
         org_id=org_id,
         window=window,
-        since=window_start(window),
+        since=start_at or window_start(window),
+        until=end_at,
+        team_id=team_id,
+        provider_id=provider_id,
+        project_id=project_id,
+        virtual_key_id=virtual_key_id,
+        model=model,
+        db=db,
+    )
+
+
+async def get_organization_usage_timeseries(
+    *,
+    org_id: UUID,
+    window: str,
+    grain: str,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    team_id: UUID | None = None,
+    provider_id: UUID | None = None,
+    project_id: UUID | None = None,
+    virtual_key_id: UUID | None = None,
+    model: str | None = None,
+    db: AsyncSession,
+) -> list[UsageTimeSeriesPoint]:
+    return await repository.get_organization_usage_timeseries(
+        org_id=org_id,
+        since=start_at or window_start(window),
+        until=end_at,
+        grain=grain,
+        team_id=team_id,
+        provider_id=provider_id,
+        project_id=project_id,
+        virtual_key_id=virtual_key_id,
+        model=model,
         db=db,
     )
 
@@ -106,6 +155,8 @@ def window_start(window: str) -> datetime | None:
         return now - timedelta(days=7)
     if window == "30d":
         return now - timedelta(days=30)
+    if window == "90d":
+        return now - timedelta(days=90)
     return None
 
 

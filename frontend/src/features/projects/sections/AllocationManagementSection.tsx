@@ -367,7 +367,7 @@ function AllocationUsagePanel({
   const failedRequests = totals?.failed_requests ?? 0;
   const successfulRequests = totals?.successful_requests ?? 0;
   const averageLatency = totals?.average_latency_ms ?? null;
-  const pressureItems = [
+  const usageItems = [
     {
       label: "Budget",
       used: costCents,
@@ -397,14 +397,12 @@ function AllocationUsagePanel({
       capLabel: allocation.max_output_tokens?.toLocaleString() ?? "No cap",
     },
   ];
-  const constrainedItems = pressureItems.filter(
-    (item) => item.cap !== null && item.cap !== undefined,
-  );
+  const constrainedItems = usageItems.filter((item) => item.cap !== null && item.cap !== undefined);
   const windowLabel = formatWindowLabel(usage?.window || allocation.window);
   const hottestItem = constrainedItems
     .map((item) => ({ ...item, ratio: item.cap ? item.used / item.cap : 0 }))
     .sort((left, right) => right.ratio - left.ratio)[0];
-  const pressureState = getPressureState(hottestItem?.ratio ?? 0);
+  const usageState = getUsageState(hottestItem?.ratio ?? 0);
 
   if (!usage || requests === 0) {
     return (
@@ -423,7 +421,7 @@ function AllocationUsagePanel({
         <div>
           <div className="flex items-center gap-2 text-sm font-medium">
             <Gauge className="size-4 text-muted-foreground" />
-            Allocation pressure
+            Allocation usage
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
             {hottestItem
@@ -431,11 +429,11 @@ function AllocationUsagePanel({
               : `No request, token, or budget cap is set for this ${windowLabel} allocation.`}
           </p>
         </div>
-        <StatusBadge variant={pressureState.variant}>{pressureState.label}</StatusBadge>
+        <StatusBadge variant={usageState.variant}>{usageState.label}</StatusBadge>
       </div>
       <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-        {pressureItems.map((item) => (
-          <PressureMeter key={item.label} {...item} />
+        {usageItems.map((item) => (
+          <UsageMeter key={item.label} {...item} />
         ))}
       </div>
       <div className="grid gap-2 text-sm md:grid-cols-5">
@@ -467,14 +465,14 @@ function AllocationUsagePanel({
         <div>
           Remaining: {formatRemaining(requests, allocation.max_requests)} requests,
           {formatRemaining(costCents, allocation.budget_cents)} budget in the {windowLabel} window.
-          Token pressure uses recorded input/output tokens for that same window.
+          Token usage uses recorded input/output tokens for that same window.
         </div>
       </div>
     </div>
   );
 }
 
-function PressureMeter({
+function UsageMeter({
   label,
   used,
   cap,
@@ -488,7 +486,7 @@ function PressureMeter({
   capLabel: string;
 }) {
   const percent = cap ? Math.min(100, Math.round((used / cap) * 100)) : 0;
-  const state = getPressureState(cap ? used / cap : 0);
+  const state = getUsageState(cap ? used / cap : 0);
 
   return (
     <div className="rounded-md bg-background p-3">
@@ -990,7 +988,7 @@ function formatWindowLabel(window: string) {
   return window === "lifetime" ? "lifetime" : window;
 }
 
-function getPressureState(ratio: number): {
+function getUsageState(ratio: number): {
   label: string;
   variant: "active" | "expired";
   barClass: string;
@@ -998,7 +996,7 @@ function getPressureState(ratio: number): {
 } {
   if (ratio >= 0.9) {
     return {
-      label: "High pressure",
+      label: "High usage",
       variant: "expired",
       barClass: "bg-destructive",
       textClass: "text-destructive",

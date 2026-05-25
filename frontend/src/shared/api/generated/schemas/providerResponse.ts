@@ -5,10 +5,10 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ProviderCredentialSummary } from "./providerCredentialSummary";
+import type { ProviderReadiness } from "./providerReadiness";
 import type { ProviderResponseCapabilities } from "./providerResponseCapabilities";
 import type { ProviderResponseCircuitBreakerPolicy } from "./providerResponseCircuitBreakerPolicy";
 import type { ProviderResponseFallbackPolicy } from "./providerResponseFallbackPolicy";
-import type { ProviderReadiness } from "./providerReadiness";
 import type { ProviderResponseRetryPolicy } from "./providerResponseRetryPolicy";
 
 export interface ProviderResponse {
@@ -23,14 +23,16 @@ export interface ProviderResponse {
   capabilities: ProviderResponseCapabilities;
   supported_integration: string;
   catalog_type?: string;
-  request_timeout_seconds: number;
+  request_timeout_seconds: number | null;
   max_body_bytes: number | null;
   retry_policy: ProviderResponseRetryPolicy;
+  model_sync_mode: string | null;
   fallback_policy: ProviderResponseFallbackPolicy;
   circuit_breaker_policy: ProviderResponseCircuitBreakerPolicy;
   max_concurrent_requests: number | null;
   credential_summary?: ProviderCredentialSummary;
   readiness?: ProviderReadiness;
+  is_favorite: boolean;
   is_active: boolean;
   created_at: string;
   updated_at: string;

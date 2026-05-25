@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import { Archive, MoreHorizontal, Pencil, Plus, RotateCcw } from "lucide-react";
+import { Archive, MoreHorizontal, Pencil, Plus, RotateCcw, Trash2, UserPlus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { useNavigate, useParams } from "react-router-dom";
@@ -35,6 +35,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Sheet,
   SheetClose,
   SheetContent,
@@ -57,17 +64,35 @@ import { cn } from "@/lib/utils";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import {
+  useListMembersApiV1AuthMembersGet,
+  useMeApiV1AuthMeGet,
+} from "@/shared/api/generated/auth/auth";
+import {
+  useAddTeamMemberApiV1TeamsTeamIdMembersPost,
   useCreateTeamProjectApiV1TeamsTeamIdProjectsPost,
   useDeactivateTeamApiV1TeamsTeamIdDelete,
   useGetTeamApiV1TeamsTeamIdGet,
+  useGetTeamUsageApiV1TeamsTeamIdUsageGet,
+  useListTeamMembersApiV1TeamsTeamIdMembersGet,
   useListTeamProjectsApiV1TeamsTeamIdProjectsGet,
+  useRemoveTeamMemberApiV1TeamsTeamIdMembersUserIdDelete,
+  useUpdateTeamMemberApiV1TeamsTeamIdMembersUserIdPatch,
   useUpdateTeamApiV1TeamsTeamIdPatch,
 } from "@/shared/api/generated/teams/teams";
-import type { ProjectResponse, UpdateTeamRequest } from "@/shared/api/generated/schemas";
+import type {
+  MemberResponse,
+  ProjectResponse,
+  TeamMemberResponse,
+  UpdateTeamRequest,
+} from "@/shared/api/generated/schemas";
 
 import { formatDateTime, formatRelativeFromNow } from "@/features/providers/lib/format";
 import { AllocationManagementSection } from "@/features/projects/sections/AllocationManagementSection";
+import { hasPermission, isTeamAdmin } from "@/features/auth/lib/permissions";
+import { ForbiddenPage } from "@/features/auth/components/ProtectedRoute";
 import { slugify } from "@/features/teams/lib/slug";
+import { EntityUsageCard } from "@/features/usage/components/EntityUsageCard";
+import { UsageRecordsDrilldown } from "@/features/usage/components/UsageRecordsDrilldown";
 
 const projectSchema = z.object({
   name: z.string().min(1, "Name is required").max(255),
@@ -94,6 +119,8 @@ export function TeamDetailPage() {
   const [projectSheetOpen, setProjectSheetOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const currentUserQuery = useMeApiV1AuthMeGet();
+  const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
 
   const teamQuery = useGetTeamApiV1TeamsTeamIdGet(teamId, {
     query: { enabled: Boolean(teamId) },
@@ -101,9 +128,24 @@ export function TeamDetailPage() {
   const projectsQuery = useListTeamProjectsApiV1TeamsTeamIdProjectsGet(teamId, {
     query: { enabled: Boolean(teamId) },
   });
+  const orgMembersQuery = useListMembersApiV1AuthMembersGet({
+    query: { enabled: Boolean(teamId) },
+  });
+  const teamMembersQuery = useListTeamMembersApiV1TeamsTeamIdMembersGet(teamId, {
+    query: { enabled: Boolean(teamId) },
+  });
+  const usageQuery = useGetTeamUsageApiV1TeamsTeamIdUsageGet(teamId, {
+    query: { enabled: Boolean(teamId) },
+  });
   const team = teamQuery.data?.status === 200 ? teamQuery.data.data : undefined;
   const projects = projectsQuery.data?.status === 200 ? projectsQuery.data.data : [];
+  const orgMembers = orgMembersQuery.data?.status === 200 ? orgMembersQuery.data.data : [];
+  const teamMembers = teamMembersQuery.data?.status === 200 ? teamMembersQuery.data.data : [];
+  const usage = usageQuery.data?.status === 200 ? usageQuery.data.data : null;
   const activeProjectCount = projects.filter((p) => p.is_active).length;
+  const canManageTeam =
+    team !== undefined &&
+    (hasPermission(currentUser, "teams.manage") || isTeamAdmin(currentUser, team.id));
 
   const projectForm = useForm<ProjectFormValues>({
     resolver: zodResolver(projectSchema),
@@ -176,6 +218,33 @@ export function TeamDetailPage() {
       onError: () => toast.error("Archive failed."),
     },
   });
+  const addTeamMember = useAddTeamMemberApiV1TeamsTeamIdMembersPost({
+    mutation: {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries();
+        toast.success("Team member added.");
+      },
+      onError: () => toast.error("Team member could not be added."),
+    },
+  });
+  const updateTeamMember = useUpdateTeamMemberApiV1TeamsTeamIdMembersUserIdPatch({
+    mutation: {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries();
+        toast.success("Team role updated.");
+      },
+      onError: () => toast.error("Team role could not be updated."),
+    },
+  });
+  const removeTeamMember = useRemoveTeamMemberApiV1TeamsTeamIdMembersUserIdDelete({
+    mutation: {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries();
+        toast.success("Team member removed.");
+      },
+      onError: () => toast.error("Team member could not be removed."),
+    },
+  });
 
   const slugInput = useWatch({ control: editTeamForm.control, name: "slug" });
   const slugPreview = slugInput?.trim() ? slugify(slugInput) : "";
@@ -200,6 +269,9 @@ export function TeamDetailPage() {
   if (teamQuery.isPending) {
     return <p className="text-sm text-muted-foreground">Loading team...</p>;
   }
+  if (isAxiosError(teamQuery.error) && teamQuery.error.response?.status === 403) {
+    return <ForbiddenPage />;
+  }
   if (!team) {
     return <PageHeader title="Team not found" description="The team may have been removed." />;
   }
@@ -210,38 +282,40 @@ export function TeamDetailPage() {
         title={team.name}
         description={team.description ?? "Group projects under this team."}
         actions={
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => setEditOpen(true)}>
-              <Pencil />
-              Edit team
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" aria-label="Team actions">
-                  <MoreHorizontal />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onSelect={() => setArchiveOpen(true)}
-                  disabled={!team.is_active}
-                  variant="destructive"
-                >
-                  <Archive className="mr-2 size-4" />
-                  Archive team
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={() =>
-                    reactivateTeam.mutate({ teamId: team.id, data: { is_active: true } })
-                  }
-                  disabled={team.is_active || reactivateTeam.isPending}
-                >
-                  <RotateCcw className="mr-2 size-4" />
-                  Reactivate team
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+          canManageTeam ? (
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={() => setEditOpen(true)}>
+                <Pencil />
+                Edit team
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="icon" aria-label="Team actions">
+                    <MoreHorizontal />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onSelect={() => setArchiveOpen(true)}
+                    disabled={!team.is_active}
+                    variant="destructive"
+                  >
+                    <Archive className="mr-2 size-4" />
+                    Archive team
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() =>
+                      reactivateTeam.mutate({ teamId: team.id, data: { is_active: true } })
+                    }
+                    disabled={team.is_active || reactivateTeam.isPending}
+                  >
+                    <RotateCcw className="mr-2 size-4" />
+                    Reactivate team
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          ) : null
         }
       />
 
@@ -263,6 +337,26 @@ export function TeamDetailPage() {
         </CardContent>
       </Card>
 
+      <TeamMembersCard
+        orgMembers={orgMembers}
+        teamMembers={teamMembers}
+        canManage={canManageTeam}
+        isLoading={orgMembersQuery.isPending || teamMembersQuery.isPending}
+        isPending={
+          addTeamMember.isPending || updateTeamMember.isPending || removeTeamMember.isPending
+        }
+        onAdd={(userId, role) => addTeamMember.mutate({ teamId, data: { user_id: userId, role } })}
+        onRoleChange={(userId, role) => updateTeamMember.mutate({ teamId, userId, data: { role } })}
+        onRemove={(userId) => removeTeamMember.mutate({ teamId, userId })}
+      />
+
+      <EntityUsageCard
+        usage={usage}
+        isLoading={usageQuery.isPending}
+        description="Aggregate team usage across projects, virtual keys, and inherited allocations."
+      />
+      <UsageRecordsDrilldown title="Team usage records" filters={{ team_id: team.id }} />
+
       <AllocationManagementSection target={{ type: "team", teamId: team.id }} />
 
       <Card>
@@ -272,73 +366,75 @@ export function TeamDetailPage() {
             Projects inside this team receive allocations and issue virtual keys.
           </CardDescription>
           <CardAction>
-            <Sheet
-              open={projectSheetOpen}
-              onOpenChange={(next) => {
-                setProjectSheetOpen(next);
-                if (!next) projectForm.reset();
-              }}
-            >
-              <SheetTrigger asChild>
-                <Button
-                  size="sm"
-                  disabled={!team.is_active}
-                  title={team.is_active ? undefined : "Reactivate the team to add projects."}
-                >
-                  <Plus />
-                  New project
-                </Button>
-              </SheetTrigger>
-              <SheetContent>
-                <SheetHeader>
-                  <SheetTitle>New project</SheetTitle>
-                  <SheetDescription>Create a project under {team.name}.</SheetDescription>
-                </SheetHeader>
-                <form
-                  id="create-project-form"
-                  className="grid gap-4 overflow-y-auto px-6 py-5"
-                  onSubmit={projectForm.handleSubmit((values) =>
-                    createProject.mutate({
-                      teamId,
-                      data: {
-                        name: values.name,
-                        description: values.description?.trim() ? values.description : null,
-                      },
-                    }),
-                  )}
-                >
-                  <div className="space-y-1.5">
-                    <Label htmlFor="project-name">Name</Label>
-                    <Input id="project-name" autoFocus {...projectForm.register("name")} />
-                    {projectForm.formState.errors.name ? (
-                      <p className="text-xs text-destructive">
-                        {projectForm.formState.errors.name.message}
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="project-description">Description</Label>
-                    <Textarea
-                      id="project-description"
-                      rows={4}
-                      {...projectForm.register("description")}
-                    />
-                  </div>
-                </form>
-                <SheetFooter>
+            {canManageTeam ? (
+              <Sheet
+                open={projectSheetOpen}
+                onOpenChange={(next) => {
+                  setProjectSheetOpen(next);
+                  if (!next) projectForm.reset();
+                }}
+              >
+                <SheetTrigger asChild>
                   <Button
-                    type="submit"
-                    form="create-project-form"
-                    disabled={createProject.isPending}
+                    size="sm"
+                    disabled={!team.is_active}
+                    title={team.is_active ? undefined : "Reactivate the team to add projects."}
                   >
-                    {createProject.isPending ? "Creating..." : "Create project"}
+                    <Plus />
+                    New project
                   </Button>
-                  <SheetClose asChild>
-                    <Button variant="outline">Cancel</Button>
-                  </SheetClose>
-                </SheetFooter>
-              </SheetContent>
-            </Sheet>
+                </SheetTrigger>
+                <SheetContent>
+                  <SheetHeader>
+                    <SheetTitle>New project</SheetTitle>
+                    <SheetDescription>Create a project under {team.name}.</SheetDescription>
+                  </SheetHeader>
+                  <form
+                    id="create-project-form"
+                    className="grid gap-4 overflow-y-auto px-6 py-5"
+                    onSubmit={projectForm.handleSubmit((values) =>
+                      createProject.mutate({
+                        teamId,
+                        data: {
+                          name: values.name,
+                          description: values.description?.trim() ? values.description : null,
+                        },
+                      }),
+                    )}
+                  >
+                    <div className="space-y-1.5">
+                      <Label htmlFor="project-name">Name</Label>
+                      <Input id="project-name" autoFocus {...projectForm.register("name")} />
+                      {projectForm.formState.errors.name ? (
+                        <p className="text-xs text-destructive">
+                          {projectForm.formState.errors.name.message}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="project-description">Description</Label>
+                      <Textarea
+                        id="project-description"
+                        rows={4}
+                        {...projectForm.register("description")}
+                      />
+                    </div>
+                  </form>
+                  <SheetFooter>
+                    <Button
+                      type="submit"
+                      form="create-project-form"
+                      disabled={createProject.isPending}
+                    >
+                      {createProject.isPending ? "Creating..." : "Create project"}
+                    </Button>
+                    <SheetClose asChild>
+                      <Button variant="outline">Cancel</Button>
+                    </SheetClose>
+                  </SheetFooter>
+                </SheetContent>
+              </Sheet>
+            ) : null}
           </CardAction>
         </CardHeader>
         <CardContent>
@@ -350,15 +446,17 @@ export function TeamDetailPage() {
               <p className="mt-1 text-sm text-muted-foreground">
                 Create a project to start assigning allocations and keys.
               </p>
-              <Button
-                className="mt-4"
-                size="sm"
-                onClick={() => setProjectSheetOpen(true)}
-                disabled={!team.is_active}
-              >
-                <Plus />
-                New project
-              </Button>
+              {canManageTeam ? (
+                <Button
+                  className="mt-4"
+                  size="sm"
+                  onClick={() => setProjectSheetOpen(true)}
+                  disabled={!team.is_active}
+                >
+                  <Plus />
+                  New project
+                </Button>
+              ) : null}
             </div>
           ) : (
             <div className="overflow-hidden rounded-md border">
@@ -474,6 +572,169 @@ export function TeamDetailPage() {
   );
 }
 
+function TeamMembersCard({
+  orgMembers,
+  teamMembers,
+  canManage,
+  isLoading,
+  isPending,
+  onAdd,
+  onRoleChange,
+  onRemove,
+}: {
+  orgMembers: MemberResponse[];
+  teamMembers: TeamMemberResponse[];
+  canManage: boolean;
+  isLoading: boolean;
+  isPending: boolean;
+  onAdd: (userId: string, role: string) => void;
+  onRoleChange: (userId: string, role: string) => void;
+  onRemove: (userId: string) => void;
+}) {
+  const [selectedUserId, setSelectedUserId] = useState("");
+  const [role, setRole] = useState("team_member");
+  const assignedIds = new Set(teamMembers.map((member) => member.user_id));
+  const assignableMembers = orgMembers.filter(
+    (member) => member.status === "active" && !assignedIds.has(member.user_id),
+  );
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Members</CardTitle>
+        <CardDescription>
+          Team roles are scoped to this team. Org owners and admins still keep their org-level
+          access.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        {canManage ? (
+          <div className="grid gap-3 rounded-md border p-3 md:grid-cols-[minmax(0,1fr)_180px_auto]">
+            <div className="flex flex-col gap-1.5">
+              <Label>User</Label>
+              <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select organization member" />
+                </SelectTrigger>
+                <SelectContent>
+                  {assignableMembers.length === 0 ? (
+                    <SelectItem value="none" disabled>
+                      No available members
+                    </SelectItem>
+                  ) : (
+                    assignableMembers.map((member) => (
+                      <SelectItem key={member.user_id} value={member.user_id}>
+                        {member.email}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>Team role</Label>
+              <Select value={role} onValueChange={setRole}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="team_admin">Admin</SelectItem>
+                  <SelectItem value="team_member">Member</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-end">
+              <Button
+                type="button"
+                disabled={isPending || !selectedUserId || selectedUserId === "none"}
+                onClick={() => {
+                  onAdd(selectedUserId, role);
+                  setSelectedUserId("");
+                  setRole("team_member");
+                }}
+              >
+                <UserPlus data-icon="inline-start" />
+                Add member
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading team members...</p>
+        ) : teamMembers.length === 0 ? (
+          <div className="rounded-md border border-dashed p-6 text-center">
+            <p className="text-sm font-medium">No team members assigned</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Assign existing organization members to make team access explicit.
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>User</TableHead>
+                  <TableHead>Org role</TableHead>
+                  <TableHead>Team role</TableHead>
+                  <TableHead>Added</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {teamMembers.map((member) => (
+                  <TableRow key={member.user_id}>
+                    <TableCell>
+                      <div className="font-medium">{member.email}</div>
+                      {member.name ? (
+                        <div className="text-xs text-muted-foreground">{member.name}</div>
+                      ) : null}
+                    </TableCell>
+                    <TableCell>{formatOrgRole(member.org_role)}</TableCell>
+                    <TableCell>
+                      {canManage ? (
+                        <Select
+                          value={member.team_role}
+                          onValueChange={(value) => onRoleChange(member.user_id, value)}
+                          disabled={isPending}
+                        >
+                          <SelectTrigger className="w-36">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="team_admin">Admin</SelectItem>
+                            <SelectItem value="team_member">Member</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        formatTeamRole(member.team_role)
+                      )}
+                    </TableCell>
+                    <TableCell>{new Date(member.created_at).toLocaleDateString()}</TableCell>
+                    <TableCell className="text-right">
+                      {canManage ? (
+                        <Button
+                          type="button"
+                          size="icon-sm"
+                          variant="ghost"
+                          disabled={isPending}
+                          onClick={() => onRemove(member.user_id)}
+                          aria-label="Remove team member"
+                        >
+                          <Trash2 />
+                        </Button>
+                      ) : null}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function ProjectTableRow({ project, onOpen }: { project: ProjectResponse; onOpen: () => void }) {
   return (
     <TableRow className={cn("cursor-pointer", !project.is_active && "opacity-60")} onClick={onOpen}>
@@ -491,6 +752,17 @@ function ProjectTableRow({ project, onOpen }: { project: ProjectResponse; onOpen
       </TableCell>
     </TableRow>
   );
+}
+
+function formatOrgRole(value: string) {
+  if (value === "org_owner") return "Owner";
+  if (value === "org_admin") return "Admin";
+  return "Viewer";
+}
+
+function formatTeamRole(value: string) {
+  if (value === "team_admin") return "Admin";
+  return "Member";
 }
 
 function Fact({ label, value }: { label: string; value: string }) {

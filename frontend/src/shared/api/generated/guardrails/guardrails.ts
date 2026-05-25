@@ -27,6 +27,7 @@ import type {
   GuardrailEventResponse,
   GuardrailPolicyResponse,
   HTTPValidationError,
+  ListEventsApiV1GuardrailsEventsGetParams,
   UpdateGuardrailAssignmentRequest,
   UpdateGuardrailPolicyRequest,
 } from "../schemas";
@@ -414,6 +415,117 @@ export const useUpdatePolicyApiV1GuardrailsPoliciesPolicyIdPatch = <
 > => {
   return useMutation(
     getUpdatePolicyApiV1GuardrailsPoliciesPolicyIdPatchMutationOptions(options),
+    queryClient,
+  );
+};
+export type deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponse204 = {
+  data: void;
+  status: 204;
+};
+
+export type deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponse422 = {
+  data: HTTPValidationError;
+  status: 422;
+};
+
+export type deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponseSuccess =
+  deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponse204 & {
+    headers: Headers;
+  };
+export type deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponseError =
+  deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponse422 & {
+    headers: Headers;
+  };
+
+export type deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponse =
+  | deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponseSuccess
+  | deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponseError;
+
+export const getDeletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteUrl = (policyId: string) => {
+  return `/api/v1/guardrails/policies/${policyId}`;
+};
+
+/**
+ * @summary Delete Policy
+ */
+export const deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete = async (
+  policyId: string,
+  options?: RequestInit,
+): Promise<deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponse> => {
+  return apiMutator<deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponse>(
+    getDeletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteUrl(policyId),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getDeletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteMutationOptions = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete>>,
+    TError,
+    { policyId: string },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete>>,
+  TError,
+  { policyId: string },
+  TContext
+> => {
+  const mutationKey = ["deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete>>,
+    { policyId: string }
+  > = (props) => {
+    const { policyId } = props ?? {};
+
+    return deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete(policyId);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete>>
+>;
+
+export type DeletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteMutationError = HTTPValidationError;
+
+/**
+ * @summary Delete Policy
+ */
+export const useDeletePolicyApiV1GuardrailsPoliciesPolicyIdDelete = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete>>,
+      TError,
+      { policyId: string },
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete>>,
+  TError,
+  { policyId: string },
+  TContext
+> => {
+  return useMutation(
+    getDeletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteMutationOptions(options),
     queryClient,
   );
 };
@@ -806,30 +918,171 @@ export const useUpdateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch = <
     queryClient,
   );
 };
+export type deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponse204 = {
+  data: void;
+  status: 204;
+};
+
+export type deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponse422 = {
+  data: HTTPValidationError;
+  status: 422;
+};
+
+export type deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponseSuccess =
+  deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponse204 & {
+    headers: Headers;
+  };
+export type deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponseError =
+  deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponse422 & {
+    headers: Headers;
+  };
+
+export type deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponse =
+  | deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponseSuccess
+  | deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponseError;
+
+export const getDeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteUrl = (
+  assignmentId: string,
+) => {
+  return `/api/v1/guardrails/assignments/${assignmentId}`;
+};
+
+/**
+ * @summary Delete Assignment
+ */
+export const deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete = async (
+  assignmentId: string,
+  options?: RequestInit,
+): Promise<deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponse> => {
+  return apiMutator<deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponse>(
+    getDeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteUrl(assignmentId),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getDeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteMutationOptions = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete>>,
+    TError,
+    { assignmentId: string },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete>>,
+  TError,
+  { assignmentId: string },
+  TContext
+> => {
+  const mutationKey = ["deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete>>,
+    { assignmentId: string }
+  > = (props) => {
+    const { assignmentId } = props ?? {};
+
+    return deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete(assignmentId);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete>>
+  >;
+
+export type DeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteMutationError =
+  HTTPValidationError;
+
+/**
+ * @summary Delete Assignment
+ */
+export const useDeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete>>,
+      TError,
+      { assignmentId: string },
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete>>,
+  TError,
+  { assignmentId: string },
+  TContext
+> => {
+  return useMutation(
+    getDeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteMutationOptions(options),
+    queryClient,
+  );
+};
 export type listEventsApiV1GuardrailsEventsGetResponse200 = {
   data: GuardrailEventResponse[];
   status: 200;
+};
+
+export type listEventsApiV1GuardrailsEventsGetResponse422 = {
+  data: HTTPValidationError;
+  status: 422;
 };
 
 export type listEventsApiV1GuardrailsEventsGetResponseSuccess =
   listEventsApiV1GuardrailsEventsGetResponse200 & {
     headers: Headers;
   };
-export type listEventsApiV1GuardrailsEventsGetResponse =
-  listEventsApiV1GuardrailsEventsGetResponseSuccess;
+export type listEventsApiV1GuardrailsEventsGetResponseError =
+  listEventsApiV1GuardrailsEventsGetResponse422 & {
+    headers: Headers;
+  };
 
-export const getListEventsApiV1GuardrailsEventsGetUrl = () => {
-  return `/api/v1/guardrails/events`;
+export type listEventsApiV1GuardrailsEventsGetResponse =
+  | listEventsApiV1GuardrailsEventsGetResponseSuccess
+  | listEventsApiV1GuardrailsEventsGetResponseError;
+
+export const getListEventsApiV1GuardrailsEventsGetUrl = (
+  params?: ListEventsApiV1GuardrailsEventsGetParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/guardrails/events?${stringifiedParams}`
+    : `/api/v1/guardrails/events`;
 };
 
 /**
  * @summary List Events
  */
 export const listEventsApiV1GuardrailsEventsGet = async (
+  params?: ListEventsApiV1GuardrailsEventsGetParams,
   options?: RequestInit,
 ): Promise<listEventsApiV1GuardrailsEventsGetResponse> => {
   return apiMutator<listEventsApiV1GuardrailsEventsGetResponse>(
-    getListEventsApiV1GuardrailsEventsGetUrl(),
+    getListEventsApiV1GuardrailsEventsGetUrl(params),
     {
       ...options,
       method: "GET",
@@ -837,25 +1090,30 @@ export const listEventsApiV1GuardrailsEventsGet = async (
   );
 };
 
-export const getListEventsApiV1GuardrailsEventsGetQueryKey = () => {
-  return [`/api/v1/guardrails/events`] as const;
+export const getListEventsApiV1GuardrailsEventsGetQueryKey = (
+  params?: ListEventsApiV1GuardrailsEventsGetParams,
+) => {
+  return [`/api/v1/guardrails/events`, ...(params ? [params] : [])] as const;
 };
 
 export const getListEventsApiV1GuardrailsEventsGetQueryOptions = <
   TData = Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>,
-  TError = unknown,
->(options?: {
-  query?: Partial<
-    UseQueryOptions<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError, TData>
-  >;
-}) => {
+  TError = HTTPValidationError,
+>(
+  params?: ListEventsApiV1GuardrailsEventsGetParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError, TData>
+    >;
+  },
+) => {
   const { query: queryOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getListEventsApiV1GuardrailsEventsGetQueryKey();
+  const queryKey = queryOptions?.queryKey ?? getListEventsApiV1GuardrailsEventsGetQueryKey(params);
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>> = ({
     signal,
-  }) => listEventsApiV1GuardrailsEventsGet({ signal });
+  }) => listEventsApiV1GuardrailsEventsGet(params, { signal });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>,
@@ -867,12 +1125,13 @@ export const getListEventsApiV1GuardrailsEventsGetQueryOptions = <
 export type ListEventsApiV1GuardrailsEventsGetQueryResult = NonNullable<
   Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>
 >;
-export type ListEventsApiV1GuardrailsEventsGetQueryError = unknown;
+export type ListEventsApiV1GuardrailsEventsGetQueryError = HTTPValidationError;
 
 export function useListEventsApiV1GuardrailsEventsGet<
   TData = Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>,
-  TError = unknown,
+  TError = HTTPValidationError,
 >(
+  params: undefined | ListEventsApiV1GuardrailsEventsGetParams,
   options: {
     query: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError, TData>
@@ -890,8 +1149,9 @@ export function useListEventsApiV1GuardrailsEventsGet<
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function useListEventsApiV1GuardrailsEventsGet<
   TData = Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>,
-  TError = unknown,
+  TError = HTTPValidationError,
 >(
+  params?: ListEventsApiV1GuardrailsEventsGetParams,
   options?: {
     query?: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError, TData>
@@ -909,8 +1169,9 @@ export function useListEventsApiV1GuardrailsEventsGet<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function useListEventsApiV1GuardrailsEventsGet<
   TData = Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>,
-  TError = unknown,
+  TError = HTTPValidationError,
 >(
+  params?: ListEventsApiV1GuardrailsEventsGetParams,
   options?: {
     query?: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError, TData>
@@ -924,8 +1185,9 @@ export function useListEventsApiV1GuardrailsEventsGet<
 
 export function useListEventsApiV1GuardrailsEventsGet<
   TData = Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>,
-  TError = unknown,
+  TError = HTTPValidationError,
 >(
+  params?: ListEventsApiV1GuardrailsEventsGetParams,
   options?: {
     query?: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError, TData>
@@ -933,7 +1195,7 @@ export function useListEventsApiV1GuardrailsEventsGet<
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getListEventsApiV1GuardrailsEventsGetQueryOptions(options);
+  const queryOptions = getListEventsApiV1GuardrailsEventsGetQueryOptions(params, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

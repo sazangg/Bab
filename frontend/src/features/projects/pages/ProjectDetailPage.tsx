@@ -1,16 +1,18 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
+import { isAxiosError } from "axios";
 import { Archive, Building2, KeyRound, MoreHorizontal, Pencil, RotateCcw } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
   useDeactivateProjectApiV1ProjectsProjectIdDelete,
+  useGetProjectApiV1ProjectsProjectIdGet,
+  useGetProjectUsageApiV1ProjectsProjectIdUsageGet,
   useListVirtualKeysApiV1ProjectsProjectIdKeysGet,
   useUpdateProjectApiV1ProjectsProjectIdPatch,
 } from "@/shared/api/generated/projects/projects";
+import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
 import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
-import type { ProjectResponse } from "@/shared/api/generated/schemas";
-import { apiMutator } from "@/shared/api/orval-mutator";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -33,6 +35,10 @@ import { StatusBadge } from "@/shared/components/StatusBadge";
 import { ProjectAccessSection } from "@/features/projects/sections/ProjectAccessSection";
 import { ProjectKeysSection } from "@/features/projects/sections/ProjectKeysSection";
 import { EditProjectDialog } from "@/features/projects/components/EditProjectDialog";
+import { EntityUsageCard } from "@/features/usage/components/EntityUsageCard";
+import { UsageRecordsDrilldown } from "@/features/usage/components/UsageRecordsDrilldown";
+import { hasPermission, isTeamAdmin } from "@/features/auth/lib/permissions";
+import { ForbiddenPage } from "@/features/auth/components/ProtectedRoute";
 
 export function ProjectDetailPage() {
   const { projectId = "" } = useParams<{ projectId: string }>();
@@ -41,21 +47,27 @@ export function ProjectDetailPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
 
-  const projectQuery = useQuery({
-    queryKey: ["/api/v1/projects", projectId],
-    queryFn: () =>
-      apiMutator<{ data: ProjectResponse; status: number }>(`/api/v1/projects/${projectId}`),
-    enabled: Boolean(projectId),
+  const projectQuery = useGetProjectApiV1ProjectsProjectIdGet(projectId, {
+    query: { enabled: Boolean(projectId) },
   });
+  const currentUserQuery = useMeApiV1AuthMeGet();
   const teamsQuery = useListTeamsApiV1TeamsGet();
   const keysQuery = useListVirtualKeysApiV1ProjectsProjectIdKeysGet(projectId, {
     query: { enabled: Boolean(projectId) },
   });
+  const usageQuery = useGetProjectUsageApiV1ProjectsProjectIdUsageGet(projectId, {
+    query: { enabled: Boolean(projectId) },
+  });
 
   const project = projectQuery.data?.status === 200 ? projectQuery.data.data : undefined;
+  const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
   const teams = teamsQuery.data?.status === 200 ? teamsQuery.data.data : [];
   const team = project ? teams.find((item) => item.id === project.team_id) : undefined;
   const keys = keysQuery.data?.status === 200 ? keysQuery.data.data : [];
+  const usage = usageQuery.data?.status === 200 ? usageQuery.data.data : null;
+  const canManageProject = project
+    ? hasPermission(currentUser, "projects.manage") || isTeamAdmin(currentUser, project.team_id)
+    : false;
 
   const updateMutation = useUpdateProjectApiV1ProjectsProjectIdPatch({
     mutation: {
@@ -78,6 +90,9 @@ export function ProjectDetailPage() {
 
   if (projectQuery.isPending) {
     return <p className="text-sm text-muted-foreground">Loading project...</p>;
+  }
+  if (isAxiosError(projectQuery.error) && projectQuery.error.response?.status === 403) {
+    return <ForbiddenPage />;
   }
   if (!project) {
     return (
@@ -109,37 +124,49 @@ export function ProjectDetailPage() {
           </>
         }
         actions={
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" aria-label="Project actions">
-                <MoreHorizontal />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => setEditOpen(true)}>
-                <Pencil />
-                Edit project
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setArchiveOpen(true)} disabled={!project.is_active}>
-                <Archive />
-                Archive project
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() =>
-                  updateMutation.mutate({
-                    projectId: project.id,
-                    data: { is_active: true },
-                  })
-                }
-                disabled={project.is_active || updateMutation.isPending}
-              >
-                <RotateCcw />
-                Reactivate project
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          canManageProject ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" aria-label="Project actions">
+                  <MoreHorizontal />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => setEditOpen(true)}>
+                  <Pencil />
+                  Edit project
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => setArchiveOpen(true)}
+                  disabled={!project.is_active}
+                >
+                  <Archive />
+                  Archive project
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() =>
+                    updateMutation.mutate({
+                      projectId: project.id,
+                      data: { is_active: true },
+                    })
+                  }
+                  disabled={project.is_active || updateMutation.isPending}
+                >
+                  <RotateCcw />
+                  Reactivate project
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null
         }
       />
+
+      <EntityUsageCard
+        usage={usage}
+        isLoading={usageQuery.isPending}
+        description="Aggregate project usage across all virtual keys, including inherited team allocations."
+      />
+      <UsageRecordsDrilldown title="Project usage records" filters={{ project_id: project.id }} />
 
       <Tabs defaultValue="keys" className="space-y-4">
         <TabsList>
@@ -156,6 +183,7 @@ export function ProjectDetailPage() {
             keys={keys}
             isLoading={keysQuery.isPending}
             onView={(keyId) => navigate(`/projects/${projectId}/keys/${keyId}`)}
+            canManage={canManageProject}
           />
         </TabsContent>
         <TabsContent value="access" className="space-y-4">

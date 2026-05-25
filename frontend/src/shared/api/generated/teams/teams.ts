@@ -26,9 +26,13 @@ import type {
   CreateProjectRequest,
   CreateTeamRequest,
   HTTPValidationError,
+  OrganizationUsageSummary,
   ProjectResponse,
+  TeamMemberResponse,
   TeamResponse,
+  UpdateTeamMemberRequest,
   UpdateTeamRequest,
+  UpsertTeamMemberRequest,
 } from "../schemas";
 
 import { apiMutator } from "../../orval-mutator";
@@ -924,6 +928,530 @@ export const useCreateTeamProjectApiV1TeamsTeamIdProjectsPost = <
     queryClient,
   );
 };
+export type listTeamMembersApiV1TeamsTeamIdMembersGetResponse200 = {
+  data: TeamMemberResponse[];
+  status: 200;
+};
+
+export type listTeamMembersApiV1TeamsTeamIdMembersGetResponse422 = {
+  data: HTTPValidationError;
+  status: 422;
+};
+
+export type listTeamMembersApiV1TeamsTeamIdMembersGetResponseSuccess =
+  listTeamMembersApiV1TeamsTeamIdMembersGetResponse200 & {
+    headers: Headers;
+  };
+export type listTeamMembersApiV1TeamsTeamIdMembersGetResponseError =
+  listTeamMembersApiV1TeamsTeamIdMembersGetResponse422 & {
+    headers: Headers;
+  };
+
+export type listTeamMembersApiV1TeamsTeamIdMembersGetResponse =
+  | listTeamMembersApiV1TeamsTeamIdMembersGetResponseSuccess
+  | listTeamMembersApiV1TeamsTeamIdMembersGetResponseError;
+
+export const getListTeamMembersApiV1TeamsTeamIdMembersGetUrl = (teamId: string) => {
+  return `/api/v1/teams/${teamId}/members`;
+};
+
+/**
+ * @summary List Team Members
+ */
+export const listTeamMembersApiV1TeamsTeamIdMembersGet = async (
+  teamId: string,
+  options?: RequestInit,
+): Promise<listTeamMembersApiV1TeamsTeamIdMembersGetResponse> => {
+  return apiMutator<listTeamMembersApiV1TeamsTeamIdMembersGetResponse>(
+    getListTeamMembersApiV1TeamsTeamIdMembersGetUrl(teamId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListTeamMembersApiV1TeamsTeamIdMembersGetQueryKey = (teamId: string) => {
+  return [`/api/v1/teams/${teamId}/members`] as const;
+};
+
+export const getListTeamMembersApiV1TeamsTeamIdMembersGetQueryOptions = <
+  TData = Awaited<ReturnType<typeof listTeamMembersApiV1TeamsTeamIdMembersGet>>,
+  TError = HTTPValidationError,
+>(
+  teamId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof listTeamMembersApiV1TeamsTeamIdMembersGet>>,
+        TError,
+        TData
+      >
+    >;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListTeamMembersApiV1TeamsTeamIdMembersGetQueryKey(teamId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listTeamMembersApiV1TeamsTeamIdMembersGet>>
+  > = ({ signal }) => listTeamMembersApiV1TeamsTeamIdMembersGet(teamId, { signal });
+
+  return { queryKey, queryFn, enabled: !!teamId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listTeamMembersApiV1TeamsTeamIdMembersGet>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ListTeamMembersApiV1TeamsTeamIdMembersGetQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listTeamMembersApiV1TeamsTeamIdMembersGet>>
+>;
+export type ListTeamMembersApiV1TeamsTeamIdMembersGetQueryError = HTTPValidationError;
+
+export function useListTeamMembersApiV1TeamsTeamIdMembersGet<
+  TData = Awaited<ReturnType<typeof listTeamMembersApiV1TeamsTeamIdMembersGet>>,
+  TError = HTTPValidationError,
+>(
+  teamId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof listTeamMembersApiV1TeamsTeamIdMembersGet>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listTeamMembersApiV1TeamsTeamIdMembersGet>>,
+          TError,
+          Awaited<ReturnType<typeof listTeamMembersApiV1TeamsTeamIdMembersGet>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListTeamMembersApiV1TeamsTeamIdMembersGet<
+  TData = Awaited<ReturnType<typeof listTeamMembersApiV1TeamsTeamIdMembersGet>>,
+  TError = HTTPValidationError,
+>(
+  teamId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof listTeamMembersApiV1TeamsTeamIdMembersGet>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listTeamMembersApiV1TeamsTeamIdMembersGet>>,
+          TError,
+          Awaited<ReturnType<typeof listTeamMembersApiV1TeamsTeamIdMembersGet>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListTeamMembersApiV1TeamsTeamIdMembersGet<
+  TData = Awaited<ReturnType<typeof listTeamMembersApiV1TeamsTeamIdMembersGet>>,
+  TError = HTTPValidationError,
+>(
+  teamId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof listTeamMembersApiV1TeamsTeamIdMembersGet>>,
+        TError,
+        TData
+      >
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary List Team Members
+ */
+
+export function useListTeamMembersApiV1TeamsTeamIdMembersGet<
+  TData = Awaited<ReturnType<typeof listTeamMembersApiV1TeamsTeamIdMembersGet>>,
+  TError = HTTPValidationError,
+>(
+  teamId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof listTeamMembersApiV1TeamsTeamIdMembersGet>>,
+        TError,
+        TData
+      >
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListTeamMembersApiV1TeamsTeamIdMembersGetQueryOptions(teamId, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export type addTeamMemberApiV1TeamsTeamIdMembersPostResponse201 = {
+  data: TeamMemberResponse;
+  status: 201;
+};
+
+export type addTeamMemberApiV1TeamsTeamIdMembersPostResponse422 = {
+  data: HTTPValidationError;
+  status: 422;
+};
+
+export type addTeamMemberApiV1TeamsTeamIdMembersPostResponseSuccess =
+  addTeamMemberApiV1TeamsTeamIdMembersPostResponse201 & {
+    headers: Headers;
+  };
+export type addTeamMemberApiV1TeamsTeamIdMembersPostResponseError =
+  addTeamMemberApiV1TeamsTeamIdMembersPostResponse422 & {
+    headers: Headers;
+  };
+
+export type addTeamMemberApiV1TeamsTeamIdMembersPostResponse =
+  | addTeamMemberApiV1TeamsTeamIdMembersPostResponseSuccess
+  | addTeamMemberApiV1TeamsTeamIdMembersPostResponseError;
+
+export const getAddTeamMemberApiV1TeamsTeamIdMembersPostUrl = (teamId: string) => {
+  return `/api/v1/teams/${teamId}/members`;
+};
+
+/**
+ * @summary Add Team Member
+ */
+export const addTeamMemberApiV1TeamsTeamIdMembersPost = async (
+  teamId: string,
+  upsertTeamMemberRequest: UpsertTeamMemberRequest,
+  options?: RequestInit,
+): Promise<addTeamMemberApiV1TeamsTeamIdMembersPostResponse> => {
+  return apiMutator<addTeamMemberApiV1TeamsTeamIdMembersPostResponse>(
+    getAddTeamMemberApiV1TeamsTeamIdMembersPostUrl(teamId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(upsertTeamMemberRequest),
+    },
+  );
+};
+
+export const getAddTeamMemberApiV1TeamsTeamIdMembersPostMutationOptions = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addTeamMemberApiV1TeamsTeamIdMembersPost>>,
+    TError,
+    { teamId: string; data: UpsertTeamMemberRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof addTeamMemberApiV1TeamsTeamIdMembersPost>>,
+  TError,
+  { teamId: string; data: UpsertTeamMemberRequest },
+  TContext
+> => {
+  const mutationKey = ["addTeamMemberApiV1TeamsTeamIdMembersPost"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof addTeamMemberApiV1TeamsTeamIdMembersPost>>,
+    { teamId: string; data: UpsertTeamMemberRequest }
+  > = (props) => {
+    const { teamId, data } = props ?? {};
+
+    return addTeamMemberApiV1TeamsTeamIdMembersPost(teamId, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AddTeamMemberApiV1TeamsTeamIdMembersPostMutationResult = NonNullable<
+  Awaited<ReturnType<typeof addTeamMemberApiV1TeamsTeamIdMembersPost>>
+>;
+export type AddTeamMemberApiV1TeamsTeamIdMembersPostMutationBody = UpsertTeamMemberRequest;
+export type AddTeamMemberApiV1TeamsTeamIdMembersPostMutationError = HTTPValidationError;
+
+/**
+ * @summary Add Team Member
+ */
+export const useAddTeamMemberApiV1TeamsTeamIdMembersPost = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof addTeamMemberApiV1TeamsTeamIdMembersPost>>,
+      TError,
+      { teamId: string; data: UpsertTeamMemberRequest },
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof addTeamMemberApiV1TeamsTeamIdMembersPost>>,
+  TError,
+  { teamId: string; data: UpsertTeamMemberRequest },
+  TContext
+> => {
+  return useMutation(
+    getAddTeamMemberApiV1TeamsTeamIdMembersPostMutationOptions(options),
+    queryClient,
+  );
+};
+export type updateTeamMemberApiV1TeamsTeamIdMembersUserIdPatchResponse200 = {
+  data: TeamMemberResponse;
+  status: 200;
+};
+
+export type updateTeamMemberApiV1TeamsTeamIdMembersUserIdPatchResponse422 = {
+  data: HTTPValidationError;
+  status: 422;
+};
+
+export type updateTeamMemberApiV1TeamsTeamIdMembersUserIdPatchResponseSuccess =
+  updateTeamMemberApiV1TeamsTeamIdMembersUserIdPatchResponse200 & {
+    headers: Headers;
+  };
+export type updateTeamMemberApiV1TeamsTeamIdMembersUserIdPatchResponseError =
+  updateTeamMemberApiV1TeamsTeamIdMembersUserIdPatchResponse422 & {
+    headers: Headers;
+  };
+
+export type updateTeamMemberApiV1TeamsTeamIdMembersUserIdPatchResponse =
+  | updateTeamMemberApiV1TeamsTeamIdMembersUserIdPatchResponseSuccess
+  | updateTeamMemberApiV1TeamsTeamIdMembersUserIdPatchResponseError;
+
+export const getUpdateTeamMemberApiV1TeamsTeamIdMembersUserIdPatchUrl = (
+  teamId: string,
+  userId: string,
+) => {
+  return `/api/v1/teams/${teamId}/members/${userId}`;
+};
+
+/**
+ * @summary Update Team Member
+ */
+export const updateTeamMemberApiV1TeamsTeamIdMembersUserIdPatch = async (
+  teamId: string,
+  userId: string,
+  updateTeamMemberRequest: UpdateTeamMemberRequest,
+  options?: RequestInit,
+): Promise<updateTeamMemberApiV1TeamsTeamIdMembersUserIdPatchResponse> => {
+  return apiMutator<updateTeamMemberApiV1TeamsTeamIdMembersUserIdPatchResponse>(
+    getUpdateTeamMemberApiV1TeamsTeamIdMembersUserIdPatchUrl(teamId, userId),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updateTeamMemberRequest),
+    },
+  );
+};
+
+export const getUpdateTeamMemberApiV1TeamsTeamIdMembersUserIdPatchMutationOptions = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateTeamMemberApiV1TeamsTeamIdMembersUserIdPatch>>,
+    TError,
+    { teamId: string; userId: string; data: UpdateTeamMemberRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateTeamMemberApiV1TeamsTeamIdMembersUserIdPatch>>,
+  TError,
+  { teamId: string; userId: string; data: UpdateTeamMemberRequest },
+  TContext
+> => {
+  const mutationKey = ["updateTeamMemberApiV1TeamsTeamIdMembersUserIdPatch"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateTeamMemberApiV1TeamsTeamIdMembersUserIdPatch>>,
+    { teamId: string; userId: string; data: UpdateTeamMemberRequest }
+  > = (props) => {
+    const { teamId, userId, data } = props ?? {};
+
+    return updateTeamMemberApiV1TeamsTeamIdMembersUserIdPatch(teamId, userId, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateTeamMemberApiV1TeamsTeamIdMembersUserIdPatchMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateTeamMemberApiV1TeamsTeamIdMembersUserIdPatch>>
+>;
+export type UpdateTeamMemberApiV1TeamsTeamIdMembersUserIdPatchMutationBody =
+  UpdateTeamMemberRequest;
+export type UpdateTeamMemberApiV1TeamsTeamIdMembersUserIdPatchMutationError = HTTPValidationError;
+
+/**
+ * @summary Update Team Member
+ */
+export const useUpdateTeamMemberApiV1TeamsTeamIdMembersUserIdPatch = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateTeamMemberApiV1TeamsTeamIdMembersUserIdPatch>>,
+      TError,
+      { teamId: string; userId: string; data: UpdateTeamMemberRequest },
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateTeamMemberApiV1TeamsTeamIdMembersUserIdPatch>>,
+  TError,
+  { teamId: string; userId: string; data: UpdateTeamMemberRequest },
+  TContext
+> => {
+  return useMutation(
+    getUpdateTeamMemberApiV1TeamsTeamIdMembersUserIdPatchMutationOptions(options),
+    queryClient,
+  );
+};
+export type removeTeamMemberApiV1TeamsTeamIdMembersUserIdDeleteResponse204 = {
+  data: void;
+  status: 204;
+};
+
+export type removeTeamMemberApiV1TeamsTeamIdMembersUserIdDeleteResponse422 = {
+  data: HTTPValidationError;
+  status: 422;
+};
+
+export type removeTeamMemberApiV1TeamsTeamIdMembersUserIdDeleteResponseSuccess =
+  removeTeamMemberApiV1TeamsTeamIdMembersUserIdDeleteResponse204 & {
+    headers: Headers;
+  };
+export type removeTeamMemberApiV1TeamsTeamIdMembersUserIdDeleteResponseError =
+  removeTeamMemberApiV1TeamsTeamIdMembersUserIdDeleteResponse422 & {
+    headers: Headers;
+  };
+
+export type removeTeamMemberApiV1TeamsTeamIdMembersUserIdDeleteResponse =
+  | removeTeamMemberApiV1TeamsTeamIdMembersUserIdDeleteResponseSuccess
+  | removeTeamMemberApiV1TeamsTeamIdMembersUserIdDeleteResponseError;
+
+export const getRemoveTeamMemberApiV1TeamsTeamIdMembersUserIdDeleteUrl = (
+  teamId: string,
+  userId: string,
+) => {
+  return `/api/v1/teams/${teamId}/members/${userId}`;
+};
+
+/**
+ * @summary Remove Team Member
+ */
+export const removeTeamMemberApiV1TeamsTeamIdMembersUserIdDelete = async (
+  teamId: string,
+  userId: string,
+  options?: RequestInit,
+): Promise<removeTeamMemberApiV1TeamsTeamIdMembersUserIdDeleteResponse> => {
+  return apiMutator<removeTeamMemberApiV1TeamsTeamIdMembersUserIdDeleteResponse>(
+    getRemoveTeamMemberApiV1TeamsTeamIdMembersUserIdDeleteUrl(teamId, userId),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getRemoveTeamMemberApiV1TeamsTeamIdMembersUserIdDeleteMutationOptions = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof removeTeamMemberApiV1TeamsTeamIdMembersUserIdDelete>>,
+    TError,
+    { teamId: string; userId: string },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof removeTeamMemberApiV1TeamsTeamIdMembersUserIdDelete>>,
+  TError,
+  { teamId: string; userId: string },
+  TContext
+> => {
+  const mutationKey = ["removeTeamMemberApiV1TeamsTeamIdMembersUserIdDelete"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof removeTeamMemberApiV1TeamsTeamIdMembersUserIdDelete>>,
+    { teamId: string; userId: string }
+  > = (props) => {
+    const { teamId, userId } = props ?? {};
+
+    return removeTeamMemberApiV1TeamsTeamIdMembersUserIdDelete(teamId, userId);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RemoveTeamMemberApiV1TeamsTeamIdMembersUserIdDeleteMutationResult = NonNullable<
+  Awaited<ReturnType<typeof removeTeamMemberApiV1TeamsTeamIdMembersUserIdDelete>>
+>;
+
+export type RemoveTeamMemberApiV1TeamsTeamIdMembersUserIdDeleteMutationError = HTTPValidationError;
+
+/**
+ * @summary Remove Team Member
+ */
+export const useRemoveTeamMemberApiV1TeamsTeamIdMembersUserIdDelete = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof removeTeamMemberApiV1TeamsTeamIdMembersUserIdDelete>>,
+      TError,
+      { teamId: string; userId: string },
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof removeTeamMemberApiV1TeamsTeamIdMembersUserIdDelete>>,
+  TError,
+  { teamId: string; userId: string },
+  TContext
+> => {
+  return useMutation(
+    getRemoveTeamMemberApiV1TeamsTeamIdMembersUserIdDeleteMutationOptions(options),
+    queryClient,
+  );
+};
 export type listTeamAllocationsApiV1TeamsTeamIdAllocationsGetResponse200 = {
   data: AllocationResponse[];
   status: 200;
@@ -1095,6 +1623,182 @@ export function useListTeamAllocationsApiV1TeamsTeamIdAllocationsGet<
     teamId,
     options,
   );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export type getTeamUsageApiV1TeamsTeamIdUsageGetResponse200 = {
+  data: OrganizationUsageSummary;
+  status: 200;
+};
+
+export type getTeamUsageApiV1TeamsTeamIdUsageGetResponse422 = {
+  data: HTTPValidationError;
+  status: 422;
+};
+
+export type getTeamUsageApiV1TeamsTeamIdUsageGetResponseSuccess =
+  getTeamUsageApiV1TeamsTeamIdUsageGetResponse200 & {
+    headers: Headers;
+  };
+export type getTeamUsageApiV1TeamsTeamIdUsageGetResponseError =
+  getTeamUsageApiV1TeamsTeamIdUsageGetResponse422 & {
+    headers: Headers;
+  };
+
+export type getTeamUsageApiV1TeamsTeamIdUsageGetResponse =
+  | getTeamUsageApiV1TeamsTeamIdUsageGetResponseSuccess
+  | getTeamUsageApiV1TeamsTeamIdUsageGetResponseError;
+
+export const getGetTeamUsageApiV1TeamsTeamIdUsageGetUrl = (teamId: string) => {
+  return `/api/v1/teams/${teamId}/usage`;
+};
+
+/**
+ * @summary Get Team Usage
+ */
+export const getTeamUsageApiV1TeamsTeamIdUsageGet = async (
+  teamId: string,
+  options?: RequestInit,
+): Promise<getTeamUsageApiV1TeamsTeamIdUsageGetResponse> => {
+  return apiMutator<getTeamUsageApiV1TeamsTeamIdUsageGetResponse>(
+    getGetTeamUsageApiV1TeamsTeamIdUsageGetUrl(teamId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetTeamUsageApiV1TeamsTeamIdUsageGetQueryKey = (teamId: string) => {
+  return [`/api/v1/teams/${teamId}/usage`] as const;
+};
+
+export const getGetTeamUsageApiV1TeamsTeamIdUsageGetQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTeamUsageApiV1TeamsTeamIdUsageGet>>,
+  TError = HTTPValidationError,
+>(
+  teamId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getTeamUsageApiV1TeamsTeamIdUsageGet>>,
+        TError,
+        TData
+      >
+    >;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetTeamUsageApiV1TeamsTeamIdUsageGetQueryKey(teamId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getTeamUsageApiV1TeamsTeamIdUsageGet>>
+  > = ({ signal }) => getTeamUsageApiV1TeamsTeamIdUsageGet(teamId, { signal });
+
+  return { queryKey, queryFn, enabled: !!teamId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTeamUsageApiV1TeamsTeamIdUsageGet>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetTeamUsageApiV1TeamsTeamIdUsageGetQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTeamUsageApiV1TeamsTeamIdUsageGet>>
+>;
+export type GetTeamUsageApiV1TeamsTeamIdUsageGetQueryError = HTTPValidationError;
+
+export function useGetTeamUsageApiV1TeamsTeamIdUsageGet<
+  TData = Awaited<ReturnType<typeof getTeamUsageApiV1TeamsTeamIdUsageGet>>,
+  TError = HTTPValidationError,
+>(
+  teamId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getTeamUsageApiV1TeamsTeamIdUsageGet>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getTeamUsageApiV1TeamsTeamIdUsageGet>>,
+          TError,
+          Awaited<ReturnType<typeof getTeamUsageApiV1TeamsTeamIdUsageGet>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetTeamUsageApiV1TeamsTeamIdUsageGet<
+  TData = Awaited<ReturnType<typeof getTeamUsageApiV1TeamsTeamIdUsageGet>>,
+  TError = HTTPValidationError,
+>(
+  teamId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getTeamUsageApiV1TeamsTeamIdUsageGet>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getTeamUsageApiV1TeamsTeamIdUsageGet>>,
+          TError,
+          Awaited<ReturnType<typeof getTeamUsageApiV1TeamsTeamIdUsageGet>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetTeamUsageApiV1TeamsTeamIdUsageGet<
+  TData = Awaited<ReturnType<typeof getTeamUsageApiV1TeamsTeamIdUsageGet>>,
+  TError = HTTPValidationError,
+>(
+  teamId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getTeamUsageApiV1TeamsTeamIdUsageGet>>,
+        TError,
+        TData
+      >
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Get Team Usage
+ */
+
+export function useGetTeamUsageApiV1TeamsTeamIdUsageGet<
+  TData = Awaited<ReturnType<typeof getTeamUsageApiV1TeamsTeamIdUsageGet>>,
+  TError = HTTPValidationError,
+>(
+  teamId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getTeamUsageApiV1TeamsTeamIdUsageGet>>,
+        TError,
+        TData
+      >
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetTeamUsageApiV1TeamsTeamIdUsageGetQueryOptions(teamId, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

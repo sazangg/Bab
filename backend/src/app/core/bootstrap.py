@@ -1,12 +1,23 @@
 import re
 from pathlib import Path
+from uuid import UUID
 
 from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal, Base, engine, transaction
+from app.core.security import hash_password
 from app.modules.activity.internal.models import ActivityEvent  # noqa: F401
-from app.modules.auth.internal.models import Organization, Team  # noqa: F401
+from app.modules.auth.internal.models import (  # noqa: F401
+    AuditEvent,
+    IdentityAccount,
+    Invite,
+    Organization,
+    OrganizationMembership,
+    Team,
+    TeamMembership,
+    User,
+)
 from app.modules.guardrails.internal.models import (  # noqa: F401
     GuardrailAssignment,
     GuardrailEvent,
@@ -24,6 +35,8 @@ from app.modules.providers.internal.models import (  # noqa: F401
 from app.modules.settings.internal.models import OrganizationSettings  # noqa: F401
 from app.modules.usage.internal.models import UsageRecord  # noqa: F401
 
+DEFAULT_ADMIN_USER_ID = UUID("00000000-0000-4000-8000-000000000001")
+
 
 async def create_development_database() -> None:
     Path(settings.assets_dir).mkdir(parents=True, exist_ok=True)
@@ -40,6 +53,10 @@ async def _sqlite_schema_is_stale(connection) -> bool:
     provider_column_names = {row[1] for row in providers_columns}
     if "display_name" not in provider_column_names:
         return True
+    if "is_favorite" not in provider_column_names:
+        return True
+    if "model_sync_mode" not in provider_column_names:
+        return True
     teams_columns = await connection.exec_driver_sql("PRAGMA table_info(teams)")
     team_column_names = {row[1] for row in teams_columns}
     if "updated_at" not in team_column_names:
@@ -51,6 +68,12 @@ async def _sqlite_schema_is_stale(connection) -> bool:
         return True
 
     required_tables = {
+        "users",
+        "identity_accounts",
+        "organization_memberships",
+        "team_memberships",
+        "invites",
+        "audit_events",
         "provider_credentials",
         "credential_pools",
         "credential_pool_credentials",
@@ -147,6 +170,63 @@ async def sync_default_workspace(db) -> None:
             )
             db.add(team)
             await db.flush()
+
+        admin_email = settings.default_admin_email.lower()
+        admin_user = await db.scalar(select(User).where(User.email == admin_email))
+        if admin_user is None:
+            admin_user = User(
+                id=DEFAULT_ADMIN_USER_ID,
+                email=admin_email,
+                name="Default admin",
+                password_hash=hash_password(settings.default_admin_password),
+            )
+            db.add(admin_user)
+            await db.flush()
+            db.add(
+                IdentityAccount(
+                    user_id=admin_user.id,
+                    provider="local",
+                    provider_subject=admin_email,
+                    email=admin_email,
+                )
+            )
+        elif not admin_user.password_hash:
+            admin_user.password_hash = hash_password(settings.default_admin_password)
+
+        org_membership = await db.scalar(
+            select(OrganizationMembership).where(
+                OrganizationMembership.org_id == org.id,
+                OrganizationMembership.user_id == admin_user.id,
+            )
+        )
+        if org_membership is None:
+            db.add(
+                OrganizationMembership(
+                    org_id=org.id,
+                    user_id=admin_user.id,
+                    role="org_owner",
+                    status="active",
+                )
+            )
+        else:
+            org_membership.role = "org_owner"
+            org_membership.status = "active"
+
+        team_membership = await db.scalar(
+            select(TeamMembership).where(
+                TeamMembership.team_id == team.id,
+                TeamMembership.user_id == admin_user.id,
+            )
+        )
+        if team_membership is None:
+            db.add(
+                TeamMembership(
+                    org_id=org.id,
+                    team_id=team.id,
+                    user_id=admin_user.id,
+                    role="team_admin",
+                )
+            )
 
         for entry in _provider_catalog_entries():
             provider = await db.scalar(

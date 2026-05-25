@@ -55,6 +55,12 @@ import { cn } from "@/lib/utils";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
+import {
+  hasAnyTeamAdminMembership,
+  hasPermission,
+  isTeamAdmin,
+} from "@/features/auth/lib/permissions";
+import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
 
 import {
   useDeactivateProjectApiV1ProjectsProjectIdDelete,
@@ -84,10 +90,20 @@ export function ProjectsPage() {
   const queryClient = useQueryClient();
   const projectsQuery = useListProjectsApiV1ProjectsGet();
   const teamsQuery = useListTeamsApiV1TeamsGet();
+  const currentUserQuery = useMeApiV1AuthMeGet();
+  const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
   const projects = projectsQuery.data?.status === 200 ? projectsQuery.data.data : [];
   const teamsData = teamsQuery.data?.status === 200 ? teamsQuery.data.data : undefined;
   const teams = useMemo(() => teamsData ?? [], [teamsData]);
-  const activeTeams = useMemo(() => teams.filter((team) => team.is_active), [teams]);
+  const canManageAllProjects = hasPermission(currentUser, "projects.manage");
+  const canCreateProject = canManageAllProjects || hasAnyTeamAdminMembership(currentUser);
+  const activeTeams = useMemo(
+    () =>
+      teams.filter(
+        (team) => team.is_active && (canManageAllProjects || isTeamAdmin(currentUser, team.id)),
+      ),
+    [canManageAllProjects, currentUser, teams],
+  );
   const teamById = useMemo(() => {
     const map: Record<string, TeamResponse> = {};
     for (const team of teams) {
@@ -123,7 +139,7 @@ export function ProjectsPage() {
         .includes(term);
     });
 
-  const canCreate = activeTeams.length > 0;
+  const canCreate = canCreateProject && activeTeams.length > 0;
 
   return (
     <>
@@ -138,18 +154,20 @@ export function ProjectsPage() {
                 Manage teams
               </Link>
             </Button>
-            <NewProjectSheet
-              open={newOpen}
-              onOpenChange={setNewOpen}
-              activeTeams={activeTeams}
-              disabled={!canCreate}
-              onCreated={async (project) => {
-                await queryClient.invalidateQueries();
-                setNewOpen(false);
-                toast.success(`Project "${project.name}" created.`);
-                navigate(`/projects/${project.id}`);
-              }}
-            />
+            {canCreateProject ? (
+              <NewProjectSheet
+                open={newOpen}
+                onOpenChange={setNewOpen}
+                activeTeams={activeTeams}
+                disabled={!canCreate}
+                onCreated={async (project) => {
+                  await queryClient.invalidateQueries();
+                  setNewOpen(false);
+                  toast.success(`Project "${project.name}" created.`);
+                  navigate(`/projects/${project.id}`);
+                }}
+              />
+            ) : null}
           </div>
         }
       />
@@ -163,7 +181,7 @@ export function ProjectsPage() {
           description={
             canCreate
               ? "Create the first project to start issuing virtual keys."
-              : "Create an active team first, then add projects to it."
+              : "You do not have project creation access in any active team."
           }
           action={
             canCreate ? (
@@ -171,14 +189,14 @@ export function ProjectsPage() {
                 <Plus />
                 New project
               </Button>
-            ) : (
+            ) : hasPermission(currentUser, "teams.manage") ? (
               <Button asChild>
                 <Link to="/teams">
                   <Building2 />
                   Go to Teams
                 </Link>
               </Button>
-            )
+            ) : undefined
           }
         />
       ) : (
@@ -264,6 +282,9 @@ export function ProjectsPage() {
                         team={teamById[project.team_id]}
                         onOpen={() => navigate(`/projects/${project.id}`)}
                         onEdit={() => setEditingProject(project)}
+                        canManage={
+                          canManageAllProjects || isTeamAdmin(currentUser, project.team_id)
+                        }
                       />
                     ))}
                   </TableBody>
@@ -291,11 +312,13 @@ function ProjectRow({
   team,
   onOpen,
   onEdit,
+  canManage,
 }: {
   project: ProjectResponse;
   team: TeamResponse | undefined;
   onOpen: () => void;
   onEdit: () => void;
+  canManage: boolean;
 }) {
   const queryClient = useQueryClient();
   const deactivateProject = useDeactivateProjectApiV1ProjectsProjectIdDelete({
@@ -345,27 +368,29 @@ function ProjectRow({
         {formatRelativeFromNow(project.created_at)}
       </TableCell>
       <TableCell onClick={(event) => event.stopPropagation()}>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" aria-label="Project actions">
-              <MoreHorizontal />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={onEdit}>
-              <Pencil data-icon="inline-start" />
-              Edit project
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              variant="destructive"
-              disabled={!project.is_active || deactivateProject.isPending}
-              onSelect={() => deactivateProject.mutate({ projectId: project.id })}
-            >
-              <Trash2 data-icon="inline-start" />
-              Archive project
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {canManage ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon-sm" aria-label="Project actions">
+                <MoreHorizontal />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={onEdit}>
+                <Pencil data-icon="inline-start" />
+                Edit project
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                variant="destructive"
+                disabled={!project.is_active || deactivateProject.isPending}
+                onSelect={() => deactivateProject.mutate({ projectId: project.id })}
+              >
+                <Trash2 data-icon="inline-start" />
+                Archive project
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
       </TableCell>
     </TableRow>
   );

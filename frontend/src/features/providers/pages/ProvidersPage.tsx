@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
-import { MoreHorizontal, Pencil, Plug, Plus, Power, RotateCcw, Search } from "lucide-react";
+import { MoreHorizontal, Pencil, Plug, Plus, Power, RotateCcw, Search, Star } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link } from "react-router-dom";
@@ -75,7 +75,7 @@ export function ProvidersPage() {
     custom: providers.filter((provider) => provider.catalog_type === "custom").length,
     ready: providers.filter((provider) => provider.readiness?.is_ready).length,
   };
-  const catalogEntries = providers
+  const catalogEntries = [...providers]
     .filter((entry) => {
       if (segment === "default") return entry.catalog_type === "default";
       if (segment === "custom") return entry.catalog_type === "custom";
@@ -86,7 +86,8 @@ export function ProvidersPage() {
       `${entry.name} ${entry.slug ?? ""} ${entry.base_url}`
         .toLowerCase()
         .includes(search.toLowerCase().trim()),
-    );
+    )
+    .sort(compareProviders);
 
   const createMutation = useCreateProviderApiV1ProvidersPost({
     mutation: {
@@ -178,7 +179,7 @@ export function ProvidersPage() {
               action={<Button onClick={() => setCreateOpen(true)}>Add custom provider</Button>}
             />
           ) : (
-            <div className="space-y-3">
+            <div className="grid gap-3 xl:grid-cols-2">
               {catalogEntries.map((entry) => (
                 <ProviderCatalogRow
                   key={entry.id}
@@ -190,6 +191,12 @@ export function ProvidersPage() {
                     updateMutation.mutate({
                       providerId: entry.id,
                       data: { is_active: true },
+                    })
+                  }
+                  onToggleFavorite={() =>
+                    updateMutation.mutate({
+                      providerId: entry.id,
+                      data: { is_favorite: !entry.is_favorite },
                     })
                   }
                   isUpdating={updateMutation.isPending}
@@ -256,6 +263,7 @@ function ProviderCatalogRow({
   onEdit,
   onDeactivate,
   onReactivate,
+  onToggleFavorite,
   isUpdating,
 }: {
   provider: ProviderResponse;
@@ -263,24 +271,25 @@ function ProviderCatalogRow({
   onEdit: () => void;
   onDeactivate: () => void;
   onReactivate: () => void;
+  onToggleFavorite: () => void;
   isUpdating: boolean;
 }) {
   const activeCredentialCount = provider.credential_summary?.active ?? 0;
   const needsAttention = provider.is_active && !provider.readiness?.is_ready;
 
   return (
-    <div
+    <article
       className={cn(
-        "rounded-lg border p-4 transition-colors hover:bg-muted/30",
+        "flex min-h-56 flex-col rounded-lg border p-4 transition-colors hover:bg-muted/30",
         !provider.is_active && "opacity-60",
       )}
     >
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-1 flex-col gap-4">
         <Link className="min-w-0 flex-1 space-y-2" to={`/providers/${provider.id}`}>
-          <div className="flex items-center gap-3">
+          <div className="flex items-start gap-3">
             <ProviderLogo iconSlug={provider.slug ?? undefined} name={provider.name} />
             <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2 pr-8">
                 <h2 className="font-medium">{provider.name}</h2>
                 <StatusBadge variant={provider.catalog_type === "default" ? "active" : "muted"}>
                   {provider.catalog_type === "default" ? "Default" : "Custom"}
@@ -309,43 +318,66 @@ function ProviderCatalogRow({
           <p className="truncate font-mono text-xs text-muted-foreground">{provider.base_url}</p>
         </Link>
 
-        <div className="flex shrink-0 items-center gap-2">
-          <Button size="sm" onClick={onAddKey}>
-            <Plus />
-            Add credential
+        <div className="flex items-center justify-between gap-2 border-t pt-3">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={provider.is_favorite ? "Remove favorite" : "Mark as favorite"}
+            aria-pressed={provider.is_favorite}
+            disabled={isUpdating}
+            onClick={onToggleFavorite}
+            className={cn(provider.is_favorite && "text-primary")}
+          >
+            <Star className={cn(provider.is_favorite && "fill-current")} />
           </Button>
-          <Button asChild size="sm" variant="outline">
-            <Link to={`/providers/${provider.id}`}>Open</Link>
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon-sm" aria-label="Provider actions">
-                <MoreHorizontal />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={onEdit}>
-                <Pencil className="mr-2 size-4" />
-                Edit provider
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={onDeactivate}
-                disabled={!provider.is_active}
-                variant="destructive"
-              >
-                <Power className="mr-2 size-4" />
-                Deactivate
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={onReactivate} disabled={provider.is_active || isUpdating}>
-                <RotateCcw className="mr-2 size-4" />
-                Reactivate
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button size="sm" onClick={onAddKey}>
+              <Plus />
+              Add credential
+            </Button>
+            <Button asChild size="sm" variant="outline">
+              <Link to={`/providers/${provider.id}`}>Open</Link>
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon-sm" aria-label="Provider actions">
+                  <MoreHorizontal />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={onEdit}>
+                  <Pencil className="mr-2 size-4" />
+                  Edit provider
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={onDeactivate}
+                  disabled={!provider.is_active}
+                  variant="destructive"
+                >
+                  <Power className="mr-2 size-4" />
+                  Deactivate
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={onReactivate}
+                  disabled={provider.is_active || isUpdating}
+                >
+                  <RotateCcw className="mr-2 size-4" />
+                  Reactivate
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </div>
-    </div>
+    </article>
   );
+}
+
+function compareProviders(a: ProviderResponse, b: ProviderResponse) {
+  if (a.is_favorite !== b.is_favorite) {
+    return a.is_favorite ? -1 : 1;
+  }
+  return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
 }
 
 function AddProviderCredentialDialog({

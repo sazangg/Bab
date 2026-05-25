@@ -5,7 +5,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_current_user, get_scope, require_role
+from app.api.v1.deps import get_scope, require_permission
 from app.core.database import Scope, get_db
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.providers import facade
@@ -41,15 +41,15 @@ from app.modules.settings import facade as settings_facade
 router = APIRouter(prefix="/providers", tags=["providers"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RequestScope = Annotated[Scope, Depends(get_scope)]
-CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]
-ProviderAdmin = Annotated[AuthenticatedUser, Depends(require_role("super_admin"))]
+ProviderViewer = Annotated[AuthenticatedUser, Depends(require_permission("providers.view"))]
+ProviderAdmin = Annotated[AuthenticatedUser, Depends(require_permission("providers.manage"))]
 
 
 @router.get("")
 async def list_providers(
     scope: RequestScope,
     db: DatabaseSession,
-    _: CurrentUser,
+    _: ProviderViewer,
 ) -> list[ProviderResponse]:
     return await facade.list_providers(scope=scope, db=db)
 
@@ -69,7 +69,7 @@ async def get_provider(
     provider_id: UUID,
     scope: RequestScope,
     db: DatabaseSession,
-    _: CurrentUser,
+    _: ProviderViewer,
 ) -> ProviderResponse:
     try:
         return await facade.get_provider(provider_id=provider_id, scope=scope, db=db)
@@ -82,7 +82,7 @@ async def list_credential_pools(
     provider_id: UUID,
     scope: RequestScope,
     db: DatabaseSession,
-    _: CurrentUser,
+    _: ProviderViewer,
 ) -> list[CredentialPoolResponse]:
     try:
         return await facade.list_credential_pools(provider_id=provider_id, scope=scope, db=db)
@@ -138,7 +138,7 @@ async def list_credential_pool_credentials(
     pool_id: UUID,
     scope: RequestScope,
     db: DatabaseSession,
-    _: CurrentUser,
+    _: ProviderViewer,
 ) -> list[CredentialPoolCredentialResponse]:
     try:
         return await facade.list_credential_pool_credentials(
@@ -230,7 +230,7 @@ async def list_provider_credentials(
     provider_id: UUID,
     scope: RequestScope,
     db: DatabaseSession,
-    _: CurrentUser,
+    _: ProviderViewer,
 ) -> list[ProviderCredentialResponse]:
     try:
         return await facade.list_provider_credentials(provider_id=provider_id, scope=scope, db=db)
@@ -330,7 +330,7 @@ async def list_model_offerings(
     provider_id: UUID,
     scope: RequestScope,
     db: DatabaseSession,
-    _: CurrentUser,
+    _: ProviderViewer,
     search: str | None = Query(default=None, min_length=1, max_length=255),
     modality: str | None = Query(default=None, min_length=1, max_length=255),
     is_active: bool | None = Query(default=None),
@@ -460,6 +460,7 @@ async def sync_model_offerings(
 ) -> list[ModelOfferingResponse]:
     try:
         org_settings = await settings_facade.get_organization_settings(scope=scope, db=db)
+        provider = await facade.get_provider(provider_id=provider_id, scope=scope, db=db)
         async with httpx.AsyncClient(timeout=30) as http_client:
             return await facade.sync_model_offerings(
                 provider_id=provider_id,
@@ -472,7 +473,7 @@ async def sync_model_offerings(
                     if payload is not None
                     else SyncModelOfferingsRequest().metadata_mode
                 ),
-                sync_mode=org_settings.default_model_sync_mode,
+                sync_mode=provider.model_sync_mode or org_settings.default_model_sync_mode,
             )
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc

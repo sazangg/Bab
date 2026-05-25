@@ -20,6 +20,8 @@ export function useBreadcrumbs(): Breadcrumb[] {
   const providerDetailMatch = useMatch("/providers/:providerId");
   const usageMatch = useMatch("/usage");
   const activityMatch = useMatch("/activity");
+  const auditMatch = useMatch("/audit");
+  const usersMatch = useMatch("/users");
   const settingsMatch = useMatch("/settings");
   const apiDocsMatch = useMatch("/api-docs");
   const allocationsMatch = useMatch("/allocations");
@@ -102,6 +104,12 @@ export function useBreadcrumbs(): Breadcrumb[] {
   }
   if (activityMatch) {
     return [{ label: "Activity" }];
+  }
+  if (auditMatch) {
+    return [{ label: "Audit" }];
+  }
+  if (usersMatch) {
+    return [{ label: "Users" }];
   }
   if (settingsMatch) {
     return [{ label: "Settings" }];

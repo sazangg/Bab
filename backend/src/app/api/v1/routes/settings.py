@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_current_user, get_scope, require_role
+from app.api.v1.deps import get_scope, require_permission
 from app.core.config import settings
 from app.core.database import Scope, get_db
 from app.modules.auth.schemas import AuthenticatedUser
@@ -17,15 +17,15 @@ from app.modules.settings.schemas import (
 router = APIRouter(prefix="/settings", tags=["settings"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RequestScope = Annotated[Scope, Depends(get_scope)]
-CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]
-SettingsAdmin = Annotated[AuthenticatedUser, Depends(require_role("super_admin"))]
+SettingsViewer = Annotated[AuthenticatedUser, Depends(require_permission("settings.view"))]
+SettingsAdmin = Annotated[AuthenticatedUser, Depends(require_permission("settings.manage"))]
 
 
 @router.get("")
 async def get_settings(
     scope: RequestScope,
     db: DatabaseSession,
-    _: CurrentUser,
+    _: SettingsViewer,
 ) -> OrganizationSettingsResponse:
     return await facade.get_organization_settings(scope=scope, db=db)
 

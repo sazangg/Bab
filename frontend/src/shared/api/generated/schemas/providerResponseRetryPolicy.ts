@@ -5,4 +5,4 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type ProviderResponseRetryPolicy = { [key: string]: unknown };
+export type ProviderResponseRetryPolicy = { [key: string]: unknown } | null;

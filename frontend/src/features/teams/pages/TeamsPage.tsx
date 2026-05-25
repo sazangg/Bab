@@ -41,6 +41,8 @@ import { cn } from "@/lib/utils";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
+import { hasPermission, isTeamAdmin } from "@/features/auth/lib/permissions";
+import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
 import { useListProjectsApiV1ProjectsGet } from "@/shared/api/generated/projects/projects";
 import {
   useCreateTeamApiV1TeamsPost,
@@ -73,6 +75,9 @@ export function TeamsPage() {
   const [search, setSearch] = useState("");
   const [segment, setSegment] = useState<TeamSegment>("active");
 
+  const currentUserQuery = useMeApiV1AuthMeGet();
+  const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
+  const canCreateTeam = hasPermission(currentUser, "teams.manage");
   const teamsQuery = useListTeamsApiV1TeamsGet();
   const projectsQuery = useListProjectsApiV1ProjectsGet();
   const teams = teamsQuery.data?.status === 200 ? teamsQuery.data.data : [];
@@ -108,16 +113,18 @@ export function TeamsPage() {
         title="Teams"
         description="Teams group projects under a business, product, or division boundary."
         actions={
-          <CreateTeamSheet
-            open={createOpen}
-            onOpenChange={setCreateOpen}
-            onCreated={async (team) => {
-              await queryClient.invalidateQueries();
-              setCreateOpen(false);
-              toast.success(`Team "${team.name}" created.`);
-              navigate(`/teams/${team.id}`);
-            }}
-          />
+          canCreateTeam ? (
+            <CreateTeamSheet
+              open={createOpen}
+              onOpenChange={setCreateOpen}
+              onCreated={async (team) => {
+                await queryClient.invalidateQueries();
+                setCreateOpen(false);
+                toast.success(`Team "${team.name}" created.`);
+                navigate(`/teams/${team.id}`);
+              }}
+            />
+          ) : null
         }
       />
 
@@ -129,10 +136,12 @@ export function TeamsPage() {
           title="No teams yet"
           description="Create the first team to start organizing projects."
           action={
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus />
-              New team
-            </Button>
+            canCreateTeam ? (
+              <Button onClick={() => setCreateOpen(true)}>
+                <Plus />
+                New team
+              </Button>
+            ) : undefined
           }
         />
       ) : (
@@ -204,6 +213,10 @@ export function TeamsPage() {
                         projectCount={projectCountByTeam[team.id] ?? 0}
                         onOpen={() => navigate(`/teams/${team.id}`)}
                         onEdit={() => setEditingTeam(team)}
+                        canEdit={
+                          hasPermission(currentUser, "teams.manage") ||
+                          isTeamAdmin(currentUser, team.id)
+                        }
                       />
                     ))}
                   </TableBody>
@@ -231,11 +244,13 @@ function TeamRow({
   projectCount,
   onOpen,
   onEdit,
+  canEdit,
 }: {
   team: TeamResponse;
   projectCount: number;
   onOpen: () => void;
   onEdit: () => void;
+  canEdit: boolean;
 }) {
   return (
     <TableRow
@@ -266,19 +281,21 @@ function TeamRow({
         {formatRelativeFromNow(team.updated_at)}
       </TableCell>
       <TableCell onClick={(event) => event.stopPropagation()}>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" aria-label="Team actions">
-              <MoreHorizontal />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={onEdit}>
-              <Pencil data-icon="inline-start" />
-              Edit team
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {canEdit ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon-sm" aria-label="Team actions">
+                <MoreHorizontal />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={onEdit}>
+                <Pencil data-icon="inline-start" />
+                Edit team
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
       </TableCell>
     </TableRow>
   );

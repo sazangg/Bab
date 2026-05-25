@@ -22,9 +22,10 @@ class CreateProviderRequest(BaseModel):
     base_url: HttpUrl
     description: str | None = Field(default=None, max_length=1000)
     capabilities: dict[str, bool] = Field(default_factory=dict)
-    request_timeout_seconds: int = Field(default=30, ge=1, le=300)
+    request_timeout_seconds: int | None = Field(default=None, ge=1, le=300)
     max_body_bytes: int | None = Field(default=None, ge=1)
-    retry_policy: dict[str, Any] = Field(default_factory=dict)
+    retry_policy: dict[str, Any] | None = None
+    model_sync_mode: str | None = Field(default=None, pattern="^(merge|replace|disabled)$")
     fallback_policy: dict[str, Any] = Field(default_factory=dict)
     circuit_breaker_policy: dict[str, Any] = Field(default_factory=dict)
     max_concurrent_requests: int | None = Field(default=None, ge=1)
@@ -39,9 +40,11 @@ class UpdateProviderRequest(BaseModel):
     request_timeout_seconds: int | None = Field(default=None, ge=1, le=300)
     max_body_bytes: int | None = Field(default=None, ge=1)
     retry_policy: dict[str, Any] | None = None
+    model_sync_mode: str | None = Field(default=None, pattern="^(merge|replace|disabled)$")
     fallback_policy: dict[str, Any] | None = None
     circuit_breaker_policy: dict[str, Any] | None = None
     max_concurrent_requests: int | None = Field(default=None, ge=1)
+    is_favorite: bool | None = None
     is_active: bool | None = None
 
 
@@ -252,14 +255,16 @@ class ProviderResponse(BaseModel):
     capabilities: dict[str, Any]
     supported_integration: str
     catalog_type: str = "custom"
-    request_timeout_seconds: int
+    request_timeout_seconds: int | None
     max_body_bytes: int | None
-    retry_policy: dict[str, Any]
+    retry_policy: dict[str, Any] | None
+    model_sync_mode: str | None
     fallback_policy: dict[str, Any]
     circuit_breaker_policy: dict[str, Any]
     max_concurrent_requests: int | None
     credential_summary: ProviderCredentialSummary = Field(default_factory=ProviderCredentialSummary)
     readiness: ProviderReadiness = Field(default_factory=ProviderReadiness)
+    is_favorite: bool
     is_active: bool
     created_at: datetime
     updated_at: datetime

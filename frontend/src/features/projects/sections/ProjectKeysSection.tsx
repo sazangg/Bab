@@ -87,12 +87,14 @@ export function ProjectKeysSection({
   keys,
   isLoading,
   onView,
+  canManage,
 }: {
   projectId: string;
   project: ProjectResponse;
   keys: VirtualKeyResponse[];
   isLoading: boolean;
   onView: (keyId: string) => void;
+  canManage: boolean;
 }) {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
@@ -192,161 +194,163 @@ export function ProjectKeysSection({
           <CardDescription>
             Each key inherits this project's access. Restrictions can only narrow it.
           </CardDescription>
-          <CardAction>
-            <Sheet open={createOpen} onOpenChange={setCreateOpen}>
-              <SheetTrigger asChild>
-                <Button size="sm" disabled={!project.is_active || !effectiveAllocation}>
-                  <Plus />
-                  New key
-                </Button>
-              </SheetTrigger>
-              <SheetContent>
-                <SheetHeader>
-                  <SheetTitle>New virtual key</SheetTitle>
-                  <SheetDescription>
-                    {effectiveAllocation
-                      ? `Uses allocation: ${effectiveAllocation.name} unless a custom allocation is selected.`
-                      : "Create a team or project allocation before issuing a key."}
-                  </SheetDescription>
-                </SheetHeader>
-                <form
-                  className="grid gap-4 overflow-y-auto px-6 py-5"
-                  onSubmit={form.handleSubmit(submit)}
-                >
-                  <div className="space-y-1.5">
-                    <Label htmlFor="key-name">Label</Label>
-                    <Input id="key-name" autoFocus {...form.register("name")} />
-                    {form.formState.errors.name ? (
-                      <p className="text-xs text-destructive">
-                        {form.formState.errors.name.message}
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="key-expires">Expires at</Label>
-                    <Input
-                      id="key-expires"
-                      type="datetime-local"
-                      {...form.register("expires_at")}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Optional. Blank uses the organization default if configured.
-                    </p>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Allocation</Label>
-                    <Select
-                      value={selectedAllocationId}
-                      onValueChange={(value) =>
-                        form.setValue("allocation_id", value, { shouldDirty: true })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="inherited">
-                          Inherit default ({effectiveAllocation?.name ?? "none"})
-                        </SelectItem>
-                        {availableAllocations
-                          .filter((allocation) => allocation.is_active)
-                          .map((allocation) => (
-                            <SelectItem key={allocation.id} value={allocation.id}>
-                              {allocation.name}
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="rounded-md border bg-muted/30 p-3 text-sm">
-                    <span className="text-xs text-muted-foreground">Effective allocation</span>
-                    <p className="font-medium">{selectedAllocation?.name ?? "None configured"}</p>
-                  </div>
-                  <div className="space-y-2">
-                    <div>
-                      <Label>Allowed models</Label>
-                      <p className="text-xs text-muted-foreground">
-                        Optional subset of the selected allocation. Leave blank to allow every
-                        allocation model.
-                      </p>
-                    </div>
-                    <div className="rounded-md border">
-                      <ScrollArea className="h-60">
-                        <div className="grid gap-1 p-2">
-                          {!selectedAllocation ? (
-                            <p className="p-2 text-sm text-muted-foreground">
-                              Select an allocation to choose models.
-                            </p>
-                          ) : selectableModels.length === 0 ? (
-                            <p className="p-2 text-sm text-muted-foreground">
-                              No active models are available for this allocation.
-                            </p>
-                          ) : (
-                            selectableModels.map((model) => {
-                              const checked = selectedAllowedModels.includes(
-                                model.provider_model_name,
-                              );
-                              return (
-                                <label
-                                  key={model.id}
-                                  className="flex min-w-0 cursor-pointer items-start gap-3 rounded-md px-2 py-2 hover:bg-muted/50"
-                                >
-                                  <Checkbox
-                                    checked={checked}
-                                    onCheckedChange={(nextChecked) => {
-                                      const nextModels = nextChecked
-                                        ? [...selectedAllowedModels, model.provider_model_name]
-                                        : selectedAllowedModels.filter(
-                                            (name) => name !== model.provider_model_name,
-                                          );
-                                      form.setValue("allowed_models", nextModels.join(", "), {
-                                        shouldDirty: true,
-                                      });
-                                    }}
-                                  />
-                                  <span className="min-w-0">
-                                    <span className="block text-sm font-medium break-words">
-                                      {model.alias || model.provider_model_name}
-                                    </span>
-                                    <span className="block text-xs break-all text-muted-foreground">
-                                      {model.provider_model_name}
-                                    </span>
-                                  </span>
-                                </label>
-                              );
-                            })
-                          )}
-                        </div>
-                      </ScrollArea>
-                    </div>
-                    {selectedAllowedModels.length > 0 ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="w-fit"
-                        onClick={() => form.setValue("allowed_models", "", { shouldDirty: true })}
-                      >
-                        Allow all allocation models
-                      </Button>
-                    ) : null}
-                  </div>
-                </form>
-                <SheetFooter>
-                  <Button
-                    type="submit"
-                    disabled={createMutation.isPending || !effectiveAllocation}
-                    onClick={form.handleSubmit(submit)}
-                  >
-                    {createMutation.isPending ? "Creating..." : "Create key"}
+          {canManage ? (
+            <CardAction>
+              <Sheet open={createOpen} onOpenChange={setCreateOpen}>
+                <SheetTrigger asChild>
+                  <Button size="sm" disabled={!project.is_active || !effectiveAllocation}>
+                    <Plus />
+                    New key
                   </Button>
-                  <SheetClose asChild>
-                    <Button variant="outline">Cancel</Button>
-                  </SheetClose>
-                </SheetFooter>
-              </SheetContent>
-            </Sheet>
-          </CardAction>
+                </SheetTrigger>
+                <SheetContent>
+                  <SheetHeader>
+                    <SheetTitle>New virtual key</SheetTitle>
+                    <SheetDescription>
+                      {effectiveAllocation
+                        ? `Uses allocation: ${effectiveAllocation.name} unless a custom allocation is selected.`
+                        : "Create a team or project allocation before issuing a key."}
+                    </SheetDescription>
+                  </SheetHeader>
+                  <form
+                    className="grid gap-4 overflow-y-auto px-6 py-5"
+                    onSubmit={form.handleSubmit(submit)}
+                  >
+                    <div className="space-y-1.5">
+                      <Label htmlFor="key-name">Label</Label>
+                      <Input id="key-name" autoFocus {...form.register("name")} />
+                      {form.formState.errors.name ? (
+                        <p className="text-xs text-destructive">
+                          {form.formState.errors.name.message}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="key-expires">Expires at</Label>
+                      <Input
+                        id="key-expires"
+                        type="datetime-local"
+                        {...form.register("expires_at")}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Optional. Blank uses the organization default if configured.
+                      </p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Allocation</Label>
+                      <Select
+                        value={selectedAllocationId}
+                        onValueChange={(value) =>
+                          form.setValue("allocation_id", value, { shouldDirty: true })
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="inherited">
+                            Inherit default ({effectiveAllocation?.name ?? "none"})
+                          </SelectItem>
+                          {availableAllocations
+                            .filter((allocation) => allocation.is_active)
+                            .map((allocation) => (
+                              <SelectItem key={allocation.id} value={allocation.id}>
+                                {allocation.name}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                      <span className="text-xs text-muted-foreground">Effective allocation</span>
+                      <p className="font-medium">{selectedAllocation?.name ?? "None configured"}</p>
+                    </div>
+                    <div className="space-y-2">
+                      <div>
+                        <Label>Allowed models</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Optional subset of the selected allocation. Leave blank to allow every
+                          allocation model.
+                        </p>
+                      </div>
+                      <div className="rounded-md border">
+                        <ScrollArea className="h-60">
+                          <div className="grid gap-1 p-2">
+                            {!selectedAllocation ? (
+                              <p className="p-2 text-sm text-muted-foreground">
+                                Select an allocation to choose models.
+                              </p>
+                            ) : selectableModels.length === 0 ? (
+                              <p className="p-2 text-sm text-muted-foreground">
+                                No active models are available for this allocation.
+                              </p>
+                            ) : (
+                              selectableModels.map((model) => {
+                                const checked = selectedAllowedModels.includes(
+                                  model.provider_model_name,
+                                );
+                                return (
+                                  <label
+                                    key={model.id}
+                                    className="flex min-w-0 cursor-pointer items-start gap-3 rounded-md px-2 py-2 hover:bg-muted/50"
+                                  >
+                                    <Checkbox
+                                      checked={checked}
+                                      onCheckedChange={(nextChecked) => {
+                                        const nextModels = nextChecked
+                                          ? [...selectedAllowedModels, model.provider_model_name]
+                                          : selectedAllowedModels.filter(
+                                              (name) => name !== model.provider_model_name,
+                                            );
+                                        form.setValue("allowed_models", nextModels.join(", "), {
+                                          shouldDirty: true,
+                                        });
+                                      }}
+                                    />
+                                    <span className="min-w-0">
+                                      <span className="block text-sm font-medium break-words">
+                                        {model.alias || model.provider_model_name}
+                                      </span>
+                                      <span className="block text-xs break-all text-muted-foreground">
+                                        {model.provider_model_name}
+                                      </span>
+                                    </span>
+                                  </label>
+                                );
+                              })
+                            )}
+                          </div>
+                        </ScrollArea>
+                      </div>
+                      {selectedAllowedModels.length > 0 ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="w-fit"
+                          onClick={() => form.setValue("allowed_models", "", { shouldDirty: true })}
+                        >
+                          Allow all allocation models
+                        </Button>
+                      ) : null}
+                    </div>
+                  </form>
+                  <SheetFooter>
+                    <Button
+                      type="submit"
+                      disabled={createMutation.isPending || !effectiveAllocation}
+                      onClick={form.handleSubmit(submit)}
+                    >
+                      {createMutation.isPending ? "Creating..." : "Create key"}
+                    </Button>
+                    <SheetClose asChild>
+                      <Button variant="outline">Cancel</Button>
+                    </SheetClose>
+                  </SheetFooter>
+                </SheetContent>
+              </Sheet>
+            </CardAction>
+          ) : null}
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -412,14 +416,16 @@ export function ProjectKeysSection({
                           className="text-right"
                           onClick={(event) => event.stopPropagation()}
                         >
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            disabled={Boolean(key.revoked_at)}
-                            onClick={() => setRevokeId(key.id)}
-                          >
-                            Revoke
-                          </Button>
+                          {canManage ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={Boolean(key.revoked_at)}
+                              onClick={() => setRevokeId(key.id)}
+                            >
+                              Revoke
+                            </Button>
+                          ) : null}
                         </TableCell>
                       </TableRow>
                     );

@@ -65,6 +65,7 @@ from app.modules.providers.schemas import (
     UpdateProviderCredentialRequest,
     UpdateProviderRequest,
 )
+from app.modules.settings import facade as settings_facade
 
 logger = structlog.get_logger(__name__)
 
@@ -93,6 +94,7 @@ async def create_provider(
             request_timeout_seconds=payload.request_timeout_seconds,
             max_body_bytes=payload.max_body_bytes,
             retry_policy=payload.retry_policy,
+            model_sync_mode=payload.model_sync_mode,
             fallback_policy=payload.fallback_policy,
             circuit_breaker_policy=payload.circuit_breaker_policy,
             max_concurrent_requests=payload.max_concurrent_requests,
@@ -1051,18 +1053,22 @@ async def update_provider(
             provider.description = payload.description
         if payload.capabilities is not None:
             provider.capabilities = payload.capabilities
-        if payload.request_timeout_seconds is not None:
+        if "request_timeout_seconds" in payload.model_fields_set:
             provider.request_timeout_seconds = payload.request_timeout_seconds
         if "max_body_bytes" in payload.model_fields_set:
             provider.max_body_bytes = payload.max_body_bytes
-        if payload.retry_policy is not None:
+        if "retry_policy" in payload.model_fields_set:
             provider.retry_policy = payload.retry_policy
+        if "model_sync_mode" in payload.model_fields_set:
+            provider.model_sync_mode = payload.model_sync_mode
         if payload.fallback_policy is not None:
             provider.fallback_policy = payload.fallback_policy
         if payload.circuit_breaker_policy is not None:
             provider.circuit_breaker_policy = payload.circuit_breaker_policy
         if "max_concurrent_requests" in payload.model_fields_set:
             provider.max_concurrent_requests = payload.max_concurrent_requests
+        if payload.is_favorite is not None:
+            provider.is_favorite = payload.is_favorite
         if payload.is_active is not None:
             provider.is_active = payload.is_active
         await db.flush()
@@ -1138,6 +1144,14 @@ async def _create_chat_completion_with_policy(
     provider = await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
     if not provider.is_active:
         raise ProviderInactiveError
+    org_settings = await settings_facade.get_organization_settings(scope=scope, db=db)
+    request_timeout_seconds = (
+        provider.request_timeout_seconds or org_settings.default_request_timeout_seconds
+    )
+    retry_policy = _retry_policy(
+        provider,
+        default_retry_count=org_settings.default_retry_count,
+    )
 
     _raise_if_circuit_open(provider)
     adapter = default_adapter_registry.get(provider.adapter_type)
@@ -1170,7 +1184,8 @@ async def _create_chat_completion_with_policy(
             try:
                 response = await _call_with_retries(
                     call=call_upstream,
-                    provider=provider,
+                    request_timeout_seconds=request_timeout_seconds,
+                    retry_policy=retry_policy,
                 )
                 _record_circuit_success(provider)
                 if credential is not None:
@@ -1249,14 +1264,14 @@ async def _try_provider_fallbacks(
 async def _call_with_retries(
     *,
     call: Callable[[], Awaitable[ProviderChatCompletionResponse]],
-    provider: Provider,
+    request_timeout_seconds: int,
+    retry_policy: dict,
 ) -> ProviderChatCompletionResponse:
-    retry_policy = _retry_policy(provider)
     max_attempts = retry_policy["max_attempts"] if retry_policy["enabled"] else 1
     last_error: ProviderUpstreamError | None = None
     for attempt in range(1, max_attempts + 1):
         try:
-            async with asyncio.timeout(provider.request_timeout_seconds):
+            async with asyncio.timeout(request_timeout_seconds):
                 return await call()
         except TimeoutError as exc:
             last_error = ProviderUpstreamError(
@@ -1285,11 +1300,18 @@ def _retry_delay_seconds(policy: dict, attempt: int) -> float:
     return min(initial * (2 ** (attempt - 1)), maximum)
 
 
-def _retry_policy(provider: Provider) -> dict:
+def _retry_policy(provider: Provider, *, default_retry_count: int = 0) -> dict:
     stored = provider.retry_policy if isinstance(provider.retry_policy, dict) else {}
+    inherited_enabled = default_retry_count > 0
+    inherited_attempts = max(1, min(default_retry_count + 1, 10))
     return {
-        "enabled": bool(stored.get("enabled", False)),
-        "max_attempts": _int_policy_value(stored.get("max_attempts"), 3, minimum=1, maximum=10),
+        "enabled": bool(stored.get("enabled", inherited_enabled)),
+        "max_attempts": _int_policy_value(
+            stored.get("max_attempts"),
+            inherited_attempts,
+            minimum=1,
+            maximum=10,
+        ),
         "backoff": (
             stored.get("backoff")
             if stored.get("backoff") in {"constant", "linear", "exponential"}
@@ -1462,6 +1484,10 @@ async def stream_chat_completion(
     provider = await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
     if not provider.is_active:
         raise ProviderInactiveError
+    org_settings = await settings_facade.get_organization_settings(scope=scope, db=db)
+    request_timeout_seconds = (
+        provider.request_timeout_seconds or org_settings.default_request_timeout_seconds
+    )
 
     adapter = default_adapter_registry.get(provider.adapter_type)
     routed_credentials = await _resolve_provider_credential_route(
@@ -1476,7 +1502,7 @@ async def stream_chat_completion(
     async with _provider_concurrency_slot(provider):
         for credential in routed_credentials:
             try:
-                async with asyncio.timeout(provider.request_timeout_seconds):
+                async with asyncio.timeout(request_timeout_seconds):
                     stream = await adapter.stream_chat_completion(
                         provider=AdapterProvider(
                             base_url=provider.base_url,
