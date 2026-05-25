@@ -67,16 +67,22 @@ export function EditProviderSheet({
       slug: "",
       base_url: "",
       description: "",
+      request_timeout_mode: "inherit",
       request_timeout_seconds: undefined,
+      max_body_mode: "inherit",
       max_body_bytes_kb: undefined,
       max_concurrent_requests: undefined,
       model_sync_mode: "inherit",
+      retry_policy_mode: "inherit",
       retry_policy: defaultRetryPolicy,
       fallback_policy: defaultFallbackPolicy,
       circuit_breaker_policy: defaultCircuitBreakerPolicy,
     },
   });
   const retryPolicy = useWatch({ control: form.control, name: "retry_policy" });
+  const retryPolicyMode = useWatch({ control: form.control, name: "retry_policy_mode" });
+  const requestTimeoutMode = useWatch({ control: form.control, name: "request_timeout_mode" });
+  const maxBodyMode = useWatch({ control: form.control, name: "max_body_mode" });
   const fallbackPolicy = useWatch({ control: form.control, name: "fallback_policy" });
   const modelSyncMode = useWatch({ control: form.control, name: "model_sync_mode" });
   const circuitBreakerPolicy = useWatch({
@@ -99,13 +105,16 @@ export function EditProviderSheet({
       slug: provider.slug ?? "",
       base_url: provider.base_url,
       description: provider.description ?? "",
+      request_timeout_mode: provider.request_timeout_seconds == null ? "inherit" : "override",
       request_timeout_seconds: provider.request_timeout_seconds ?? undefined,
+      max_body_mode: provider.max_body_bytes == null ? "inherit" : "override",
       max_body_bytes_kb:
         provider.max_body_bytes != null
           ? Math.max(1, Math.round(provider.max_body_bytes / 1024))
           : undefined,
       max_concurrent_requests: provider.max_concurrent_requests ?? undefined,
       model_sync_mode: parseModelSyncMode(provider.model_sync_mode),
+      retry_policy_mode: provider.retry_policy == null ? "inherit" : "override",
       retry_policy: mergeRetryPolicy(provider.retry_policy),
       fallback_policy: mergeFallbackPolicy(provider.fallback_policy),
       circuit_breaker_policy: mergeCircuitBreakerPolicy(provider.circuit_breaker_policy),
@@ -161,12 +170,17 @@ export function EditProviderSheet({
 
             <FormSection
               title="Request controls"
-              description="Per-request controls inherit gateway defaults when blank."
+              description="Per-request controls inherit gateway defaults unless explicitly overridden."
             >
-              <FormField
-                label="Request timeout (seconds)"
+              <OverrideNumberField
+                label="Request timeout"
                 htmlFor="edit-provider-timeout"
-                hint={`Blank inherits org default (${settings?.default_request_timeout_seconds ?? 30}s).`}
+                unit="seconds"
+                mode={requestTimeoutMode}
+                onModeChange={(value) =>
+                  form.setValue("request_timeout_mode", value, { shouldDirty: true })
+                }
+                inheritedValue={`${settings?.default_request_timeout_seconds ?? 30}s`}
                 error={form.formState.errors.request_timeout_seconds?.message}
               >
                 <Input
@@ -174,24 +188,29 @@ export function EditProviderSheet({
                   type="number"
                   min={1}
                   max={300}
-                  placeholder="Inherited"
+                  disabled={requestTimeoutMode === "inherit"}
                   {...form.register("request_timeout_seconds")}
                 />
-              </FormField>
+              </OverrideNumberField>
               <div className="grid grid-cols-2 gap-3">
-                <FormField
-                  label="Max body (KB)"
+                <OverrideNumberField
+                  label="Max body"
                   htmlFor="edit-provider-body"
-                  hint={`Blank inherits org default (${Math.round((settings?.default_max_body_bytes ?? 0) / 1024).toLocaleString()} KB).`}
+                  unit="KB"
+                  mode={maxBodyMode}
+                  onModeChange={(value) =>
+                    form.setValue("max_body_mode", value, { shouldDirty: true })
+                  }
+                  inheritedValue={`${Math.round((settings?.default_max_body_bytes ?? 0) / 1024).toLocaleString()} KB`}
                 >
                   <Input
                     id="edit-provider-body"
                     type="number"
                     min={1}
-                    placeholder="—"
+                    disabled={maxBodyMode === "inherit"}
                     {...form.register("max_body_bytes_kb")}
                   />
-                </FormField>
+                </OverrideNumberField>
                 <FormField
                   label="Max concurrent requests"
                   htmlFor="edit-provider-concurrent"
@@ -236,6 +255,11 @@ export function EditProviderSheet({
             <PolicySection
               title="Retry policy"
               description="Retry against the same provider with backoff when upstream errors occur."
+              mode={retryPolicyMode}
+              onModeChange={(value) =>
+                form.setValue("retry_policy_mode", value, { shouldDirty: true })
+              }
+              inheritedLabel={formatInheritedRetry(settings?.default_retry_count ?? 0)}
               enabled={retryPolicy?.enabled ?? false}
               onEnabledChange={(checked) => form.setValue("retry_policy.enabled", checked)}
             >
@@ -434,35 +458,106 @@ export function FormField({
   );
 }
 
+function OverrideNumberField({
+  label,
+  htmlFor,
+  unit,
+  mode,
+  onModeChange,
+  inheritedValue,
+  error,
+  children,
+}: {
+  label: string;
+  htmlFor: string;
+  unit: string;
+  mode: "inherit" | "override";
+  onModeChange: (value: "inherit" | "override") => void;
+  inheritedValue: string;
+  error?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-3">
+        <Label htmlFor={htmlFor}>{label}</Label>
+        <Select value={mode} onValueChange={(value) => onModeChange(value as typeof mode)}>
+          <SelectTrigger className="h-8 w-32">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="inherit">Inherit</SelectItem>
+            <SelectItem value="override">Override</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      {children}
+      <p className="text-xs text-muted-foreground">
+        {mode === "inherit"
+          ? `Using org default: ${inheritedValue}.`
+          : `Provider-specific ${label.toLowerCase()} in ${unit}.`}
+      </p>
+      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+    </div>
+  );
+}
+
 function PolicySection({
   title,
   description,
+  mode,
+  onModeChange,
+  inheritedLabel,
   enabled,
   onEnabledChange,
   children,
 }: {
   title: string;
   description: string;
+  mode?: "inherit" | "override";
+  onModeChange?: (value: "inherit" | "override") => void;
+  inheritedLabel?: string;
   enabled: boolean;
   onEnabledChange: (checked: boolean) => void;
   children: React.ReactNode;
 }) {
+  const isInherited = mode === "inherit";
   return (
     <section className="space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-0.5">
           <h3 className="text-sm font-medium">{title}</h3>
           <p className="text-xs text-muted-foreground">{description}</p>
+          {isInherited && inheritedLabel ? (
+            <p className="text-xs text-muted-foreground">{inheritedLabel}</p>
+          ) : null}
         </div>
-        <Switch
-          checked={enabled}
-          onCheckedChange={onEnabledChange}
-          aria-label={`Enable ${title.toLowerCase()}`}
-        />
+        <div className="flex items-center gap-2">
+          {mode && onModeChange ? (
+            <Select value={mode} onValueChange={(value) => onModeChange(value as typeof mode)}>
+              <SelectTrigger className="h-8 w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="inherit">Inherit</SelectItem>
+                <SelectItem value="override">Override</SelectItem>
+              </SelectContent>
+            </Select>
+          ) : null}
+          <Switch
+            checked={enabled}
+            disabled={isInherited}
+            onCheckedChange={onEnabledChange}
+            aria-label={`Enable ${title.toLowerCase()}`}
+          />
+        </div>
       </div>
       <div
-        className={cn("space-y-3 transition-opacity", !enabled && "pointer-events-none opacity-50")}
-        aria-hidden={!enabled}
+        className={cn(
+          "space-y-3 transition-opacity",
+          (!enabled || isInherited) && "pointer-events-none opacity-50",
+        )}
+        aria-hidden={!enabled || isInherited}
       >
         {children}
       </div>
@@ -657,4 +752,9 @@ function FallbackProviderPicker({
 function parseModelSyncMode(value: string | null | undefined) {
   if (value === "merge" || value === "replace" || value === "disabled") return value;
   return "inherit";
+}
+
+function formatInheritedRetry(defaultRetryCount: number) {
+  if (defaultRetryCount <= 0) return "Using org default: no retries.";
+  return `Using org default: ${defaultRetryCount + 1} total attempts.`;
 }

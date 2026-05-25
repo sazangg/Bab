@@ -10,6 +10,10 @@ class GuardrailAssignmentConflictError(Exception):
     pass
 
 
+class GuardrailAssignmentTargetNotFoundError(Exception):
+    pass
+
+
 class GuardrailDeniedError(Exception):
     def __init__(self, *, detail: str, policy_id=None, rule_id=None) -> None:
         super().__init__(detail)

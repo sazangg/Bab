@@ -46,6 +46,7 @@ class GuardrailRule(Base):
     rule_type: Mapped[str] = mapped_column(String(50), index=True)
     effect: Mapped[str] = mapped_column(String(50), default="allow", index=True)
     values: Mapped[list[str]] = mapped_column(JSON, default=list)
+    config: Mapped[dict] = mapped_column(JSON, default=dict)
     priority: Mapped[int] = mapped_column(Integer, default=100)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(

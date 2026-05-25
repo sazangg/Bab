@@ -26,6 +26,8 @@ import type {
   GuardrailAssignmentResponse,
   GuardrailEventResponse,
   GuardrailPolicyResponse,
+  GuardrailSimulationRequest,
+  GuardrailSimulationResponse,
   HTTPValidationError,
   ListEventsApiV1GuardrailsEventsGetParams,
   UpdateGuardrailAssignmentRequest,
@@ -1203,3 +1205,117 @@ export function useListEventsApiV1GuardrailsEventsGet<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+export type simulateGuardrailsApiV1GuardrailsSimulatePostResponse200 = {
+  data: GuardrailSimulationResponse;
+  status: 200;
+};
+
+export type simulateGuardrailsApiV1GuardrailsSimulatePostResponse422 = {
+  data: HTTPValidationError;
+  status: 422;
+};
+
+export type simulateGuardrailsApiV1GuardrailsSimulatePostResponseSuccess =
+  simulateGuardrailsApiV1GuardrailsSimulatePostResponse200 & {
+    headers: Headers;
+  };
+export type simulateGuardrailsApiV1GuardrailsSimulatePostResponseError =
+  simulateGuardrailsApiV1GuardrailsSimulatePostResponse422 & {
+    headers: Headers;
+  };
+
+export type simulateGuardrailsApiV1GuardrailsSimulatePostResponse =
+  | simulateGuardrailsApiV1GuardrailsSimulatePostResponseSuccess
+  | simulateGuardrailsApiV1GuardrailsSimulatePostResponseError;
+
+export const getSimulateGuardrailsApiV1GuardrailsSimulatePostUrl = () => {
+  return `/api/v1/guardrails/simulate`;
+};
+
+/**
+ * @summary Simulate Guardrails
+ */
+export const simulateGuardrailsApiV1GuardrailsSimulatePost = async (
+  guardrailSimulationRequest: GuardrailSimulationRequest,
+  options?: RequestInit,
+): Promise<simulateGuardrailsApiV1GuardrailsSimulatePostResponse> => {
+  return apiMutator<simulateGuardrailsApiV1GuardrailsSimulatePostResponse>(
+    getSimulateGuardrailsApiV1GuardrailsSimulatePostUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(guardrailSimulationRequest),
+    },
+  );
+};
+
+export const getSimulateGuardrailsApiV1GuardrailsSimulatePostMutationOptions = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof simulateGuardrailsApiV1GuardrailsSimulatePost>>,
+    TError,
+    { data: GuardrailSimulationRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof simulateGuardrailsApiV1GuardrailsSimulatePost>>,
+  TError,
+  { data: GuardrailSimulationRequest },
+  TContext
+> => {
+  const mutationKey = ["simulateGuardrailsApiV1GuardrailsSimulatePost"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof simulateGuardrailsApiV1GuardrailsSimulatePost>>,
+    { data: GuardrailSimulationRequest }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return simulateGuardrailsApiV1GuardrailsSimulatePost(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SimulateGuardrailsApiV1GuardrailsSimulatePostMutationResult = NonNullable<
+  Awaited<ReturnType<typeof simulateGuardrailsApiV1GuardrailsSimulatePost>>
+>;
+export type SimulateGuardrailsApiV1GuardrailsSimulatePostMutationBody = GuardrailSimulationRequest;
+export type SimulateGuardrailsApiV1GuardrailsSimulatePostMutationError = HTTPValidationError;
+
+/**
+ * @summary Simulate Guardrails
+ */
+export const useSimulateGuardrailsApiV1GuardrailsSimulatePost = <
+  TError = HTTPValidationError,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof simulateGuardrailsApiV1GuardrailsSimulatePost>>,
+      TError,
+      { data: GuardrailSimulationRequest },
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof simulateGuardrailsApiV1GuardrailsSimulatePost>>,
+  TError,
+  { data: GuardrailSimulationRequest },
+  TContext
+> => {
+  return useMutation(
+    getSimulateGuardrailsApiV1GuardrailsSimulatePostMutationOptions(options),
+    queryClient,
+  );
+};

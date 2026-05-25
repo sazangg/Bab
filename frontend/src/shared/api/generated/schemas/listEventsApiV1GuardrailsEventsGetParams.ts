@@ -7,5 +7,14 @@
 
 export type ListEventsApiV1GuardrailsEventsGetParams = {
   decision?: string | null;
+  policy_id?: string | null;
+  rule_id?: string | null;
+  team_id?: string | null;
+  project_id?: string | null;
+  allocation_id?: string | null;
+  virtual_key_id?: string | null;
+  provider_id?: string | null;
+  pool_id?: string | null;
+  model?: string | null;
   limit?: number;
 };

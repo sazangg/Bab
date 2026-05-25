@@ -1,3 +1,4 @@
+import re
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,9 +7,11 @@ from app.core.database import Scope, transaction
 from app.modules.activity import facade as activity_facade
 from app.modules.activity.schemas import RecordActivityEvent
 from app.modules.auth.schemas import AuthenticatedUser
+from app.modules.guardrails.detectors.registry import DEFAULT_PII_DETECTOR, get_detector
 from app.modules.guardrails.errors import (
     GuardrailAssignmentConflictError,
     GuardrailAssignmentNotFoundError,
+    GuardrailAssignmentTargetNotFoundError,
     GuardrailDeniedError,
     GuardrailPolicyNotFoundError,
 )
@@ -22,6 +25,9 @@ from app.modules.guardrails.schemas import (
     GuardrailEventResponse,
     GuardrailPolicyResponse,
     GuardrailRuleResponse,
+    GuardrailSimulationMatch,
+    GuardrailSimulationRequest,
+    GuardrailSimulationResponse,
     UpdateGuardrailAssignmentRequest,
     UpdateGuardrailPolicyRequest,
 )
@@ -168,14 +174,30 @@ async def create_assignment(
         )
         if policy is None:
             raise GuardrailPolicyNotFoundError
-        existing = await repository.find_assignment_for_scope(
-            org_id=scope.org_id,
-            policy_id=payload.policy_id,
+        team_id, project_id, allocation_id, virtual_key_id = _assignment_scope_ids_from_payload(
             scope_type=payload.scope_type,
             team_id=payload.team_id,
             project_id=payload.project_id,
             allocation_id=payload.allocation_id,
             virtual_key_id=payload.virtual_key_id,
+        )
+        await _validate_assignment_target(
+            org_id=scope.org_id,
+            scope_type=payload.scope_type,
+            team_id=team_id,
+            project_id=project_id,
+            allocation_id=allocation_id,
+            virtual_key_id=virtual_key_id,
+            db=db,
+        )
+        existing = await repository.find_assignment_for_scope(
+            org_id=scope.org_id,
+            policy_id=payload.policy_id,
+            scope_type=payload.scope_type,
+            team_id=team_id,
+            project_id=project_id,
+            allocation_id=allocation_id,
+            virtual_key_id=virtual_key_id,
             db=db,
         )
         if existing is not None:
@@ -184,10 +206,10 @@ async def create_assignment(
             org_id=scope.org_id,
             policy_id=payload.policy_id,
             scope_type=payload.scope_type,
-            team_id=payload.team_id,
-            project_id=payload.project_id,
-            allocation_id=payload.allocation_id,
-            virtual_key_id=payload.virtual_key_id,
+            team_id=team_id,
+            project_id=project_id,
+            allocation_id=allocation_id,
+            virtual_key_id=virtual_key_id,
             is_active=payload.is_active,
             db=db,
         )
@@ -239,6 +261,15 @@ async def update_assignment(
             allocation_id=payload.allocation_id,
             virtual_key_id=payload.virtual_key_id,
             fallback=assignment,
+        )
+        await _validate_assignment_target(
+            org_id=scope.org_id,
+            scope_type=scope_type,
+            team_id=team_id,
+            project_id=project_id,
+            allocation_id=allocation_id,
+            virtual_key_id=virtual_key_id,
+            db=db,
         )
         existing = await repository.find_assignment_for_scope(
             org_id=scope.org_id,
@@ -335,8 +366,8 @@ async def evaluate_request(
     for rule in rules:
         if not rule.is_active:
             continue
-        denied = _rule_denies(rule=rule, context=context)
-        if not denied:
+        evaluation = await _evaluate_rule(rule=rule, context=context)
+        if not evaluation["denied"]:
             continue
         mode = policy_mode.get(rule.policy_id, "enforce")
         await _record_event(
@@ -345,6 +376,7 @@ async def evaluate_request(
             rule_id=rule.id,
             decision="blocked" if mode == "enforce" else "warned",
             reason=f"{rule.rule_type}_{rule.effect}",
+            metadata={"matched_values": evaluation["matched_values"]},
             db=db,
         )
         if mode == "enforce":
@@ -359,6 +391,7 @@ async def evaluate_request(
         rule_id=None,
         decision="allowed",
         reason="guardrails_passed",
+        metadata={},
         db=db,
     )
 
@@ -367,32 +400,157 @@ async def list_events(
     *,
     scope: Scope,
     decision: str | None = None,
+    policy_id: UUID | None = None,
+    rule_id: UUID | None = None,
+    team_id: UUID | None = None,
+    project_id: UUID | None = None,
+    allocation_id: UUID | None = None,
+    virtual_key_id: UUID | None = None,
+    provider_id: UUID | None = None,
+    pool_id: UUID | None = None,
+    model: str | None = None,
     limit: int = 50,
     db: AsyncSession,
 ) -> list[GuardrailEventResponse]:
     events = await repository.list_events(
         org_id=scope.org_id,
         decision=decision,
+        policy_id=policy_id,
+        rule_id=rule_id,
+        team_id=team_id,
+        project_id=project_id,
+        allocation_id=allocation_id,
+        virtual_key_id=virtual_key_id,
+        provider_id=provider_id,
+        pool_id=pool_id,
+        model=model,
         limit=limit,
         db=db,
     )
     return [_to_event_response(event) for event in events]
 
 
-def _rule_denies(*, rule, context: GuardrailEvaluationContext) -> bool:
-    values = {value.lower() for value in rule.values}
+async def simulate(
+    *,
+    payload: GuardrailSimulationRequest,
+    scope: Scope,
+    db: AsyncSession,
+) -> GuardrailSimulationResponse:
+    if payload.policy_id is not None:
+        policy = await repository.get_policy(
+            policy_id=payload.policy_id,
+            org_id=scope.org_id,
+            db=db,
+        )
+        if policy is None:
+            raise GuardrailPolicyNotFoundError
+        rules = await repository.list_policy_rules(
+            org_id=scope.org_id,
+            policy_ids=[policy.id],
+            db=db,
+        )
+        enforcement_mode = policy.enforcement_mode
+    else:
+        rules = payload.rules or []
+        enforcement_mode = payload.enforcement_mode
+
+    context = GuardrailEvaluationContext(
+        org_id=scope.org_id,
+        team_id=scope.org_id,
+        project_id=scope.org_id,
+        allocation_id=scope.org_id,
+        allocation_chain_ids=[],
+        virtual_key_id=scope.org_id,
+        provider_id=payload.provider_id or scope.org_id,
+        pool_id=payload.pool_id or scope.org_id,
+        requested_model=payload.requested_model,
+        provider_model=payload.provider_model or payload.requested_model,
+        prompt_text=payload.prompt_text
+        if payload.prompt_text is not None
+        else _messages_text(payload.messages),
+    )
+
+    matches: list[GuardrailSimulationMatch] = []
+    for rule in rules:
+        is_active = getattr(rule, "is_active", True)
+        if not is_active:
+            continue
+        evaluation = await _evaluate_rule(rule=rule, context=context)
+        if not evaluation["denied"]:
+            continue
+        decision = "blocked" if enforcement_mode == "enforce" else "warned"
+        matches.append(
+            GuardrailSimulationMatch(
+                rule_id=getattr(rule, "id", None),
+                rule_type=rule.rule_type,
+                effect=rule.effect,
+                priority=rule.priority,
+                decision=decision,
+                reason=f"{rule.rule_type}_{rule.effect}",
+                matched_values=evaluation["matched_values"],
+            )
+        )
+
+    return GuardrailSimulationResponse(
+        decision=matches[0].decision if matches else "allowed",
+        enforcement_mode=enforcement_mode,
+        matches=matches,
+    )
+
+
+async def _evaluate_rule(*, rule, context: GuardrailEvaluationContext) -> dict:
+    matched_values = await _matched_rule_values(rule=rule, context=context)
+    matches = bool(matched_values)
+    denied = matches if rule.effect == "deny" else not matches
+    return {"denied": denied, "matched_values": matched_values}
+
+
+async def _matched_rule_values(*, rule, context: GuardrailEvaluationContext) -> list[str]:
+    values = [value.strip() for value in rule.values if value.strip()]
     if rule.rule_type == "model":
         current = {context.requested_model.lower(), context.provider_model.lower()}
+        return [value for value in values if value.lower() in current]
     elif rule.rule_type == "provider":
         current = {str(context.provider_id).lower()}
+        return [value for value in values if value.lower() in current]
     elif rule.rule_type == "pool":
         current = {str(context.pool_id).lower()}
-    else:
-        return False
-    matches = bool(values.intersection(current))
-    if rule.effect == "deny":
-        return matches
-    return not matches
+        return [value for value in values if value.lower() in current]
+    elif rule.rule_type == "prompt_contains":
+        prompt_text = context.prompt_text.lower()
+        return [value for value in values if value.lower() in prompt_text]
+    elif rule.rule_type == "prompt_regex":
+        return _matched_regex_values(values=values, prompt_text=context.prompt_text)
+    elif rule.rule_type == "pii":
+        return await _matched_detector_values(
+            rule=rule,
+            values=values,
+            prompt_text=context.prompt_text,
+        )
+    return []
+
+
+async def _matched_detector_values(*, rule, values: list[str], prompt_text: str) -> list[str]:
+    config = getattr(rule, "config", None) or {}
+    detector_name = config.get("detector")
+    if not isinstance(detector_name, str):
+        detector_name = DEFAULT_PII_DETECTOR
+    detector = get_detector(detector_name)
+    if detector is None:
+        return []
+    result = await detector.detect(text=prompt_text, values=values, config=config)
+    return result.matched_values
+
+
+def _matched_regex_values(*, values: list[str], prompt_text: str) -> list[str]:
+    matched: list[str] = []
+    for value in values:
+        try:
+            if re.search(value, prompt_text, re.IGNORECASE):
+                matched.append(value)
+        except re.error:
+            continue
+    return matched
 
 
 async def _record_event(
@@ -402,6 +560,7 @@ async def _record_event(
     rule_id: UUID | None,
     decision: str,
     reason: str,
+    metadata: dict,
     db: AsyncSession,
 ) -> None:
     await repository.create_event(
@@ -418,10 +577,30 @@ async def _record_event(
         pool_id=context.pool_id,
         requested_model=context.requested_model,
         provider_model=context.provider_model,
-        metadata={},
+        metadata=metadata,
         db=db,
     )
     await db.commit()
+
+
+def _messages_text(messages: list[dict]) -> str:
+    parts: list[str] = []
+    for message in messages:
+        parts.append(_content_to_text(message.get("content")))
+    return "\n".join(parts)
+
+
+def _content_to_text(content) -> str:
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return " ".join(_content_to_text(part) for part in content)
+    if isinstance(content, dict):
+        text = content.get("text")
+        return text if isinstance(text, str) else ""
+    return str(content)
 
 
 def _rules_by_policy(rules) -> dict[UUID, list]:
@@ -449,6 +628,52 @@ def _assignment_scope_ids(
     if scope_type == "virtual_key":
         return None, None, None, virtual_key_id or fallback.virtual_key_id
     return None, None, None, None
+
+
+def _assignment_scope_ids_from_payload(
+    *,
+    scope_type: str,
+    team_id: UUID | None,
+    project_id: UUID | None,
+    allocation_id: UUID | None,
+    virtual_key_id: UUID | None,
+) -> tuple[UUID | None, UUID | None, UUID | None, UUID | None]:
+    if scope_type == "team":
+        return team_id, None, None, None
+    if scope_type == "project":
+        return None, project_id, None, None
+    if scope_type == "allocation":
+        return None, None, allocation_id, None
+    if scope_type == "virtual_key":
+        return None, None, None, virtual_key_id
+    return None, None, None, None
+
+
+async def _validate_assignment_target(
+    *,
+    org_id: UUID,
+    scope_type: str,
+    team_id: UUID | None,
+    project_id: UUID | None,
+    allocation_id: UUID | None,
+    virtual_key_id: UUID | None,
+    db: AsyncSession,
+) -> None:
+    target_id = {
+        "org": None,
+        "team": team_id,
+        "project": project_id,
+        "allocation": allocation_id,
+        "virtual_key": virtual_key_id,
+    }[scope_type]
+    exists = await repository.assignment_target_exists(
+        org_id=org_id,
+        scope_type=scope_type,
+        target_id=target_id,
+        db=db,
+    )
+    if not exists:
+        raise GuardrailAssignmentTargetNotFoundError
 
 
 def _to_policy_response(policy, rules) -> GuardrailPolicyResponse:

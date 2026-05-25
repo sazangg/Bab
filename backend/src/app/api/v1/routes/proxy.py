@@ -197,6 +197,7 @@ async def create_chat_completion(
                 pool_id=resolved.pool_id,
                 requested_model=resolved.requested_model,
                 provider_model=resolved.provider_model,
+                prompt_text=_messages_text(provider_payload.messages),
             ),
             db=db,
         )
@@ -391,6 +392,7 @@ async def _execute_chat_proxy(
                 pool_id=resolved.pool_id,
                 requested_model=resolved.requested_model,
                 provider_model=resolved.provider_model,
+                prompt_text=_messages_text(provider_payload.messages),
             ),
             db=db,
         )
@@ -565,6 +567,26 @@ def _to_provider_payload(body: dict[str, Any]) -> ProviderChatCompletionRequest:
         )
     except ValidationError as exc:
         raise RequestValidationError(exc.errors()) from exc
+
+
+def _messages_text(messages: list[dict[str, Any]]) -> str:
+    parts: list[str] = []
+    for message in messages:
+        parts.append(_content_to_text(message.get("content")))
+    return "\n".join(parts)
+
+
+def _content_to_text(content: Any) -> str:
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return " ".join(_content_to_text(part) for part in content)
+    if isinstance(content, dict):
+        value = content.get("text")
+        return value if isinstance(value, str) else ""
+    return str(content)
 
 
 def _completion_body_to_chat_body(body: dict[str, Any]) -> dict[str, Any]:

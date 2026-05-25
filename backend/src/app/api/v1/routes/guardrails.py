@@ -11,6 +11,7 @@ from app.modules.guardrails import facade
 from app.modules.guardrails.errors import (
     GuardrailAssignmentConflictError,
     GuardrailAssignmentNotFoundError,
+    GuardrailAssignmentTargetNotFoundError,
     GuardrailPolicyNotFoundError,
 )
 from app.modules.guardrails.schemas import (
@@ -19,6 +20,8 @@ from app.modules.guardrails.schemas import (
     GuardrailAssignmentResponse,
     GuardrailEventResponse,
     GuardrailPolicyResponse,
+    GuardrailSimulationRequest,
+    GuardrailSimulationResponse,
     UpdateGuardrailAssignmentRequest,
     UpdateGuardrailPolicyRequest,
 )
@@ -102,6 +105,11 @@ async def create_assignment(
         return await facade.create_assignment(payload=payload, actor=actor, scope=scope, db=db)
     except GuardrailPolicyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="guardrail policy not found") from exc
+    except GuardrailAssignmentTargetNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="guardrail assignment target not found",
+        ) from exc
     except GuardrailAssignmentConflictError as exc:
         raise HTTPException(status_code=409, detail="guardrail assignment already exists") from exc
 
@@ -126,6 +134,11 @@ async def update_assignment(
         raise HTTPException(status_code=404, detail="guardrail assignment not found") from exc
     except GuardrailPolicyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="guardrail policy not found") from exc
+    except GuardrailAssignmentTargetNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="guardrail assignment target not found",
+        ) from exc
     except GuardrailAssignmentConflictError as exc:
         raise HTTPException(status_code=409, detail="guardrail assignment already exists") from exc
 
@@ -154,11 +167,42 @@ async def list_events(
     db: DatabaseSession,
     _: GuardrailViewer,
     decision: str | None = None,
+    policy_id: UUID | None = None,
+    rule_id: UUID | None = None,
+    team_id: UUID | None = None,
+    project_id: UUID | None = None,
+    allocation_id: UUID | None = None,
+    virtual_key_id: UUID | None = None,
+    provider_id: UUID | None = None,
+    pool_id: UUID | None = None,
+    model: str | None = None,
     limit: int = 50,
 ) -> list[GuardrailEventResponse]:
     return await facade.list_events(
         scope=scope,
         decision=decision,
+        policy_id=policy_id,
+        rule_id=rule_id,
+        team_id=team_id,
+        project_id=project_id,
+        allocation_id=allocation_id,
+        virtual_key_id=virtual_key_id,
+        provider_id=provider_id,
+        pool_id=pool_id,
+        model=model,
         limit=min(max(limit, 1), 200),
         db=db,
     )
+
+
+@router.post("/simulate")
+async def simulate_guardrails(
+    payload: GuardrailSimulationRequest,
+    scope: RequestScope,
+    db: DatabaseSession,
+    _: GuardrailViewer,
+) -> GuardrailSimulationResponse:
+    try:
+        return await facade.simulate(payload=payload, scope=scope, db=db)
+    except GuardrailPolicyNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="guardrail policy not found") from exc

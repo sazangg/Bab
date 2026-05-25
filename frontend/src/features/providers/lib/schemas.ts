@@ -76,19 +76,39 @@ const optionalPositiveInt = z.preprocess(
   z.number().int().min(1).optional(),
 );
 
-export const editProviderSchema = z.object({
-  name: z.string().min(1).max(255),
-  slug: z.string().optional(),
-  base_url: z.url(),
-  description: z.string().max(1000).optional(),
-  request_timeout_seconds: optionalPositiveInt,
-  max_body_bytes_kb: optionalPositiveInt,
-  max_concurrent_requests: optionalPositiveInt,
-  model_sync_mode: z.enum(["inherit", "merge", "replace", "disabled"]),
-  retry_policy: retryPolicySchema,
-  fallback_policy: fallbackPolicySchema,
-  circuit_breaker_policy: circuitBreakerPolicySchema,
-});
+export const editProviderSchema = z
+  .object({
+    name: z.string().min(1).max(255),
+    slug: z.string().optional(),
+    base_url: z.url(),
+    description: z.string().max(1000).optional(),
+    request_timeout_mode: z.enum(["inherit", "override"]),
+    request_timeout_seconds: optionalPositiveInt,
+    max_body_mode: z.enum(["inherit", "override"]),
+    max_body_bytes_kb: optionalPositiveInt,
+    max_concurrent_requests: optionalPositiveInt,
+    model_sync_mode: z.enum(["inherit", "merge", "replace", "disabled"]),
+    retry_policy_mode: z.enum(["inherit", "override"]),
+    retry_policy: retryPolicySchema,
+    fallback_policy: fallbackPolicySchema,
+    circuit_breaker_policy: circuitBreakerPolicySchema,
+  })
+  .superRefine((values, context) => {
+    if (values.request_timeout_mode === "override" && values.request_timeout_seconds == null) {
+      context.addIssue({
+        code: "custom",
+        path: ["request_timeout_seconds"],
+        message: "Set a provider timeout or inherit the org default.",
+      });
+    }
+    if (values.max_body_mode === "override" && values.max_body_bytes_kb == null) {
+      context.addIssue({
+        code: "custom",
+        path: ["max_body_bytes_kb"],
+        message: "Set a provider max body or inherit the org default.",
+      });
+    }
+  });
 
 export const providerCredentialSchema = z.object({
   name: z.string().min(1).max(255),

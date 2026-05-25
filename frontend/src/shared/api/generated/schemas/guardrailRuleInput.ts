@@ -4,14 +4,16 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
+import type { GuardrailRuleInputConfig } from "./guardrailRuleInputConfig";
 
 export interface GuardrailRuleInput {
-  /** @pattern ^(model|provider|pool)$ */
+  /** @pattern ^(model|provider|pool|prompt_contains|prompt_regex|pii)$ */
   rule_type: string;
   /** @pattern ^(allow|deny)$ */
   effect?: string;
   /** @minItems 1 */
   values: string[];
+  config?: GuardrailRuleInputConfig;
   /** @minimum 1 */
   priority?: number;
   is_active?: boolean;

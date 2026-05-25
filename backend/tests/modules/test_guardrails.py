@@ -7,12 +7,17 @@ from app.core.database import Scope
 from app.modules.auth.internal.models import Organization, Team
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.guardrails import facade as guardrails_facade
-from app.modules.guardrails.errors import GuardrailAssignmentConflictError, GuardrailDeniedError
+from app.modules.guardrails.errors import (
+    GuardrailAssignmentConflictError,
+    GuardrailAssignmentTargetNotFoundError,
+    GuardrailDeniedError,
+)
 from app.modules.guardrails.schemas import (
     CreateGuardrailAssignmentRequest,
     CreateGuardrailPolicyRequest,
     GuardrailEvaluationContext,
     GuardrailRuleInput,
+    GuardrailSimulationRequest,
 )
 
 
@@ -196,6 +201,31 @@ async def test_guardrail_rejects_duplicate_assignment_for_same_policy_scope(
         )
 
 
+async def test_guardrail_rejects_assignment_to_missing_target(db_session: AsyncSession) -> None:
+    actor, scope, _team = await _create_actor_scope(db_session)
+    policy = await guardrails_facade.create_policy(
+        payload=CreateGuardrailPolicyRequest(
+            name="Target guard",
+            rules=[GuardrailRuleInput(rule_type="model", effect="deny", values=["gpt-5-large"])],
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    with pytest.raises(GuardrailAssignmentTargetNotFoundError):
+        await guardrails_facade.create_assignment(
+            payload=CreateGuardrailAssignmentRequest(
+                policy_id=policy.id,
+                scope_type="team",
+                team_id=uuid4(),
+            ),
+            actor=actor,
+            scope=scope,
+            db=db_session,
+        )
+
+
 async def test_deleted_assignment_no_longer_enforces_policy(db_session: AsyncSession) -> None:
     actor, scope, team = await _create_actor_scope(db_session)
     policy = await guardrails_facade.create_policy(
@@ -228,3 +258,131 @@ async def test_deleted_assignment_no_longer_enforces_policy(db_session: AsyncSes
         context=_context(org_id=scope.org_id, team_id=team.id, model="gpt-5-large"),
         db=db_session,
     )
+
+
+async def test_guardrail_events_can_be_filtered_by_policy_and_model(
+    db_session: AsyncSession,
+) -> None:
+    actor, scope, team = await _create_actor_scope(db_session)
+    policy = await guardrails_facade.create_policy(
+        payload=CreateGuardrailPolicyRequest(
+            name="Event filters",
+            rules=[GuardrailRuleInput(rule_type="model", effect="deny", values=["gpt-5-large"])],
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    await guardrails_facade.create_assignment(
+        payload=CreateGuardrailAssignmentRequest(
+            policy_id=policy.id,
+            scope_type="team",
+            team_id=team.id,
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    with pytest.raises(GuardrailDeniedError):
+        await guardrails_facade.evaluate_request(
+            context=_context(org_id=scope.org_id, team_id=team.id, model="gpt-5-large"),
+            db=db_session,
+        )
+
+    events = await guardrails_facade.list_events(
+        scope=scope,
+        policy_id=policy.id,
+        model="large",
+        db=db_session,
+    )
+    assert len(events) == 1
+    assert events[0].policy_id == policy.id
+    assert events[0].requested_model == "gpt-5-large"
+
+
+async def test_guardrail_prompt_contains_blocks_matching_prompt(
+    db_session: AsyncSession,
+) -> None:
+    actor, scope, team = await _create_actor_scope(db_session)
+    policy = await guardrails_facade.create_policy(
+        payload=CreateGuardrailPolicyRequest(
+            name="Prompt guard",
+            rules=[
+                GuardrailRuleInput(
+                    rule_type="prompt_contains",
+                    effect="deny",
+                    values=["internal roadmap"],
+                )
+            ],
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    await guardrails_facade.create_assignment(
+        payload=CreateGuardrailAssignmentRequest(
+            policy_id=policy.id,
+            scope_type="team",
+            team_id=team.id,
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    with pytest.raises(GuardrailDeniedError):
+        await guardrails_facade.evaluate_request(
+            context=_context(
+                org_id=scope.org_id,
+                team_id=team.id,
+                model="gpt-5-mini",
+            ).model_copy(update={"prompt_text": "Summarize the internal roadmap"}),
+            db=db_session,
+        )
+
+
+async def test_guardrail_simulation_reports_pii_match(db_session: AsyncSession) -> None:
+    _actor, scope, _team = await _create_actor_scope(db_session)
+
+    result = await guardrails_facade.simulate(
+        payload=GuardrailSimulationRequest(
+            rules=[
+                GuardrailRuleInput(
+                    rule_type="pii",
+                    effect="deny",
+                    values=["email", "credit_card"],
+                )
+            ],
+            requested_model="gpt-5-mini",
+            prompt_text="Contact alice@example.com for approval.",
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    assert result.decision == "blocked"
+    assert result.matches[0].matched_values == ["email"]
+
+
+async def test_guardrail_pii_rule_uses_configured_detector(db_session: AsyncSession) -> None:
+    _actor, scope, _team = await _create_actor_scope(db_session)
+
+    result = await guardrails_facade.simulate(
+        payload=GuardrailSimulationRequest(
+            rules=[
+                GuardrailRuleInput(
+                    rule_type="pii",
+                    effect="deny",
+                    values=["email"],
+                    config={"detector": "missing_detector"},
+                )
+            ],
+            requested_model="gpt-5-mini",
+            prompt_text="Contact alice@example.com for approval.",
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    assert result.decision == "allowed"

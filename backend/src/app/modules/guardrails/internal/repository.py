@@ -3,12 +3,14 @@ from uuid import UUID
 from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.auth.internal.models import Team
 from app.modules.guardrails.internal.models import (
     GuardrailAssignment,
     GuardrailEvent,
     GuardrailPolicy,
     GuardrailRule,
 )
+from app.modules.keys.internal.models import Allocation, Project, VirtualKey
 
 
 async def list_policies(*, org_id: UUID, db: AsyncSession) -> list[GuardrailPolicy]:
@@ -169,6 +171,29 @@ async def find_assignment_for_scope(
     )
 
 
+async def assignment_target_exists(
+    *,
+    org_id: UUID,
+    scope_type: str,
+    target_id: UUID | None,
+    db: AsyncSession,
+) -> bool:
+    if scope_type == "org":
+        return True
+    if target_id is None:
+        return False
+    model = {
+        "team": Team,
+        "project": Project,
+        "allocation": Allocation,
+        "virtual_key": VirtualKey,
+    }.get(scope_type)
+    if model is None:
+        return False
+    exists = await db.scalar(select(model.id).where(model.org_id == org_id, model.id == target_id))
+    return exists is not None
+
+
 async def delete_assignment(*, assignment: GuardrailAssignment, db: AsyncSession) -> None:
     await db.delete(assignment)
     await db.flush()
@@ -242,12 +267,45 @@ async def list_events(
     *,
     org_id: UUID,
     decision: str | None,
+    policy_id: UUID | None,
+    rule_id: UUID | None,
+    team_id: UUID | None,
+    project_id: UUID | None,
+    allocation_id: UUID | None,
+    virtual_key_id: UUID | None,
+    provider_id: UUID | None,
+    pool_id: UUID | None,
+    model: str | None,
     limit: int,
     db: AsyncSession,
 ) -> list[GuardrailEvent]:
     filters = [GuardrailEvent.org_id == org_id]
     if decision is not None:
         filters.append(GuardrailEvent.decision == decision)
+    if policy_id is not None:
+        filters.append(GuardrailEvent.policy_id == policy_id)
+    if rule_id is not None:
+        filters.append(GuardrailEvent.rule_id == rule_id)
+    if team_id is not None:
+        filters.append(GuardrailEvent.team_id == team_id)
+    if project_id is not None:
+        filters.append(GuardrailEvent.project_id == project_id)
+    if allocation_id is not None:
+        filters.append(GuardrailEvent.allocation_id == allocation_id)
+    if virtual_key_id is not None:
+        filters.append(GuardrailEvent.virtual_key_id == virtual_key_id)
+    if provider_id is not None:
+        filters.append(GuardrailEvent.provider_id == provider_id)
+    if pool_id is not None:
+        filters.append(GuardrailEvent.pool_id == pool_id)
+    if model:
+        model_filter = f"%{model.strip()}%"
+        filters.append(
+            or_(
+                GuardrailEvent.requested_model.ilike(model_filter),
+                GuardrailEvent.provider_model.ilike(model_filter),
+            )
+        )
     result = await db.scalars(
         select(GuardrailEvent)
         .where(*filters)

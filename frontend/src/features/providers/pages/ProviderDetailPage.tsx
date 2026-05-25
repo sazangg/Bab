@@ -298,6 +298,10 @@ export function ProviderDetailPage() {
             }
           />
           <Fact
+            label="Retry policy"
+            value={formatProviderRetry(provider.retry_policy, settings?.default_retry_count ?? 0)}
+          />
+          <Fact
             label="Concurrency"
             value={provider.max_concurrent_requests?.toString() ?? "No cap"}
           />
@@ -428,6 +432,17 @@ function Fact({ label, value, muted }: { label: string; value: string; muted?: b
       </p>
     </div>
   );
+}
+
+function formatProviderRetry(value: unknown, defaultRetryCount: number) {
+  if (!value || typeof value !== "object") {
+    return defaultRetryCount > 0
+      ? `Inherited (${defaultRetryCount + 1} attempts)`
+      : "Inherited (no retries)";
+  }
+  const policy = value as { enabled?: boolean; max_attempts?: number };
+  if (!policy.enabled) return "Disabled override";
+  return `${policy.max_attempts ?? 1} attempts`;
 }
 
 function ReadinessStep({ label, ready }: { label: string; ready: boolean }) {
