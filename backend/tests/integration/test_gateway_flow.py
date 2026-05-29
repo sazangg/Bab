@@ -31,7 +31,7 @@ async def _provision_gateway_path(
     *,
     upstream_api_key: str = "sk-test-upstream",
     model: str = "gpt-test",
-) -> str:
+) -> tuple[str, str]:
     providers = (await client.get("/api/v1/providers", headers=headers)).json()
     provider = next(provider for provider in providers if provider["slug"] == "openai")
     provider_id = provider["id"]
@@ -113,7 +113,7 @@ async def _provision_gateway_path(
     assert key_response.status_code == 201
     virtual_key = key_response.json()["key"]
     assert virtual_key is not None
-    return virtual_key
+    return virtual_key, credential_id
 
 
 @pytest.mark.asyncio
@@ -174,7 +174,7 @@ async def test_gateway_path_records_usage_with_mocked_upstream(app_client, db_se
         base_url="http://test",
     ) as client:
         admin_headers = await _login(client)
-        virtual_key = await _provision_gateway_path(client, admin_headers)
+        virtual_key, credential_id = await _provision_gateway_path(client, admin_headers)
 
         proxy_response = await client.post(
             "/v1/chat/completions",
@@ -193,6 +193,8 @@ async def test_gateway_path_records_usage_with_mocked_upstream(app_client, db_se
         assert len(records) == 1
         assert records[0]["requested_model"] == "gpt-test"
         assert records[0]["provider_model"] == "gpt-test"
+        assert records[0]["provider_credential_id"] == credential_id
+        assert records[0]["provider_credential_name"] == "Integration OpenAI key"
         assert records[0]["http_status"] == 200
         assert records[0]["total_tokens"] == 17
 
@@ -218,7 +220,7 @@ async def test_gateway_path_can_call_live_openai(app_client, db_session) -> None
         assert settings.openai_api_key is not None
         assert settings.live_openai_model is not None
         live_model = settings.live_openai_model
-        virtual_key = await _provision_gateway_path(
+        virtual_key, _credential_id = await _provision_gateway_path(
             client,
             admin_headers,
             upstream_api_key=settings.openai_api_key,

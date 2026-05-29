@@ -279,6 +279,7 @@ class ProviderChatCompletionRequest(BaseModel):
 class ProviderChatCompletionResponse(BaseModel):
     status_code: int
     body: dict[str, Any]
+    provider_credential_id: UUID | None = None
 
 
 class ProviderChatCompletionStream:
@@ -289,8 +290,10 @@ class ProviderChatCompletionStream:
         chunks: AsyncIterator[bytes],
         close: Callable[[], Awaitable[None]],
         media_type: str,
+        provider_credential_id: UUID | None = None,
     ) -> None:
         self.status_code = status_code
         self.chunks = chunks
         self.close = close
         self.media_type = media_type
+        self.provider_credential_id = provider_credential_id

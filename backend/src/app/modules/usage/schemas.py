@@ -30,6 +30,8 @@ class UsageRecordResponse(RecordUsage):
 
     id: UUID
     created_at: datetime
+    provider_credential_name: str | None = None
+    provider_credential_prefix: str | None = None
 
 
 class UsageSummaryTotals(BaseModel):

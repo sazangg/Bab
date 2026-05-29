@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.auth.internal.models import Team
 from app.modules.keys.internal.models import Allocation, Project, VirtualKey
-from app.modules.providers.internal.models import CredentialPool, Provider
+from app.modules.providers.internal.models import CredentialPool, Provider, ProviderCredential
 from app.modules.usage.internal.models import UsageRecord
 from app.modules.usage.schemas import (
     AllocationBudgetBurnRow,
@@ -15,6 +15,7 @@ from app.modules.usage.schemas import (
     RecordUsage,
     SpendInsights,
     UsageBreakdownRow,
+    UsageRecordResponse,
     UsageSummaryTotals,
     UsageTimeSeriesPoint,
     VirtualKeyUsageSummary,
@@ -41,7 +42,7 @@ async def list_usage_records(
     model: str | None,
     limit: int,
     db: AsyncSession,
-) -> list[UsageRecord]:
+) -> list[UsageRecordResponse]:
     filters = [UsageRecord.org_id == org_id]
     if since is not None:
         filters.append(UsageRecord.created_at >= since)
@@ -59,10 +60,23 @@ async def list_usage_records(
         filters.append(UsageRecord.virtual_key_id == virtual_key_id)
     if model:
         filters.append(UsageRecord.provider_model == model)
-    result = await db.scalars(
-        select(UsageRecord).where(*filters).order_by(UsageRecord.created_at.desc()).limit(limit)
+    result = await db.execute(
+        select(UsageRecord, ProviderCredential.name, ProviderCredential.key_prefix)
+        .outerjoin(ProviderCredential, ProviderCredential.id == UsageRecord.provider_credential_id)
+        .where(*filters)
+        .order_by(UsageRecord.created_at.desc())
+        .limit(limit)
     )
-    return list(result)
+    return [
+        UsageRecordResponse.model_validate(
+            {
+                **record.__dict__,
+                "provider_credential_name": credential_name,
+                "provider_credential_prefix": credential_prefix,
+            }
+        )
+        for record, credential_name, credential_prefix in result
+    ]
 
 
 async def summarize_allocation_usage(

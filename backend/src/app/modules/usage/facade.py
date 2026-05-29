@@ -48,7 +48,7 @@ async def list_usage_records(
         limit=limit,
         db=db,
     )
-    return [UsageRecordResponse.model_validate(record) for record in records]
+    return records
 
 
 async def summarize_allocation_usage(

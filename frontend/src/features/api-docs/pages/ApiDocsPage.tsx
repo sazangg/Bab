@@ -65,6 +65,16 @@ export function ApiDocsPage() {
     "max_tokens": 32
   }'`}
           />
+          <CommandBlock
+            title="Embeddings status"
+            command={`curl ${baseUrl}/v1/embeddings \\
+  -H "Authorization: Bearer bab-sk-..." \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "text-embedding-3-small",
+    "input": "hello"
+  }'`}
+          />
           <div className="rounded-md border bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
             <div className="font-medium text-foreground">Postman setup</div>
             <p>Method: POST</p>
@@ -92,7 +102,10 @@ export function ApiDocsPage() {
             Some newer OpenAI models reject <code>max_tokens</code>; use{" "}
             <code>max_completion_tokens</code> when testing those models.
           </p>
-          <p>Embeddings require a provider adapter expansion and are not part of this slice yet.</p>
+          <p>
+            Embeddings currently return <code>501 Not Implemented</code>. The route exists so client
+            integrations fail explicitly until provider adapter coverage is added.
+          </p>
           <Button asChild variant="outline" className="w-fit">
             <a href={`${baseUrl}/openapi.json`} target="_blank" rel="noreferrer">
               <ExternalLink />

@@ -71,6 +71,8 @@ export function DashboardHomePage() {
   const providersWithCredentials = providers.filter(
     (provider) => (provider.credential_summary?.active ?? 0) > 0,
   );
+  const readyProviders = providers.filter((provider) => provider.readiness?.is_ready);
+  const providersNeedingSetup = activeProviders.length - readyProviders.length;
 
   return (
     <div className="space-y-6">
@@ -108,11 +110,11 @@ export function DashboardHomePage() {
         />
         <MetricCard
           label="Gateway state"
-          value={providersWithCredentials.length > 0 ? "Routable" : "Setup"}
+          value={readyProviders.length > 0 ? "Routable" : "Setup"}
           detail={
-            providersWithCredentials.length > 0
-              ? "At least one active credential"
-              : "Add credentials to route traffic"
+            readyProviders.length > 0
+              ? `${readyProviders.length} provider${readyProviders.length === 1 ? "" : "s"} ready`
+              : "Complete a provider readiness chain"
           }
           icon={CircleGauge}
         />
@@ -157,6 +159,21 @@ export function DashboardHomePage() {
                 </div>
               </div>
             ))}
+            <div className="flex gap-3 rounded-lg border bg-background p-3">
+              <Plug className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">Provider readiness</span>
+                  <Badge variant={providersNeedingSetup > 0 ? "secondary" : "outline"}>
+                    {providersNeedingSetup > 0 ? `${providersNeedingSetup} incomplete` : "Ready"}
+                  </Badge>
+                </div>
+                <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                  {readyProviders.length} of {activeProviders.length} active providers can route
+                  through credentials, pools, and models.
+                </p>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </section>

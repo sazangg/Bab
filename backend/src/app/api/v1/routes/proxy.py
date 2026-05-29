@@ -334,9 +334,24 @@ async def create_chat_completion(
         latency_ms=_elapsed_ms(started_at),
         usage=usage,
         error_code=None,
+        provider_credential_id=upstream.provider_credential_id,
         db=db,
     )
     return JSONResponse(status_code=upstream.status_code, content=upstream.body)
+
+
+@router.post("/embeddings", response_model=None)
+async def create_embeddings() -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        content={
+            "error": {
+                "message": "Embeddings are not implemented yet.",
+                "type": "not_implemented",
+                "code": "embeddings_not_implemented",
+            }
+        },
+    )
 
 
 async def _execute_chat_proxy(
@@ -485,6 +500,7 @@ async def _execute_chat_proxy(
         latency_ms=_elapsed_ms(started_at),
         usage=usage,
         error_code=None,
+        provider_credential_id=upstream.provider_credential_id,
         db=db,
     )
     return JSONResponse(status_code=upstream.status_code, content=response_transform(upstream.body))
@@ -520,6 +536,7 @@ async def _stream_proxy_response(
             latency_ms=_elapsed_ms(started_at),
             usage=usage,
             error_code=error_code,
+            provider_credential_id=upstream.provider_credential_id,
             db=db,
         )
 
@@ -740,6 +757,7 @@ async def _record_proxy_request(
     usage: UsageAccounting,
     error_code: str | None,
     db: AsyncSession,
+    provider_credential_id: UUID | None = None,
 ) -> None:
     for allocation_id in resolved.allocation_chain_ids:
         await usage_facade.record_usage(
@@ -751,7 +769,7 @@ async def _record_proxy_request(
                 virtual_key_id=resolved.virtual_key_id,
                 pool_id=resolved.pool_id,
                 provider_id=resolved.provider_id,
-                provider_credential_id=resolved.provider_key_id,
+                provider_credential_id=provider_credential_id or resolved.provider_key_id,
                 requested_model=resolved.requested_model,
                 provider_model=resolved.provider_model,
                 http_status=http_status,

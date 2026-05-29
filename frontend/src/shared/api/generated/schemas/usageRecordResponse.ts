@@ -24,6 +24,8 @@ export interface UsageRecordResponse {
   cost_cents?: number | null;
   usage_source?: string;
   error_code?: string | null;
+  provider_credential_name?: string | null;
+  provider_credential_prefix?: string | null;
   id: string;
   created_at: string;
 }

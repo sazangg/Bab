@@ -1193,6 +1193,7 @@ async def _create_chat_completion_with_policy(
                         provider_credential=credential,
                         db=db,
                     )
+                    response.provider_credential_id = credential.id
                 return response
             except ProviderUpstreamError as exc:
                 last_error = exc
@@ -1520,6 +1521,7 @@ async def stream_chat_completion(
                         provider_credential=credential,
                         db=db,
                     )
+                    stream.provider_credential_id = credential.id
                 return stream
             except TimeoutError as exc:
                 last_error = ProviderUpstreamError(

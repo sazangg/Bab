@@ -56,6 +56,7 @@ export function UsageRecordsDrilldown({
               <TableRow>
                 <TableHead>Time</TableHead>
                 <TableHead>Model</TableHead>
+                <TableHead>Credential</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Spend</TableHead>
                 <TableHead className="text-right">Latency</TableHead>
@@ -70,6 +71,14 @@ export function UsageRecordsDrilldown({
                   <TableCell>
                     <div className="font-medium">{record.requested_model}</div>
                     <div className="text-xs text-muted-foreground">{record.provider_model}</div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="font-medium">
+                      {record.provider_credential_name ?? "Unknown"}
+                    </div>
+                    <div className="font-mono text-xs text-muted-foreground">
+                      {record.provider_credential_prefix ?? shortId(record.provider_credential_id)}
+                    </div>
                   </TableCell>
                   <TableCell>{record.http_status}</TableCell>
                   <TableCell className="text-right">{formatCents(record.cost_cents)}</TableCell>
@@ -93,6 +102,9 @@ function downloadCsv(records: UsageRecordResponse[]) {
     "total_tokens",
     "cost_cents",
     "latency_ms",
+    "provider_credential_id",
+    "provider_credential_name",
+    "provider_credential_prefix",
     "error_code",
   ];
   const rows = records.map((record) =>
@@ -104,6 +116,9 @@ function downloadCsv(records: UsageRecordResponse[]) {
       record.total_tokens ?? 0,
       record.cost_cents ?? 0,
       record.latency_ms,
+      record.provider_credential_id ?? "",
+      record.provider_credential_name ?? "",
+      record.provider_credential_prefix ?? "",
       record.error_code ?? "",
     ]
       .map((value) => `"${String(value).replaceAll('"', '""')}"`)
@@ -116,6 +131,10 @@ function downloadCsv(records: UsageRecordResponse[]) {
   anchor.download = "bab-usage-records.csv";
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+function shortId(value: string | null | undefined) {
+  return value ? value.slice(0, 8) : "-";
 }
 
 function formatCents(value: number | null | undefined) {
