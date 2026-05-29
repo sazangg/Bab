@@ -33,8 +33,8 @@ Generate a Fernet key:
 uv run --project backend python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-In `BAB_ENVIRONMENT=development`, the backend creates local SQLite tables on startup. This is a
-temporary development bootstrap until migrations are wired.
+In `BAB_ENVIRONMENT=development`, the backend applies pending Alembic migrations on startup and
+seeds the default local workspace. Existing local data is preserved across schema changes.
 
 ## Run Locally
 
@@ -47,6 +47,12 @@ Use two terminals:
 
 Then open `http://127.0.0.1:5173` and sign in with the development credentials configured for the
 local environment.
+
+Apply backend migrations manually:
+
+```powershell
+./scripts/migrate-backend.ps1
+```
 
 ## Current Product Surface
 
@@ -67,6 +73,9 @@ pnpm --dir frontend lint
 pnpm --dir frontend test
 pnpm --dir frontend build
 ```
+
+Backend integration tests use a mocked upstream by default. To run the optional live OpenAI smoke,
+set `BAB_RUN_LIVE_OPENAI_TESTS=true`, `OPENAI_API_KEY`, and `BAB_LIVE_OPENAI_MODEL`.
 
 Smoke check local servers:
 

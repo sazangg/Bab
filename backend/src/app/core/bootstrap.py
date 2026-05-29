@@ -5,127 +5,26 @@ from uuid import UUID
 from sqlalchemy import select
 
 from app.core.config import settings
-from app.core.database import AsyncSessionLocal, Base, engine, transaction
+from app.core.database import AsyncSessionLocal, transaction
 from app.core.security import hash_password
-from app.modules.activity.internal.models import ActivityEvent  # noqa: F401
 from app.modules.auth.internal.models import (  # noqa: F401
-    AuditEvent,
     IdentityAccount,
-    Invite,
     Organization,
     OrganizationMembership,
     Team,
     TeamMembership,
     User,
 )
-from app.modules.guardrails.internal.models import (  # noqa: F401
-    GuardrailAssignment,
-    GuardrailEvent,
-    GuardrailPolicy,
-    GuardrailRule,
-)
-from app.modules.keys.internal.models import Allocation, Project, VirtualKey  # noqa: F401
-from app.modules.providers.internal.models import (  # noqa: F401
-    CredentialPool,
-    CredentialPoolCredential,
-    ModelOffering,
+from app.modules.providers.internal.models import (
     Provider,
-    ProviderCredential,
 )
 from app.modules.settings.internal.models import OrganizationSettings  # noqa: F401
-from app.modules.usage.internal.models import UsageRecord  # noqa: F401
 
 DEFAULT_ADMIN_USER_ID = UUID("00000000-0000-4000-8000-000000000001")
 
 
 async def create_development_database() -> None:
     Path(settings.assets_dir).mkdir(parents=True, exist_ok=True)
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
-        if engine.url.get_backend_name() == "sqlite":
-            if await _sqlite_schema_is_stale(connection):
-                await connection.run_sync(Base.metadata.drop_all)
-                await connection.run_sync(Base.metadata.create_all)
-
-
-async def _sqlite_schema_is_stale(connection) -> bool:
-    providers_columns = await connection.exec_driver_sql("PRAGMA table_info(providers)")
-    provider_column_names = {row[1] for row in providers_columns}
-    if "display_name" not in provider_column_names:
-        return True
-    if "is_favorite" not in provider_column_names:
-        return True
-    if "model_sync_mode" not in provider_column_names:
-        return True
-    teams_columns = await connection.exec_driver_sql("PRAGMA table_info(teams)")
-    team_column_names = {row[1] for row in teams_columns}
-    if "updated_at" not in team_column_names:
-        return True
-
-    projects_columns = await connection.exec_driver_sql("PRAGMA table_info(projects)")
-    project_column_names = {row[1] for row in projects_columns}
-    if "team_id" not in project_column_names:
-        return True
-
-    required_tables = {
-        "users",
-        "identity_accounts",
-        "organization_memberships",
-        "team_memberships",
-        "invites",
-        "audit_events",
-        "provider_credentials",
-        "credential_pools",
-        "credential_pool_credentials",
-        "allocations",
-        "activity_events",
-        "usage_records",
-        "organization_settings",
-        "guardrail_policies",
-        "guardrail_rules",
-        "guardrail_assignments",
-        "guardrail_events",
-    }
-    for table_name in required_tables:
-        existing = await connection.exec_driver_sql(
-            f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'"
-        )
-        if existing.first() is None:
-            return True
-
-    provider_credentials_columns = await connection.exec_driver_sql(
-        "PRAGMA table_info(provider_credentials)"
-    )
-    provider_credentials_column_info = {row[1]: row for row in provider_credentials_columns}
-    if (
-        "pool_id" in provider_credentials_column_info
-        or "priority" in provider_credentials_column_info
-    ):
-        return True
-
-    virtual_key_columns = await connection.exec_driver_sql("PRAGMA table_info(virtual_keys)")
-    virtual_key_column_names = {row[1] for row in virtual_key_columns}
-    if "allocation_id" not in virtual_key_column_names:
-        return True
-    if "custom_allocation_id" not in virtual_key_column_names:
-        return True
-
-    allocation_columns = await connection.exec_driver_sql("PRAGMA table_info(allocations)")
-    allocation_column_names = {row[1] for row in allocation_columns}
-    if "is_default" not in allocation_column_names or "budget_cents" not in allocation_column_names:
-        return True
-
-    usage_columns = await connection.exec_driver_sql("PRAGMA table_info(usage_records)")
-    usage_column_names = {row[1] for row in usage_columns}
-    if "cost_cents" not in usage_column_names:
-        return True
-
-    settings_columns = await connection.exec_driver_sql("PRAGMA table_info(organization_settings)")
-    settings_column_names = {row[1] for row in settings_columns}
-    return (
-        "default_max_body_bytes" not in settings_column_names
-        or "organization_logo_url" not in settings_column_names
-    )
 
 
 async def ensure_default_workspace() -> None:

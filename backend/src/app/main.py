@@ -17,7 +17,9 @@ from app.api.v1.routes.teams import router as teams_router
 from app.api.v1.routes.usage import router as usage_router
 from app.core.bootstrap import create_development_database, ensure_default_workspace
 from app.core.config import settings
+from app.core.database import engine
 from app.core.logging import configure_logging
+from app.core.migrations import run_database_migrations
 from app.core.problems import install_problem_handlers
 
 
@@ -25,6 +27,7 @@ from app.core.problems import install_problem_handlers
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     if settings.environment == "development":
         await create_development_database()
+        await run_database_migrations(engine)
         await ensure_default_workspace()
     yield
 

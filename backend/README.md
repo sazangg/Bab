@@ -16,10 +16,12 @@ Paste the generated Fernet key into `BAB_ENCRYPTION_KEY` in `.env`.
 
 ```powershell
 uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+uv run alembic upgrade head
 uv run pytest
 uv run ruff check .
 uv run ruff format --check .
 ```
 
-With `BAB_ENVIRONMENT=development`, local SQLite tables are created on startup.
-Production deployments must use migrations instead.
+With `BAB_ENVIRONMENT=development`, startup applies pending Alembic migrations and seeds the
+default local workspace. Production deployments should run `uv run alembic upgrade head` before
+starting the app.
