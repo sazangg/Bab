@@ -20,9 +20,11 @@ import type {
 import type {
   GetOrganizationUsageSummaryApiV1UsageSummaryGetParams,
   GetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetParams,
+  GetSpendInsightsApiV1UsageSpendInsightsGetParams,
   HTTPValidationError,
   ListUsageRecordsApiV1UsageRecordsGetParams,
   OrganizationUsagePage,
+  SpendInsights,
   UsageRecordResponse,
   UsageTimeSeriesPoint,
 } from "../schemas";
@@ -604,6 +606,198 @@ export function useGetOrganizationUsageTimeseriesApiV1UsageTimeseriesGet<
     params,
     options,
   );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export type getSpendInsightsApiV1UsageSpendInsightsGetResponse200 = {
+  data: SpendInsights;
+  status: 200;
+};
+
+export type getSpendInsightsApiV1UsageSpendInsightsGetResponse422 = {
+  data: HTTPValidationError;
+  status: 422;
+};
+
+export type getSpendInsightsApiV1UsageSpendInsightsGetResponseSuccess =
+  getSpendInsightsApiV1UsageSpendInsightsGetResponse200 & {
+    headers: Headers;
+  };
+export type getSpendInsightsApiV1UsageSpendInsightsGetResponseError =
+  getSpendInsightsApiV1UsageSpendInsightsGetResponse422 & {
+    headers: Headers;
+  };
+
+export type getSpendInsightsApiV1UsageSpendInsightsGetResponse =
+  | getSpendInsightsApiV1UsageSpendInsightsGetResponseSuccess
+  | getSpendInsightsApiV1UsageSpendInsightsGetResponseError;
+
+export const getGetSpendInsightsApiV1UsageSpendInsightsGetUrl = (
+  params?: GetSpendInsightsApiV1UsageSpendInsightsGetParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/usage/spend-insights?${stringifiedParams}`
+    : `/api/v1/usage/spend-insights`;
+};
+
+/**
+ * @summary Get Spend Insights
+ */
+export const getSpendInsightsApiV1UsageSpendInsightsGet = async (
+  params?: GetSpendInsightsApiV1UsageSpendInsightsGetParams,
+  options?: RequestInit,
+): Promise<getSpendInsightsApiV1UsageSpendInsightsGetResponse> => {
+  return apiMutator<getSpendInsightsApiV1UsageSpendInsightsGetResponse>(
+    getGetSpendInsightsApiV1UsageSpendInsightsGetUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetSpendInsightsApiV1UsageSpendInsightsGetQueryKey = (
+  params?: GetSpendInsightsApiV1UsageSpendInsightsGetParams,
+) => {
+  return [`/api/v1/usage/spend-insights`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetSpendInsightsApiV1UsageSpendInsightsGetQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSpendInsightsApiV1UsageSpendInsightsGet>>,
+  TError = HTTPValidationError,
+>(
+  params?: GetSpendInsightsApiV1UsageSpendInsightsGetParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getSpendInsightsApiV1UsageSpendInsightsGet>>,
+        TError,
+        TData
+      >
+    >;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetSpendInsightsApiV1UsageSpendInsightsGetQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getSpendInsightsApiV1UsageSpendInsightsGet>>
+  > = ({ signal }) => getSpendInsightsApiV1UsageSpendInsightsGet(params, { signal });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSpendInsightsApiV1UsageSpendInsightsGet>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetSpendInsightsApiV1UsageSpendInsightsGetQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSpendInsightsApiV1UsageSpendInsightsGet>>
+>;
+export type GetSpendInsightsApiV1UsageSpendInsightsGetQueryError = HTTPValidationError;
+
+export function useGetSpendInsightsApiV1UsageSpendInsightsGet<
+  TData = Awaited<ReturnType<typeof getSpendInsightsApiV1UsageSpendInsightsGet>>,
+  TError = HTTPValidationError,
+>(
+  params: undefined | GetSpendInsightsApiV1UsageSpendInsightsGetParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getSpendInsightsApiV1UsageSpendInsightsGet>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSpendInsightsApiV1UsageSpendInsightsGet>>,
+          TError,
+          Awaited<ReturnType<typeof getSpendInsightsApiV1UsageSpendInsightsGet>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetSpendInsightsApiV1UsageSpendInsightsGet<
+  TData = Awaited<ReturnType<typeof getSpendInsightsApiV1UsageSpendInsightsGet>>,
+  TError = HTTPValidationError,
+>(
+  params?: GetSpendInsightsApiV1UsageSpendInsightsGetParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getSpendInsightsApiV1UsageSpendInsightsGet>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSpendInsightsApiV1UsageSpendInsightsGet>>,
+          TError,
+          Awaited<ReturnType<typeof getSpendInsightsApiV1UsageSpendInsightsGet>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetSpendInsightsApiV1UsageSpendInsightsGet<
+  TData = Awaited<ReturnType<typeof getSpendInsightsApiV1UsageSpendInsightsGet>>,
+  TError = HTTPValidationError,
+>(
+  params?: GetSpendInsightsApiV1UsageSpendInsightsGetParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getSpendInsightsApiV1UsageSpendInsightsGet>>,
+        TError,
+        TData
+      >
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Get Spend Insights
+ */
+
+export function useGetSpendInsightsApiV1UsageSpendInsightsGet<
+  TData = Awaited<ReturnType<typeof getSpendInsightsApiV1UsageSpendInsightsGet>>,
+  TError = HTTPValidationError,
+>(
+  params?: GetSpendInsightsApiV1UsageSpendInsightsGetParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getSpendInsightsApiV1UsageSpendInsightsGet>>,
+        TError,
+        TData
+      >
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetSpendInsightsApiV1UsageSpendInsightsGetQueryOptions(params, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

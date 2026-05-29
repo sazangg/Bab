@@ -32,10 +32,12 @@ import {
 import {
   useGetOrganizationUsageSummaryApiV1UsageSummaryGet,
   useGetOrganizationUsageTimeseriesApiV1UsageTimeseriesGet,
+  useGetSpendInsightsApiV1UsageSpendInsightsGet,
   useListUsageRecordsApiV1UsageRecordsGet,
 } from "@/shared/api/generated/usage/usage";
 import type {
   ActivityEventResponse,
+  AllocationBudgetBurnRow,
   UsageRecordResponse,
   UsageBreakdownRow,
   UsageTimeSeriesPoint,
@@ -71,11 +73,18 @@ export function UsagePage() {
     ...usageParams,
     grain,
   });
+  const spendInsightsQuery = useGetSpendInsightsApiV1UsageSpendInsightsGet({
+    window,
+    start_at: usageParams.start_at,
+    end_at: usageParams.end_at,
+  });
   const recordsQuery = useListUsageRecordsApiV1UsageRecordsGet({
     ...usageParams,
     limit: 100,
   });
   const summary = usageQuery.data?.status === 200 ? usageQuery.data.data : null;
+  const spendInsights =
+    spendInsightsQuery.data?.status === 200 ? spendInsightsQuery.data.data : null;
   const timeseries = timeseriesQuery.data?.status === 200 ? timeseriesQuery.data.data : [];
   const records = recordsQuery.data?.status === 200 ? recordsQuery.data.data : [];
   const filteredRecords = records.filter((record) => {
@@ -220,6 +229,11 @@ export function UsagePage() {
             onMetricChange={setChartMetric}
             isLoading={timeseriesQuery.isPending}
           />
+
+          <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,480px)]">
+            <SpendDriversCard rows={spendInsights?.top_spend_drivers ?? summary.by_model} />
+            <BudgetBurnCard rows={spendInsights?.allocation_budget_burn ?? []} />
+          </section>
 
           <section className="grid gap-4 xl:grid-cols-2">
             <BreakdownCard title="Providers" rows={summary.by_provider} onSelect={setProviderId} />
@@ -522,6 +536,92 @@ function UsageRecordsCard({
               ))}
             </TableBody>
           </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SpendDriversCard({ rows }: { rows: UsageBreakdownRow[] }) {
+  const maxSpend = Math.max(...rows.map((row) => row.cost_cents ?? 0), 0);
+  return (
+    <Card>
+      <CardHeader className="border-b">
+        <CardTitle>Top spend drivers</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No priced usage in this range.</p>
+        ) : (
+          <div className="space-y-3">
+            {rows.slice(0, 8).map((row) => {
+              const spend = row.cost_cents ?? 0;
+              const width = maxSpend ? Math.max(3, (spend / maxSpend) * 100) : 0;
+              return (
+                <div key={row.id} className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-3 text-sm">
+                    <span className="min-w-0 truncate font-medium">{row.label}</span>
+                    <span className="shrink-0 text-muted-foreground">{formatCents(spend)}</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-primary"
+                      style={{ width: `${width}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>{(row.requests ?? 0).toLocaleString()} requests</span>
+                    <span>{(row.total_tokens ?? 0).toLocaleString()} tokens</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function BudgetBurnCard({ rows }: { rows: AllocationBudgetBurnRow[] }) {
+  return (
+    <Card>
+      <CardHeader className="border-b">
+        <CardTitle>Budget burn</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No active allocations with budgets in this range.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {rows.slice(0, 8).map((row) => {
+              const burn = Math.min(row.burn_rate_pct, 100);
+              return (
+                <div key={row.allocation_id} className="rounded-md border bg-background p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium">{row.allocation_name}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {row.target_type} · {row.window}
+                      </div>
+                    </div>
+                    <Badge variant={row.burn_rate_pct >= 90 ? "destructive" : "outline"}>
+                      {row.burn_rate_pct}%
+                    </Badge>
+                  </div>
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
+                    <div className="h-full rounded-full bg-primary" style={{ width: `${burn}%` }} />
+                  </div>
+                  <div className="mt-2 flex justify-between text-xs text-muted-foreground">
+                    <span>{formatCents(row.spent_cents)} spent</span>
+                    <span>{formatCents(row.remaining_cents)} left</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )}
       </CardContent>
     </Card>

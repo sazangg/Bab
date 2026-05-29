@@ -8,6 +8,7 @@ from app.modules.usage.schemas import (
     AllocationUsageSummary,
     OrganizationUsageSummary,
     RecordUsage,
+    SpendInsights,
     UsageRecordResponse,
     UsageTimeSeriesPoint,
     VirtualKeyUsageSummary,
@@ -130,6 +131,23 @@ async def get_organization_usage_timeseries(
         project_id=project_id,
         virtual_key_id=virtual_key_id,
         model=model,
+        db=db,
+    )
+
+
+async def get_spend_insights(
+    *,
+    org_id: UUID,
+    window: str,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    db: AsyncSession,
+) -> SpendInsights:
+    return await repository.get_spend_insights(
+        org_id=org_id,
+        window=window,
+        since=start_at or window_start(window),
+        until=end_at,
         db=db,
     )
 

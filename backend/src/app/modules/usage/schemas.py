@@ -52,6 +52,23 @@ class UsageBreakdownRow(UsageSummaryTotals):
     label: str
 
 
+class AllocationBudgetBurnRow(BaseModel):
+    allocation_id: UUID
+    allocation_name: str
+    target_type: str
+    window: str
+    budget_cents: int
+    spent_cents: int
+    remaining_cents: int
+    burn_rate_pct: float
+
+
+class SpendInsights(BaseModel):
+    window: str
+    top_spend_drivers: list[UsageBreakdownRow]
+    allocation_budget_burn: list[AllocationBudgetBurnRow]
+
+
 class AllocationUsageSummary(BaseModel):
     allocation_id: UUID
     window: str

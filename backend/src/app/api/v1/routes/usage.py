@@ -20,6 +20,7 @@ from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.usage import facade
 from app.modules.usage.schemas import (
     OrganizationUsageSummary,
+    SpendInsights,
     UsageRecordResponse,
     UsageTimeSeriesPoint,
 )
@@ -157,5 +158,23 @@ async def get_organization_usage_timeseries(
         project_id=project_id,
         virtual_key_id=virtual_key_id,
         model=model,
+        db=db,
+    )
+
+
+@router.get("/spend-insights")
+async def get_spend_insights(
+    scope: RequestScope,
+    db: DatabaseSession,
+    _: UsageViewer,
+    window: UsageWindow = "30d",
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+) -> SpendInsights:
+    return await facade.get_spend_insights(
+        org_id=scope.org_id,
+        window=window,
+        start_at=start_at,
+        end_at=end_at,
         db=db,
     )

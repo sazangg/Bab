@@ -9,9 +9,11 @@ from app.modules.keys.internal.models import Allocation, Project, VirtualKey
 from app.modules.providers.internal.models import CredentialPool, Provider
 from app.modules.usage.internal.models import UsageRecord
 from app.modules.usage.schemas import (
+    AllocationBudgetBurnRow,
     AllocationUsageSummary,
     OrganizationUsageSummary,
     RecordUsage,
+    SpendInsights,
     UsageBreakdownRow,
     UsageSummaryTotals,
     UsageTimeSeriesPoint,
@@ -263,6 +265,41 @@ async def get_organization_usage_timeseries(
     ]
 
 
+async def get_spend_insights(
+    *,
+    org_id: UUID,
+    window: str,
+    since: datetime | None,
+    until: datetime | None,
+    db: AsyncSession,
+) -> SpendInsights:
+    filters = [UsageRecord.org_id == org_id]
+    if since is not None:
+        filters.append(UsageRecord.created_at >= since)
+    if until is not None:
+        filters.append(UsageRecord.created_at <= until)
+    top_spend_drivers = await _breakdown(
+        UsageRecord.provider_model,
+        UsageRecord.provider_model,
+        *filters,
+        db=db,
+    )
+    return SpendInsights(
+        window=window,
+        top_spend_drivers=sorted(
+            top_spend_drivers,
+            key=lambda row: row.cost_cents,
+            reverse=True,
+        )[:10],
+        allocation_budget_burn=await _allocation_budget_burn(
+            org_id=org_id,
+            since=since,
+            until=until,
+            db=db,
+        ),
+    )
+
+
 async def get_virtual_key_usage_summary(
     *,
     virtual_key_id: UUID,
@@ -304,6 +341,57 @@ async def get_virtual_key_usage_summary(
             db=db,
         ),
     )
+
+
+async def _allocation_budget_burn(
+    *,
+    org_id: UUID,
+    since: datetime | None,
+    until: datetime | None,
+    db: AsyncSession,
+) -> list[AllocationBudgetBurnRow]:
+    usage_filters = [UsageRecord.allocation_id == Allocation.id]
+    if since is not None:
+        usage_filters.append(UsageRecord.created_at >= since)
+    if until is not None:
+        usage_filters.append(UsageRecord.created_at <= until)
+    spent_subquery = (
+        select(func.coalesce(func.sum(UsageRecord.cost_cents), 0))
+        .where(*usage_filters)
+        .scalar_subquery()
+    )
+    rows = (
+        await db.execute(
+            select(
+                Allocation.id,
+                Allocation.name,
+                Allocation.target_type,
+                Allocation.window,
+                Allocation.budget_cents,
+                spent_subquery,
+            )
+            .where(
+                Allocation.org_id == org_id,
+                Allocation.budget_cents.is_not(None),
+                Allocation.is_active.is_(True),
+            )
+            .order_by(spent_subquery.desc(), Allocation.name.asc())
+            .limit(20)
+        )
+    ).all()
+    return [
+        AllocationBudgetBurnRow(
+            allocation_id=row[0],
+            allocation_name=row[1],
+            target_type=row[2],
+            window=row[3],
+            budget_cents=int(row[4]),
+            spent_cents=int(row[5]),
+            remaining_cents=max(0, int(row[4]) - int(row[5])),
+            burn_rate_pct=round((int(row[5]) / int(row[4])) * 100, 1) if int(row[4]) > 0 else 0,
+        )
+        for row in rows
+    ]
 
 
 async def _totals(*filters, db: AsyncSession) -> UsageSummaryTotals:
