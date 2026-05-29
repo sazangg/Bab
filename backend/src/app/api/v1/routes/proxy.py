@@ -265,6 +265,14 @@ async def create_chat_completion(
         ) from exc
     except GuardrailDeniedError as exc:
         if resolved is not None:
+            await _record_proxy_request(
+                resolved=resolved,
+                http_status=status.HTTP_403_FORBIDDEN,
+                latency_ms=_elapsed_ms(started_at),
+                usage=unknown_usage(),
+                error_code="guardrail_denied",
+                db=db,
+            )
             await _record_proxy_activity(
                 resolved=resolved,
                 action="proxy.guardrail_denied",
@@ -451,6 +459,14 @@ async def _execute_chat_proxy(
         ) from exc
     except GuardrailDeniedError as exc:
         if resolved is not None:
+            await _record_proxy_request(
+                resolved=resolved,
+                http_status=status.HTTP_403_FORBIDDEN,
+                latency_ms=_elapsed_ms(started_at),
+                usage=unknown_usage(),
+                error_code="guardrail_denied",
+                db=db,
+            )
             await _record_proxy_activity(
                 resolved=resolved,
                 action="proxy.guardrail_denied",

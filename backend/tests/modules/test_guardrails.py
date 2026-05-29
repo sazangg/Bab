@@ -116,7 +116,7 @@ async def test_guardrail_monitor_mode_records_warning_without_blocking(
 
     events = await guardrails_facade.list_events(scope=scope, db=db_session)
     assert events[0].decision == "allowed"
-    assert events[1].decision == "warned"
+    assert events[1].decision == "dry_run"
 
 
 async def test_guardrail_policy_blocks_when_any_enabled_rule_denies(

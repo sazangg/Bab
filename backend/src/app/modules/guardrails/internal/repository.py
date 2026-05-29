@@ -121,6 +121,7 @@ async def create_assignment(
     project_id: UUID | None,
     allocation_id: UUID | None,
     virtual_key_id: UUID | None,
+    enforcement_mode: str,
     is_active: bool,
     db: AsyncSession,
 ) -> GuardrailAssignment:
@@ -132,6 +133,7 @@ async def create_assignment(
         project_id=project_id,
         allocation_id=allocation_id,
         virtual_key_id=virtual_key_id,
+        enforcement_mode=enforcement_mode,
         is_active=is_active,
     )
     db.add(assignment)

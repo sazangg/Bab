@@ -77,6 +77,7 @@ class GuardrailAssignment(Base):
     project_id: Mapped[UUID | None] = mapped_column(nullable=True, index=True)
     allocation_id: Mapped[UUID | None] = mapped_column(nullable=True, index=True)
     virtual_key_id: Mapped[UUID | None] = mapped_column(nullable=True, index=True)
+    enforcement_mode: Mapped[str] = mapped_column(String(50), default="enforce", index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

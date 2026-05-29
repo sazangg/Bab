@@ -15,6 +15,7 @@ export interface GuardrailAssignmentResponse {
   project_id: string | null;
   allocation_id: string | null;
   virtual_key_id: string | null;
+  enforcement_mode: string;
   is_active: boolean;
   created_at: string;
   updated_at: string;

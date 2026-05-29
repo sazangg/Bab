@@ -210,6 +210,7 @@ async def create_assignment(
             project_id=project_id,
             allocation_id=allocation_id,
             virtual_key_id=virtual_key_id,
+            enforcement_mode=payload.enforcement_mode,
             is_active=payload.is_active,
             db=db,
         )
@@ -289,6 +290,8 @@ async def update_assignment(
         assignment.project_id = project_id
         assignment.allocation_id = allocation_id
         assignment.virtual_key_id = virtual_key_id
+        if payload.enforcement_mode is not None:
+            assignment.enforcement_mode = payload.enforcement_mode
         if payload.is_active is not None:
             assignment.is_active = payload.is_active
         await activity_facade.record_event(
@@ -362,6 +365,9 @@ async def evaluate_request(
         assignment.policy_id for assignment in assignments if assignment.policy_id in policies
     ]
     rules = await repository.list_policy_rules(org_id=context.org_id, policy_ids=policy_ids, db=db)
+    assignments_by_policy: dict[UUID, list[GuardrailAssignment]] = {}
+    for assignment in assignments:
+        assignments_by_policy.setdefault(assignment.policy_id, []).append(assignment)
     policy_mode = {policy.id: policy.enforcement_mode for policy in policies.values()}
     for rule in rules:
         if not rule.is_active:
@@ -369,14 +375,20 @@ async def evaluate_request(
         evaluation = await _evaluate_rule(rule=rule, context=context)
         if not evaluation["denied"]:
             continue
-        mode = policy_mode.get(rule.policy_id, "enforce")
+        mode = _effective_rule_mode(
+            policy_mode=policy_mode.get(rule.policy_id, "enforce"),
+            assignments=assignments_by_policy.get(rule.policy_id, []),
+        )
         await _record_event(
             context=context,
             policy_id=rule.policy_id,
             rule_id=rule.id,
-            decision="blocked" if mode == "enforce" else "warned",
+            decision="blocked" if mode == "enforce" else "dry_run",
             reason=f"{rule.rule_type}_{rule.effect}",
-            metadata={"matched_values": evaluation["matched_values"]},
+            metadata={
+                "matched_values": evaluation["matched_values"],
+                "enforcement_mode": mode,
+            },
             db=db,
         )
         if mode == "enforce":
@@ -630,6 +642,14 @@ def _assignment_scope_ids(
     return None, None, None, None
 
 
+def _effective_rule_mode(*, policy_mode: str, assignments: list[GuardrailAssignment]) -> str:
+    if any(assignment.enforcement_mode == "dry_run" for assignment in assignments):
+        return "dry_run"
+    if policy_mode == "monitor":
+        return "dry_run"
+    return "enforce"
+
+
 def _assignment_scope_ids_from_payload(
     *,
     scope_type: str,
@@ -704,6 +724,7 @@ def _to_assignment_response(
         project_id=assignment.project_id,
         allocation_id=assignment.allocation_id,
         virtual_key_id=assignment.virtual_key_id,
+        enforcement_mode=assignment.enforcement_mode,
         is_active=assignment.is_active,
         created_at=assignment.created_at,
         updated_at=assignment.updated_at,

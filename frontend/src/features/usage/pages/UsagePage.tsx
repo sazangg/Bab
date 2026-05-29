@@ -74,9 +74,7 @@ export function UsagePage() {
     grain,
   });
   const spendInsightsQuery = useGetSpendInsightsApiV1UsageSpendInsightsGet({
-    window,
-    start_at: usageParams.start_at,
-    end_at: usageParams.end_at,
+    ...usageParams,
   });
   const recordsQuery = useListUsageRecordsApiV1UsageRecordsGet({
     ...usageParams,
@@ -90,7 +88,7 @@ export function UsagePage() {
   const filteredRecords = records.filter((record) => {
     const term = recordFilter.trim().toLowerCase();
     if (!term) return true;
-    return `${record.requested_model} ${record.provider_model} ${record.http_status} ${record.error_code ?? ""} ${record.provider_id} ${record.project_id} ${record.allocation_id} ${record.virtual_key_id}`
+    return `${record.requested_model} ${record.provider_model} ${record.provider_credential_name ?? ""} ${record.provider_credential_prefix ?? ""} ${record.http_status} ${record.error_code ?? ""} ${record.provider_id} ${record.project_id} ${record.allocation_id} ${record.virtual_key_id}`
       .toLowerCase()
       .includes(term);
   });
@@ -501,6 +499,7 @@ function UsageRecordsCard({
               <TableRow>
                 <TableHead>Time</TableHead>
                 <TableHead>Model</TableHead>
+                <TableHead>Credential</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Tokens</TableHead>
                 <TableHead className="text-right">Spend</TableHead>
@@ -516,6 +515,14 @@ function UsageRecordsCard({
                   <TableCell>
                     <div className="font-medium">{record.requested_model}</div>
                     <div className="text-xs text-muted-foreground">{record.provider_model}</div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="font-medium">
+                      {record.provider_credential_name ?? "Unknown"}
+                    </div>
+                    <div className="font-mono text-xs text-muted-foreground">
+                      {record.provider_credential_prefix ?? shortId(record.provider_credential_id)}
+                    </div>
                   </TableCell>
                   <TableCell>
                     <Badge variant={record.http_status >= 400 ? "destructive" : "secondary"}>
@@ -637,6 +644,9 @@ function downloadCsv(records: UsageRecordResponse[]) {
     "total_tokens",
     "cost_cents",
     "latency_ms",
+    "provider_credential_id",
+    "provider_credential_name",
+    "provider_credential_prefix",
     "error_code",
   ];
   const rows = records.map((record) =>
@@ -648,6 +658,9 @@ function downloadCsv(records: UsageRecordResponse[]) {
       record.total_tokens ?? 0,
       record.cost_cents ?? 0,
       record.latency_ms,
+      record.provider_credential_id ?? "",
+      record.provider_credential_name ?? "",
+      record.provider_credential_prefix ?? "",
       record.error_code ?? "",
     ]
       .map((value) => `"${String(value).replaceAll('"', '""')}"`)
@@ -848,6 +861,10 @@ function RecentDenialsCard({ events }: { events: ActivityEventResponse[] }) {
 
 function formatCents(value: number) {
   return `$${(value / 100).toLocaleString()}`;
+}
+
+function shortId(value: string | null | undefined) {
+  return value ? value.slice(0, 8) : "-";
 }
 
 function metricValue(point: UsageTimeSeriesPoint, metric: UsageChartMetric) {

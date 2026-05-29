@@ -8,6 +8,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,14 +37,19 @@ import { PageHeader } from "@/shared/components/PageHeader";
 const ANY = "__any__";
 
 export function ActivityPage() {
-  const [category, setCategory] = useState(ANY);
-  const [severity, setSeverity] = useState(ANY);
-  const [entitySearch, setEntitySearch] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [category, setCategory] = useState(searchParams.get("category") ?? ANY);
+  const [severity, setSeverity] = useState(searchParams.get("severity") ?? ANY);
+  const [entityType, setEntityType] = useState(searchParams.get("entity_type") ?? ANY);
+  const [entityId, setEntityId] = useState(searchParams.get("entity_id") ?? "");
+  const [entitySearch, setEntitySearch] = useState(searchParams.get("q") ?? "");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const activityQuery = useListActivityEventsApiV1ActivityGet({
     limit: 100,
     category: category === ANY ? undefined : category,
     severity: severity === ANY ? undefined : severity,
+    entity_type: entityType === ANY ? undefined : entityType,
+    entity_id: entityType === ANY || !entityId.trim() ? undefined : entityId.trim(),
   });
   const events = activityQuery.data?.status === 200 ? activityQuery.data.data : [];
   const filteredEvents = events.filter((event) => {
@@ -53,6 +59,22 @@ export function ActivityPage() {
       .toLowerCase()
       .includes(term);
   });
+  const updateFilter = (updates: Record<string, string>) => {
+    const next = new URLSearchParams(searchParams);
+    for (const [key, value] of Object.entries(updates)) {
+      if (!value || value === ANY) next.delete(key);
+      else next.set(key, value);
+    }
+    setSearchParams(next, { replace: true });
+  };
+  const clearFilters = () => {
+    setCategory(ANY);
+    setSeverity(ANY);
+    setEntityType(ANY);
+    setEntityId("");
+    setEntitySearch("");
+    setSearchParams({}, { replace: true });
+  };
 
   return (
     <div className="space-y-6">
@@ -74,7 +96,13 @@ export function ActivityPage() {
                   placeholder="Filter entity, actor, metadata..."
                 />
               </div>
-              <Select value={category} onValueChange={setCategory}>
+              <Select
+                value={category}
+                onValueChange={(value) => {
+                  setCategory(value);
+                  updateFilter({ category: value });
+                }}
+              >
                 <SelectTrigger className="w-36">
                   <SelectValue />
                 </SelectTrigger>
@@ -88,7 +116,13 @@ export function ActivityPage() {
                   <SelectItem value="proxy">Proxy</SelectItem>
                 </SelectContent>
               </Select>
-              <Select value={severity} onValueChange={setSeverity}>
+              <Select
+                value={severity}
+                onValueChange={(value) => {
+                  setSeverity(value);
+                  updateFilter({ severity: value });
+                }}
+              >
                 <SelectTrigger className="w-32">
                   <SelectValue />
                 </SelectTrigger>
@@ -99,6 +133,42 @@ export function ActivityPage() {
                   <SelectItem value="error">Error</SelectItem>
                 </SelectContent>
               </Select>
+              <Select
+                value={entityType}
+                onValueChange={(value) => {
+                  setEntityType(value);
+                  const nextEntityId = value === ANY ? "" : entityId;
+                  if (value === ANY) setEntityId("");
+                  updateFilter({ entity_type: value, entity_id: nextEntityId });
+                }}
+              >
+                <SelectTrigger className="w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ANY}>All entities</SelectItem>
+                  <SelectItem value="provider">Provider</SelectItem>
+                  <SelectItem value="team">Team</SelectItem>
+                  <SelectItem value="project">Project</SelectItem>
+                  <SelectItem value="allocation">Allocation</SelectItem>
+                  <SelectItem value="virtual_key">Virtual key</SelectItem>
+                  <SelectItem value="pool">Pool</SelectItem>
+                  <SelectItem value="model_offering">Model offering</SelectItem>
+                </SelectContent>
+              </Select>
+              <Input
+                className="h-9 w-72 font-mono"
+                value={entityId}
+                disabled={entityType === ANY}
+                onChange={(event) => {
+                  setEntityId(event.target.value);
+                  updateFilter({ entity_id: event.target.value });
+                }}
+                placeholder="Entity id"
+              />
+              <Button type="button" variant="outline" onClick={clearFilters}>
+                Clear
+              </Button>
             </div>
           </div>
         </CardHeader>

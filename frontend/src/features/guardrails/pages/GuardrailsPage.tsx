@@ -87,6 +87,7 @@ const emptyAssignmentForm = {
   policy_id: "",
   scope_type: "org",
   scope_id: "",
+  enforcement_mode: "enforce",
 };
 
 const ruleTypeOptions = ["model", "provider", "pool", "prompt_contains", "prompt_regex", "pii"];
@@ -320,6 +321,7 @@ export function GuardrailsPage() {
         assignment.allocation_id ??
         assignment.virtual_key_id ??
         "",
+      enforcement_mode: assignment.enforcement_mode,
     });
     setAssignmentSheetOpen(true);
   };
@@ -404,6 +406,7 @@ export function GuardrailsPage() {
       project_id: scopeType === "project" ? assignmentForm.scope_id : null,
       allocation_id: scopeType === "allocation" ? assignmentForm.scope_id : null,
       virtual_key_id: scopeType === "virtual_key" ? assignmentForm.scope_id : null,
+      enforcement_mode: assignmentForm.enforcement_mode,
       is_active: editingAssignment?.is_active ?? true,
     };
     if (editingAssignment) {
@@ -664,6 +667,7 @@ export function GuardrailsPage() {
                   <TableRow>
                     <TableHead>Policy</TableHead>
                     <TableHead>Scope</TableHead>
+                    <TableHead>Mode</TableHead>
                     <TableHead>Status</TableHead>
                     {canManageGuardrails ? (
                       <TableHead className="w-12">
@@ -681,6 +685,11 @@ export function GuardrailsPage() {
                         <div className="text-xs text-muted-foreground">
                           {labelAssignmentScope(assignment, scopeLabels)}
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={assignment.enforcement_mode === "dry_run" ? "outline" : "secondary"}>
+                          {assignment.enforcement_mode === "dry_run" ? "Dry run" : "Enforce"}
+                        </Badge>
                       </TableCell>
                       <TableCell>
                         <StatusBadge variant={assignment.is_active ? "active" : "inactive"}>
@@ -757,7 +766,7 @@ export function GuardrailsPage() {
                 <SelectContent>
                   <SelectItem value="all">All decisions</SelectItem>
                   <SelectItem value="allowed">Allowed</SelectItem>
-                  <SelectItem value="warned">Warned</SelectItem>
+                  <SelectItem value="dry_run">Dry run</SelectItem>
                   <SelectItem value="blocked">Blocked</SelectItem>
                 </SelectContent>
               </Select>
@@ -1049,6 +1058,18 @@ export function GuardrailsPage() {
                   </p>
                 </div>
               ) : null}
+              <SelectField
+                label="Mode"
+                value={assignmentForm.enforcement_mode}
+                onValueChange={(value) =>
+                  setAssignmentForm({ ...assignmentForm, enforcement_mode: value })
+                }
+                options={["enforce", "dry_run"]}
+                labels={{ enforce: "Enforce", dry_run: "Dry run / log only" }}
+              />
+              <p className="-mt-2 text-xs text-muted-foreground">
+                Dry-run assignments evaluate and log matches without blocking requests.
+              </p>
               <div className="rounded-md border bg-muted/20 p-3">
                 <div className="text-sm font-medium">Assignment preview</div>
                 <div className="mt-2 grid gap-1 text-sm text-muted-foreground">
@@ -1067,6 +1088,12 @@ export function GuardrailsPage() {
                       {selectedAssignmentPolicy
                         ? `${selectedAssignmentPolicy.rules.filter((rule) => rule.is_active).length} active`
                         : "-"}
+                    </span>
+                  </div>
+                  <div>
+                    Mode:{" "}
+                    <span className="text-foreground">
+                      {assignmentForm.enforcement_mode === "dry_run" ? "Dry run" : "Enforce"}
                     </span>
                   </div>
                 </div>

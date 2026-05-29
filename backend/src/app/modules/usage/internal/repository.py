@@ -285,6 +285,11 @@ async def get_spend_insights(
     window: str,
     since: datetime | None,
     until: datetime | None,
+    team_id: UUID | None,
+    provider_id: UUID | None,
+    project_id: UUID | None,
+    virtual_key_id: UUID | None,
+    model: str | None,
     db: AsyncSession,
 ) -> SpendInsights:
     filters = [UsageRecord.org_id == org_id]
@@ -292,6 +297,16 @@ async def get_spend_insights(
         filters.append(UsageRecord.created_at >= since)
     if until is not None:
         filters.append(UsageRecord.created_at <= until)
+    if team_id is not None:
+        filters.append(UsageRecord.team_id == team_id)
+    if provider_id is not None:
+        filters.append(UsageRecord.provider_id == provider_id)
+    if project_id is not None:
+        filters.append(UsageRecord.project_id == project_id)
+    if virtual_key_id is not None:
+        filters.append(UsageRecord.virtual_key_id == virtual_key_id)
+    if model:
+        filters.append(UsageRecord.provider_model == model)
     top_spend_drivers = await _breakdown(
         UsageRecord.provider_model,
         UsageRecord.provider_model,
@@ -309,6 +324,11 @@ async def get_spend_insights(
             org_id=org_id,
             since=since,
             until=until,
+            team_id=team_id,
+            provider_id=provider_id,
+            project_id=project_id,
+            virtual_key_id=virtual_key_id,
+            model=model,
             db=db,
         ),
     )
@@ -362,6 +382,11 @@ async def _allocation_budget_burn(
     org_id: UUID,
     since: datetime | None,
     until: datetime | None,
+    team_id: UUID | None = None,
+    provider_id: UUID | None = None,
+    project_id: UUID | None = None,
+    virtual_key_id: UUID | None = None,
+    model: str | None = None,
     db: AsyncSession,
 ) -> list[AllocationBudgetBurnRow]:
     usage_filters = [UsageRecord.allocation_id == Allocation.id]
@@ -369,6 +394,16 @@ async def _allocation_budget_burn(
         usage_filters.append(UsageRecord.created_at >= since)
     if until is not None:
         usage_filters.append(UsageRecord.created_at <= until)
+    if team_id is not None:
+        usage_filters.append(UsageRecord.team_id == team_id)
+    if provider_id is not None:
+        usage_filters.append(UsageRecord.provider_id == provider_id)
+    if project_id is not None:
+        usage_filters.append(UsageRecord.project_id == project_id)
+    if virtual_key_id is not None:
+        usage_filters.append(UsageRecord.virtual_key_id == virtual_key_id)
+    if model:
+        usage_filters.append(UsageRecord.provider_model == model)
     spent_subquery = (
         select(func.coalesce(func.sum(UsageRecord.cost_cents), 0))
         .where(*usage_filters)

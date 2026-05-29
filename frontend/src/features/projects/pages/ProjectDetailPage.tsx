@@ -39,6 +39,7 @@ import { EntityUsageCard } from "@/features/usage/components/EntityUsageCard";
 import { UsageRecordsDrilldown } from "@/features/usage/components/UsageRecordsDrilldown";
 import { hasPermission, isTeamAdmin } from "@/features/auth/lib/permissions";
 import { ForbiddenPage } from "@/features/auth/components/ProtectedRoute";
+import { RecentGuardrailEventsCard } from "@/features/guardrails/components/RecentGuardrailEventsCard";
 
 export function ProjectDetailPage() {
   const { projectId = "" } = useParams<{ projectId: string }>();
@@ -167,6 +168,7 @@ export function ProjectDetailPage() {
         description="Aggregate project usage across all virtual keys, including inherited team allocations."
       />
       <UsageRecordsDrilldown title="Project usage records" filters={{ project_id: project.id }} />
+      <RecentGuardrailEventsCard filters={{ project_id: project.id }} />
 
       <Tabs defaultValue="keys" className="space-y-4">
         <TabsList>

@@ -65,6 +65,7 @@ import type { UsageBreakdownRow } from "@/shared/api/generated/schemas";
 import { hasPermission, isTeamAdmin } from "@/features/auth/lib/permissions";
 import { ForbiddenPage } from "@/features/auth/components/ProtectedRoute";
 import { UsageRecordsDrilldown } from "@/features/usage/components/UsageRecordsDrilldown";
+import { RecentGuardrailEventsCard } from "@/features/guardrails/components/RecentGuardrailEventsCard";
 
 const editSchema = z.object({
   name: z.string().min(1).max(255),
@@ -272,6 +273,7 @@ export function KeyDetailPage() {
         title="Key usage records"
         filters={{ project_id: project.id, virtual_key_id: key.id }}
       />
+      <RecentGuardrailEventsCard title="Key guardrail events" filters={{ virtual_key_id: key.id }} />
 
       {canManageKey ? (
         <Sheet open={editOpen} onOpenChange={setEditOpen}>

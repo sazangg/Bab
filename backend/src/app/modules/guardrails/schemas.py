@@ -85,6 +85,7 @@ class CreateGuardrailAssignmentRequest(BaseModel):
     project_id: UUID | None = None
     allocation_id: UUID | None = None
     virtual_key_id: UUID | None = None
+    enforcement_mode: str = Field(default="enforce", pattern="^(enforce|dry_run)$")
     is_active: bool = True
 
     @model_validator(mode="after")
@@ -111,6 +112,7 @@ class UpdateGuardrailAssignmentRequest(BaseModel):
     project_id: UUID | None = None
     allocation_id: UUID | None = None
     virtual_key_id: UUID | None = None
+    enforcement_mode: str | None = Field(default=None, pattern="^(enforce|dry_run)$")
     is_active: bool | None = None
 
     @model_validator(mode="after")
@@ -141,6 +143,7 @@ class GuardrailAssignmentResponse(BaseModel):
     project_id: UUID | None
     allocation_id: UUID | None
     virtual_key_id: UUID | None
+    enforcement_mode: str
     is_active: bool
     created_at: datetime
     updated_at: datetime

@@ -170,11 +170,21 @@ async def get_spend_insights(
     window: UsageWindow = "30d",
     start_at: datetime | None = None,
     end_at: datetime | None = None,
+    team_id: UUID | None = None,
+    provider_id: UUID | None = None,
+    project_id: UUID | None = None,
+    virtual_key_id: UUID | None = None,
+    model: str | None = None,
 ) -> SpendInsights:
     return await facade.get_spend_insights(
         org_id=scope.org_id,
         window=window,
         start_at=start_at,
         end_at=end_at,
+        team_id=team_id,
+        provider_id=provider_id,
+        project_id=project_id,
+        virtual_key_id=virtual_key_id,
+        model=model,
         db=db,
     )

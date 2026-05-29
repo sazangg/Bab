@@ -13,5 +13,7 @@ export interface CreateGuardrailAssignmentRequest {
   project_id?: string | null;
   allocation_id?: string | null;
   virtual_key_id?: string | null;
+  /** @pattern ^(enforce|dry_run)$ */
+  enforcement_mode?: string;
   is_active?: boolean;
 }

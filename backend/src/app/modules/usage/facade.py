@@ -141,6 +141,11 @@ async def get_spend_insights(
     window: str,
     start_at: datetime | None = None,
     end_at: datetime | None = None,
+    team_id: UUID | None = None,
+    provider_id: UUID | None = None,
+    project_id: UUID | None = None,
+    virtual_key_id: UUID | None = None,
+    model: str | None = None,
     db: AsyncSession,
 ) -> SpendInsights:
     return await repository.get_spend_insights(
@@ -148,6 +153,11 @@ async def get_spend_insights(
         window=window,
         since=start_at or window_start(window),
         until=end_at,
+        team_id=team_id,
+        provider_id=provider_id,
+        project_id=project_id,
+        virtual_key_id=virtual_key_id,
+        model=model,
         db=db,
     )
 
