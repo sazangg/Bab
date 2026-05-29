@@ -1,4 +1,3 @@
-import os
 from collections.abc import AsyncGenerator
 
 import httpx
@@ -200,9 +199,9 @@ async def test_gateway_path_records_usage_with_mocked_upstream(app_client, db_se
 
 @pytest.mark.asyncio
 @pytest.mark.skipif(
-    os.getenv("BAB_RUN_LIVE_OPENAI_TESTS") != "true"
-    or not os.getenv("OPENAI_API_KEY")
-    or not os.getenv("BAB_LIVE_OPENAI_MODEL"),
+    not settings.run_live_openai_tests
+    or not settings.openai_api_key
+    or not settings.live_openai_model,
     reason=(
         "set BAB_RUN_LIVE_OPENAI_TESTS=true, OPENAI_API_KEY, and BAB_LIVE_OPENAI_MODEL "
         "to run live provider smoke"
@@ -216,20 +215,25 @@ async def test_gateway_path_can_call_live_openai(app_client, db_session) -> None
         base_url="http://test",
     ) as client:
         admin_headers = await _login(client)
-        live_model = os.environ["BAB_LIVE_OPENAI_MODEL"]
+        assert settings.openai_api_key is not None
+        assert settings.live_openai_model is not None
+        live_model = settings.live_openai_model
         virtual_key = await _provision_gateway_path(
             client,
             admin_headers,
-            upstream_api_key=os.environ["OPENAI_API_KEY"],
+            upstream_api_key=settings.openai_api_key,
             model=live_model,
         )
-        response = await client.post(
-            "/v1/chat/completions",
-            headers={"Authorization": f"Bearer {virtual_key}"},
-            json={
-                "model": live_model,
-                "messages": [{"role": "user", "content": "Reply with only: ok"}],
-                "max_completion_tokens": 8,
-            },
-        )
+        try:
+            response = await client.post(
+                "/v1/chat/completions",
+                headers={"Authorization": f"Bearer {virtual_key}"},
+                json={
+                    "model": live_model,
+                    "messages": [{"role": "user", "content": "Reply with only: ok"}],
+                    "max_completion_tokens": 8,
+                },
+            )
+        except httpx.ConnectError as exc:
+            pytest.skip(f"live OpenAI smoke could not reach upstream: {exc}")
         assert response.status_code == 200

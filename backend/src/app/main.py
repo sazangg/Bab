@@ -16,15 +16,17 @@ from app.api.v1.routes.settings import router as settings_router
 from app.api.v1.routes.teams import router as teams_router
 from app.api.v1.routes.usage import router as usage_router
 from app.core.bootstrap import create_development_database, ensure_default_workspace
-from app.core.config import settings
+from app.core.config import settings, validate_runtime_settings
 from app.core.database import engine
 from app.core.logging import configure_logging
 from app.core.migrations import run_database_migrations
 from app.core.problems import install_problem_handlers
+from app.core.request_context import request_context_middleware
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    validate_runtime_settings()
     if settings.environment == "development":
         await create_development_database()
         await run_database_migrations(engine)
@@ -36,6 +38,7 @@ def create_app() -> FastAPI:
     configure_logging(environment=settings.environment)
     Path(settings.assets_dir).mkdir(parents=True, exist_ok=True)
     app = FastAPI(title="Bab API", lifespan=lifespan)
+    app.middleware("http")(request_context_middleware)
     install_problem_handlers(app)
     app.include_router(activity_router, prefix="/api/v1")
     app.include_router(auth_router, prefix="/api/v1")

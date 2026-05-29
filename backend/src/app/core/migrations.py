@@ -19,6 +19,7 @@ APP_TABLES = {
     "virtual_keys",
     "usage_records",
 }
+BASELINE_REVISION = "20260529_0001"
 
 
 async def run_database_migrations(engine: AsyncEngine) -> None:
@@ -27,6 +28,11 @@ async def run_database_migrations(engine: AsyncEngine) -> None:
         await connection.run_sync(_stamp_existing_schema_if_needed)
         await connection.run_sync(_upgrade_to_head)
         await connection.run_sync(_validate_current_schema)
+
+
+async def get_migration_state(engine: AsyncEngine) -> dict[str, str | bool | None]:
+    async with engine.connect() as connection:
+        return await connection.run_sync(_read_migration_state)
 
 
 def _alembic_config(connection) -> Config:
@@ -42,13 +48,11 @@ def _stamp_existing_schema_if_needed(connection) -> None:
     if "alembic_version" in table_names or not table_names.intersection(APP_TABLES):
         return
 
-    config = _alembic_config(connection)
-    head = ScriptDirectory.from_config(config).get_current_head()
     connection.execute(text("CREATE TABLE IF NOT EXISTS alembic_version (version_num VARCHAR(32))"))
     connection.execute(text("DELETE FROM alembic_version"))
     connection.execute(
         text("INSERT INTO alembic_version (version_num) VALUES (:version_num)"),
-        {"version_num": head},
+        {"version_num": BASELINE_REVISION},
     )
 
 
@@ -77,3 +81,14 @@ def _validate_current_schema(connection) -> None:
                 f"Table {table.name} is missing columns: {', '.join(missing_columns)}. "
                 "Restore from backup or create an Alembic migration."
             )
+
+
+def _read_migration_state(connection) -> dict[str, str | bool | None]:
+    config = _alembic_config(connection)
+    head = ScriptDirectory.from_config(config).get_current_head()
+    inspector = inspect(connection)
+    if "alembic_version" not in inspector.get_table_names():
+        return {"current": None, "head": head, "is_current": False}
+
+    current = connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
+    return {"current": current, "head": head, "is_current": current == head}

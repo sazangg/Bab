@@ -43,6 +43,26 @@ class Settings(BaseSettings):
         min_length=12,
         validation_alias="BAB_DEFAULT_ADMIN_PASSWORD",
     )
+    run_live_openai_tests: bool = Field(
+        default=False,
+        validation_alias="BAB_RUN_LIVE_OPENAI_TESTS",
+    )
+    openai_api_key: str | None = Field(
+        default=None,
+        validation_alias="OPENAI_API_KEY",
+    )
+    live_openai_model: str | None = Field(
+        default=None,
+        validation_alias="BAB_LIVE_OPENAI_MODEL",
+    )
+
+    @field_validator("environment")
+    @classmethod
+    def validate_environment(cls, value: str) -> str:
+        normalized = value.lower()
+        if normalized not in {"development", "test", "production"}:
+            raise ValueError("BAB_ENVIRONMENT must be development, test, or production")
+        return normalized
 
     @field_validator("encryption_key")
     @classmethod
@@ -56,6 +76,23 @@ class Settings(BaseSettings):
                 'print(Fernet.generate_key().decode())"'
             ) from exc
         return value
+
+
+def validate_runtime_settings(current_settings: Settings | None = None) -> None:
+    current_settings = current_settings or settings
+    if current_settings.environment != "production":
+        return
+
+    errors: list[str] = []
+    if current_settings.database_url.startswith("sqlite"):
+        errors.append("DATABASE_URL must not use SQLite in production")
+    if current_settings.default_admin_password == "admin-password-change-me":
+        errors.append("BAB_DEFAULT_ADMIN_PASSWORD must be changed in production")
+    if current_settings.secret_key == "change-me-to-at-least-32-characters":
+        errors.append("BAB_SECRET_KEY must be changed in production")
+
+    if errors:
+        raise RuntimeError("Invalid production configuration: " + "; ".join(errors))
 
 
 @lru_cache
