@@ -42,6 +42,9 @@ from app.modules.teams import facade as teams_facade
 logger = structlog.get_logger(__name__)
 
 
+type ResolvedKeyAllocation = tuple[VirtualKey, Project, Allocation, list[Allocation]]
+
+
 async def create_project(
     *,
     team_id: UUID,
@@ -382,8 +385,14 @@ async def create_virtual_key(
         org_id=str(scope.org_id),
         actor_user_id=str(actor.id),
     )
+    response = await _to_virtual_key_response_with_effective_allocation(
+        virtual_key,
+        project=project,
+        scope=scope,
+        db=db,
+    )
     return CreatedVirtualKeyResponse(
-        **_to_virtual_key_response(virtual_key).model_dump(),
+        **response.model_dump(),
         key=raw_key if org_settings.allow_secret_copy else None,
     )
 
@@ -394,13 +403,21 @@ async def list_virtual_keys(
     scope: Scope,
     db: AsyncSession,
 ) -> list[VirtualKeyResponse]:
-    await _get_project_or_raise(project_id=project_id, scope=scope, db=db)
+    project = await _get_project_or_raise(project_id=project_id, scope=scope, db=db)
     virtual_keys = await repository.list_virtual_keys(
         org_id=scope.org_id,
         project_id=project_id,
         db=db,
     )
-    return [_to_virtual_key_response(virtual_key) for virtual_key in virtual_keys]
+    return [
+        await _to_virtual_key_response_with_effective_allocation(
+            virtual_key,
+            project=project,
+            scope=scope,
+            db=db,
+        )
+        for virtual_key in virtual_keys
+    ]
 
 
 async def get_virtual_key(
@@ -410,14 +427,19 @@ async def get_virtual_key(
     scope: Scope,
     db: AsyncSession,
 ) -> VirtualKeyResponse:
-    await _get_project_or_raise(project_id=project_id, scope=scope, db=db)
+    project = await _get_project_or_raise(project_id=project_id, scope=scope, db=db)
     virtual_key = await _get_virtual_key_or_raise(
         project_id=project_id,
         key_id=key_id,
         scope=scope,
         db=db,
     )
-    return _to_virtual_key_response(virtual_key)
+    return await _to_virtual_key_response_with_effective_allocation(
+        virtual_key,
+        project=project,
+        scope=scope,
+        db=db,
+    )
 
 
 async def update_virtual_key(
@@ -482,7 +504,13 @@ async def update_virtual_key(
         org_id=str(scope.org_id),
         actor_user_id=str(actor.id),
     )
-    return _to_virtual_key_response(virtual_key)
+    project = await _get_project_or_raise(project_id=project_id, scope=scope, db=db)
+    return await _to_virtual_key_response_with_effective_allocation(
+        virtual_key,
+        project=project,
+        scope=scope,
+        db=db,
+    )
 
 
 async def revoke_virtual_key(
@@ -523,44 +551,10 @@ async def revoke_virtual_key(
 
 
 async def resolve_access(*, payload: ResolveAccessRequest, db: AsyncSession) -> ResolvedAccess:
-    virtual_key = await repository.get_virtual_key_by_hash(
-        key_hash=hash_token(payload.raw_key),
+    virtual_key, project, allocation, allocation_chain = await _resolve_key_allocation(
+        raw_key=payload.raw_key,
         db=db,
     )
-    if virtual_key is None:
-        raise InvalidVirtualKeyError
-    if virtual_key.revoked_at is not None:
-        raise InvalidVirtualKeyError
-    if virtual_key.expires_at is not None and _as_utc(virtual_key.expires_at) <= datetime.now(UTC):
-        raise InvalidVirtualKeyError
-
-    project = await repository.get_project(
-        project_id=virtual_key.project_id,
-        org_id=virtual_key.org_id,
-        db=db,
-    )
-    if project is None or not project.is_active:
-        raise InvalidVirtualKeyError
-
-    allocation = await repository.get_allocation(
-        allocation_id=virtual_key.custom_allocation_id or virtual_key.allocation_id,
-        org_id=virtual_key.org_id,
-        db=db,
-    )
-    if allocation is None or not allocation.is_active:
-        raise AccessDeniedError
-    if allocation.project_id not in {None, project.id}:
-        raise AccessDeniedError
-    allocation_chain = [
-        allocation,
-        *await repository.get_parent_allocations(
-            allocation=allocation,
-            org_id=virtual_key.org_id,
-            db=db,
-        ),
-    ]
-    if any(not chain_allocation.is_active for chain_allocation in allocation_chain):
-        raise AccessDeniedError
 
     matched = await _match_offering(
         allocation=allocation,
@@ -606,28 +600,10 @@ async def resolve_access(*, payload: ResolveAccessRequest, db: AsyncSession) -> 
 
 
 async def list_accessible_models(*, raw_key: str, db: AsyncSession) -> list[AccessibleModel]:
-    virtual_key = await repository.get_virtual_key_by_hash(key_hash=hash_token(raw_key), db=db)
-    if virtual_key is None:
-        raise InvalidVirtualKeyError
-    if virtual_key.revoked_at is not None:
-        raise InvalidVirtualKeyError
-    if virtual_key.expires_at is not None and _as_utc(virtual_key.expires_at) <= datetime.now(UTC):
-        raise InvalidVirtualKeyError
-
-    project = await repository.get_project(
-        project_id=virtual_key.project_id,
-        org_id=virtual_key.org_id,
+    virtual_key, _project, allocation, allocation_chain = await _resolve_key_allocation(
+        raw_key=raw_key,
         db=db,
     )
-    if project is None or not project.is_active:
-        raise InvalidVirtualKeyError
-    allocation = await repository.get_allocation(
-        allocation_id=virtual_key.custom_allocation_id or virtual_key.allocation_id,
-        org_id=virtual_key.org_id,
-        db=db,
-    )
-    if allocation is None or not allocation.is_active:
-        raise AccessDeniedError
 
     models: list[AccessibleModel] = []
     seen: set[str] = set()
@@ -654,6 +630,15 @@ async def list_accessible_models(*, raw_key: str, db: AsyncSession) -> list[Acce
             and model.provider_model_name not in virtual_key.allowed_models
         ):
             continue
+        if not await _allocation_chain_allows_route(
+            allocation_chain=allocation_chain[1:],
+            provider_id=model.provider_id,
+            pool_id=pool.id,
+            provider_model=model.provider_model_name,
+            scope=Scope(org_id=virtual_key.org_id),
+            db=db,
+        ):
+            continue
         if model.provider_model_name in seen:
             continue
         seen.add(model.provider_model_name)
@@ -668,6 +653,70 @@ async def list_accessible_models(*, raw_key: str, db: AsyncSession) -> list[Acce
             )
         )
     return models
+
+
+async def _resolve_key_allocation(*, raw_key: str, db: AsyncSession) -> ResolvedKeyAllocation:
+    virtual_key = await repository.get_virtual_key_by_hash(key_hash=hash_token(raw_key), db=db)
+    if virtual_key is None:
+        raise InvalidVirtualKeyError
+    if virtual_key.revoked_at is not None:
+        raise InvalidVirtualKeyError
+    if virtual_key.expires_at is not None and _as_utc(virtual_key.expires_at) <= datetime.now(UTC):
+        raise InvalidVirtualKeyError
+
+    project = await repository.get_project(
+        project_id=virtual_key.project_id,
+        org_id=virtual_key.org_id,
+        db=db,
+    )
+    if project is None or not project.is_active:
+        raise InvalidVirtualKeyError
+
+    if virtual_key.custom_allocation_id is not None:
+        allocation = await repository.get_allocation(
+            allocation_id=virtual_key.custom_allocation_id,
+            org_id=virtual_key.org_id,
+            db=db,
+        )
+        if allocation is None or not allocation.is_active or allocation.project_id != project.id:
+            raise AccessDeniedError
+    else:
+        allocation = await _resolve_effective_allocation(
+            project=project,
+            scope=Scope(org_id=virtual_key.org_id),
+            db=db,
+        )
+        if allocation is None:
+            raise AccessDeniedError
+
+    allocation_chain = await _runtime_allocation_chain(
+        allocation=allocation,
+        project=project,
+        org_id=virtual_key.org_id,
+        db=db,
+    )
+    if any(not chain_allocation.is_active for chain_allocation in allocation_chain):
+        raise AccessDeniedError
+    return virtual_key, project, allocation, allocation_chain
+
+
+async def _runtime_allocation_chain(
+    *,
+    allocation: Allocation,
+    project: Project,
+    org_id: UUID,
+    db: AsyncSession,
+) -> list[Allocation]:
+    chain = [allocation]
+    if allocation.project_id == project.id:
+        team_default = await repository.get_default_team_allocation(
+            org_id=org_id,
+            team_id=project.team_id,
+            db=db,
+        )
+        if team_default is not None and team_default.id != allocation.id:
+            chain.append(team_default)
+    return chain
 
 
 async def _match_offering(
@@ -733,6 +782,28 @@ async def _allocation_allows_route(
         ):
             return True
     return False
+
+
+async def _allocation_chain_allows_route(
+    *,
+    allocation_chain: list[Allocation],
+    provider_id: UUID,
+    pool_id: UUID,
+    provider_model: str,
+    scope: Scope,
+    db: AsyncSession,
+) -> bool:
+    for ancestor in allocation_chain:
+        if not await _allocation_allows_route(
+            allocation=ancestor,
+            provider_id=provider_id,
+            pool_id=pool_id,
+            provider_model=provider_model,
+            scope=scope,
+            db=db,
+        ):
+            return False
+    return True
 
 
 async def _validate_allocation_target(
@@ -867,6 +938,23 @@ def _to_virtual_key_response(virtual_key: VirtualKey) -> VirtualKeyResponse:
         created_at=virtual_key.created_at,
         updated_at=virtual_key.updated_at,
     )
+
+
+async def _to_virtual_key_response_with_effective_allocation(
+    virtual_key: VirtualKey,
+    *,
+    project: Project,
+    scope: Scope,
+    db: AsyncSession,
+) -> VirtualKeyResponse:
+    allocation_id = virtual_key.allocation_id
+    if virtual_key.custom_allocation_id is None:
+        allocation = await _resolve_effective_allocation(project=project, scope=scope, db=db)
+        if allocation is not None:
+            allocation_id = allocation.id
+    response = _to_virtual_key_response(virtual_key)
+    response.allocation_id = allocation_id
+    return response
 
 
 def _offerings_to_json(offerings: list[AllocationOffering]) -> list[dict[str, str]]:

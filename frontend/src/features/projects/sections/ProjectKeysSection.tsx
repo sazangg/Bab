@@ -119,13 +119,14 @@ export function ProjectKeysSection({
   const allocations = allocationsQuery.data?.status === 200 ? allocationsQuery.data.data : [];
   const teamAllocations =
     teamAllocationsQuery.data?.status === 200 ? teamAllocationsQuery.data.data : [];
-  const availableAllocations = [...allocations, ...teamAllocations];
+  const visibleAllocations = [...allocations, ...teamAllocations];
+  const customAllocations = allocations.filter((allocation) => allocation.is_active);
   const effectiveAllocation =
     allocations.find((allocation) => allocation.is_default && allocation.is_active) ??
     teamAllocations.find((allocation) => allocation.is_default && allocation.is_active);
   const selectedAllocation =
     selectedAllocationId && selectedAllocationId !== "inherited"
-      ? availableAllocations.find((allocation) => allocation.id === selectedAllocationId)
+      ? customAllocations.find((allocation) => allocation.id === selectedAllocationId)
       : effectiveAllocation;
   const selectedAllowedModels = parseModels(allowedModelsValue) ?? [];
   const providersQuery = useListProvidersApiV1ProvidersGet();
@@ -192,7 +193,8 @@ export function ProjectKeysSection({
         <CardHeader>
           <CardTitle>Virtual keys</CardTitle>
           <CardDescription>
-            Each key inherits this project's access. Restrictions can only narrow it.
+            Each key uses the current project default, or the current team default when the project
+            has none. Custom overrides can only use active allocations from this project.
           </CardDescription>
           {canManage ? (
             <CardAction>
@@ -208,7 +210,7 @@ export function ProjectKeysSection({
                     <SheetTitle>New virtual key</SheetTitle>
                     <SheetDescription>
                       {effectiveAllocation
-                        ? `Uses allocation: ${effectiveAllocation.name} unless a custom allocation is selected.`
+                        ? `Uses current default: ${effectiveAllocation.name} unless a project allocation override is selected.`
                         : "Create a team or project allocation before issuing a key."}
                     </SheetDescription>
                   </SheetHeader>
@@ -249,15 +251,13 @@ export function ProjectKeysSection({
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="inherited">
-                            Inherit default ({effectiveAllocation?.name ?? "none"})
+                            Use current project/team default ({effectiveAllocation?.name ?? "none"})
                           </SelectItem>
-                          {availableAllocations
-                            .filter((allocation) => allocation.is_active)
-                            .map((allocation) => (
-                              <SelectItem key={allocation.id} value={allocation.id}>
-                                {allocation.name}
-                              </SelectItem>
-                            ))}
+                          {customAllocations.map((allocation) => (
+                            <SelectItem key={allocation.id} value={allocation.id}>
+                              {allocation.name}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
@@ -390,12 +390,14 @@ export function ProjectKeysSection({
                         <TableCell className="text-muted-foreground">
                           <div className="flex flex-col gap-1">
                             <span>
-                              {availableAllocations.find(
+                              {visibleAllocations.find(
                                 (allocation) => allocation.id === key.allocation_id,
                               )?.name ?? key.allocation_id}
                             </span>
                             <span className="text-xs">
-                              {key.allocation_mode === "custom" ? "Custom" : "Inherited"}
+                              {key.allocation_mode === "custom"
+                                ? "Custom project override"
+                                : "Current default"}
                             </span>
                           </div>
                         </TableCell>

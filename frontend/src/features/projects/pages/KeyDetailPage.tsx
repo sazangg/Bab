@@ -15,6 +15,7 @@ import {
   useRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete,
   useUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch,
 } from "@/shared/api/generated/projects/projects";
+import { useListTeamAllocationsApiV1TeamsTeamIdAllocationsGet } from "@/shared/api/generated/teams/teams";
 import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
 import { Button } from "@/components/ui/button";
 import {
@@ -83,6 +84,10 @@ export function KeyDetailPage() {
   const [revokeOpen, setRevokeOpen] = useState(false);
 
   const projectsQuery = useListProjectsApiV1ProjectsGet();
+  const project =
+    projectsQuery.data?.status === 200
+      ? projectsQuery.data.data.find((p) => p.id === projectId)
+      : undefined;
   const currentUserQuery = useMeApiV1AuthMeGet();
   const keyQuery = useGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet(projectId, keyId, {
     query: { enabled: Boolean(projectId && keyId) },
@@ -91,20 +96,23 @@ export function KeyDetailPage() {
     projectId,
     { query: { enabled: Boolean(projectId) } },
   );
+  const teamAllocationsQuery = useListTeamAllocationsApiV1TeamsTeamIdAllocationsGet(
+    project?.team_id ?? "",
+    { query: { enabled: Boolean(project?.team_id) } },
+  );
   const usageQuery = useGetVirtualKeyUsageApiV1ProjectsProjectIdKeysKeyIdUsageGet(
     projectId,
     keyId,
     { query: { enabled: Boolean(projectId && keyId) } },
   );
 
-  const project =
-    projectsQuery.data?.status === 200
-      ? projectsQuery.data.data.find((p) => p.id === projectId)
-      : undefined;
   const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
   const key = keyQuery.data?.status === 200 ? keyQuery.data.data : undefined;
   const allocations = allocationsQuery.data?.status === 200 ? allocationsQuery.data.data : [];
-  const allocation = allocations.find((item) => item.id === key?.allocation_id);
+  const teamAllocations =
+    teamAllocationsQuery.data?.status === 200 ? teamAllocationsQuery.data.data : [];
+  const visibleAllocations = [...allocations, ...teamAllocations];
+  const allocation = visibleAllocations.find((item) => item.id === key?.allocation_id);
   const customAllocation = allocations.find((item) => item.id === key?.custom_allocation_id);
   const activeAllocations = allocations.filter((item) => item.is_active);
   const usage = usageQuery.data?.status === 200 ? usageQuery.data.data : undefined;
@@ -247,8 +255,8 @@ export function KeyDetailPage() {
         <CardHeader>
           <CardTitle>Allocation scope</CardTitle>
           <CardDescription>
-            This key inherits the project or team default unless a custom allocation override is
-            set.
+            Inherited keys use the current project default, or the current team default when the
+            project has none. Custom overrides can only use project allocations.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-3">
@@ -311,8 +319,8 @@ export function KeyDetailPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="inherited">Use project/team default</SelectItem>
-                    <SelectItem value="custom">Use custom allocation</SelectItem>
+                    <SelectItem value="inherited">Use current project/team default</SelectItem>
+                    <SelectItem value="custom">Use project allocation override</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

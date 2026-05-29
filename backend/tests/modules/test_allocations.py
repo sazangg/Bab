@@ -232,6 +232,111 @@ async def test_project_allocation_must_respect_parent_route_at_runtime(
         )
 
 
+async def test_inherited_key_uses_current_project_default_at_runtime(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _,
+        project,
+        _,
+        pool,
+        fast_model,
+        large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    first_allocation = await keys_facade.create_allocation(
+        payload=CreateAllocationRequest(
+            name="First project default",
+            project_id=project.id,
+            offerings=[AllocationOffering(pool_id=pool.id, model_offering_id=fast_model.id)],
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Inherited key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    second_allocation = await keys_facade.create_allocation(
+        payload=CreateAllocationRequest(
+            name="Second project default",
+            project_id=project.id,
+            offerings=[AllocationOffering(pool_id=pool.id, model_offering_id=large_model.id)],
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    resolved = await keys_facade.resolve_access(
+        payload=ResolveAccessRequest(raw_key=created_key.key, requested_model="gpt-5.5"),
+        db=db_session,
+    )
+
+    assert created_key.allocation_id == first_allocation.id
+    assert resolved.allocation_id == second_allocation.id
+    assert resolved.provider_model == "gpt-5.5"
+
+
+async def test_key_custom_allocation_is_capped_by_current_team_default(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        _,
+        pool,
+        fast_model,
+        large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    custom_allocation = await keys_facade.create_allocation(
+        payload=CreateAllocationRequest(
+            name="Project override",
+            project_id=project.id,
+            offerings=[AllocationOffering(pool_id=pool.id, model_offering_id=large_model.id)],
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(
+            name="Custom key",
+            allocation_id=custom_allocation.id,
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    await keys_facade.create_allocation(
+        payload=CreateAllocationRequest(
+            name="Current team default",
+            team_id=team.id,
+            offerings=[AllocationOffering(pool_id=pool.id, model_offering_id=fast_model.id)],
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    with pytest.raises(AccessDeniedError):
+        await keys_facade.resolve_access(
+            payload=ResolveAccessRequest(raw_key=created_key.key, requested_model="gpt-5.5"),
+            db=db_session,
+        )
+
+    models = await keys_facade.list_accessible_models(raw_key=created_key.key, db=db_session)
+    assert models == []
+
+
 async def test_allocation_limits_apply_to_parent_chain(db_session: AsyncSession) -> None:
     actor, scope, team, project, _, pool, fast_model, _ = await _create_project_pool_and_models(
         db_session

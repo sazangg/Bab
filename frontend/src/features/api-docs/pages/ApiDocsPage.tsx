@@ -3,10 +3,13 @@ import { Copy, ExternalLink, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/shared/components/PageHeader";
-
-const baseUrl = "http://localhost:8000";
+import { useGetSettingsApiV1SettingsGet } from "@/shared/api/generated/settings/settings";
 
 export function ApiDocsPage() {
+  const settingsQuery = useGetSettingsApiV1SettingsGet();
+  const settings = settingsQuery.data?.status === 200 ? settingsQuery.data.data : undefined;
+  const baseUrl = resolveGatewayBaseUrl(settings?.public_base_url);
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -100,6 +103,12 @@ export function ApiDocsPage() {
       </Card>
     </div>
   );
+}
+
+function resolveGatewayBaseUrl(publicBaseUrl?: string | null) {
+  if (publicBaseUrl?.trim()) return publicBaseUrl.replace(/\/$/, "");
+  const envBaseUrl = import.meta.env.VITE_BAB_API_URL as string | undefined;
+  return envBaseUrl?.replace(/\/$/, "") ?? "http://localhost:8000";
 }
 
 function CommandBlock({ title, command }: { title: string; command: string }) {

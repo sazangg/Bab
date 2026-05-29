@@ -18,6 +18,7 @@ import {
   Users,
 } from "lucide-react";
 import { useTheme } from "next-themes";
+import { useQuery } from "@tanstack/react-query";
 import { Fragment } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 
@@ -66,6 +67,7 @@ import {
 import { useAuthStore } from "@/features/auth/model/auth-store";
 import { useBreadcrumbs } from "@/app/shell/breadcrumbs";
 import { useGetSettingsApiV1SettingsGet } from "@/shared/api/generated/settings/settings";
+import { httpClient } from "@/shared/api/http-client";
 
 const organizationNav = [
   { to: "/", label: "Home", icon: Gauge, end: true },
@@ -101,6 +103,11 @@ const workspaceNav = [
 const internalNav = [{ to: "/design-system", label: "Design system", icon: Palette }];
 const fallbackOrganizationName =
   import.meta.env.VITE_BAB_ORGANIZATION_NAME ?? "Default organization";
+
+type ReadinessResponse = {
+  status: "ready" | "not_ready";
+  checks: Record<string, { ok: boolean }>;
+};
 
 function LogoSidebarTrigger({ logoUrl }: { logoUrl?: string | null }) {
   const { toggleSidebar, state } = useSidebar();
@@ -143,6 +150,16 @@ export function DashboardLayout() {
   const { resolvedTheme, setTheme } = useTheme();
   const settingsQuery = useGetSettingsApiV1SettingsGet();
   const currentUserQuery = useMeApiV1AuthMeGet();
+  const readinessQuery = useQuery({
+    queryKey: ["gateway-readiness"],
+    queryFn: async () => {
+      const response = await httpClient.get<ReadinessResponse>("/api/v1/ready", {
+        validateStatus: () => true,
+      });
+      return { status: response.status, data: response.data };
+    },
+    refetchInterval: 30_000,
+  });
   const settings = settingsQuery.data?.status === 200 ? settingsQuery.data.data : undefined;
   const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
   const canView = (permission?: string) => !permission || hasPermission(currentUser, permission);
@@ -165,6 +182,7 @@ export function DashboardLayout() {
   });
   const breadcrumbs = useBreadcrumbs();
   const isDark = resolvedTheme === "dark";
+  const gatewayStatus = resolveGatewayStatus(readinessQuery.data?.status, readinessQuery.data?.data);
 
   const isActive = (path: string, end?: boolean) =>
     end || path === "/" ? location.pathname === path : location.pathname.startsWith(path);
@@ -327,13 +345,15 @@ export function DashboardLayout() {
           className="flex items-center gap-1.5"
           role="status"
           aria-live="polite"
-          aria-label="System status: all systems operational"
+          aria-label={`System status: ${gatewayStatus.label}`}
         >
           <span className="relative flex size-2 shrink-0" aria-hidden="true">
-            <span className="absolute inset-0 rounded-full bg-emerald-500/60 motion-safe:animate-ping" />
-            <span className="relative size-2 rounded-full bg-emerald-500" />
+            {gatewayStatus.variant === "ready" ? (
+              <span className="absolute inset-0 rounded-full bg-emerald-500/60 motion-safe:animate-ping" />
+            ) : null}
+            <span className={`relative size-2 rounded-full ${gatewayStatus.className}`} />
           </span>
-          <span>All systems operational</span>
+          <span>{gatewayStatus.label}</span>
         </div>
         <div className="flex items-center gap-3">
           <span className="tabular-nums">v0.1.0</span>
@@ -343,6 +363,28 @@ export function DashboardLayout() {
       </footer>
     </SidebarProvider>
   );
+}
+
+function resolveGatewayStatus(statusCode?: number, readiness?: ReadinessResponse) {
+  if (!statusCode || !readiness) {
+    return {
+      label: "Status unavailable",
+      variant: "unknown",
+      className: "bg-muted-foreground",
+    } as const;
+  }
+  if (statusCode === 200 && readiness.status === "ready") {
+    return {
+      label: "Gateway ready",
+      variant: "ready",
+      className: "bg-emerald-500",
+    } as const;
+  }
+  return {
+    label: "Gateway degraded",
+    variant: "degraded",
+    className: "bg-amber-500",
+  } as const;
 }
 
 function resolveAssetUrl(url: string) {
