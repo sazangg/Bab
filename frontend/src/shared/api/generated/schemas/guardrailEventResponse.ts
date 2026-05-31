@@ -12,6 +12,7 @@ export interface GuardrailEventResponse {
   policy_id: string | null;
   rule_id: string | null;
   decision: string;
+  phase: string;
   reason: string;
   team_id: string | null;
   project_id: string | null;

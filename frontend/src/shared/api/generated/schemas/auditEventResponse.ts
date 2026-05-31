@@ -16,5 +16,8 @@ export interface AuditEventResponse {
   entity_type: string;
   entity_id: string | null;
   metadata: AuditEventResponseMetadata;
+  previous_hash: string | null;
+  event_hash: string | null;
+  signature_algorithm: string;
   created_at: string;
 }

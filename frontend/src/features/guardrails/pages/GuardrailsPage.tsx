@@ -109,6 +109,7 @@ type PolicyRuleForm = {
   id: string;
   rule_type: string;
   effect: string;
+  phase: string;
   values: string;
   detector: string;
   priority: number;
@@ -120,6 +121,7 @@ function newRuleForm(overrides: Partial<PolicyRuleForm> = {}): PolicyRuleForm {
     id: crypto.randomUUID(),
     rule_type: "model",
     effect: "allow",
+    phase: "both",
     values: "",
     detector: "local_regex",
     priority: 100,
@@ -293,7 +295,7 @@ export function GuardrailsPage() {
     summary: policy.rules
       .map(
         (rule) =>
-          `${rule.effect} ${ruleTypeLabels[rule.rule_type] ?? rule.rule_type}: ${rule.values.join(", ")}`,
+          `${rule.effect} ${rule.phase} ${ruleTypeLabels[rule.rule_type] ?? rule.rule_type}: ${rule.values.join(", ")}`,
       )
       .join(" · "),
   }));
@@ -339,6 +341,7 @@ export function GuardrailsPage() {
               newRuleForm({
                 rule_type: rule.rule_type,
                 effect: rule.effect,
+                phase: rule.phase ?? "both",
                 values: rule.values.join("\n"),
                 detector: readRuleDetector(rule.config),
                 priority: rule.priority,
@@ -365,6 +368,7 @@ export function GuardrailsPage() {
       rules.push({
         rule_type: rule.rule_type,
         effect: rule.effect,
+        phase: rule.phase,
         values,
         config: buildRuleConfig(rule),
         priority: rule.priority,
@@ -855,7 +859,9 @@ export function GuardrailsPage() {
                         <div>
                           {event.policy_id ? (policyLabels[event.policy_id] ?? "Policy") : "-"}
                         </div>
-                        <div className="text-xs text-muted-foreground">{event.reason}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {event.phase} · {event.reason}
+                        </div>
                       </TableCell>
                       <TableCell className="font-mono text-xs">
                         {event.requested_model ?? "-"}
@@ -1175,7 +1181,7 @@ function RuleEditor({
           </Button>
         </div>
       </div>
-      <div className="grid gap-3 sm:grid-cols-[1fr_1fr_7rem]">
+      <div className="grid gap-3 sm:grid-cols-[1fr_1fr_1fr_7rem]">
         <SelectField
           label="Rule"
           value={rule.rule_type}
@@ -1188,6 +1194,13 @@ function RuleEditor({
           value={rule.effect}
           onValueChange={(value) => onChange({ ...rule, effect: value })}
           options={["allow", "deny"]}
+        />
+        <SelectField
+          label="Phase"
+          value={rule.phase}
+          onValueChange={(value) => onChange({ ...rule, phase: value })}
+          options={["request", "response", "both"]}
+          labels={{ request: "Request", response: "Response", both: "Both" }}
         />
         <Field label="Priority">
           <Input

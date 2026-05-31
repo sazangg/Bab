@@ -59,6 +59,7 @@ function GuardrailEventRow({ event }: { event: GuardrailEventResponse }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="font-medium">{event.reason.replaceAll("_", " ")}</div>
+          <div className="mt-1 text-xs text-muted-foreground">{event.phase}</div>
       <div className="mt-1 truncate text-xs text-muted-foreground">
         {event.requested_model ?? "-"} · {event.provider_model ?? "-"}
       </div>

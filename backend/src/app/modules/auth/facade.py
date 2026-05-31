@@ -187,6 +187,29 @@ async def accept_invite(
 
 
 async def list_audit_events(
-    *, scope: Scope, db: AsyncSession, limit: int = 100
+    *,
+    scope: Scope,
+    db: AsyncSession,
+    limit: int | None = 100,
+    start_at=None,
+    end_at=None,
+    actor_user_id=None,
+    action: str | None = None,
+    entity_type: str | None = None,
+    entity_id=None,
 ) -> list[AuditEventResponse]:
-    return await service.list_audit_events(scope=scope, db=db, limit=limit)
+    return await service.list_audit_events(
+        scope=scope,
+        db=db,
+        limit=limit,
+        start_at=start_at,
+        end_at=end_at,
+        actor_user_id=actor_user_id,
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+    )
+
+
+async def verify_audit_chain(*, scope: Scope, db: AsyncSession):
+    return await service.verify_audit_chain(scope=scope, db=db)

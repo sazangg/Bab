@@ -233,6 +233,7 @@ async def create_event(
     policy_id: UUID | None,
     rule_id: UUID | None,
     decision: str,
+    phase: str,
     reason: str,
     team_id: UUID,
     project_id: UUID,
@@ -251,6 +252,7 @@ async def create_event(
         policy_id=policy_id,
         rule_id=rule_id,
         decision=decision,
+        phase=phase,
         reason=reason,
         team_id=team_id,
         project_id=project_id,
@@ -272,6 +274,7 @@ async def list_events(
     *,
     org_id: UUID,
     decision: str | None,
+    phase: str | None,
     policy_id: UUID | None,
     rule_id: UUID | None,
     team_id: UUID | None,
@@ -287,6 +290,8 @@ async def list_events(
     filters = [GuardrailEvent.org_id == org_id]
     if decision is not None:
         filters.append(GuardrailEvent.decision == decision)
+    if phase is not None:
+        filters.append(GuardrailEvent.phase == phase)
     if policy_id is not None:
         filters.append(GuardrailEvent.policy_id == policy_id)
     if rule_id is not None:

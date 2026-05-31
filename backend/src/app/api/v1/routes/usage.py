@@ -1,8 +1,11 @@
+import csv
 from datetime import datetime
+from io import StringIO
 from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import (
@@ -132,6 +135,113 @@ async def list_usage_records(
     )
 
 
+@router.get("/records/export")
+async def export_usage_records(
+    scope: RequestScope,
+    db: DatabaseSession,
+    user: CurrentUser,
+    window: UsageWindow = "30d",
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    team_id: UUID | None = None,
+    provider_id: UUID | None = None,
+    project_id: UUID | None = None,
+    allocation_id: UUID | None = None,
+    virtual_key_id: UUID | None = None,
+    model: str | None = None,
+) -> Response:
+    if not auth_facade.has_permission(user, "usage.view"):
+        if team_id is not None:
+            await require_team_view_or_permission(
+                team_id=str(team_id),
+                permission="usage.view",
+                user=user,
+                db=db,
+            )
+        elif project_id is not None:
+            await require_project_view_or_permission(
+                project_id=str(project_id),
+                permission="usage.view",
+                user=user,
+                db=db,
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="insufficient permissions",
+            )
+    records = await facade.list_usage_records(
+        org_id=scope.org_id,
+        window=window,
+        start_at=start_at,
+        end_at=end_at,
+        team_id=team_id,
+        provider_id=provider_id,
+        project_id=project_id,
+        allocation_id=allocation_id,
+        virtual_key_id=virtual_key_id,
+        model=model,
+        limit=None,
+        db=db,
+    )
+    return _csv_response(
+        filename="bab-usage-records.csv",
+        header=[
+            "id",
+            "created_at",
+            "request_id",
+            "org_id",
+            "team_id",
+            "project_id",
+            "allocation_id",
+            "virtual_key_id",
+            "pool_id",
+            "provider_id",
+            "provider_credential_id",
+            "provider_credential_name",
+            "provider_credential_prefix",
+            "requested_model",
+            "provider_model",
+            "http_status",
+            "latency_ms",
+            "prompt_tokens",
+            "completion_tokens",
+            "total_tokens",
+            "cost_cents",
+            "usage_source",
+            "error_code",
+        ],
+        rows=[
+            [
+                record.id,
+                record.created_at,
+                record.request_id,
+                record.org_id,
+                record.team_id,
+                record.project_id,
+                record.allocation_id,
+                record.virtual_key_id,
+                record.pool_id,
+                record.provider_id,
+                record.provider_credential_id,
+                record.provider_credential_name,
+                record.provider_credential_prefix,
+                record.requested_model,
+                record.provider_model,
+                record.http_status,
+                record.latency_ms,
+                record.prompt_tokens,
+                record.completion_tokens,
+                record.total_tokens,
+                record.cost_cents,
+                record.usage_source,
+                record.error_code,
+            ]
+            for record in records
+        ],
+    )
+
+
 @router.get("/timeseries")
 async def get_organization_usage_timeseries(
     scope: RequestScope,
@@ -159,6 +269,18 @@ async def get_organization_usage_timeseries(
         virtual_key_id=virtual_key_id,
         model=model,
         db=db,
+    )
+
+
+def _csv_response(*, filename: str, header: list[str], rows: list[list[object]]) -> Response:
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(header)
+    writer.writerows(rows)
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

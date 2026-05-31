@@ -657,7 +657,7 @@ async def create_model_offering(
             model_offering_id=model_offering.id,
             db=db,
         )
-    return ModelOfferingResponse.model_validate(model_offering)
+    return _model_offering_response(model_offering)
 
 
 async def sync_model_offerings(
@@ -744,15 +744,20 @@ async def sync_model_offerings(
                         metadata.capabilities if metadata else _default_model_capabilities()
                     ),
                     context_window=metadata.context_window if metadata else None,
-                    input_price_per_million_tokens=(
+                    input_price_per_million_tokens=None,
+                    output_price_per_million_tokens=None,
+                    cached_input_price_per_million_tokens=None,
+                    catalog_input_price_per_million_tokens=(
                         metadata.pricing.input_price_per_million_tokens if metadata else None
                     ),
-                    output_price_per_million_tokens=(
+                    catalog_output_price_per_million_tokens=(
                         metadata.pricing.output_price_per_million_tokens if metadata else None
                     ),
-                    cached_input_price_per_million_tokens=(
+                    catalog_cached_input_price_per_million_tokens=(
                         metadata.pricing.cached_input_price_per_million_tokens if metadata else None
                     ),
+                    pricing_catalog_version=metadata.pricing.catalog_version if metadata else None,
+                    pricing_last_refreshed_at=synced_at if metadata else None,
                     rate_limit_hints=metadata.rate_limit_hints if metadata else {},
                     metadata_source="catalog" if metadata else "provider",
                     db=db,
@@ -766,11 +771,13 @@ async def sync_model_offerings(
                         _overwrite_model_offering_from_metadata(
                             model_offering=model_offering,
                             metadata=metadata,
+                            refreshed_at=synced_at,
                         )
                     else:
                         _enrich_model_offering_from_metadata(
                             model_offering=model_offering,
                             metadata=metadata,
+                            refreshed_at=synced_at,
                         )
                 await db.flush()
             synced_models.append(model_offering)
@@ -791,7 +798,7 @@ async def sync_model_offerings(
         org_id=str(scope.org_id),
     )
     return [
-        ModelOfferingResponse.model_validate(model_offering) for model_offering in synced_models
+        _model_offering_response(model_offering) for model_offering in synced_models
     ]
 
 
@@ -819,7 +826,7 @@ async def list_model_offerings(
     )
     return ModelOfferingPageResponse(
         items=[
-            ModelOfferingResponse.model_validate(model_offering)
+            _model_offering_response(model_offering)
             for model_offering in model_offerings
         ],
         total=total,
@@ -841,7 +848,7 @@ async def get_model_offering(
     )
     if model_offering is None:
         raise ProviderNotFoundError
-    return ModelOfferingResponse.model_validate(model_offering)
+    return _model_offering_response(model_offering)
 
 
 async def test_model_offering(
@@ -1002,7 +1009,7 @@ async def update_model_offering(
             db=db,
         )
 
-    return ModelOfferingResponse.model_validate(model_offering)
+    return _model_offering_response(model_offering)
 
 
 async def deactivate_model_offering(
@@ -1988,6 +1995,7 @@ def _enrich_model_offering_from_metadata(
     *,
     model_offering: ModelOffering,
     metadata: ModelMetadata,
+    refreshed_at: datetime,
 ) -> None:
     model_offering.capabilities = {
         **metadata.capabilities,
@@ -2006,18 +2014,11 @@ def _enrich_model_offering_from_metadata(
             model_offering.input_modalities,
             model_offering.output_modalities,
         )
-    if model_offering.input_price_per_million_tokens is None:
-        model_offering.input_price_per_million_tokens = (
-            metadata.pricing.input_price_per_million_tokens
-        )
-    if model_offering.output_price_per_million_tokens is None:
-        model_offering.output_price_per_million_tokens = (
-            metadata.pricing.output_price_per_million_tokens
-        )
-    if model_offering.cached_input_price_per_million_tokens is None:
-        model_offering.cached_input_price_per_million_tokens = (
-            metadata.pricing.cached_input_price_per_million_tokens
-        )
+    _refresh_model_offering_catalog_pricing(
+        model_offering=model_offering,
+        metadata=metadata,
+        refreshed_at=refreshed_at,
+    )
     model_offering.rate_limit_hints = {
         **metadata.rate_limit_hints,
         **(model_offering.rate_limit_hints or {}),
@@ -2028,6 +2029,7 @@ def _overwrite_model_offering_from_metadata(
     *,
     model_offering: ModelOffering,
     metadata: ModelMetadata,
+    refreshed_at: datetime,
 ) -> None:
     model_offering.version = metadata.version
     model_offering.input_modalities = metadata.input_modalities
@@ -2038,15 +2040,111 @@ def _overwrite_model_offering_from_metadata(
     )
     model_offering.capabilities = metadata.capabilities
     model_offering.context_window = metadata.context_window
-    model_offering.input_price_per_million_tokens = metadata.pricing.input_price_per_million_tokens
-    model_offering.output_price_per_million_tokens = (
-        metadata.pricing.output_price_per_million_tokens
-    )
-    model_offering.cached_input_price_per_million_tokens = (
-        metadata.pricing.cached_input_price_per_million_tokens
+    model_offering.input_price_per_million_tokens = None
+    model_offering.output_price_per_million_tokens = None
+    model_offering.cached_input_price_per_million_tokens = None
+    _refresh_model_offering_catalog_pricing(
+        model_offering=model_offering,
+        metadata=metadata,
+        refreshed_at=refreshed_at,
     )
     model_offering.rate_limit_hints = metadata.rate_limit_hints
     model_offering.metadata_source = "catalog"
+
+
+def _refresh_model_offering_catalog_pricing(
+    *,
+    model_offering: ModelOffering,
+    metadata: ModelMetadata,
+    refreshed_at: datetime,
+) -> None:
+    model_offering.catalog_input_price_per_million_tokens = (
+        metadata.pricing.input_price_per_million_tokens
+    )
+    model_offering.catalog_output_price_per_million_tokens = (
+        metadata.pricing.output_price_per_million_tokens
+    )
+    model_offering.catalog_cached_input_price_per_million_tokens = (
+        metadata.pricing.cached_input_price_per_million_tokens
+    )
+    model_offering.pricing_catalog_version = metadata.pricing.catalog_version
+    model_offering.pricing_last_refreshed_at = refreshed_at
+
+
+def _model_offering_response(model_offering: ModelOffering) -> ModelOfferingResponse:
+    effective_input = (
+        model_offering.input_price_per_million_tokens
+        if model_offering.input_price_per_million_tokens is not None
+        else model_offering.catalog_input_price_per_million_tokens
+    )
+    effective_output = (
+        model_offering.output_price_per_million_tokens
+        if model_offering.output_price_per_million_tokens is not None
+        else model_offering.catalog_output_price_per_million_tokens
+    )
+    effective_cached_input = (
+        model_offering.cached_input_price_per_million_tokens
+        if model_offering.cached_input_price_per_million_tokens is not None
+        else model_offering.catalog_cached_input_price_per_million_tokens
+    )
+    has_manual_price = any(
+        value is not None
+        for value in (
+            model_offering.input_price_per_million_tokens,
+            model_offering.output_price_per_million_tokens,
+            model_offering.cached_input_price_per_million_tokens,
+        )
+    )
+    has_catalog_price = any(
+        value is not None
+        for value in (
+            model_offering.catalog_input_price_per_million_tokens,
+            model_offering.catalog_output_price_per_million_tokens,
+            model_offering.catalog_cached_input_price_per_million_tokens,
+        )
+    )
+    pricing_source = "unset"
+    if has_manual_price:
+        pricing_source = "manual"
+    elif has_catalog_price:
+        pricing_source = "catalog"
+    return ModelOfferingResponse(
+        id=model_offering.id,
+        org_id=model_offering.org_id,
+        provider_id=model_offering.provider_id,
+        provider_model_name=model_offering.provider_model_name,
+        alias=model_offering.alias,
+        version=model_offering.version,
+        modality=model_offering.modality,
+        input_modalities=model_offering.input_modalities,
+        output_modalities=model_offering.output_modalities,
+        capabilities=model_offering.capabilities,
+        context_window=model_offering.context_window,
+        input_price_per_million_tokens=model_offering.input_price_per_million_tokens,
+        output_price_per_million_tokens=model_offering.output_price_per_million_tokens,
+        cached_input_price_per_million_tokens=model_offering.cached_input_price_per_million_tokens,
+        catalog_input_price_per_million_tokens=(
+            model_offering.catalog_input_price_per_million_tokens
+        ),
+        catalog_output_price_per_million_tokens=(
+            model_offering.catalog_output_price_per_million_tokens
+        ),
+        catalog_cached_input_price_per_million_tokens=(
+            model_offering.catalog_cached_input_price_per_million_tokens
+        ),
+        effective_input_price_per_million_tokens=effective_input,
+        effective_output_price_per_million_tokens=effective_output,
+        effective_cached_input_price_per_million_tokens=effective_cached_input,
+        pricing_source=pricing_source,
+        pricing_catalog_version=model_offering.pricing_catalog_version,
+        pricing_last_refreshed_at=model_offering.pricing_last_refreshed_at,
+        rate_limit_hints=model_offering.rate_limit_hints,
+        metadata_source=model_offering.metadata_source,
+        metadata_last_synced_at=model_offering.metadata_last_synced_at,
+        is_active=model_offering.is_active,
+        created_at=model_offering.created_at,
+        updated_at=model_offering.updated_at,
+    )
 
 
 def _combined_modality(input_modalities: list[str], output_modalities: list[str]) -> str:

@@ -184,29 +184,20 @@ async def create_chat_completion(
         )
         _enforce_provider_body_size(raw_body, resolved_provider.max_body_bytes)
         estimated_tokens = estimate_request_tokens(provider_payload.messages)
+        await _enforce_virtual_key_limits(
+            resolved=resolved,
+            estimated_input_tokens=estimated_tokens,
+            requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
+            db=db,
+        )
         reservation_ids = await _enforce_allocation_limits(
             resolved=resolved,
             estimated_input_tokens=estimated_tokens,
             requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
             db=db,
         )
-        await guardrails_facade.evaluate_request(
-            context=GuardrailEvaluationContext(
-                org_id=resolved.org_id,
-                team_id=resolved.team_id,
-                project_id=resolved.project_id,
-                allocation_id=resolved.allocation_id,
-                allocation_chain_ids=resolved.allocation_chain_ids,
-                virtual_key_id=resolved.virtual_key_id,
-                provider_id=resolved.provider_id,
-                pool_id=resolved.pool_id,
-                request_id=current_request_id(),
-                requested_model=resolved.requested_model,
-                provider_model=resolved.provider_model,
-                prompt_text=_messages_text(provider_payload.messages),
-            ),
-            db=db,
-        )
+        guardrail_context = _guardrail_context(resolved=resolved, provider_payload=provider_payload)
+        await guardrails_facade.evaluate_request(context=guardrail_context, db=db)
         upstream_extra_body = _normalize_provider_extra_body(
             extra_body=provider_payload.extra_body,
             provider_model=resolved.provider_model,
@@ -217,6 +208,15 @@ async def create_chat_completion(
             extra_body=upstream_extra_body,
         )
         if is_streaming:
+            if await guardrails_facade.has_enforced_response_guardrails(
+                context=guardrail_context,
+                db=db,
+            ):
+                await _release_reservations(reservation_ids=reservation_ids, db=db)
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="streaming is disabled when enforced output guardrails apply",
+                )
             upstream_stream = await providers_facade.stream_chat_completion(
                 provider_id=resolved.provider_id,
                 pool_id=resolved.pool_id,
@@ -346,6 +346,41 @@ async def create_chat_completion(
         request_messages=provider_payload.messages,
         response_body=upstream.body,
     )
+    try:
+        await guardrails_facade.evaluate_response(
+            context=_guardrail_context(resolved=resolved, provider_payload=provider_payload),
+            response_text=_response_text(upstream.body),
+            db=db,
+        )
+    except GuardrailDeniedError as exc:
+        actual_cost_cents = await _record_proxy_request(
+            resolved=resolved,
+            http_status=status.HTTP_403_FORBIDDEN,
+            latency_ms=_elapsed_ms(started_at),
+            usage=usage,
+            error_code="guardrail_output_denied",
+            provider_credential_id=upstream.provider_credential_id,
+            db=db,
+        )
+        await _commit_reservations(
+            reservation_ids=reservation_ids,
+            usage=usage,
+            cost_cents=actual_cost_cents,
+            db=db,
+        )
+        await _record_proxy_activity(
+            resolved=resolved,
+            action="proxy.guardrail_output_denied",
+            message=exc.detail,
+            severity="warning",
+            metadata={
+                "reason": "guardrail_output_denied",
+                "policy_id": str(exc.policy_id) if exc.policy_id else None,
+                "rule_id": str(exc.rule_id) if exc.rule_id else None,
+            },
+            db=db,
+        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.detail) from exc
 
     actual_cost_cents = await _record_proxy_request(
         resolved=resolved,
@@ -416,6 +451,12 @@ async def _execute_chat_proxy(
         )
         _enforce_provider_body_size(raw_body, resolved_provider.max_body_bytes)
         estimated_tokens = estimate_request_tokens(provider_payload.messages)
+        await _enforce_virtual_key_limits(
+            resolved=resolved,
+            estimated_input_tokens=estimated_tokens,
+            requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
+            db=db,
+        )
         reservation_ids = await _enforce_allocation_limits(
             resolved=resolved,
             estimated_input_tokens=estimated_tokens,
@@ -423,20 +464,7 @@ async def _execute_chat_proxy(
             db=db,
         )
         await guardrails_facade.evaluate_request(
-            context=GuardrailEvaluationContext(
-                org_id=resolved.org_id,
-                team_id=resolved.team_id,
-                project_id=resolved.project_id,
-                allocation_id=resolved.allocation_id,
-                allocation_chain_ids=resolved.allocation_chain_ids,
-                virtual_key_id=resolved.virtual_key_id,
-                provider_id=resolved.provider_id,
-                pool_id=resolved.pool_id,
-                request_id=current_request_id(),
-                requested_model=resolved.requested_model,
-                provider_model=resolved.provider_model,
-                prompt_text=_messages_text(provider_payload.messages),
-            ),
+            context=_guardrail_context(resolved=resolved, provider_payload=provider_payload),
             db=db,
         )
         upstream_extra_body = _normalize_provider_extra_body(
@@ -534,6 +562,41 @@ async def _execute_chat_proxy(
         request_messages=provider_payload.messages,
         response_body=upstream.body,
     )
+    try:
+        await guardrails_facade.evaluate_response(
+            context=_guardrail_context(resolved=resolved, provider_payload=provider_payload),
+            response_text=_response_text(upstream.body),
+            db=db,
+        )
+    except GuardrailDeniedError as exc:
+        actual_cost_cents = await _record_proxy_request(
+            resolved=resolved,
+            http_status=status.HTTP_403_FORBIDDEN,
+            latency_ms=_elapsed_ms(started_at),
+            usage=usage,
+            error_code="guardrail_output_denied",
+            provider_credential_id=upstream.provider_credential_id,
+            db=db,
+        )
+        await _commit_reservations(
+            reservation_ids=reservation_ids,
+            usage=usage,
+            cost_cents=actual_cost_cents,
+            db=db,
+        )
+        await _record_proxy_activity(
+            resolved=resolved,
+            action="proxy.guardrail_output_denied",
+            message=exc.detail,
+            severity="warning",
+            metadata={
+                "reason": "guardrail_output_denied",
+                "policy_id": str(exc.policy_id) if exc.policy_id else None,
+                "rule_id": str(exc.rule_id) if exc.rule_id else None,
+            },
+            db=db,
+        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.detail) from exc
     actual_cost_cents = await _record_proxy_request(
         resolved=resolved,
         http_status=upstream.status_code,
@@ -648,6 +711,45 @@ def _messages_text(messages: list[dict[str, Any]]) -> str:
     for message in messages:
         parts.append(_content_to_text(message.get("content")))
     return "\n".join(parts)
+
+
+def _response_text(response_body: dict[str, Any]) -> str:
+    choices = response_body.get("choices") if isinstance(response_body, dict) else None
+    if not isinstance(choices, list):
+        return ""
+    parts: list[str] = []
+    for choice in choices:
+        if not isinstance(choice, dict):
+            continue
+        message = choice.get("message")
+        if isinstance(message, dict):
+            parts.append(_content_to_text(message.get("content")))
+            continue
+        text = choice.get("text")
+        if isinstance(text, str):
+            parts.append(text)
+    return "\n".join(part for part in parts if part)
+
+
+def _guardrail_context(
+    *,
+    resolved,
+    provider_payload: ProviderChatCompletionRequest,
+) -> GuardrailEvaluationContext:
+    return GuardrailEvaluationContext(
+        org_id=resolved.org_id,
+        team_id=resolved.team_id,
+        project_id=resolved.project_id,
+        allocation_id=resolved.allocation_id,
+        allocation_chain_ids=resolved.allocation_chain_ids,
+        virtual_key_id=resolved.virtual_key_id,
+        provider_id=resolved.provider_id,
+        pool_id=resolved.pool_id,
+        request_id=current_request_id(),
+        requested_model=resolved.requested_model,
+        provider_model=resolved.provider_model,
+        prompt_text=_messages_text(provider_payload.messages),
+    )
 
 
 def _content_to_text(content: Any) -> str:
@@ -842,6 +944,69 @@ async def _record_proxy_request(
             db=db,
         )
     return cost_cents
+
+
+async def _enforce_virtual_key_limits(
+    *,
+    resolved,
+    estimated_input_tokens: int,
+    requested_output_tokens: int | None,
+    db: AsyncSession,
+) -> None:
+    requested_total_tokens = estimated_input_tokens + (requested_output_tokens or 0)
+    if (
+        resolved.key_max_tokens_per_request is not None
+        and requested_total_tokens > resolved.key_max_tokens_per_request
+    ):
+        await _raise_proxy_denial(
+            resolved=resolved,
+            detail="virtual key request token limit exceeded",
+            reason="virtual_key_request_token_limit",
+            db=db,
+        )
+
+    if (
+        resolved.key_max_requests_per_minute is None
+        and resolved.key_max_tokens_per_minute is None
+    ):
+        return
+
+    now = datetime.now(UTC)
+    since = now - timedelta(minutes=1)
+    request_count, _prompt_tokens, _completion_tokens, total_tokens = (
+        await usage_facade.summarize_virtual_key_usage(
+            virtual_key_id=resolved.virtual_key_id,
+            since=since,
+            db=db,
+        )
+    )
+    reservations = await usage_facade.summarize_active_virtual_key_reservations(
+        virtual_key_id=resolved.virtual_key_id,
+        since=since,
+        now=now,
+        db=db,
+    )
+    if (
+        resolved.key_max_requests_per_minute is not None
+        and request_count + reservations.requests + 1 > resolved.key_max_requests_per_minute
+    ):
+        await _raise_proxy_denial(
+            resolved=resolved,
+            detail="virtual key request rate limit exceeded",
+            reason="virtual_key_request_rate_limit",
+            db=db,
+        )
+    if (
+        resolved.key_max_tokens_per_minute is not None
+        and total_tokens + reservations.total_tokens + requested_total_tokens
+        > resolved.key_max_tokens_per_minute
+    ):
+        await _raise_proxy_denial(
+            resolved=resolved,
+            detail="virtual key token rate limit exceeded",
+            reason="virtual_key_token_rate_limit",
+            db=db,
+        )
 
 
 async def _enforce_allocation_limits(

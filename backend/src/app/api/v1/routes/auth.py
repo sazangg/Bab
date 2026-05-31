@@ -1,7 +1,12 @@
+import csv
+import json
+from datetime import datetime
+from io import StringIO
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+from fastapi.responses import Response as FastApiResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, get_scope, require_permission
@@ -15,6 +20,7 @@ from app.modules.auth.errors import (
 from app.modules.auth.schemas import (
     AcceptInviteRequest,
     AuditEventResponse,
+    AuditVerificationResponse,
     AuthenticatedUser,
     CreateInviteRequest,
     CreateMemberRequest,
@@ -204,9 +210,107 @@ async def list_audit_events(
     scope: RequestScope,
     db: DatabaseSession,
     _: AuditViewer,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    actor_user_id: UUID | None = None,
+    action: str | None = None,
+    entity_type: str | None = None,
+    entity_id: UUID | None = None,
     limit: int = 100,
 ) -> list[AuditEventResponse]:
-    return await facade.list_audit_events(scope=scope, db=db, limit=min(max(limit, 1), 500))
+    return await facade.list_audit_events(
+        scope=scope,
+        db=db,
+        limit=min(max(limit, 1), 500),
+        start_at=start_at,
+        end_at=end_at,
+        actor_user_id=actor_user_id,
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+    )
+
+
+@router.get("/audit/export")
+async def export_audit_events(
+    scope: RequestScope,
+    db: DatabaseSession,
+    _: AuditViewer,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    actor_user_id: UUID | None = None,
+    action: str | None = None,
+    entity_type: str | None = None,
+    entity_id: UUID | None = None,
+) -> FastApiResponse:
+    events = await facade.list_audit_events(
+        scope=scope,
+        db=db,
+        limit=None,
+        start_at=start_at,
+        end_at=end_at,
+        actor_user_id=actor_user_id,
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+    )
+    return _csv_response(
+        filename="bab-audit-events.csv",
+        header=[
+            "id",
+            "created_at",
+            "org_id",
+            "actor_user_id",
+            "actor_email",
+            "actor_role",
+            "action",
+            "entity_type",
+            "entity_id",
+            "metadata",
+            "previous_hash",
+            "event_hash",
+            "signature_algorithm",
+        ],
+        rows=[
+            [
+                event.id,
+                event.created_at,
+                event.org_id,
+                event.actor_user_id,
+                event.actor_email,
+                event.actor_role,
+                event.action,
+                event.entity_type,
+                event.entity_id,
+                json.dumps(event.metadata, sort_keys=True),
+                event.previous_hash,
+                event.event_hash,
+                event.signature_algorithm,
+            ]
+            for event in events
+        ],
+    )
+
+
+@router.get("/audit/verify")
+async def verify_audit_chain(
+    scope: RequestScope,
+    db: DatabaseSession,
+    _: AuditViewer,
+) -> AuditVerificationResponse:
+    return await facade.verify_audit_chain(scope=scope, db=db)
+
+
+def _csv_response(*, filename: str, header: list[str], rows: list[list[object]]) -> FastApiResponse:
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(header)
+    writer.writerows(rows)
+    return FastApiResponse(
+        content=output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 def _set_refresh_cookie(response: Response, value: str) -> None:

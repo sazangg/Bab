@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, KeyRound, Plus } from "lucide-react";
 import { useState } from "react";
-import { useForm, useWatch } from "react-hook-form";
+import { useForm, useWatch, type UseFormRegisterReturn } from "react-hook-form";
 import { z } from "zod";
 
 import {
@@ -77,6 +77,9 @@ const keySchema = z.object({
   expires_at: z.string().optional(),
   allocation_id: z.string().optional(),
   allowed_models: z.string().optional(),
+  max_requests_per_minute: z.string().optional(),
+  max_tokens_per_minute: z.string().optional(),
+  max_tokens_per_request: z.string().optional(),
 });
 
 type KeyValues = z.infer<typeof keySchema>;
@@ -104,7 +107,15 @@ export function ProjectKeysSection({
 
   const form = useForm<KeyValues>({
     resolver: zodResolver(keySchema),
-    defaultValues: { name: "", expires_at: "", allocation_id: "inherited", allowed_models: "" },
+    defaultValues: {
+      name: "",
+      expires_at: "",
+      allocation_id: "inherited",
+      allowed_models: "",
+      max_requests_per_minute: "",
+      max_tokens_per_minute: "",
+      max_tokens_per_request: "",
+    },
   });
   const selectedAllocationId = useWatch({ control: form.control, name: "allocation_id" });
   const allowedModelsValue = useWatch({ control: form.control, name: "allowed_models" });
@@ -160,7 +171,15 @@ export function ProjectKeysSection({
       onSuccess: async (response) => {
         if (response.status === 201) {
           setCreatedKey(response.data);
-          form.reset({ name: "", expires_at: "", allocation_id: "inherited", allowed_models: "" });
+          form.reset({
+            name: "",
+            expires_at: "",
+            allocation_id: "inherited",
+            allowed_models: "",
+            max_requests_per_minute: "",
+            max_tokens_per_minute: "",
+            max_tokens_per_request: "",
+          });
           setCreateOpen(false);
           await queryClient.invalidateQueries();
         }
@@ -184,6 +203,9 @@ export function ProjectKeysSection({
         expires_at: values.expires_at ? new Date(values.expires_at).toISOString() : null,
         allocation_id: values.allocation_id === "inherited" ? null : values.allocation_id,
         allowed_models: parseModels(values.allowed_models),
+        max_requests_per_minute: parseOptionalNumber(values.max_requests_per_minute),
+        max_tokens_per_minute: parseOptionalNumber(values.max_tokens_per_minute),
+        max_tokens_per_request: parseOptionalNumber(values.max_tokens_per_request),
       },
     });
 
@@ -333,6 +355,31 @@ export function ProjectKeysSection({
                           Allow all allocation models
                         </Button>
                       ) : null}
+                    </div>
+                    <div className="grid gap-3 rounded-md border bg-muted/20 p-3">
+                      <div>
+                        <Label>Key-level limits</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Optional caps applied directly to this key before allocation windows.
+                        </p>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <LimitInput
+                          id="key-max-requests-minute"
+                          label="Requests/min"
+                          registration={form.register("max_requests_per_minute")}
+                        />
+                        <LimitInput
+                          id="key-max-tokens-minute"
+                          label="Tokens/min"
+                          registration={form.register("max_tokens_per_minute")}
+                        />
+                        <LimitInput
+                          id="key-max-tokens-request"
+                          label="Tokens/request"
+                          registration={form.register("max_tokens_per_request")}
+                        />
+                      </div>
                     </div>
                   </form>
                   <SheetFooter>
@@ -543,6 +590,30 @@ function KeyUsageInline({
       </span>
     </div>
   );
+}
+
+function LimitInput({
+  id,
+  label,
+  registration,
+}: {
+  id: string;
+  label: string;
+  registration: UseFormRegisterReturn;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      <Input id={id} type="number" min={1} inputMode="numeric" {...registration} />
+    </div>
+  );
+}
+
+function parseOptionalNumber(value: string | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+  return Number(value);
 }
 
 function parseModels(value: string | undefined): string[] | null {

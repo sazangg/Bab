@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { ArrowLeft, Gauge, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useForm, useWatch } from "react-hook-form";
+import { useForm, useWatch, type UseFormRegisterReturn } from "react-hook-form";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { z } from "zod";
 
@@ -73,6 +73,9 @@ const editSchema = z.object({
   allowed_models: z.string().optional(),
   allocation_mode: z.enum(["inherited", "custom"]),
   custom_allocation_id: z.string().optional(),
+  max_requests_per_minute: z.string().optional(),
+  max_tokens_per_minute: z.string().optional(),
+  max_tokens_per_request: z.string().optional(),
 });
 
 type EditValues = z.infer<typeof editSchema>;
@@ -151,6 +154,9 @@ export function KeyDetailPage() {
       allowed_models: "",
       allocation_mode: "inherited",
       custom_allocation_id: "",
+      max_requests_per_minute: "",
+      max_tokens_per_minute: "",
+      max_tokens_per_request: "",
     },
   });
   const allocationMode = useWatch({ control: form.control, name: "allocation_mode" });
@@ -164,6 +170,9 @@ export function KeyDetailPage() {
         allowed_models: key.allowed_models?.join(", ") ?? "",
         allocation_mode: key.allocation_mode === "custom" ? "custom" : "inherited",
         custom_allocation_id: key.custom_allocation_id ?? "",
+        max_requests_per_minute: key.max_requests_per_minute?.toString() ?? "",
+        max_tokens_per_minute: key.max_tokens_per_minute?.toString() ?? "",
+        max_tokens_per_request: key.max_tokens_per_request?.toString() ?? "",
       });
     }
   }, [editOpen, key, form]);
@@ -248,6 +257,9 @@ export function KeyDetailPage() {
           <Fact label="Allocation" value={allocation?.name ?? key.allocation_id} />
           <Fact label="Policy" value={key.allocation_mode === "custom" ? "Custom" : "Inherited"} />
           <Fact label="Allowed models" value={formatModels(key.allowed_models)} />
+          <Fact label="Requests/min" value={formatLimit(key.max_requests_per_minute)} />
+          <Fact label="Tokens/min" value={formatLimit(key.max_tokens_per_minute)} />
+          <Fact label="Tokens/request" value={formatLimit(key.max_tokens_per_request)} />
           <Fact label="Created" value={new Date(key.created_at).toLocaleString()} />
         </CardContent>
       </Card>
@@ -301,6 +313,11 @@ export function KeyDetailPage() {
                       values.allocation_mode === "custom"
                         ? values.custom_allocation_id || null
                         : null,
+                    max_requests_per_minute: parseOptionalNumber(
+                      values.max_requests_per_minute,
+                    ),
+                    max_tokens_per_minute: parseOptionalNumber(values.max_tokens_per_minute),
+                    max_tokens_per_request: parseOptionalNumber(values.max_tokens_per_request),
                   },
                 }),
               )}
@@ -364,6 +381,31 @@ export function KeyDetailPage() {
                 <p className="text-xs text-muted-foreground">
                   Optional comma-separated subset of the allocation.
                 </p>
+              </div>
+              <div className="grid gap-3 rounded-md border bg-muted/20 p-3">
+                <div>
+                  <Label>Key-level limits</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Blank fields keep the key uncapped beyond its allocation.
+                  </p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <LimitInput
+                    id="edit-key-max-requests-minute"
+                    label="Requests/min"
+                    registration={form.register("max_requests_per_minute")}
+                  />
+                  <LimitInput
+                    id="edit-key-max-tokens-minute"
+                    label="Tokens/min"
+                    registration={form.register("max_tokens_per_minute")}
+                  />
+                  <LimitInput
+                    id="edit-key-max-tokens-request"
+                    label="Tokens/request"
+                    registration={form.register("max_tokens_per_request")}
+                  />
+                </div>
               </div>
             </form>
             <SheetFooter>
@@ -500,8 +542,29 @@ function Fact({ label, value }: { label: string; value: string }) {
   );
 }
 
+function LimitInput({
+  id,
+  label,
+  registration,
+}: {
+  id: string;
+  label: string;
+  registration: UseFormRegisterReturn;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      <Input id={id} type="number" min={1} inputMode="numeric" {...registration} />
+    </div>
+  );
+}
+
 function formatModels(models: string[] | null | undefined) {
   return models && models.length > 0 ? models.join(", ") : "All allocation models";
+}
+
+function formatLimit(value: number | null | undefined) {
+  return value == null ? "No cap" : value.toLocaleString();
 }
 
 function toLocalInput(iso: string) {
@@ -516,6 +579,13 @@ function parseModels(value: string | undefined): string[] | null {
     .map((model) => model.trim())
     .filter(Boolean);
   return models && models.length > 0 ? models : null;
+}
+
+function parseOptionalNumber(value: string | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+  return Number(value);
 }
 
 function formatCents(value: number | null | undefined) {

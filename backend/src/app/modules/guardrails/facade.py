@@ -346,6 +346,67 @@ async def evaluate_request(
     context: GuardrailEvaluationContext,
     db: AsyncSession,
 ) -> None:
+    await _evaluate_context(context=context, db=db)
+
+
+async def evaluate_response(
+    *,
+    context: GuardrailEvaluationContext,
+    response_text: str,
+    db: AsyncSession,
+) -> None:
+    await _evaluate_context(
+        context=context.model_copy(update={"phase": "response", "response_text": response_text}),
+        db=db,
+    )
+
+
+async def has_enforced_response_guardrails(
+    *,
+    context: GuardrailEvaluationContext,
+    db: AsyncSession,
+) -> bool:
+    assignments = await repository.list_effective_assignments(
+        org_id=context.org_id,
+        team_id=context.team_id,
+        project_id=context.project_id,
+        allocation_ids=context.allocation_chain_ids,
+        virtual_key_id=context.virtual_key_id,
+        db=db,
+    )
+    if not assignments:
+        return False
+    policies = {
+        policy.id: policy
+        for policy in await repository.list_policies(org_id=context.org_id, db=db)
+        if policy.is_active
+    }
+    policy_ids = [
+        assignment.policy_id for assignment in assignments if assignment.policy_id in policies
+    ]
+    rules = await repository.list_policy_rules(org_id=context.org_id, policy_ids=policy_ids, db=db)
+    assignments_by_policy: dict[UUID, list[GuardrailAssignment]] = {}
+    for assignment in assignments:
+        assignments_by_policy.setdefault(assignment.policy_id, []).append(assignment)
+    policy_mode = {policy.id: policy.enforcement_mode for policy in policies.values()}
+    return any(
+        rule.is_active
+        and _rule_applies_to_phase(rule=rule, phase="response")
+        and _rule_supports_phase(rule=rule, phase="response")
+        and _effective_rule_mode(
+            policy_mode=policy_mode.get(rule.policy_id, "enforce"),
+            assignments=assignments_by_policy.get(rule.policy_id, []),
+        )
+        == "enforce"
+        for rule in rules
+    )
+
+
+async def _evaluate_context(
+    *,
+    context: GuardrailEvaluationContext,
+    db: AsyncSession,
+) -> None:
     assignments = await repository.list_effective_assignments(
         org_id=context.org_id,
         team_id=context.team_id,
@@ -370,7 +431,11 @@ async def evaluate_request(
         assignments_by_policy.setdefault(assignment.policy_id, []).append(assignment)
     policy_mode = {policy.id: policy.enforcement_mode for policy in policies.values()}
     for rule in rules:
-        if not rule.is_active:
+        if (
+            not rule.is_active
+            or not _rule_applies_to_phase(rule=rule, phase=context.phase)
+            or not _rule_supports_phase(rule=rule, phase=context.phase)
+        ):
             continue
         evaluation = await _evaluate_rule(rule=rule, context=context)
         if not evaluation["denied"]:
@@ -388,12 +453,13 @@ async def evaluate_request(
             metadata={
                 "matched_values": evaluation["matched_values"],
                 "enforcement_mode": mode,
+                "phase": context.phase,
             },
             db=db,
         )
         if mode == "enforce":
             raise GuardrailDeniedError(
-                detail=f"request blocked by guardrail {rule.rule_type} rule",
+                detail=f"{context.phase} blocked by guardrail {rule.rule_type} rule",
                 policy_id=rule.policy_id,
                 rule_id=rule.id,
             )
@@ -402,8 +468,8 @@ async def evaluate_request(
         policy_id=None,
         rule_id=None,
         decision="allowed",
-        reason="guardrails_passed",
-        metadata={},
+        reason=f"{context.phase}_guardrails_passed",
+        metadata={"phase": context.phase},
         db=db,
     )
 
@@ -414,6 +480,7 @@ async def list_events(
     decision: str | None = None,
     policy_id: UUID | None = None,
     rule_id: UUID | None = None,
+    phase: str | None = None,
     team_id: UUID | None = None,
     project_id: UUID | None = None,
     allocation_id: UUID | None = None,
@@ -427,6 +494,7 @@ async def list_events(
     events = await repository.list_events(
         org_id=scope.org_id,
         decision=decision,
+        phase=phase,
         policy_id=policy_id,
         rule_id=rule_id,
         team_id=team_id,
@@ -529,17 +597,34 @@ async def _matched_rule_values(*, rule, context: GuardrailEvaluationContext) -> 
         current = {str(context.pool_id).lower()}
         return [value for value in values if value.lower() in current]
     elif rule.rule_type == "prompt_contains":
-        prompt_text = context.prompt_text.lower()
-        return [value for value in values if value.lower() in prompt_text]
+        target_text = _guardrail_target_text(context).lower()
+        return [value for value in values if value.lower() in target_text]
     elif rule.rule_type == "prompt_regex":
-        return _matched_regex_values(values=values, prompt_text=context.prompt_text)
+        return _matched_regex_values(values=values, prompt_text=_guardrail_target_text(context))
     elif rule.rule_type == "pii":
         return await _matched_detector_values(
             rule=rule,
             values=values,
-            prompt_text=context.prompt_text,
+            prompt_text=_guardrail_target_text(context),
         )
     return []
+
+
+def _rule_applies_to_phase(*, rule, phase: str) -> bool:
+    rule_phase = getattr(rule, "phase", "both")
+    return rule_phase in {"both", phase}
+
+
+def _rule_supports_phase(*, rule, phase: str) -> bool:
+    if phase == "request":
+        return True
+    return rule.rule_type in {"prompt_contains", "prompt_regex", "pii"}
+
+
+def _guardrail_target_text(context: GuardrailEvaluationContext) -> str:
+    if context.phase == "response":
+        return context.response_text
+    return context.prompt_text
 
 
 async def _matched_detector_values(*, rule, values: list[str], prompt_text: str) -> list[str]:
@@ -580,6 +665,7 @@ async def _record_event(
         policy_id=policy_id,
         rule_id=rule_id,
         decision=decision,
+        phase=context.phase,
         reason=reason,
         team_id=context.team_id,
         project_id=context.project_id,
@@ -739,6 +825,7 @@ def _to_event_response(event: GuardrailEvent) -> GuardrailEventResponse:
         policy_id=event.policy_id,
         rule_id=event.rule_id,
         decision=event.decision,
+        phase=event.phase,
         reason=event.reason,
         team_id=event.team_id,
         project_id=event.project_id,

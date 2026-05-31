@@ -22,6 +22,15 @@ export interface ModelOfferingResponse {
   input_price_per_million_tokens: number | null;
   output_price_per_million_tokens: number | null;
   cached_input_price_per_million_tokens: number | null;
+  catalog_input_price_per_million_tokens: number | null;
+  catalog_output_price_per_million_tokens: number | null;
+  catalog_cached_input_price_per_million_tokens: number | null;
+  effective_input_price_per_million_tokens: number | null;
+  effective_output_price_per_million_tokens: number | null;
+  effective_cached_input_price_per_million_tokens: number | null;
+  pricing_source: string;
+  pricing_catalog_version: string | null;
+  pricing_last_refreshed_at: string | null;
   rate_limit_hints: ModelOfferingResponseRateLimitHints;
   metadata_source: string;
   metadata_last_synced_at: string | null;

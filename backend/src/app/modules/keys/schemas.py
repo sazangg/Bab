@@ -105,6 +105,9 @@ class CreateVirtualKeyRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     expires_at: datetime | None = None
     allowed_models: list[str] | None = None
+    max_requests_per_minute: int | None = Field(default=None, ge=1)
+    max_tokens_per_minute: int | None = Field(default=None, ge=1)
+    max_tokens_per_request: int | None = Field(default=None, ge=1)
 
     @field_validator("allowed_models")
     @classmethod
@@ -119,6 +122,9 @@ class UpdateVirtualKeyRequest(BaseModel):
     expires_at: datetime | None = None
     allowed_models: list[str] | None = None
     custom_allocation_id: UUID | None = None
+    max_requests_per_minute: int | None = Field(default=None, ge=1)
+    max_tokens_per_minute: int | None = Field(default=None, ge=1)
+    max_tokens_per_request: int | None = Field(default=None, ge=1)
 
 
 class VirtualKeyResponse(BaseModel):
@@ -133,6 +139,9 @@ class VirtualKeyResponse(BaseModel):
     name: str
     key_prefix: str
     allowed_models: list[str] | None
+    max_requests_per_minute: int | None
+    max_tokens_per_minute: int | None
+    max_tokens_per_request: int | None
     expires_at: datetime | None
     revoked_at: datetime | None
     created_at: datetime
@@ -173,6 +182,9 @@ class ResolvedAccess(BaseModel):
     provider_model: str
     input_price_per_million_tokens: int | None = None
     output_price_per_million_tokens: int | None = None
+    key_max_requests_per_minute: int | None = None
+    key_max_tokens_per_minute: int | None = None
+    key_max_tokens_per_request: int | None = None
 
 
 class AccessibleModel(BaseModel):

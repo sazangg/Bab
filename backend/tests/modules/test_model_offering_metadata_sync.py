@@ -221,3 +221,70 @@ async def test_fill_missing_sync_keeps_unknown_provider_only_models_safe(
     assert model.input_modalities == ["text"]
     assert model.output_modalities == ["text"]
     assert model.capabilities == {"chat": True}
+
+
+async def test_catalog_pricing_tracks_effective_price_and_manual_overrides(
+    db_session: AsyncSession,
+) -> None:
+    org = Organization(name="Pricing Catalog Org", slug="pricing-catalog")
+    db_session.add(org)
+    await db_session.commit()
+    actor = AuthenticatedUser(
+        id=uuid4(),
+        org_id=org.id,
+        email="admin@example.com",
+        role="super_admin",
+    )
+    scope = Scope(org_id=org.id)
+    provider = await providers_facade.create_provider(
+        payload=CreateProviderRequest(
+            name="OpenAI",
+            base_url="https://api.openai.com/v1",
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    await providers_facade.create_provider_credential(
+        provider_id=provider.id,
+        payload=CreateProviderCredentialRequest(name="Production", api_key="provider-secret"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [{"id": "gpt-4o-mini"}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        synced = await providers_facade.sync_model_offerings(
+            provider_id=provider.id,
+            actor=actor,
+            scope=scope,
+            db=db_session,
+            http_client=http_client,
+            metadata_mode=ModelMetadataSyncMode.fill_missing,
+        )
+
+    model = synced[0]
+    assert model.catalog_input_price_per_million_tokens == 15
+    assert model.catalog_output_price_per_million_tokens == 60
+    assert model.effective_input_price_per_million_tokens == 15
+    assert model.effective_output_price_per_million_tokens == 60
+    assert model.pricing_source == "catalog"
+    assert model.pricing_catalog_version == "2026-05-31"
+    assert model.pricing_last_refreshed_at is not None
+
+    edited = await providers_facade.update_model_offering(
+        provider_id=provider.id,
+        model_offering_id=model.id,
+        payload=UpdateModelOfferingRequest(input_price_per_million_tokens=25),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    assert edited.catalog_input_price_per_million_tokens == 15
+    assert edited.effective_input_price_per_million_tokens == 25
+    assert edited.effective_output_price_per_million_tokens == 60
+    assert edited.pricing_source == "manual"

@@ -11,6 +11,8 @@ export interface GuardrailRuleInput {
   rule_type: string;
   /** @pattern ^(allow|deny)$ */
   effect?: string;
+  /** @pattern ^(request|response|both)$ */
+  phase?: string;
   /** @minItems 1 */
   values: string[];
   config?: GuardrailRuleInputConfig;

@@ -82,6 +82,40 @@ async def summarize_active_allocation_reservations(
     )
 
 
+async def summarize_active_virtual_key_reservations(
+    *,
+    virtual_key_id: UUID,
+    since: datetime | None,
+    now: datetime,
+    db: AsyncSession,
+) -> AllocationReservationSummary:
+    filters = [
+        AllocationReservation.virtual_key_id == virtual_key_id,
+        AllocationReservation.status == "active",
+        AllocationReservation.expires_at > now,
+    ]
+    if since is not None:
+        filters.append(AllocationReservation.created_at >= since)
+    row = (
+        await db.execute(
+            select(
+                func.count(AllocationReservation.id),
+                func.coalesce(func.sum(AllocationReservation.reserved_prompt_tokens), 0),
+                func.coalesce(func.sum(AllocationReservation.reserved_completion_tokens), 0),
+                func.coalesce(func.sum(AllocationReservation.reserved_total_tokens), 0),
+                func.coalesce(func.sum(AllocationReservation.reserved_cost_cents), 0),
+            ).where(*filters)
+        )
+    ).one()
+    return AllocationReservationSummary(
+        requests=int(row[0]),
+        prompt_tokens=int(row[1]),
+        completion_tokens=int(row[2]),
+        total_tokens=int(row[3]),
+        cost_cents=int(row[4]),
+    )
+
+
 async def commit_allocation_reservations(
     *,
     reservation_ids: list[UUID],
@@ -135,7 +169,7 @@ async def list_usage_records(
     allocation_id: UUID | None,
     virtual_key_id: UUID | None,
     model: str | None,
-    limit: int,
+    limit: int | None,
     db: AsyncSession,
 ) -> list[UsageRecordResponse]:
     filters = [UsageRecord.org_id == org_id]
@@ -155,13 +189,15 @@ async def list_usage_records(
         filters.append(UsageRecord.virtual_key_id == virtual_key_id)
     if model:
         filters.append(UsageRecord.provider_model == model)
-    result = await db.execute(
+    query = (
         select(UsageRecord, ProviderCredential.name, ProviderCredential.key_prefix)
         .outerjoin(ProviderCredential, ProviderCredential.id == UsageRecord.provider_credential_id)
         .where(*filters)
         .order_by(UsageRecord.created_at.desc())
-        .limit(limit)
     )
+    if limit is not None:
+        query = query.limit(limit)
+    result = await db.execute(query)
     return [
         UsageRecordResponse.model_validate(
             {
@@ -186,6 +222,24 @@ async def summarize_allocation_usage(
         func.coalesce(func.sum(UsageRecord.completion_tokens), 0),
         func.coalesce(func.sum(UsageRecord.cost_cents), 0),
     ).where(UsageRecord.allocation_id == allocation_id)
+    if since is not None:
+        query = query.where(UsageRecord.created_at >= since)
+    row = (await db.execute(query)).one()
+    return int(row[0]), int(row[1]), int(row[2]), int(row[3])
+
+
+async def summarize_virtual_key_usage(
+    *,
+    virtual_key_id: UUID,
+    since: datetime | None,
+    db: AsyncSession,
+) -> tuple[int, int, int, int]:
+    query = select(
+        func.count(UsageRecord.id),
+        func.coalesce(func.sum(UsageRecord.prompt_tokens), 0),
+        func.coalesce(func.sum(UsageRecord.completion_tokens), 0),
+        func.coalesce(func.sum(UsageRecord.total_tokens), 0),
+    ).where(UsageRecord.virtual_key_id == virtual_key_id)
     if since is not None:
         query = query.where(UsageRecord.created_at >= since)
     row = (await db.execute(query)).one()

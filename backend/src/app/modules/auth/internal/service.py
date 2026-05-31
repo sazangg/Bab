@@ -1,9 +1,13 @@
+import hashlib
+import hmac
+import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import Scope, transaction
 from app.core.security import (
     SecurityError,
@@ -581,6 +585,20 @@ async def record_audit_event(
     metadata: dict,
     db: AsyncSession,
 ) -> None:
+    created_at = datetime.now(UTC)
+    previous_hash = await _latest_audit_hash(org_id=actor.org_id, db=db)
+    event_hash = _audit_event_hash(
+        org_id=actor.org_id,
+        actor_user_id=actor.id,
+        actor_email=str(actor.email),
+        actor_role=actor.role,
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        metadata=metadata,
+        previous_hash=previous_hash,
+        created_at=created_at,
+    )
     db.add(
         AuditEvent(
             org_id=actor.org_id,
@@ -591,23 +609,155 @@ async def record_audit_event(
             entity_type=entity_type,
             entity_id=entity_id,
             metadata_=metadata,
+            previous_hash=previous_hash,
+            event_hash=event_hash,
+            signature_algorithm="hmac-sha256",
+            created_at=created_at,
         )
     )
 
 
 async def list_audit_events(
-    *, scope: Scope, db: AsyncSession, limit: int = 100
+    *,
+    scope: Scope,
+    db: AsyncSession,
+    limit: int | None = 100,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    actor_user_id: UUID | None = None,
+    action: str | None = None,
+    entity_type: str | None = None,
+    entity_id: UUID | None = None,
 ) -> list[AuditEventResponse]:
-    events = await db.scalars(
-        select(AuditEvent)
-        .where(AuditEvent.org_id == scope.org_id)
-        .order_by(AuditEvent.created_at.desc())
-        .limit(limit)
-    )
+    filters = [AuditEvent.org_id == scope.org_id]
+    if start_at is not None:
+        filters.append(AuditEvent.created_at >= start_at)
+    if end_at is not None:
+        filters.append(AuditEvent.created_at <= end_at)
+    if actor_user_id is not None:
+        filters.append(AuditEvent.actor_user_id == actor_user_id)
+    if action:
+        filters.append(AuditEvent.action == action)
+    if entity_type:
+        filters.append(AuditEvent.entity_type == entity_type)
+    if entity_id is not None:
+        filters.append(AuditEvent.entity_id == entity_id)
+    query = select(AuditEvent).where(*filters).order_by(AuditEvent.created_at.desc())
+    if limit is not None:
+        query = query.limit(limit)
+    events = await db.scalars(query)
     return [
         AuditEventResponse.model_validate({**event.__dict__, "metadata": event.metadata_})
         for event in events
     ]
+
+
+async def verify_audit_chain(*, scope: Scope, db: AsyncSession):
+    from app.modules.auth.schemas import AuditVerificationResponse
+
+    events = list(
+        await db.scalars(
+            select(AuditEvent)
+            .where(AuditEvent.org_id == scope.org_id, AuditEvent.event_hash.is_not(None))
+            .order_by(AuditEvent.created_at.asc(), AuditEvent.id.asc())
+        )
+    )
+    if not events:
+        return AuditVerificationResponse(valid=True, checked_events=0)
+    events_by_previous_hash = {event.previous_hash: event for event in events}
+    if len(events_by_previous_hash) != len(events):
+        return AuditVerificationResponse(
+            valid=False,
+            checked_events=0,
+            reason="duplicate previous hash",
+        )
+    previous_hash = None
+    checked_events = 0
+    while previous_hash in events_by_previous_hash:
+        event = events_by_previous_hash[previous_hash]
+        checked_events += 1
+        if event.previous_hash != previous_hash:
+            return AuditVerificationResponse(
+                valid=False,
+                checked_events=checked_events,
+                first_invalid_event_id=event.id,
+                reason="previous hash mismatch",
+            )
+        expected_hash = _audit_event_hash(
+            org_id=event.org_id,
+            actor_user_id=event.actor_user_id,
+            actor_email=event.actor_email,
+            actor_role=event.actor_role,
+            action=event.action,
+            entity_type=event.entity_type,
+            entity_id=event.entity_id,
+            metadata=event.metadata_,
+            previous_hash=event.previous_hash,
+            created_at=event.created_at,
+        )
+        if event.event_hash != expected_hash:
+            return AuditVerificationResponse(
+                valid=False,
+                checked_events=checked_events,
+                first_invalid_event_id=event.id,
+                reason="event hash mismatch",
+            )
+        previous_hash = event.event_hash
+    if checked_events != len(events):
+        return AuditVerificationResponse(
+            valid=False,
+            checked_events=checked_events,
+            reason="chain has unreachable events",
+        )
+    return AuditVerificationResponse(valid=True, checked_events=checked_events)
+
+
+async def _latest_audit_hash(*, org_id: UUID, db: AsyncSession) -> str | None:
+    return await db.scalar(
+        select(AuditEvent.event_hash)
+        .where(AuditEvent.org_id == org_id, AuditEvent.event_hash.is_not(None))
+        .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
+        .limit(1)
+    )
+
+
+def _audit_event_hash(
+    *,
+    org_id: UUID,
+    actor_user_id: UUID | None,
+    actor_email: str | None,
+    actor_role: str | None,
+    action: str,
+    entity_type: str,
+    entity_id: UUID | None,
+    metadata: dict,
+    previous_hash: str | None,
+    created_at: datetime,
+) -> str:
+    payload = {
+        "org_id": str(org_id),
+        "actor_user_id": str(actor_user_id) if actor_user_id else None,
+        "actor_email": actor_email,
+        "actor_role": actor_role,
+        "action": action,
+        "entity_type": entity_type,
+        "entity_id": str(entity_id) if entity_id else None,
+        "metadata": metadata,
+        "previous_hash": previous_hash,
+        "created_at": _audit_timestamp(created_at),
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return hmac.new(
+        settings.secret_key.encode(),
+        canonical.encode(),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def _audit_timestamp(value: datetime) -> str:
+    if value.tzinfo is not None:
+        value = value.astimezone(UTC).replace(tzinfo=None)
+    return value.isoformat()
 
 
 def has_permission(user: AuthenticatedUser, permission: str) -> bool:

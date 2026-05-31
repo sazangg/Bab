@@ -167,6 +167,7 @@ async def list_events(
     db: DatabaseSession,
     _: GuardrailViewer,
     decision: str | None = None,
+    phase: str | None = None,
     policy_id: UUID | None = None,
     rule_id: UUID | None = None,
     team_id: UUID | None = None,
@@ -181,6 +182,7 @@ async def list_events(
     return await facade.list_events(
         scope=scope,
         decision=decision,
+        phase=phase,
         policy_id=policy_id,
         rule_id=rule_id,
         team_id=team_id,

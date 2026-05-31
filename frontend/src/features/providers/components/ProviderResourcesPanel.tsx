@@ -104,6 +104,7 @@ import {
   dollarsToCents,
   formatDateTime,
   formatModalities,
+  formatPricingSource,
   formatRelativeFromNow,
   formatTokenPrice,
   sanitizeCredentialValidationMessage,
@@ -2056,15 +2057,32 @@ function ResourceModelTable({
                         {model.context_window ? model.context_window.toLocaleString() : "—"}
                       </TableCell>
                       <TableCell className="text-right font-mono text-xs">
-                        {formatTokenPrice(model.input_price_per_million_tokens)} /{" "}
-                        {formatTokenPrice(model.output_price_per_million_tokens)}
+                        <div className="flex flex-col">
+                          <span>
+                            {formatTokenPrice(model.effective_input_price_per_million_tokens)} /{" "}
+                            {formatTokenPrice(model.effective_output_price_per_million_tokens)}
+                          </span>
+                          <span className="font-sans text-[11px] text-muted-foreground">
+                            {formatPricingSource(model.pricing_source)}
+                          </span>
+                        </div>
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         <div className="flex flex-col">
-                          <span>{model.metadata_source}</span>
+                          <span>
+                            {model.metadata_source}
+                            {model.pricing_catalog_version
+                              ? ` · pricing ${model.pricing_catalog_version}`
+                              : ""}
+                          </span>
                           {model.metadata_last_synced_at ? (
                             <span className="text-[11px]">
                               {formatRelativeFromNow(model.metadata_last_synced_at)}
+                            </span>
+                          ) : null}
+                          {model.pricing_last_refreshed_at ? (
+                            <span className="text-[11px]">
+                              price {formatRelativeFromNow(model.pricing_last_refreshed_at)}
                             </span>
                           ) : null}
                         </div>
@@ -2190,6 +2208,7 @@ function ResourceModelTable({
                 </p>
               </div>
             ) : null}
+            {editModel ? <PricingSnapshot model={editModel} /> : null}
             <div className="space-y-1.5">
               <Label htmlFor="edit-provider-model-name">Provider model name</Label>
               <Input id="edit-provider-model-name" {...editForm.register("provider_model_name")} />
@@ -2244,6 +2263,44 @@ function ResourceModelTable({
         </SheetContent>
       </Sheet>
     </>
+  );
+}
+
+function PricingSnapshot({ model }: { model: ModelOfferingResponse }) {
+  return (
+    <div className="rounded-md border bg-muted/20 p-3 text-sm">
+      <div className="font-medium">Effective pricing</div>
+      <div className="mt-2 grid gap-2 text-xs sm:grid-cols-3">
+        <Fact
+          label="Input"
+          value={formatTokenPrice(model.effective_input_price_per_million_tokens)}
+        />
+        <Fact
+          label="Output"
+          value={formatTokenPrice(model.effective_output_price_per_million_tokens)}
+        />
+        <Fact
+          label="Cached input"
+          value={formatTokenPrice(model.effective_cached_input_price_per_million_tokens)}
+        />
+      </div>
+      <div className="mt-2 text-xs text-muted-foreground">
+        {formatPricingSource(model.pricing_source)}
+        {model.pricing_catalog_version ? ` · catalog ${model.pricing_catalog_version}` : ""}
+        {model.pricing_last_refreshed_at
+          ? ` · refreshed ${formatRelativeFromNow(model.pricing_last_refreshed_at)}`
+          : ""}
+      </div>
+    </div>
+  );
+}
+
+function Fact({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-muted-foreground">{label}</div>
+      <div className="font-mono">{value}</div>
+    </div>
   );
 }
 

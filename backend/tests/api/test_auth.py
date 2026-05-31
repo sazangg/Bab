@@ -191,6 +191,12 @@ async def test_invite_acceptance_and_team_membership_flow(
             headers=admin_headers,
         )
         audit_response = await client.get("/api/v1/auth/audit", headers=admin_headers)
+        audit_export_response = await client.get(
+            "/api/v1/auth/audit/export",
+            params={"action": "team_member.added"},
+            headers=admin_headers,
+        )
+        audit_verify_response = await client.get("/api/v1/auth/audit/verify", headers=admin_headers)
 
     assert team_response.status_code == 201
     assert invite_response.status_code == 201
@@ -212,6 +218,14 @@ async def test_invite_acceptance_and_team_membership_flow(
         "team_member.role_updated",
         "team_member.removed",
     }.issubset(audit_actions)
+    assert audit_export_response.status_code == 200
+    assert audit_export_response.headers["content-type"].startswith("text/csv")
+    assert "team_member.added" in audit_export_response.text
+    assert "team_member.role_updated" not in audit_export_response.text
+    assert "event_hash" in audit_export_response.text
+    assert audit_verify_response.status_code == 200
+    assert audit_verify_response.json()["valid"] is True, audit_verify_response.json()
+    assert audit_verify_response.json()["checked_events"] >= 4
 
 
 @pytest.mark.asyncio

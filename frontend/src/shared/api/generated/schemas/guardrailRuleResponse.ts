@@ -12,6 +12,7 @@ export interface GuardrailRuleResponse {
   policy_id: string;
   rule_type: string;
   effect: string;
+  phase: string;
   values: string[];
   config: GuardrailRuleResponseConfig;
   priority: number;

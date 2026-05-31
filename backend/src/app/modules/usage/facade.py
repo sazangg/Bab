@@ -47,6 +47,21 @@ async def summarize_active_allocation_reservations(
     )
 
 
+async def summarize_active_virtual_key_reservations(
+    *,
+    virtual_key_id: UUID,
+    since: datetime | None,
+    now: datetime,
+    db: AsyncSession,
+) -> AllocationReservationSummary:
+    return await repository.summarize_active_virtual_key_reservations(
+        virtual_key_id=virtual_key_id,
+        since=since,
+        now=now,
+        db=db,
+    )
+
+
 async def commit_allocation_reservations(
     *,
     reservation_ids: list[UUID],
@@ -84,7 +99,7 @@ async def list_usage_records(
     allocation_id: UUID | None = None,
     virtual_key_id: UUID | None = None,
     model: str | None = None,
-    limit: int = 100,
+    limit: int | None = 100,
     db: AsyncSession,
 ) -> list[UsageRecordResponse]:
     records = await repository.list_usage_records(
@@ -111,6 +126,19 @@ async def summarize_allocation_usage(
 ) -> tuple[int, int, int, int]:
     return await repository.summarize_allocation_usage(
         allocation_id=allocation_id,
+        since=since,
+        db=db,
+    )
+
+
+async def summarize_virtual_key_usage(
+    *,
+    virtual_key_id: UUID,
+    since: datetime | None,
+    db: AsyncSession,
+) -> tuple[int, int, int, int]:
+    return await repository.summarize_virtual_key_usage(
+        virtual_key_id=virtual_key_id,
         since=since,
         db=db,
     )

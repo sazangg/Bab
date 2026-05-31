@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { KeyRound, MoreHorizontal, Pencil, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, type UseFormRegisterReturn } from "react-hook-form";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -69,6 +69,9 @@ type KeyRow = {
 
 const editKeySchema = z.object({
   name: z.string().min(1, "Name is required").max(255),
+  max_requests_per_minute: z.string().optional(),
+  max_tokens_per_minute: z.string().optional(),
+  max_tokens_per_request: z.string().optional(),
 });
 
 type EditKeyValues = z.infer<typeof editKeySchema>;
@@ -326,7 +329,12 @@ function EditVirtualKeySheet({
 }) {
   const form = useForm<EditKeyValues>({
     resolver: zodResolver(editKeySchema),
-    defaultValues: { name: "" },
+    defaultValues: {
+      name: "",
+      max_requests_per_minute: "",
+      max_tokens_per_minute: "",
+      max_tokens_per_request: "",
+    },
   });
   const updateKey = useUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch({
     mutation: {
@@ -339,7 +347,14 @@ function EditVirtualKeySheet({
   });
 
   useEffect(() => {
-    if (row) form.reset({ name: row.key.name });
+    if (row) {
+      form.reset({
+        name: row.key.name,
+        max_requests_per_minute: row.key.max_requests_per_minute?.toString() ?? "",
+        max_tokens_per_minute: row.key.max_tokens_per_minute?.toString() ?? "",
+        max_tokens_per_request: row.key.max_tokens_per_request?.toString() ?? "",
+      });
+    }
   }, [row, form]);
 
   const submit = form.handleSubmit((values) => {
@@ -347,7 +362,12 @@ function EditVirtualKeySheet({
     updateKey.mutate({
       projectId: row.project.id,
       keyId: row.key.id,
-      data: { name: values.name },
+      data: {
+        name: values.name,
+        max_requests_per_minute: parseOptionalNumber(values.max_requests_per_minute),
+        max_tokens_per_minute: parseOptionalNumber(values.max_tokens_per_minute),
+        max_tokens_per_request: parseOptionalNumber(values.max_tokens_per_request),
+      },
     });
   });
 
@@ -356,7 +376,7 @@ function EditVirtualKeySheet({
       <SheetContent>
         <SheetHeader>
           <SheetTitle>Edit virtual key</SheetTitle>
-          <SheetDescription>Rename the client-facing key.</SheetDescription>
+          <SheetDescription>Rename the key and set optional direct rate controls.</SheetDescription>
         </SheetHeader>
         <form
           id="edit-virtual-key-form"
@@ -369,6 +389,31 @@ function EditVirtualKeySheet({
             {form.formState.errors.name ? (
               <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
             ) : null}
+          </div>
+          <div className="grid gap-3 rounded-md border bg-muted/20 p-3">
+            <div>
+              <Label>Key-level limits</Label>
+              <p className="text-xs text-muted-foreground">
+                Blank fields keep this key uncapped beyond its allocation.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <LimitInput
+                id="global-key-max-requests-minute"
+                label="Requests/min"
+                registration={form.register("max_requests_per_minute")}
+              />
+              <LimitInput
+                id="global-key-max-tokens-minute"
+                label="Tokens/min"
+                registration={form.register("max_tokens_per_minute")}
+              />
+              <LimitInput
+                id="global-key-max-tokens-request"
+                label="Tokens/request"
+                registration={form.register("max_tokens_per_request")}
+              />
+            </div>
           </div>
         </form>
         <SheetFooter>
@@ -427,6 +472,30 @@ function getKeyStatus(key: VirtualKeyResponse): Exclude<KeySegment, "all"> {
   if (key.revoked_at) return "revoked";
   if (key.expires_at && new Date(key.expires_at) < new Date()) return "expired";
   return "active";
+}
+
+function LimitInput({
+  id,
+  label,
+  registration,
+}: {
+  id: string;
+  label: string;
+  registration: UseFormRegisterReturn;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      <Input id={id} type="number" min={1} inputMode="numeric" {...registration} />
+    </div>
+  );
+}
+
+function parseOptionalNumber(value: string | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+  return Number(value);
 }
 
 function labelStatus(status: Exclude<KeySegment, "all">) {

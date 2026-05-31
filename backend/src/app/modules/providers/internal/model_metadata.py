@@ -9,6 +9,7 @@ class ModelPricingMetadata:
     input_price_per_million_tokens: int | None = None
     output_price_per_million_tokens: int | None = None
     cached_input_price_per_million_tokens: int | None = None
+    catalog_version: str | None = None
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,7 @@ class ModelMetadata:
     context_window: int | None = None
     pricing: ModelPricingMetadata = field(default_factory=ModelPricingMetadata)
     rate_limit_hints: dict = field(default_factory=dict)
+    metadata_version: str | None = None
 
 
 class ProviderModelMetadataAdapter(Protocol):
@@ -82,6 +84,7 @@ def _frontier_model(
 ) -> ModelMetadata:
     return ModelMetadata(
         provider_model_name=provider_model_name,
+        metadata_version="2026-05-31",
         input_modalities=["text", "vision"],
         output_modalities=["text"],
         context_window=context_window,
@@ -111,6 +114,7 @@ def _chat_model(
 ) -> ModelMetadata:
     return ModelMetadata(
         provider_model_name=provider_model_name,
+        metadata_version="2026-05-31",
         input_modalities=["text", "vision"] if vision else ["text"],
         output_modalities=["text"],
         context_window=context_window,
@@ -127,6 +131,7 @@ def _chat_model(
             input_price_per_million_tokens=input_price_per_million_tokens,
             output_price_per_million_tokens=output_price_per_million_tokens,
             cached_input_price_per_million_tokens=cached_input_price_per_million_tokens,
+            catalog_version="2026-05-31",
         ),
     )
 
@@ -138,9 +143,13 @@ _OPENAI_MODELS = {
     "gpt-5": _frontier_model("gpt-5", context_window=400_000),
     "gpt-5-mini": _frontier_model("gpt-5-mini", context_window=400_000),
     "gpt-5-nano": _frontier_model("gpt-5-nano", context_window=400_000),
-    "gpt-4o-mini": _frontier_model(
+    "gpt-4o-mini": _chat_model(
         "gpt-4o-mini",
         context_window=128_000,
+        input_price_per_million_tokens=15,
+        output_price_per_million_tokens=60,
+        cached_input_price_per_million_tokens=8,
+        vision=True,
         reasoning=False,
     ),
     "o4-mini": _frontier_model("o4-mini", context_window=200_000),

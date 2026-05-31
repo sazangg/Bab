@@ -237,6 +237,15 @@ class ModelOfferingResponse(BaseModel):
     input_price_per_million_tokens: int | None
     output_price_per_million_tokens: int | None
     cached_input_price_per_million_tokens: int | None
+    catalog_input_price_per_million_tokens: int | None
+    catalog_output_price_per_million_tokens: int | None
+    catalog_cached_input_price_per_million_tokens: int | None
+    effective_input_price_per_million_tokens: int | None
+    effective_output_price_per_million_tokens: int | None
+    effective_cached_input_price_per_million_tokens: int | None
+    pricing_source: str
+    pricing_catalog_version: str | None
+    pricing_last_refreshed_at: datetime | None
     rate_limit_hints: dict[str, Any]
     metadata_source: str
     metadata_last_synced_at: datetime | None

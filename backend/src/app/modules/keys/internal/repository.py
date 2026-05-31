@@ -217,6 +217,9 @@ async def create_virtual_key(
     key_hash: str,
     key_prefix: str,
     allowed_models: list[str] | None,
+    max_requests_per_minute: int | None,
+    max_tokens_per_minute: int | None,
+    max_tokens_per_request: int | None,
     expires_at,
     db: AsyncSession,
 ) -> VirtualKey:
@@ -229,6 +232,9 @@ async def create_virtual_key(
         key_hash=key_hash,
         key_prefix=key_prefix,
         allowed_models=allowed_models,
+        max_requests_per_minute=max_requests_per_minute,
+        max_tokens_per_minute=max_tokens_per_minute,
+        max_tokens_per_request=max_tokens_per_request,
         expires_at=expires_at,
     )
     db.add(virtual_key)

@@ -106,6 +106,9 @@ class VirtualKey(Base):
     key_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     key_prefix: Mapped[str] = mapped_column(String(32), index=True)
     allowed_models: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    max_requests_per_minute: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_tokens_per_minute: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_tokens_per_request: Mapped[int | None] = mapped_column(Integer, nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

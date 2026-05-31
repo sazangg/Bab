@@ -164,6 +164,9 @@ class AuditEvent(Base):
     entity_type: Mapped[str] = mapped_column(String(100), index=True)
     entity_id: Mapped[UUID | None] = mapped_column(nullable=True, index=True)
     metadata_: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
+    previous_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    event_hash: Mapped[str | None] = mapped_column(String(64), index=True)
+    signature_algorithm: Mapped[str] = mapped_column(String(50), default="hmac-sha256")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),

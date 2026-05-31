@@ -55,6 +55,12 @@ export function formatTokenPrice(value: number | null | undefined) {
   return `${formatCurrency(value / 100)} / 1M`;
 }
 
+export function formatPricingSource(value: string | null | undefined) {
+  if (value === "manual") return "manual override";
+  if (value === "catalog") return "provider catalog";
+  return "pricing unset";
+}
+
 export function centsToDollars(value: number | null | undefined) {
   return value === null || value === undefined ? undefined : value / 100;
 }

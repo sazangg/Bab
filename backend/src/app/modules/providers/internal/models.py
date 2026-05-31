@@ -178,6 +178,23 @@ class ModelOffering(Base):
         Integer,
         nullable=True,
     )
+    catalog_input_price_per_million_tokens: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+    catalog_output_price_per_million_tokens: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+    catalog_cached_input_price_per_million_tokens: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+    pricing_catalog_version: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    pricing_last_refreshed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     rate_limit_hints: Mapped[dict] = mapped_column(JSON, default=dict)
     metadata_source: Mapped[str] = mapped_column(String(100), default="manual")
     metadata_last_synced_at: Mapped[datetime | None] = mapped_column(

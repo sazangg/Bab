@@ -364,6 +364,9 @@ async def create_virtual_key(
             key_hash=hash_token(raw_key),
             key_prefix=_key_prefix(raw_key),
             allowed_models=payload.allowed_models,
+            max_requests_per_minute=payload.max_requests_per_minute,
+            max_tokens_per_minute=payload.max_tokens_per_minute,
+            max_tokens_per_request=payload.max_tokens_per_request,
             expires_at=expires_at,
             db=db,
         )
@@ -465,6 +468,13 @@ async def update_virtual_key(
             virtual_key.expires_at = payload.expires_at
         if "allowed_models" in payload.model_fields_set:
             virtual_key.allowed_models = payload.allowed_models
+        for field in (
+            "max_requests_per_minute",
+            "max_tokens_per_minute",
+            "max_tokens_per_request",
+        ):
+            if field in payload.model_fields_set:
+                setattr(virtual_key, field, getattr(payload, field))
         if "custom_allocation_id" in payload.model_fields_set:
             if payload.custom_allocation_id is None:
                 effective_allocation = await _resolve_effective_allocation(
@@ -596,6 +606,9 @@ async def resolve_access(*, payload: ResolveAccessRequest, db: AsyncSession) -> 
         provider_model=provider_model,
         input_price_per_million_tokens=input_price,
         output_price_per_million_tokens=output_price,
+        key_max_requests_per_minute=virtual_key.max_requests_per_minute,
+        key_max_tokens_per_minute=virtual_key.max_tokens_per_minute,
+        key_max_tokens_per_request=virtual_key.max_tokens_per_request,
     )
 
 
@@ -747,8 +760,8 @@ async def _match_offering(
                 model.provider_id,
                 pool.id,
                 model.provider_model_name,
-                model.input_price_per_million_tokens,
-                model.output_price_per_million_tokens,
+                model.effective_input_price_per_million_tokens,
+                model.effective_output_price_per_million_tokens,
             )
     return None
 
@@ -933,6 +946,9 @@ def _to_virtual_key_response(virtual_key: VirtualKey) -> VirtualKeyResponse:
         name=virtual_key.name,
         key_prefix=virtual_key.key_prefix,
         allowed_models=virtual_key.allowed_models,
+        max_requests_per_minute=virtual_key.max_requests_per_minute,
+        max_tokens_per_minute=virtual_key.max_tokens_per_minute,
+        max_tokens_per_request=virtual_key.max_tokens_per_request,
         expires_at=virtual_key.expires_at,
         revoked_at=virtual_key.revoked_at,
         created_at=virtual_key.created_at,

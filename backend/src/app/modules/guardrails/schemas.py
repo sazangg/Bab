@@ -18,6 +18,7 @@ GUARDRAIL_RULE_TYPE_PATTERN = f"^({'|'.join(GUARDRAIL_RULE_TYPES)})$"
 class GuardrailRuleInput(BaseModel):
     rule_type: str = Field(pattern=GUARDRAIL_RULE_TYPE_PATTERN)
     effect: str = Field(default="allow", pattern="^(allow|deny)$")
+    phase: str = Field(default="both", pattern="^(request|response|both)$")
     values: list[str] = Field(min_length=1)
     config: dict[str, Any] = Field(default_factory=dict)
     priority: int = Field(default=100, ge=1)
@@ -40,6 +41,7 @@ class GuardrailRuleResponse(BaseModel):
     policy_id: UUID
     rule_type: str
     effect: str
+    phase: str
     values: list[str]
     config: dict[str, Any]
     priority: int
@@ -157,6 +159,7 @@ class GuardrailEventResponse(BaseModel):
     policy_id: UUID | None
     rule_id: UUID | None
     decision: str
+    phase: str
     reason: str
     team_id: UUID | None
     project_id: UUID | None
@@ -184,6 +187,8 @@ class GuardrailEvaluationContext(BaseModel):
     requested_model: str
     provider_model: str
     prompt_text: str = ""
+    response_text: str = ""
+    phase: str = Field(default="request", pattern="^(request|response)$")
 
 
 class GuardrailSimulationRequest(BaseModel):
