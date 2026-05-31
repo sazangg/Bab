@@ -14,6 +14,7 @@ export interface UsageRecordResponse {
   pool_id: string;
   provider_id: string;
   provider_credential_id: string | null;
+  request_id?: string | null;
   requested_model: string;
   provider_model: string;
   http_status: number;

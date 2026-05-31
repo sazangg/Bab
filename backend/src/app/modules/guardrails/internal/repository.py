@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.request_ids import current_request_id
 from app.modules.auth.internal.models import Team
 from app.modules.guardrails.internal.models import (
     GuardrailAssignment,
@@ -239,6 +240,7 @@ async def create_event(
     virtual_key_id: UUID,
     provider_id: UUID,
     pool_id: UUID,
+    request_id: str | None,
     requested_model: str,
     provider_model: str,
     metadata: dict,
@@ -256,6 +258,7 @@ async def create_event(
         virtual_key_id=virtual_key_id,
         provider_id=provider_id,
         pool_id=pool_id,
+        request_id=request_id or current_request_id(),
         requested_model=requested_model,
         provider_model=provider_model,
         metadata_=metadata,

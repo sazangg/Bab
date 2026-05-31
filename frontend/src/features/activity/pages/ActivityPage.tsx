@@ -55,7 +55,7 @@ export function ActivityPage() {
   const filteredEvents = events.filter((event) => {
     const term = entitySearch.trim().toLowerCase();
     if (!term) return true;
-    return `${event.message} ${event.action} ${event.actor_email ?? ""} ${contextLabel(event)} ${JSON.stringify(event.metadata)}`
+    return `${event.message} ${event.action} ${event.actor_email ?? ""} ${event.request_id ?? ""} ${contextLabel(event)} ${JSON.stringify(event.metadata)}`
       .toLowerCase()
       .includes(term);
   });
@@ -262,6 +262,7 @@ function ActivityRow({
                 {
                   id: event.id,
                   context: eventContext(event),
+                  request_id: event.request_id,
                   metadata: event.metadata,
                 },
                 null,

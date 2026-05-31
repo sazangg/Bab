@@ -57,6 +57,7 @@ export function UsageRecordsDrilldown({
                 <TableHead>Time</TableHead>
                 <TableHead>Model</TableHead>
                 <TableHead>Credential</TableHead>
+                <TableHead>Request</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Spend</TableHead>
                 <TableHead className="text-right">Latency</TableHead>
@@ -79,6 +80,9 @@ export function UsageRecordsDrilldown({
                     <div className="font-mono text-xs text-muted-foreground">
                       {record.provider_credential_prefix ?? shortId(record.provider_credential_id)}
                     </div>
+                  </TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {shortId(record.request_id)}
                   </TableCell>
                   <TableCell>{record.http_status}</TableCell>
                   <TableCell className="text-right">{formatCents(record.cost_cents)}</TableCell>
@@ -105,6 +109,7 @@ function downloadCsv(records: UsageRecordResponse[]) {
     "provider_credential_id",
     "provider_credential_name",
     "provider_credential_prefix",
+    "request_id",
     "error_code",
   ];
   const rows = records.map((record) =>
@@ -119,6 +124,7 @@ function downloadCsv(records: UsageRecordResponse[]) {
       record.provider_credential_id ?? "",
       record.provider_credential_name ?? "",
       record.provider_credential_prefix ?? "",
+      record.request_id ?? "",
       record.error_code ?? "",
     ]
       .map((value) => `"${String(value).replaceAll('"', '""')}"`)

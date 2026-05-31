@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.request_ids import current_request_id
 from app.modules.activity.internal.models import ActivityEvent
 from app.modules.activity.schemas import RecordActivityEvent
 
@@ -14,6 +15,7 @@ async def create_activity_event(
 ) -> ActivityEvent:
     data = payload.model_dump()
     data["metadata_"] = data.pop("metadata")
+    data["request_id"] = data["request_id"] or current_request_id()
     event = ActivityEvent(**data)
     db.add(event)
     await db.flush()

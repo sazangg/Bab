@@ -19,6 +19,7 @@ export interface GuardrailEventResponse {
   virtual_key_id: string | null;
   provider_id: string | null;
   pool_id: string | null;
+  request_id: string | null;
   requested_model: string | null;
   provider_model: string | null;
   metadata: GuardrailEventResponseMetadata;

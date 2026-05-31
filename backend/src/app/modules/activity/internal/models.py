@@ -29,6 +29,7 @@ class ActivityEvent(Base):
     provider_id: Mapped[UUID | None] = mapped_column(nullable=True, index=True)
     pool_id: Mapped[UUID | None] = mapped_column(nullable=True, index=True)
     model_offering_id: Mapped[UUID | None] = mapped_column(nullable=True, index=True)
+    request_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     metadata_: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

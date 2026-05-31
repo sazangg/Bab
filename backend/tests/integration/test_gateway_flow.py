@@ -31,7 +31,7 @@ async def _provision_gateway_path(
     *,
     upstream_api_key: str = "sk-test-upstream",
     model: str = "gpt-test",
-) -> tuple[str, str]:
+) -> tuple[str, str, str]:
     providers = (await client.get("/api/v1/providers", headers=headers)).json()
     provider = next(provider for provider in providers if provider["slug"] == "openai")
     provider_id = provider["id"]
@@ -113,7 +113,7 @@ async def _provision_gateway_path(
     assert key_response.status_code == 201
     virtual_key = key_response.json()["key"]
     assert virtual_key is not None
-    return virtual_key, credential_id
+    return virtual_key, credential_id, provider_id
 
 
 @pytest.mark.asyncio
@@ -174,7 +174,10 @@ async def test_gateway_path_records_usage_with_mocked_upstream(app_client, db_se
         base_url="http://test",
     ) as client:
         admin_headers = await _login(client)
-        virtual_key, credential_id = await _provision_gateway_path(client, admin_headers)
+        virtual_key, credential_id, _provider_id = await _provision_gateway_path(
+            client,
+            admin_headers,
+        )
 
         proxy_response = await client.post(
             "/v1/chat/completions",
@@ -185,6 +188,7 @@ async def test_gateway_path_records_usage_with_mocked_upstream(app_client, db_se
             },
         )
         assert proxy_response.status_code == 200
+        assert proxy_response.headers["x-request-id"]
         assert proxy_response.json()["id"] == "chatcmpl-integration"
 
         usage_response = await client.get("/api/v1/usage/records", headers=admin_headers)
@@ -195,8 +199,174 @@ async def test_gateway_path_records_usage_with_mocked_upstream(app_client, db_se
         assert records[0]["provider_model"] == "gpt-test"
         assert records[0]["provider_credential_id"] == credential_id
         assert records[0]["provider_credential_name"] == "Integration OpenAI key"
+        assert records[0]["request_id"] == proxy_response.headers["x-request-id"]
         assert records[0]["http_status"] == 200
         assert records[0]["total_tokens"] == 17
+
+
+@pytest.mark.asyncio
+async def test_gateway_proxy_does_not_cross_provider_fallback(app_client, db_session) -> None:
+    await sync_default_workspace(db_session)
+
+    async def upstream_handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "fallback.example":
+            return httpx.Response(
+                200,
+                json={
+                    "id": "chatcmpl-fallback",
+                    "object": "chat.completion",
+                    "choices": [
+                        {
+                            "index": 0,
+                            "message": {"role": "assistant", "content": "fallback"},
+                            "finish_reason": "stop",
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+                },
+            )
+        return httpx.Response(500, json={"error": {"message": "primary failed"}})
+
+    async def override_proxy_http_client() -> AsyncGenerator[httpx.AsyncClient]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(upstream_handler)) as client:
+            yield client
+
+    app_client.dependency_overrides[get_proxy_http_client] = override_proxy_http_client
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://test",
+    ) as client:
+        admin_headers = await _login(client)
+        virtual_key, _credential_id, provider_id = await _provision_gateway_path(
+            client,
+            admin_headers,
+        )
+        fallback_provider = await client.post(
+            "/api/v1/providers",
+            headers=admin_headers,
+            json={
+                "name": "Fallback provider",
+                "slug": "fallback-provider",
+                "base_url": "https://fallback.example/v1",
+                "capabilities": {"chat": True},
+            },
+        )
+        assert fallback_provider.status_code == 201
+        fallback_provider_id = fallback_provider.json()["id"]
+        fallback_credential = await client.post(
+            f"/api/v1/providers/{fallback_provider_id}/credentials",
+            headers=admin_headers,
+            json={"name": "Fallback key", "api_key": "sk-fallback"},
+        )
+        assert fallback_credential.status_code == 201
+        update_provider = await client.patch(
+            f"/api/v1/providers/{provider_id}",
+            headers=admin_headers,
+            json={
+                "fallback_policy": {
+                    "enabled": True,
+                    "fallback_provider_ids": [fallback_provider_id],
+                    "trigger_on_status": [500],
+                }
+            },
+        )
+        assert update_provider.status_code == 200
+
+        proxy_response = await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": f"Bearer {virtual_key}", "X-Request-ID": "req-no-fallback"},
+            json={
+                "model": "gpt-test",
+                "messages": [{"role": "user", "content": "Say hello."}],
+            },
+        )
+        assert proxy_response.status_code == 500
+        assert proxy_response.json()["error"]["message"] == "primary failed"
+
+        usage_response = await client.get("/api/v1/usage/records", headers=admin_headers)
+        assert usage_response.status_code == 200
+        records = usage_response.json()
+        assert len(records) == 1
+        assert records[0]["provider_id"] == provider_id
+        assert records[0]["request_id"] == "req-no-fallback"
+        assert records[0]["http_status"] == 500
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_gateway_contract(app_client, db_session) -> None:
+    await sync_default_workspace(db_session)
+
+    async def upstream_handler(request: httpx.Request) -> httpx.Response:
+        body = json_loads(request.content)
+        assert request.url.path == "/v1/chat/completions"
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-contract",
+                "object": "chat.completion",
+                "model": body["model"],
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "contract-ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
+            },
+        )
+
+    async def override_proxy_http_client() -> AsyncGenerator[httpx.AsyncClient]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(upstream_handler)) as client:
+            yield client
+
+    app_client.dependency_overrides[get_proxy_http_client] = override_proxy_http_client
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://test",
+    ) as client:
+        admin_headers = await _login(client)
+        virtual_key, _credential_id, _provider_id = await _provision_gateway_path(
+            client,
+            admin_headers,
+            model="gpt-contract",
+        )
+        auth_headers = {"Authorization": f"Bearer {virtual_key}"}
+
+        models_response = await client.get("/v1/models", headers=auth_headers)
+        assert models_response.status_code == 200
+        assert [model["id"] for model in models_response.json()["data"]] == ["gpt-contract"]
+
+        responses_response = await client.post(
+            "/v1/responses",
+            headers=auth_headers,
+            json={"model": "gpt-contract", "input": "hello", "max_output_tokens": 8},
+        )
+        assert responses_response.status_code == 200
+        assert responses_response.json()["output_text"] == "contract-ok"
+
+        completions_response = await client.post(
+            "/v1/completions",
+            headers=auth_headers,
+            json={"model": "gpt-contract", "prompt": "hello", "max_tokens": 8},
+        )
+        assert completions_response.status_code == 200
+        assert completions_response.json()["choices"][0]["text"] == "contract-ok"
+
+        embeddings_response = await client.post(
+            "/v1/embeddings",
+            headers=auth_headers,
+            json={"model": "text-embedding-3-small", "input": "hello"},
+        )
+        assert embeddings_response.status_code == 501
+
+
+def json_loads(content: bytes) -> dict:
+    import json
+
+    return json.loads(content.decode("utf-8"))
 
 
 @pytest.mark.asyncio
@@ -220,7 +390,7 @@ async def test_gateway_path_can_call_live_openai(app_client, db_session) -> None
         assert settings.openai_api_key is not None
         assert settings.live_openai_model is not None
         live_model = settings.live_openai_model
-        virtual_key, _credential_id = await _provision_gateway_path(
+        virtual_key, _credential_id, _provider_id = await _provision_gateway_path(
             client,
             admin_headers,
             upstream_api_key=settings.openai_api_key,

@@ -13,6 +13,7 @@ class RecordUsage(BaseModel):
     pool_id: UUID
     provider_id: UUID
     provider_credential_id: UUID | None
+    request_id: str | None = None
     requested_model: str
     provider_model: str
     http_status: int

@@ -839,6 +839,7 @@ export function GuardrailsPage() {
                     <TableHead>Decision</TableHead>
                     <TableHead>Policy</TableHead>
                     <TableHead>Model</TableHead>
+                    <TableHead>Request</TableHead>
                     <TableHead>Scope</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -858,6 +859,9 @@ export function GuardrailsPage() {
                       </TableCell>
                       <TableCell className="font-mono text-xs">
                         {event.requested_model ?? "-"}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        {shortId(event.request_id)}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {labelEventScope(event, scopeLabels)}
@@ -1347,4 +1351,8 @@ function labelEventScope(event: GuardrailEventResponse, scopeLabels: Record<stri
     event.virtual_key_id ?? event.allocation_id ?? event.project_id ?? event.team_id ?? null;
   if (!scopeId) return "Organization";
   return scopeLabels[scopeId] ?? scopeId;
+}
+
+function shortId(value: string | null | undefined) {
+  return value ? value.slice(0, 8) : "-";
 }

@@ -88,7 +88,7 @@ export function UsagePage() {
   const filteredRecords = records.filter((record) => {
     const term = recordFilter.trim().toLowerCase();
     if (!term) return true;
-    return `${record.requested_model} ${record.provider_model} ${record.provider_credential_name ?? ""} ${record.provider_credential_prefix ?? ""} ${record.http_status} ${record.error_code ?? ""} ${record.provider_id} ${record.project_id} ${record.allocation_id} ${record.virtual_key_id}`
+    return `${record.requested_model} ${record.provider_model} ${record.provider_credential_name ?? ""} ${record.provider_credential_prefix ?? ""} ${record.request_id ?? ""} ${record.http_status} ${record.error_code ?? ""} ${record.provider_id} ${record.project_id} ${record.allocation_id} ${record.virtual_key_id}`
       .toLowerCase()
       .includes(term);
   });
@@ -500,6 +500,7 @@ function UsageRecordsCard({
                 <TableHead>Time</TableHead>
                 <TableHead>Model</TableHead>
                 <TableHead>Credential</TableHead>
+                <TableHead>Request</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Tokens</TableHead>
                 <TableHead className="text-right">Spend</TableHead>
@@ -511,6 +512,9 @@ function UsageRecordsCard({
                 <TableRow key={record.id}>
                   <TableCell className="text-muted-foreground">
                     {new Date(record.created_at).toLocaleString()}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {shortId(record.request_id)}
                   </TableCell>
                   <TableCell>
                     <div className="font-medium">{record.requested_model}</div>
@@ -647,6 +651,7 @@ function downloadCsv(records: UsageRecordResponse[]) {
     "provider_credential_id",
     "provider_credential_name",
     "provider_credential_prefix",
+    "request_id",
     "error_code",
   ];
   const rows = records.map((record) =>
@@ -661,6 +666,7 @@ function downloadCsv(records: UsageRecordResponse[]) {
       record.provider_credential_id ?? "",
       record.provider_credential_name ?? "",
       record.provider_credential_prefix ?? "",
+      record.request_id ?? "",
       record.error_code ?? "",
     ]
       .map((value) => `"${String(value).replaceAll('"', '""')}"`)

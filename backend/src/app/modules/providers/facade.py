@@ -440,6 +440,7 @@ async def create_chat_completion(
     scope: Scope,
     db: AsyncSession,
     http_client: httpx.AsyncClient,
+    allowed_fallback_provider_ids: set[UUID] | None = None,
 ) -> ProviderChatCompletionResponse:
     return await service.create_chat_completion(
         provider_id=provider_id,
@@ -449,6 +450,7 @@ async def create_chat_completion(
         scope=scope,
         db=db,
         http_client=http_client,
+        allowed_fallback_provider_ids=allowed_fallback_provider_ids,
     )
 
 

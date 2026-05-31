@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.request_ids import current_request_id
 from app.modules.auth.internal.models import Team
 from app.modules.keys.internal.models import Allocation, Project, VirtualKey
 from app.modules.providers.internal.models import CredentialPool, Provider, ProviderCredential
@@ -23,7 +24,9 @@ from app.modules.usage.schemas import (
 
 
 async def create_usage_record(*, payload: RecordUsage, db: AsyncSession) -> UsageRecord:
-    usage_record = UsageRecord(**payload.model_dump())
+    data = payload.model_dump()
+    data["request_id"] = data["request_id"] or current_request_id()
+    usage_record = UsageRecord(**data)
     db.add(usage_record)
     await db.flush()
     return usage_record

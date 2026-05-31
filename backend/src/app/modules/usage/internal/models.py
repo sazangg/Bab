@@ -42,6 +42,7 @@ class UsageRecord(Base):
         nullable=True,
         index=True,
     )
+    request_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     requested_model: Mapped[str] = mapped_column(String(255))
     provider_model: Mapped[str] = mapped_column(String(255))
     http_status: Mapped[int] = mapped_column(Integer)

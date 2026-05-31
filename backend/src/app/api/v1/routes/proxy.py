@@ -15,6 +15,7 @@ from starlette.responses import StreamingResponse
 
 from app.core.config import settings
 from app.core.database import Scope, get_db
+from app.core.request_ids import current_request_id
 from app.modules.activity import facade as activity_facade
 from app.modules.activity.schemas import RecordActivityEvent
 from app.modules.guardrails import facade as guardrails_facade
@@ -196,6 +197,7 @@ async def create_chat_completion(
                 virtual_key_id=resolved.virtual_key_id,
                 provider_id=resolved.provider_id,
                 pool_id=resolved.pool_id,
+                request_id=current_request_id(),
                 requested_model=resolved.requested_model,
                 provider_model=resolved.provider_model,
                 prompt_text=_messages_text(provider_payload.messages),
@@ -242,6 +244,7 @@ async def create_chat_completion(
             scope=Scope(org_id=resolved.org_id),
             db=db,
             http_client=http_client,
+            allowed_fallback_provider_ids={resolved.provider_id},
         )
     except InvalidVirtualKeyError as exc:
         raise HTTPException(
@@ -414,6 +417,7 @@ async def _execute_chat_proxy(
                 virtual_key_id=resolved.virtual_key_id,
                 provider_id=resolved.provider_id,
                 pool_id=resolved.pool_id,
+                request_id=current_request_id(),
                 requested_model=resolved.requested_model,
                 provider_model=resolved.provider_model,
                 prompt_text=_messages_text(provider_payload.messages),
@@ -436,6 +440,7 @@ async def _execute_chat_proxy(
             scope=Scope(org_id=resolved.org_id),
             db=db,
             http_client=http_client,
+            allowed_fallback_provider_ids={resolved.provider_id},
         )
     except InvalidVirtualKeyError as exc:
         raise HTTPException(
@@ -786,6 +791,7 @@ async def _record_proxy_request(
                 pool_id=resolved.pool_id,
                 provider_id=resolved.provider_id,
                 provider_credential_id=provider_credential_id or resolved.provider_key_id,
+                request_id=current_request_id(),
                 requested_model=resolved.requested_model,
                 provider_model=resolved.provider_model,
                 http_status=http_status,
@@ -940,6 +946,7 @@ async def _record_proxy_activity(
             virtual_key_id=resolved.virtual_key_id,
             provider_id=resolved.provider_id,
             pool_id=resolved.pool_id,
+            request_id=current_request_id(),
             metadata={
                 **metadata,
                 "requested_model": resolved.requested_model,

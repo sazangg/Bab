@@ -1117,6 +1117,7 @@ async def create_chat_completion(
     scope: Scope,
     db: AsyncSession,
     http_client: httpx.AsyncClient,
+    allowed_fallback_provider_ids: set[UUID] | None = None,
 ) -> ProviderChatCompletionResponse:
     return await _create_chat_completion_with_policy(
         provider_id=provider_id,
@@ -1127,6 +1128,7 @@ async def create_chat_completion(
         db=db,
         http_client=http_client,
         allow_provider_fallback=True,
+        allowed_fallback_provider_ids=allowed_fallback_provider_ids,
     )
 
 
@@ -1140,6 +1142,7 @@ async def _create_chat_completion_with_policy(
     db: AsyncSession,
     http_client: httpx.AsyncClient,
     allow_provider_fallback: bool,
+    allowed_fallback_provider_ids: set[UUID] | None,
 ) -> ProviderChatCompletionResponse:
     provider = await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
     if not provider.is_active:
@@ -1214,6 +1217,7 @@ async def _create_chat_completion_with_policy(
             scope=scope,
             db=db,
             http_client=http_client,
+            allowed_fallback_provider_ids=allowed_fallback_provider_ids,
         )
         if isinstance(fallback_result, ProviderChatCompletionResponse):
             return fallback_result
@@ -1232,6 +1236,7 @@ async def _try_provider_fallbacks(
     scope: Scope,
     db: AsyncSession,
     http_client: httpx.AsyncClient,
+    allowed_fallback_provider_ids: set[UUID] | None,
 ) -> ProviderChatCompletionResponse | ProviderUpstreamError | None:
     fallback_policy = _fallback_policy(provider)
     if not fallback_policy["enabled"]:
@@ -1242,6 +1247,11 @@ async def _try_provider_fallbacks(
 
     last_error: ProviderUpstreamError | None = None
     for fallback_provider_id in fallback_ids:
+        if (
+            allowed_fallback_provider_ids is not None
+            and fallback_provider_id not in allowed_fallback_provider_ids
+        ):
+            continue
         try:
             return await _create_chat_completion_with_policy(
                 provider_id=fallback_provider_id,
@@ -1252,6 +1262,7 @@ async def _try_provider_fallbacks(
                 db=db,
                 http_client=http_client,
                 allow_provider_fallback=False,
+                allowed_fallback_provider_ids=allowed_fallback_provider_ids,
             )
         except ProviderUpstreamError as exc:
             last_error = exc

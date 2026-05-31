@@ -22,6 +22,7 @@ export interface ActivityEventResponse {
   provider_id: string | null;
   pool_id: string | null;
   model_offering_id: string | null;
+  request_id: string | null;
   metadata: ActivityEventResponseMetadata;
   created_at: string;
 }

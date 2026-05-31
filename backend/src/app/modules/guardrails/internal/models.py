@@ -108,6 +108,7 @@ class GuardrailEvent(Base):
     virtual_key_id: Mapped[UUID | None] = mapped_column(nullable=True, index=True)
     provider_id: Mapped[UUID | None] = mapped_column(nullable=True, index=True)
     pool_id: Mapped[UUID | None] = mapped_column(nullable=True, index=True)
+    request_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     requested_model: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     provider_model: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     metadata_: Mapped[dict] = mapped_column("metadata", JSON, default=dict)

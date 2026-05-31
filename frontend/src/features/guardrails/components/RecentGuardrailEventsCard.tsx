@@ -59,9 +59,12 @@ function GuardrailEventRow({ event }: { event: GuardrailEventResponse }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="font-medium">{event.reason.replaceAll("_", " ")}</div>
-          <div className="mt-1 truncate text-xs text-muted-foreground">
-            {event.requested_model ?? "-"} · {event.provider_model ?? "-"}
-          </div>
+      <div className="mt-1 truncate text-xs text-muted-foreground">
+        {event.requested_model ?? "-"} · {event.provider_model ?? "-"}
+      </div>
+      <div className="mt-1 font-mono text-xs text-muted-foreground">
+        request {shortId(event.request_id)}
+      </div>
         </div>
         <Badge variant={event.decision === "blocked" ? "destructive" : "outline"}>
           {event.decision === "dry_run" ? "Dry run" : event.decision}
@@ -72,6 +75,10 @@ function GuardrailEventRow({ event }: { event: GuardrailEventResponse }) {
       </div>
     </div>
   );
+}
+
+function shortId(value: string | null | undefined) {
+  return value ? value.slice(0, 8) : "-";
 }
 
 function buildActivityHref(filters: { project_id?: string; virtual_key_id?: string }) {

@@ -164,6 +164,7 @@ class GuardrailEventResponse(BaseModel):
     virtual_key_id: UUID | None
     provider_id: UUID | None
     pool_id: UUID | None
+    request_id: str | None
     requested_model: str | None
     provider_model: str | None
     metadata: dict
@@ -179,6 +180,7 @@ class GuardrailEvaluationContext(BaseModel):
     virtual_key_id: UUID
     provider_id: UUID
     pool_id: UUID
+    request_id: str | None = None
     requested_model: str
     provider_model: str
     prompt_text: str = ""
