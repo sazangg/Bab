@@ -357,6 +357,64 @@ export function ProviderDetailPage() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Operational state</CardTitle>
+          <CardDescription>
+            Runtime routing controls and recent circuit breaker observations.
+          </CardDescription>
+          <CardAction>
+            <StatusBadge
+              variant={provider.operational_state?.circuit_state === "open" ? "error" : "active"}
+            >
+              Circuit {provider.operational_state?.circuit_state ?? "closed"}
+            </StatusBadge>
+          </CardAction>
+        </CardHeader>
+        <CardContent className="grid gap-x-6 gap-y-4 md:grid-cols-4">
+          <Fact
+            label="Circuit breaker"
+            value={provider.operational_state?.circuit_breaker_enabled ? "Enabled" : "Disabled"}
+          />
+          <Fact
+            label="Recent failures"
+            value={`${provider.operational_state?.recent_circuit_failures ?? 0}`}
+          />
+          <Fact
+            label="Recent successes"
+            value={`${provider.operational_state?.recent_circuit_successes ?? 0}`}
+          />
+          <Fact
+            label="Open until"
+            value={
+              provider.operational_state?.circuit_open_until
+                ? formatRelativeFromNow(new Date(provider.operational_state.circuit_open_until))
+                : "-"
+            }
+          />
+          <Fact
+            label="Fallback policy"
+            value={provider.operational_state?.fallback_enabled ? "Enabled" : "Disabled"}
+          />
+          <Fact
+            label="Fallback providers"
+            value={`${provider.operational_state?.fallback_provider_count ?? 0}`}
+          />
+          <Fact
+            label="Fallback statuses"
+            value={
+              provider.operational_state?.fallback_trigger_statuses?.length
+                ? provider.operational_state.fallback_trigger_statuses.join(", ")
+                : "-"
+            }
+          />
+          <Fact
+            label="Last upstream failure"
+            value={lastCredentialFailure(activeCredentials) ?? "-"}
+          />
+        </CardContent>
+      </Card>
+
       <EditProviderSheet
         provider={isEditOpen ? provider : null}
         onClose={() => setIsEditOpen(false)}
@@ -491,6 +549,14 @@ function lastSuccessfulRequestAt(
     if (!latest || parsed > latest) latest = parsed;
   }
   return latest;
+}
+
+function lastCredentialFailure(
+  credentials: { last_validation_error: string | null; health_status: string }[],
+) {
+  const failed = credentials.find((credential) => credential.last_validation_error);
+  if (!failed) return null;
+  return failed.last_validation_error;
 }
 
 function formatCents(value: number) {

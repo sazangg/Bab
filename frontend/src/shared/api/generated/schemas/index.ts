@@ -82,6 +82,7 @@ export * from "./projectResponse";
 export * from "./providerCredentialResponse";
 export * from "./providerCredentialRoutingPolicy";
 export * from "./providerCredentialSummary";
+export * from "./providerOperationalState";
 export * from "./providerReadiness";
 export * from "./providerResponse";
 export * from "./providerResponseCapabilities";

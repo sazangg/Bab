@@ -54,6 +54,7 @@ from app.modules.providers.schemas import (
     ProviderCredentialResponse,
     ProviderCredentialRoutingPolicy,
     ProviderCredentialSummary,
+    ProviderOperationalState,
     ProviderReadiness,
     ProviderResponse,
     TestModelOfferingRequest,
@@ -1631,6 +1632,7 @@ def _to_response(
     response.catalog_type = _provider_catalog_type(provider)
     response.capabilities = _aggregate_provider_capabilities(provider)
     response.readiness = _provider_readiness(provider, response.credential_summary)
+    response.operational_state = _provider_operational_state(provider)
     return response
 
 
@@ -1701,6 +1703,25 @@ def _provider_readiness(
                 active_model_count > 0,
             ]
         ),
+    )
+
+
+def _provider_operational_state(provider: Provider) -> ProviderOperationalState:
+    circuit_policy = _circuit_breaker_policy(provider)
+    fallback_policy = _fallback_policy(provider)
+    events = list(_provider_circuit_events.get(provider.id, []))
+    open_until = _provider_circuit_open_until.get(provider.id)
+    if open_until is not None and open_until <= _now():
+        open_until = None
+    return ProviderOperationalState(
+        circuit_breaker_enabled=circuit_policy["enabled"],
+        circuit_state="open" if open_until is not None else "closed",
+        circuit_open_until=open_until,
+        recent_circuit_failures=sum(1 for _created_at, succeeded in events if not succeeded),
+        recent_circuit_successes=sum(1 for _created_at, succeeded in events if succeeded),
+        fallback_enabled=fallback_policy["enabled"],
+        fallback_provider_count=len(fallback_policy["fallback_provider_ids"]),
+        fallback_trigger_statuses=sorted(fallback_policy["trigger_on_status"]),
     )
 
 

@@ -150,6 +150,17 @@ class ProviderReadiness(BaseModel):
     is_ready: bool = False
 
 
+class ProviderOperationalState(BaseModel):
+    circuit_breaker_enabled: bool = False
+    circuit_state: str = "closed"
+    circuit_open_until: datetime | None = None
+    recent_circuit_failures: int = 0
+    recent_circuit_successes: int = 0
+    fallback_enabled: bool = False
+    fallback_provider_count: int = 0
+    fallback_trigger_statuses: list[int] = Field(default_factory=list)
+
+
 class TestProviderCredentialResponse(BaseModel):
     id: UUID
     health_status: str
@@ -264,6 +275,7 @@ class ProviderResponse(BaseModel):
     max_concurrent_requests: int | None
     credential_summary: ProviderCredentialSummary = Field(default_factory=ProviderCredentialSummary)
     readiness: ProviderReadiness = Field(default_factory=ProviderReadiness)
+    operational_state: ProviderOperationalState = Field(default_factory=ProviderOperationalState)
     is_favorite: bool
     is_active: bool
     created_at: datetime

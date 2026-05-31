@@ -9,6 +9,7 @@ import type { ProviderReadiness } from "./providerReadiness";
 import type { ProviderResponseCapabilities } from "./providerResponseCapabilities";
 import type { ProviderResponseCircuitBreakerPolicy } from "./providerResponseCircuitBreakerPolicy";
 import type { ProviderResponseFallbackPolicy } from "./providerResponseFallbackPolicy";
+import type { ProviderOperationalState } from "./providerOperationalState";
 import type { ProviderResponseRetryPolicy } from "./providerResponseRetryPolicy";
 
 export interface ProviderResponse {
@@ -32,6 +33,7 @@ export interface ProviderResponse {
   max_concurrent_requests: number | null;
   credential_summary?: ProviderCredentialSummary;
   readiness?: ProviderReadiness;
+  operational_state?: ProviderOperationalState;
   is_favorite: boolean;
   is_active: boolean;
   created_at: string;

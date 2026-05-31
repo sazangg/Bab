@@ -55,6 +55,8 @@ export function UsagePage() {
   const [endDate, setEndDate] = useState("");
   const [customRangeEnabled, setCustomRangeEnabled] = useState(false);
   const [providerId, setProviderId] = useState("all");
+  const [teamId, setTeamId] = useState("all");
+  const [projectId, setProjectId] = useState("all");
   const [model, setModel] = useState("all");
   const [virtualKeyId, setVirtualKeyId] = useState("all");
   const [recordFilter, setRecordFilter] = useState("");
@@ -65,6 +67,8 @@ export function UsagePage() {
     startDate: customRangeEnabled ? startDate : "",
     endDate: customRangeEnabled ? endDate : "",
     providerId,
+    teamId,
+    projectId,
     model,
     virtualKeyId,
   });
@@ -97,6 +101,8 @@ export function UsagePage() {
   const failed = totals?.failed_requests ?? 0;
   const errorRate = requests > 0 ? `${Math.round((failed / requests) * 1000) / 10}%` : "0%";
   const providerOptions = summary?.by_provider ?? [];
+  const teamOptions = summary?.by_team ?? [];
+  const projectOptions = summary?.by_project ?? [];
   const modelOptions = summary?.by_model ?? [];
   const virtualKeyOptions = summary?.by_virtual_key ?? [];
 
@@ -143,6 +149,8 @@ export function UsagePage() {
               variant="outline"
               onClick={() => {
                 setProviderId("all");
+                setTeamId("all");
+                setProjectId("all");
                 setModel("all");
                 setVirtualKeyId("all");
                 setRecordFilter("");
@@ -155,13 +163,27 @@ export function UsagePage() {
       />
 
       <Card>
-        <CardContent className="grid gap-3 md:grid-cols-3">
+        <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <UsageSelect
             label="Provider"
             value={providerId}
             placeholder="All providers"
             options={providerOptions}
             onChange={setProviderId}
+          />
+          <UsageSelect
+            label="Team"
+            value={teamId}
+            placeholder="All teams"
+            options={teamOptions}
+            onChange={setTeamId}
+          />
+          <UsageSelect
+            label="Project"
+            value={projectId}
+            placeholder="All projects"
+            options={projectOptions}
+            onChange={setProjectId}
           />
           <UsageSelect
             label="Model"
@@ -513,9 +535,6 @@ function UsageRecordsCard({
                   <TableCell className="text-muted-foreground">
                     {new Date(record.created_at).toLocaleString()}
                   </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {shortId(record.request_id)}
-                  </TableCell>
                   <TableCell>
                     <div className="font-medium">{record.requested_model}</div>
                     <div className="text-xs text-muted-foreground">{record.provider_model}</div>
@@ -527,6 +546,9 @@ function UsageRecordsCard({
                     <div className="font-mono text-xs text-muted-foreground">
                       {record.provider_credential_prefix ?? shortId(record.provider_credential_id)}
                     </div>
+                  </TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {shortId(record.request_id)}
                   </TableCell>
                   <TableCell>
                     <Badge variant={record.http_status >= 400 ? "destructive" : "secondary"}>
@@ -686,6 +708,8 @@ function buildUsageParams({
   startDate,
   endDate,
   providerId,
+  teamId,
+  projectId,
   model,
   virtualKeyId,
 }: {
@@ -693,6 +717,8 @@ function buildUsageParams({
   startDate: string;
   endDate: string;
   providerId: string;
+  teamId: string;
+  projectId: string;
   model: string;
   virtualKeyId: string;
 }) {
@@ -701,6 +727,8 @@ function buildUsageParams({
     start_at?: string;
     end_at?: string;
     provider_id?: string;
+    team_id?: string;
+    project_id?: string;
     model?: string;
     virtual_key_id?: string;
   } = { window };
@@ -712,6 +740,12 @@ function buildUsageParams({
   }
   if (providerId !== "all") {
     params.provider_id = providerId;
+  }
+  if (teamId !== "all") {
+    params.team_id = teamId;
+  }
+  if (projectId !== "all") {
+    params.project_id = projectId;
   }
   if (model !== "all") {
     params.model = model;
