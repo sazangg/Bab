@@ -1,18 +1,21 @@
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.request_ids import current_request_id
 from app.modules.auth.internal.models import Team
 from app.modules.keys.internal.models import Allocation, Project, VirtualKey
 from app.modules.providers.internal.models import CredentialPool, Provider, ProviderCredential
-from app.modules.usage.internal.models import UsageRecord
+from app.modules.usage.accounting import UsageAccounting
+from app.modules.usage.internal.models import AllocationReservation, UsageRecord
 from app.modules.usage.schemas import (
     AllocationBudgetBurnRow,
+    AllocationReservationSummary,
     AllocationUsageSummary,
     OrganizationUsageSummary,
+    RecordAllocationReservation,
     RecordUsage,
     SpendInsights,
     UsageBreakdownRow,
@@ -30,6 +33,95 @@ async def create_usage_record(*, payload: RecordUsage, db: AsyncSession) -> Usag
     db.add(usage_record)
     await db.flush()
     return usage_record
+
+
+async def create_allocation_reservation(
+    *,
+    payload: RecordAllocationReservation,
+    db: AsyncSession,
+) -> AllocationReservation:
+    data = payload.model_dump()
+    data["request_id"] = data["request_id"] or current_request_id()
+    reservation = AllocationReservation(**data)
+    db.add(reservation)
+    await db.flush()
+    return reservation
+
+
+async def summarize_active_allocation_reservations(
+    *,
+    allocation_id: UUID,
+    since: datetime | None,
+    now: datetime,
+    db: AsyncSession,
+) -> AllocationReservationSummary:
+    filters = [
+        AllocationReservation.allocation_id == allocation_id,
+        AllocationReservation.status == "active",
+        AllocationReservation.expires_at > now,
+    ]
+    if since is not None:
+        filters.append(AllocationReservation.created_at >= since)
+    row = (
+        await db.execute(
+            select(
+                func.count(AllocationReservation.id),
+                func.coalesce(func.sum(AllocationReservation.reserved_prompt_tokens), 0),
+                func.coalesce(func.sum(AllocationReservation.reserved_completion_tokens), 0),
+                func.coalesce(func.sum(AllocationReservation.reserved_total_tokens), 0),
+                func.coalesce(func.sum(AllocationReservation.reserved_cost_cents), 0),
+            ).where(*filters)
+        )
+    ).one()
+    return AllocationReservationSummary(
+        requests=int(row[0]),
+        prompt_tokens=int(row[1]),
+        completion_tokens=int(row[2]),
+        total_tokens=int(row[3]),
+        cost_cents=int(row[4]),
+    )
+
+
+async def commit_allocation_reservations(
+    *,
+    reservation_ids: list[UUID],
+    usage: UsageAccounting,
+    cost_cents: int | None,
+    db: AsyncSession,
+) -> None:
+    if not reservation_ids:
+        return
+    await db.execute(
+        update(AllocationReservation)
+        .where(
+            AllocationReservation.id.in_(reservation_ids),
+            AllocationReservation.status == "active",
+        )
+        .values(
+            status="committed",
+            actual_prompt_tokens=usage.prompt_tokens,
+            actual_completion_tokens=usage.completion_tokens,
+            actual_total_tokens=usage.total_tokens,
+            actual_cost_cents=cost_cents,
+        )
+    )
+
+
+async def release_allocation_reservations(
+    *,
+    reservation_ids: list[UUID],
+    db: AsyncSession,
+) -> None:
+    if not reservation_ids:
+        return
+    await db.execute(
+        update(AllocationReservation)
+        .where(
+            AllocationReservation.id.in_(reservation_ids),
+            AllocationReservation.status == "active",
+        )
+        .values(status="released")
+    )
 
 
 async def list_usage_records(

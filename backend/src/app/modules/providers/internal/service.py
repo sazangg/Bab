@@ -1711,7 +1711,7 @@ def _provider_operational_state(provider: Provider) -> ProviderOperationalState:
     fallback_policy = _fallback_policy(provider)
     events = list(_provider_circuit_events.get(provider.id, []))
     open_until = _provider_circuit_open_until.get(provider.id)
-    if open_until is not None and open_until <= _now():
+    if open_until is not None and open_until <= datetime.now(UTC):
         open_until = None
     return ProviderOperationalState(
         circuit_breaker_enabled=circuit_policy["enabled"],

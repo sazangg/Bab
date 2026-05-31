@@ -69,7 +69,12 @@ async def _create_project_pool_and_models(db_session: AsyncSession):
     )
     fast_model = await providers_facade.create_model_offering(
         provider_id=provider.id,
-        payload=CreateModelOfferingRequest(provider_model_name="gpt-5.4-mini", alias="fast"),
+        payload=CreateModelOfferingRequest(
+            provider_model_name="gpt-5.4-mini",
+            alias="fast",
+            input_price_per_million_tokens=1_000_000,
+            output_price_per_million_tokens=1_000_000,
+        ),
         actor=actor,
         scope=scope,
         db=db_session,
@@ -397,6 +402,64 @@ async def test_allocation_limits_apply_to_parent_chain(db_session: AsyncSession)
         )
     assert exc.value.status_code == 403
     assert exc.value.detail == "allocation request limit exceeded"
+
+
+async def test_allocation_budget_includes_active_reservations(db_session: AsyncSession) -> None:
+    actor, scope, _, project, _, pool, fast_model, _ = await _create_project_pool_and_models(
+        db_session
+    )
+    allocation = await keys_facade.create_allocation(
+        payload=CreateAllocationRequest(
+            name="Project grant",
+            project_id=project.id,
+            offerings=[AllocationOffering(pool_id=pool.id, model_offering_id=fast_model.id)],
+            budget_cents=10,
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Console key", allocation_id=allocation.id),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    resolved = await keys_facade.resolve_access(
+        payload=ResolveAccessRequest(raw_key=created_key.key, requested_model="gpt-5.4-mini"),
+        db=db_session,
+    )
+
+    reservation_ids = await _enforce_allocation_limits(
+        resolved=resolved,
+        estimated_input_tokens=4,
+        requested_output_tokens=4,
+        db=db_session,
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await _enforce_allocation_limits(
+            resolved=resolved,
+            estimated_input_tokens=4,
+            requested_output_tokens=4,
+            db=db_session,
+        )
+    assert exc.value.status_code == 403
+    assert exc.value.detail == "allocation budget exceeded"
+
+    await usage_facade.release_allocation_reservations(
+        reservation_ids=reservation_ids,
+        db=db_session,
+    )
+
+    second_reservation_ids = await _enforce_allocation_limits(
+        resolved=resolved,
+        estimated_input_tokens=4,
+        requested_output_tokens=4,
+        db=db_session,
+    )
+    assert second_reservation_ids
 
 
 async def test_allocation_usage_summary_breaks_down_usage(db_session: AsyncSession) -> None:

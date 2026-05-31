@@ -35,6 +35,26 @@ class UsageRecordResponse(RecordUsage):
     provider_credential_prefix: str | None = None
 
 
+class RecordAllocationReservation(BaseModel):
+    org_id: UUID
+    allocation_id: UUID
+    virtual_key_id: UUID
+    request_id: str | None = None
+    reserved_prompt_tokens: int = 0
+    reserved_completion_tokens: int = 0
+    reserved_total_tokens: int = 0
+    reserved_cost_cents: int | None = None
+    expires_at: datetime
+
+
+class AllocationReservationSummary(BaseModel):
+    requests: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    cost_cents: int = 0
+
+
 class UsageSummaryTotals(BaseModel):
     requests: int = 0
     successful_requests: int = 0

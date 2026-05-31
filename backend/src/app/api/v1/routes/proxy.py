@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
@@ -26,6 +27,7 @@ from app.modules.keys.errors import (
     AccessDeniedError,
     InvalidVirtualKeyError,
 )
+from app.modules.keys.internal.models import Allocation
 from app.modules.keys.schemas import ResolveAccessRequest
 from app.modules.providers import facade as providers_facade
 from app.modules.providers.errors import (
@@ -46,7 +48,7 @@ from app.modules.usage.accounting import (
 )
 from app.modules.usage.costing.base import CostingContext
 from app.modules.usage.costing.registry import default_cost_calculator_registry
-from app.modules.usage.schemas import RecordUsage
+from app.modules.usage.schemas import RecordAllocationReservation, RecordUsage
 
 router = APIRouter(prefix="/v1", tags=["proxy"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
@@ -159,6 +161,7 @@ async def create_chat_completion(
     raw_key = _extract_bearer_token(authorization)
     resolved = None
     estimated_tokens = 0
+    reservation_ids: list[UUID] = []
     try:
         resolved = await keys_facade.resolve_access(
             payload=ResolveAccessRequest(
@@ -181,7 +184,7 @@ async def create_chat_completion(
         )
         _enforce_provider_body_size(raw_body, resolved_provider.max_body_bytes)
         estimated_tokens = estimate_request_tokens(provider_payload.messages)
-        await _enforce_allocation_limits(
+        reservation_ids = await _enforce_allocation_limits(
             resolved=resolved,
             estimated_input_tokens=estimated_tokens,
             requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
@@ -229,6 +232,7 @@ async def create_chat_completion(
                     resolved=resolved,
                     provider_payload=provider_payload,
                     estimated_tokens=estimated_tokens,
+                    reservation_ids=reservation_ids,
                     started_at=started_at,
                     db=db,
                 ),
@@ -253,6 +257,7 @@ async def create_chat_completion(
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
     except AccessDeniedError as exc:
+        await _release_reservations(reservation_ids=reservation_ids, db=db)
         if resolved is not None:
             await _record_proxy_activity(
                 resolved=resolved,
@@ -276,6 +281,7 @@ async def create_chat_completion(
                 error_code="guardrail_denied",
                 db=db,
             )
+            await _release_reservations(reservation_ids=reservation_ids, db=db)
             await _record_proxy_activity(
                 resolved=resolved,
                 action="proxy.guardrail_denied",
@@ -302,6 +308,7 @@ async def create_chat_completion(
                 error_code="provider_unavailable",
                 db=db,
             )
+            await _release_reservations(reservation_ids=reservation_ids, db=db)
             await _record_proxy_activity(
                 resolved=resolved,
                 action="proxy.provider_unavailable",
@@ -324,6 +331,7 @@ async def create_chat_completion(
                 error_code="provider_upstream_error",
                 db=db,
             )
+            await _release_reservations(reservation_ids=reservation_ids, db=db)
             await _record_proxy_activity(
                 resolved=resolved,
                 action="proxy.provider_error",
@@ -339,13 +347,19 @@ async def create_chat_completion(
         response_body=upstream.body,
     )
 
-    await _record_proxy_request(
+    actual_cost_cents = await _record_proxy_request(
         resolved=resolved,
         http_status=upstream.status_code,
         latency_ms=_elapsed_ms(started_at),
         usage=usage,
         error_code=None,
         provider_credential_id=upstream.provider_credential_id,
+        db=db,
+    )
+    await _commit_reservations(
+        reservation_ids=reservation_ids,
+        usage=usage,
+        cost_cents=actual_cost_cents,
         db=db,
     )
     return JSONResponse(status_code=upstream.status_code, content=upstream.body)
@@ -379,6 +393,7 @@ async def _execute_chat_proxy(
     provider_payload = _to_provider_payload(body)
     raw_key = _extract_bearer_token(authorization)
     resolved = None
+    reservation_ids: list[UUID] = []
     try:
         resolved = await keys_facade.resolve_access(
             payload=ResolveAccessRequest(
@@ -401,7 +416,7 @@ async def _execute_chat_proxy(
         )
         _enforce_provider_body_size(raw_body, resolved_provider.max_body_bytes)
         estimated_tokens = estimate_request_tokens(provider_payload.messages)
-        await _enforce_allocation_limits(
+        reservation_ids = await _enforce_allocation_limits(
             resolved=resolved,
             estimated_input_tokens=estimated_tokens,
             requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
@@ -449,6 +464,7 @@ async def _execute_chat_proxy(
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
     except AccessDeniedError as exc:
+        await _release_reservations(reservation_ids=reservation_ids, db=db)
         if resolved is not None:
             await _record_proxy_activity(
                 resolved=resolved,
@@ -472,6 +488,7 @@ async def _execute_chat_proxy(
                 error_code="guardrail_denied",
                 db=db,
             )
+            await _release_reservations(reservation_ids=reservation_ids, db=db)
             await _record_proxy_activity(
                 resolved=resolved,
                 action="proxy.guardrail_denied",
@@ -495,6 +512,7 @@ async def _execute_chat_proxy(
                 error_code="provider_unavailable",
                 db=db,
             )
+            await _release_reservations(reservation_ids=reservation_ids, db=db)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="provider is not available",
@@ -509,19 +527,26 @@ async def _execute_chat_proxy(
                 error_code="provider_upstream_error",
                 db=db,
             )
+            await _release_reservations(reservation_ids=reservation_ids, db=db)
         return JSONResponse(status_code=exc.status_code, content=exc.body)
 
     usage = usage_from_provider_response(
         request_messages=provider_payload.messages,
         response_body=upstream.body,
     )
-    await _record_proxy_request(
+    actual_cost_cents = await _record_proxy_request(
         resolved=resolved,
         http_status=upstream.status_code,
         latency_ms=_elapsed_ms(started_at),
         usage=usage,
         error_code=None,
         provider_credential_id=upstream.provider_credential_id,
+        db=db,
+    )
+    await _commit_reservations(
+        reservation_ids=reservation_ids,
+        usage=usage,
+        cost_cents=actual_cost_cents,
         db=db,
     )
     return JSONResponse(status_code=upstream.status_code, content=response_transform(upstream.body))
@@ -533,6 +558,7 @@ async def _stream_proxy_response(
     resolved,
     provider_payload: ProviderChatCompletionRequest,
     estimated_tokens: int,
+    reservation_ids: list[UUID],
     started_at: float,
     db: AsyncSession,
 ):
@@ -551,7 +577,7 @@ async def _stream_proxy_response(
             request_messages=provider_payload.messages,
             chunks=chunks,
         )
-        await _record_proxy_request(
+        usage_cost_cents = await _record_proxy_request(
             resolved=resolved,
             http_status=upstream.status_code,
             latency_ms=_elapsed_ms(started_at),
@@ -560,6 +586,15 @@ async def _stream_proxy_response(
             provider_credential_id=upstream.provider_credential_id,
             db=db,
         )
+        if error_code is None:
+            await _commit_reservations(
+                reservation_ids=reservation_ids,
+                usage=usage,
+                cost_cents=usage_cost_cents,
+                db=db,
+            )
+        else:
+            await _release_reservations(reservation_ids=reservation_ids, db=db)
 
 
 def _enforce_content_length(request: Request, max_body_bytes: int) -> None:
@@ -779,7 +814,8 @@ async def _record_proxy_request(
     error_code: str | None,
     db: AsyncSession,
     provider_credential_id: UUID | None = None,
-) -> None:
+) -> int | None:
+    cost_cents = _calculate_cost_cents(resolved=resolved, usage=usage)
     for allocation_id in resolved.allocation_chain_ids:
         await usage_facade.record_usage(
             payload=RecordUsage(
@@ -799,12 +835,13 @@ async def _record_proxy_request(
                 prompt_tokens=usage.prompt_tokens,
                 completion_tokens=usage.completion_tokens,
                 total_tokens=usage.total_tokens,
-                cost_cents=_calculate_cost_cents(resolved=resolved, usage=usage),
+                cost_cents=cost_cents,
                 usage_source=usage.usage_source,
                 error_code=error_code,
             ),
             db=db,
         )
+    return cost_cents
 
 
 async def _enforce_allocation_limits(
@@ -813,7 +850,7 @@ async def _enforce_allocation_limits(
     estimated_input_tokens: int,
     requested_output_tokens: int | None,
     db: AsyncSession,
-) -> None:
+) -> list[UUID]:
     requested_total_tokens = estimated_input_tokens + (requested_output_tokens or 0)
     estimated_cost_cents = _calculate_cost_cents(
         resolved=resolved,
@@ -823,6 +860,12 @@ async def _enforce_allocation_limits(
             total_tokens=requested_total_tokens if requested_output_tokens is not None else None,
             usage_source="estimated",
         ),
+    )
+    expires_at = datetime.now(UTC) + timedelta(minutes=5)
+    await db.execute(
+        select(Allocation.id)
+        .where(Allocation.id.in_([limit.allocation_id for limit in resolved.allocation_limits]))
+        .with_for_update()
     )
     for limit in resolved.allocation_limits:
         if limit.max_input_tokens is not None and estimated_input_tokens > limit.max_input_tokens:
@@ -865,6 +908,12 @@ async def _enforce_allocation_limits(
             since=since,
             db=db,
         )
+        reservations = await usage_facade.summarize_active_allocation_reservations(
+            allocation_id=limit.allocation_id,
+            since=since,
+            now=datetime.now(UTC),
+            db=db,
+        )
         if limit.max_requests is not None and request_count + 1 > limit.max_requests:
             await _raise_proxy_denial(
                 resolved=resolved,
@@ -873,8 +922,19 @@ async def _enforce_allocation_limits(
                 db=db,
             )
         if (
+            limit.max_requests is not None
+            and request_count + reservations.requests + 1 > limit.max_requests
+        ):
+            await _raise_proxy_denial(
+                resolved=resolved,
+                detail="allocation request limit exceeded",
+                reason="request_limit",
+                db=db,
+            )
+        if (
             limit.max_input_tokens is not None
-            and prompt_tokens + estimated_input_tokens > limit.max_input_tokens
+            and prompt_tokens + reservations.prompt_tokens + estimated_input_tokens
+            > limit.max_input_tokens
         ):
             await _raise_proxy_denial(
                 resolved=resolved,
@@ -885,7 +945,8 @@ async def _enforce_allocation_limits(
         if (
             limit.max_output_tokens is not None
             and requested_output_tokens is not None
-            and completion_tokens + requested_output_tokens > limit.max_output_tokens
+            and completion_tokens + reservations.completion_tokens + requested_output_tokens
+            > limit.max_output_tokens
         ):
             await _raise_proxy_denial(
                 resolved=resolved,
@@ -896,7 +957,7 @@ async def _enforce_allocation_limits(
         if (
             limit.budget_cents is not None
             and estimated_cost_cents is not None
-            and cost_cents + estimated_cost_cents > limit.budget_cents
+            and cost_cents + reservations.cost_cents + estimated_cost_cents > limit.budget_cents
         ):
             await _raise_proxy_denial(
                 resolved=resolved,
@@ -904,6 +965,45 @@ async def _enforce_allocation_limits(
                 reason="budget_limit",
                 db=db,
             )
+    reservation_ids: list[UUID] = []
+    for limit in resolved.allocation_limits:
+        reservation_ids.append(
+            await usage_facade.create_allocation_reservation(
+                payload=RecordAllocationReservation(
+                    org_id=resolved.org_id,
+                    allocation_id=limit.allocation_id,
+                    virtual_key_id=resolved.virtual_key_id,
+                    request_id=current_request_id(),
+                    reserved_prompt_tokens=estimated_input_tokens,
+                    reserved_completion_tokens=requested_output_tokens or 0,
+                    reserved_total_tokens=requested_total_tokens,
+                    reserved_cost_cents=estimated_cost_cents,
+                    expires_at=expires_at,
+                ),
+                db=db,
+            )
+        )
+    await db.commit()
+    return reservation_ids
+
+
+async def _commit_reservations(
+    *,
+    reservation_ids: list[UUID],
+    usage: UsageAccounting,
+    cost_cents: int | None,
+    db: AsyncSession,
+) -> None:
+    await usage_facade.commit_allocation_reservations(
+        reservation_ids=reservation_ids,
+        usage=usage,
+        cost_cents=cost_cents,
+        db=db,
+    )
+
+
+async def _release_reservations(*, reservation_ids: list[UUID], db: AsyncSession) -> None:
+    await usage_facade.release_allocation_reservations(reservation_ids=reservation_ids, db=db)
 
 
 async def _raise_proxy_denial(

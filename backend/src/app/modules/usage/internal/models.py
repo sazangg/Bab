@@ -58,3 +58,42 @@ class UsageRecord(Base):
         default=lambda: datetime.now(UTC),
         index=True,
     )
+
+
+class AllocationReservation(Base):
+    __tablename__ = "allocation_reservations"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        index=True,
+    )
+    allocation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("allocations.id", ondelete="RESTRICT"),
+        index=True,
+    )
+    virtual_key_id: Mapped[UUID] = mapped_column(
+        ForeignKey("virtual_keys.id", ondelete="RESTRICT"),
+        index=True,
+    )
+    request_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(50), default="active", index=True)
+    reserved_prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    reserved_completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    reserved_total_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    reserved_cost_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    actual_prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    actual_completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    actual_total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    actual_cost_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        index=True,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )

@@ -3,10 +3,13 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.usage.accounting import UsageAccounting
 from app.modules.usage.internal import repository
 from app.modules.usage.schemas import (
+    AllocationReservationSummary,
     AllocationUsageSummary,
     OrganizationUsageSummary,
+    RecordAllocationReservation,
     RecordUsage,
     SpendInsights,
     UsageRecordResponse,
@@ -17,6 +20,55 @@ from app.modules.usage.schemas import (
 
 async def record_usage(*, payload: RecordUsage, db: AsyncSession) -> None:
     await repository.create_usage_record(payload=payload, db=db)
+    await db.commit()
+
+
+async def create_allocation_reservation(
+    *,
+    payload: RecordAllocationReservation,
+    db: AsyncSession,
+) -> UUID:
+    reservation = await repository.create_allocation_reservation(payload=payload, db=db)
+    return reservation.id
+
+
+async def summarize_active_allocation_reservations(
+    *,
+    allocation_id: UUID,
+    since: datetime | None,
+    now: datetime,
+    db: AsyncSession,
+) -> AllocationReservationSummary:
+    return await repository.summarize_active_allocation_reservations(
+        allocation_id=allocation_id,
+        since=since,
+        now=now,
+        db=db,
+    )
+
+
+async def commit_allocation_reservations(
+    *,
+    reservation_ids: list[UUID],
+    usage: UsageAccounting,
+    cost_cents: int | None,
+    db: AsyncSession,
+) -> None:
+    await repository.commit_allocation_reservations(
+        reservation_ids=reservation_ids,
+        usage=usage,
+        cost_cents=cost_cents,
+        db=db,
+    )
+    await db.commit()
+
+
+async def release_allocation_reservations(
+    *,
+    reservation_ids: list[UUID],
+    db: AsyncSession,
+) -> None:
+    await repository.release_allocation_reservations(reservation_ids=reservation_ids, db=db)
     await db.commit()
 
 
