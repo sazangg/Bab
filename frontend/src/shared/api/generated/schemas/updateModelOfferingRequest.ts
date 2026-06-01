@@ -4,8 +4,8 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { UpdateModelOfferingRequestCapabilities } from "./updateModelOfferingRequestCapabilities";
-import type { UpdateModelOfferingRequestRateLimitHints } from "./updateModelOfferingRequestRateLimitHints";
+import type { UpdateModelOfferingRequestCapabilities } from './updateModelOfferingRequestCapabilities';
+import type { UpdateModelOfferingRequestRateLimitHints } from './updateModelOfferingRequestRateLimitHints';
 
 export interface UpdateModelOfferingRequest {
   provider_model_name?: string | null;

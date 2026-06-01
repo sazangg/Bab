@@ -5,13 +5,13 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type ListUsageRecordsApiV1UsageRecordsGetWindow =
-  (typeof ListUsageRecordsApiV1UsageRecordsGetWindow)[keyof typeof ListUsageRecordsApiV1UsageRecordsGetWindow];
+export type ListUsageRecordsApiV1UsageRecordsGetWindow = typeof ListUsageRecordsApiV1UsageRecordsGetWindow[keyof typeof ListUsageRecordsApiV1UsageRecordsGetWindow];
+
 
 export const ListUsageRecordsApiV1UsageRecordsGetWindow = {
-  "24h": "24h",
-  "7d": "7d",
-  "30d": "30d",
-  "90d": "90d",
-  lifetime: "lifetime",
+  '24h': '24h',
+  '7d': '7d',
+  '30d': '30d',
+  '90d': '90d',
+  lifetime: 'lifetime',
 } as const;

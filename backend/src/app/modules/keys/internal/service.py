@@ -10,29 +10,32 @@ from app.modules.activity import facade as activity_facade
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys.errors import (
     AccessDeniedError,
-    AllocationNotFoundError,
     InvalidVirtualKeyError,
+    PolicyNotConfiguredError,
     ProjectNotFoundError,
     VirtualKeyNotFoundError,
 )
 from app.modules.keys.internal import repository
-from app.modules.keys.internal.models import Allocation, Project, VirtualKey
+from app.modules.keys.internal.models import Project, VirtualKey
 from app.modules.keys.schemas import (
     AccessibleModel,
-    AllocationOffering,
-    AllocationResponse,
-    CreateAllocationRequest,
     CreatedVirtualKeyResponse,
     CreateProjectRequest,
     CreateVirtualKeyRequest,
     ProjectResponse,
     ResolveAccessRequest,
     ResolvedAccess,
-    ResolvedAllocationLimit,
-    UpdateAllocationRequest,
+    ResolvedLimitPolicy,
     UpdateProjectRequest,
     UpdateVirtualKeyRequest,
     VirtualKeyResponse,
+)
+from app.modules.policies.internal import repository as policies_repository
+from app.modules.policies.internal.models import (
+    AccessPolicyRoute,
+    LimitPolicy,
+    LimitPolicyRule,
+    PolicyAssignment,
 )
 from app.modules.providers import facade as providers_facade
 from app.modules.providers.errors import ProviderNotFoundError
@@ -42,7 +45,15 @@ from app.modules.teams import facade as teams_facade
 logger = structlog.get_logger(__name__)
 
 
-type ResolvedKeyAllocation = tuple[VirtualKey, Project, Allocation, list[Allocation]]
+type ResolvedKeyProject = tuple[VirtualKey, Project]
+type ResolvedPolicyRoute = tuple[
+    AccessPolicyRoute,
+    UUID,
+    UUID,
+    str,
+    int | None,
+    int | None,
+]
 
 
 async def create_project(
@@ -160,172 +171,6 @@ async def deactivate_project(
     )
 
 
-async def create_allocation(
-    *,
-    payload: CreateAllocationRequest,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    db: AsyncSession,
-) -> AllocationResponse:
-    async with transaction(db):
-        project = await _validate_allocation_target(payload=payload, scope=scope, db=db)
-        parent_allocation_id = payload.parent_allocation_id
-        parent_allocation = None
-        if project is not None and parent_allocation_id is None:
-            parent_allocation = await repository.get_default_team_allocation(
-                org_id=scope.org_id,
-                team_id=project.team_id,
-                db=db,
-            )
-            parent_allocation_id = parent_allocation.id if parent_allocation else None
-        if payload.parent_allocation_id is not None:
-            parent_allocation = await _get_allocation_or_raise(
-                allocation_id=payload.parent_allocation_id,
-                scope=scope,
-                db=db,
-            )
-        await _validate_offerings(payload.offerings, scope=scope, db=db)
-        if payload.is_default:
-            await repository.clear_default_allocations(
-                org_id=scope.org_id,
-                team_id=payload.team_id,
-                project_id=payload.project_id,
-                db=db,
-            )
-        allocation = await repository.create_allocation(
-            org_id=scope.org_id,
-            parent_allocation_id=parent_allocation_id,
-            target_type="project" if payload.project_id is not None else "team",
-            team_id=payload.team_id,
-            project_id=payload.project_id,
-            name=payload.name,
-            description=payload.description,
-            offerings=_offerings_to_json(payload.offerings),
-            is_default=payload.is_default,
-            budget_cents=payload.budget_cents,
-            max_requests=payload.max_requests,
-            max_input_tokens=payload.max_input_tokens,
-            max_output_tokens=payload.max_output_tokens,
-            max_tokens_per_request=payload.max_tokens_per_request,
-            window=payload.window,
-            db=db,
-        )
-        await activity_facade.record_admin_event(
-            actor=actor,
-            category="allocation",
-            action="allocation.created",
-            message=f"Created allocation {allocation.name}.",
-            team_id=allocation.team_id,
-            project_id=allocation.project_id,
-            allocation_id=allocation.id,
-            db=db,
-        )
-    logger.info(
-        "allocation_created",
-        allocation_id=str(allocation.id),
-        org_id=str(scope.org_id),
-        actor_user_id=str(actor.id),
-    )
-    return _to_allocation_response(allocation)
-
-
-async def list_allocations(*, scope: Scope, db: AsyncSession) -> list[AllocationResponse]:
-    allocations = await repository.list_allocations(org_id=scope.org_id, db=db)
-    return [_to_allocation_response(allocation) for allocation in allocations]
-
-
-async def list_team_allocations(
-    *,
-    team_id: UUID,
-    scope: Scope,
-    db: AsyncSession,
-) -> list[AllocationResponse]:
-    await teams_facade.get_team(team_id=team_id, scope=scope, db=db)
-    allocations = await repository.list_team_allocations(
-        org_id=scope.org_id,
-        team_id=team_id,
-        db=db,
-    )
-    return [_to_allocation_response(allocation) for allocation in allocations]
-
-
-async def list_project_allocations(
-    *,
-    project_id: UUID,
-    scope: Scope,
-    db: AsyncSession,
-) -> list[AllocationResponse]:
-    await _get_project_or_raise(project_id=project_id, scope=scope, db=db)
-    allocations = await repository.list_project_allocations(
-        org_id=scope.org_id,
-        project_id=project_id,
-        db=db,
-    )
-    return [_to_allocation_response(allocation) for allocation in allocations]
-
-
-async def update_allocation(
-    *,
-    allocation_id: UUID,
-    payload: UpdateAllocationRequest,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    db: AsyncSession,
-) -> AllocationResponse:
-    async with transaction(db):
-        allocation = await _get_allocation_or_raise(
-            allocation_id=allocation_id,
-            scope=scope,
-            db=db,
-        )
-        if payload.name is not None:
-            allocation.name = payload.name
-        if "description" in payload.model_fields_set:
-            allocation.description = payload.description
-        if payload.offerings is not None:
-            await _validate_offerings(payload.offerings, scope=scope, db=db)
-            allocation.offerings = _offerings_to_json(payload.offerings)
-        for field in (
-            "budget_cents",
-            "max_requests",
-            "max_input_tokens",
-            "max_output_tokens",
-            "max_tokens_per_request",
-            "window",
-        ):
-            if field in payload.model_fields_set:
-                setattr(allocation, field, getattr(payload, field))
-        if payload.is_default is not None:
-            if payload.is_default:
-                await repository.clear_default_allocations(
-                    org_id=scope.org_id,
-                    team_id=allocation.team_id,
-                    project_id=allocation.project_id,
-                    db=db,
-                )
-            allocation.is_default = payload.is_default
-        if payload.is_active is not None:
-            allocation.is_active = payload.is_active
-        await db.flush()
-        await activity_facade.record_admin_event(
-            actor=actor,
-            category="allocation",
-            action="allocation.updated",
-            message=f"Updated allocation {allocation.name}.",
-            team_id=allocation.team_id,
-            project_id=allocation.project_id,
-            allocation_id=allocation.id,
-            db=db,
-        )
-    logger.info(
-        "allocation_updated",
-        allocation_id=str(allocation_id),
-        org_id=str(scope.org_id),
-        actor_user_id=str(actor.id),
-    )
-    return _to_allocation_response(allocation)
-
-
 async def create_virtual_key(
     *,
     project_id: UUID,
@@ -337,18 +182,22 @@ async def create_virtual_key(
     org_settings = await settings_facade.get_organization_settings(scope=scope, db=db)
     async with transaction(db):
         project = await _get_project_or_raise(project_id=project_id, scope=scope, db=db)
-        if payload.allocation_id is not None:
-            allocation = await _get_allocation_or_raise(
-                allocation_id=payload.allocation_id,
-                scope=scope,
-                db=db,
-            )
-            if allocation.project_id != project.id:
-                raise AccessDeniedError
-        else:
-            allocation = await _resolve_effective_allocation(project=project, scope=scope, db=db)
-            if allocation is None:
-                raise AllocationNotFoundError
+        access_routes = await _effective_access_routes(
+            org_id=scope.org_id,
+            team_id=project.team_id,
+            project_id=project.id,
+            virtual_key_id=None,
+            db=db,
+        )
+        limit_policies = await _effective_limit_policies(
+            org_id=scope.org_id,
+            team_id=project.team_id,
+            project_id=project.id,
+            virtual_key_id=None,
+            db=db,
+        )
+        if not access_routes or not limit_policies:
+            raise PolicyNotConfiguredError
         raw_key = generate_virtual_key(prefix=org_settings.virtual_key_prefix)
         expires_at = payload.expires_at
         if expires_at is None and org_settings.default_virtual_key_expiration_days is not None:
@@ -358,15 +207,10 @@ async def create_virtual_key(
         virtual_key = await repository.create_virtual_key(
             org_id=scope.org_id,
             project_id=project.id,
-            allocation_id=allocation.id,
-            custom_allocation_id=payload.allocation_id,
             name=payload.name,
             key_hash=hash_token(raw_key),
             key_prefix=_key_prefix(raw_key),
             allowed_models=payload.allowed_models,
-            max_requests_per_minute=payload.max_requests_per_minute,
-            max_tokens_per_minute=payload.max_tokens_per_minute,
-            max_tokens_per_request=payload.max_tokens_per_request,
             expires_at=expires_at,
             db=db,
         )
@@ -377,7 +221,6 @@ async def create_virtual_key(
             message=f"Created virtual key {virtual_key.name}.",
             team_id=project.team_id,
             project_id=project.id,
-            allocation_id=allocation.id,
             virtual_key_id=virtual_key.id,
             db=db,
         )
@@ -388,7 +231,7 @@ async def create_virtual_key(
         org_id=str(scope.org_id),
         actor_user_id=str(actor.id),
     )
-    response = await _to_virtual_key_response_with_effective_allocation(
+    response = await _to_virtual_key_response(
         virtual_key,
         project=project,
         scope=scope,
@@ -413,7 +256,7 @@ async def list_virtual_keys(
         db=db,
     )
     return [
-        await _to_virtual_key_response_with_effective_allocation(
+        await _to_virtual_key_response(
             virtual_key,
             project=project,
             scope=scope,
@@ -437,7 +280,7 @@ async def get_virtual_key(
         scope=scope,
         db=db,
     )
-    return await _to_virtual_key_response_with_effective_allocation(
+    return await _to_virtual_key_response(
         virtual_key,
         project=project,
         scope=scope,
@@ -468,34 +311,6 @@ async def update_virtual_key(
             virtual_key.expires_at = payload.expires_at
         if "allowed_models" in payload.model_fields_set:
             virtual_key.allowed_models = payload.allowed_models
-        for field in (
-            "max_requests_per_minute",
-            "max_tokens_per_minute",
-            "max_tokens_per_request",
-        ):
-            if field in payload.model_fields_set:
-                setattr(virtual_key, field, getattr(payload, field))
-        if "custom_allocation_id" in payload.model_fields_set:
-            if payload.custom_allocation_id is None:
-                effective_allocation = await _resolve_effective_allocation(
-                    project=await _get_project_or_raise(project_id=project_id, scope=scope, db=db),
-                    scope=scope,
-                    db=db,
-                )
-                if effective_allocation is None:
-                    raise AllocationNotFoundError
-                virtual_key.allocation_id = effective_allocation.id
-                virtual_key.custom_allocation_id = None
-            else:
-                allocation = await _get_allocation_or_raise(
-                    allocation_id=payload.custom_allocation_id,
-                    scope=scope,
-                    db=db,
-                )
-                if allocation.project_id != project_id:
-                    raise AccessDeniedError
-                virtual_key.allocation_id = allocation.id
-                virtual_key.custom_allocation_id = allocation.id
         await db.flush()
         await activity_facade.record_admin_event(
             actor=actor,
@@ -503,7 +318,6 @@ async def update_virtual_key(
             action="virtual_key.updated",
             message=f"Updated virtual key {virtual_key.name}.",
             project_id=project_id,
-            allocation_id=virtual_key.allocation_id,
             virtual_key_id=virtual_key.id,
             db=db,
         )
@@ -515,7 +329,7 @@ async def update_virtual_key(
         actor_user_id=str(actor.id),
     )
     project = await _get_project_or_raise(project_id=project_id, scope=scope, db=db)
-    return await _to_virtual_key_response_with_effective_allocation(
+    return await _to_virtual_key_response(
         virtual_key,
         project=project,
         scope=scope,
@@ -547,7 +361,6 @@ async def revoke_virtual_key(
             action="virtual_key.revoked",
             message=f"Revoked virtual key {virtual_key.name}.",
             project_id=project_id,
-            allocation_id=virtual_key.allocation_id,
             virtual_key_id=virtual_key.id,
             db=db,
         )
@@ -561,43 +374,46 @@ async def revoke_virtual_key(
 
 
 async def resolve_access(*, payload: ResolveAccessRequest, db: AsyncSession) -> ResolvedAccess:
-    virtual_key, project, allocation, allocation_chain = await _resolve_key_allocation(
+    virtual_key, project = await _resolve_key_project(
         raw_key=payload.raw_key,
         db=db,
     )
-
-    matched = await _match_offering(
-        allocation=allocation,
+    matched = await _match_policy_route(
+        org_id=virtual_key.org_id,
+        team_id=project.team_id,
+        project_id=project.id,
+        virtual_key_id=virtual_key.id,
         requested_model=payload.requested_model,
-        scope=Scope(org_id=virtual_key.org_id),
         db=db,
     )
     if matched is None:
         raise AccessDeniedError
-    provider_id, pool_id, provider_model, input_price, output_price = matched
-    for ancestor in allocation_chain[1:]:
-        if not await _allocation_allows_route(
-            allocation=ancestor,
-            provider_id=provider_id,
-            pool_id=pool_id,
-            provider_model=provider_model,
-            scope=Scope(org_id=virtual_key.org_id),
-            db=db,
-        ):
-            raise AccessDeniedError
-
+    route, model_offering_id, provider_id, pool_id, provider_model, input_price, output_price = (
+        matched
+    )
     if virtual_key.allowed_models is not None and provider_model not in virtual_key.allowed_models:
+        raise AccessDeniedError
+    limit_rules = await _matching_limit_policies(
+        org_id=virtual_key.org_id,
+        team_id=project.team_id,
+        project_id=project.id,
+        virtual_key_id=virtual_key.id,
+        route=route,
+        model_offering_id=model_offering_id,
+        db=db,
+    )
+    if not limit_rules:
         raise AccessDeniedError
 
     return ResolvedAccess(
         org_id=virtual_key.org_id,
         team_id=project.team_id,
         project_id=virtual_key.project_id,
-        allocation_id=allocation.id,
-        allocation_chain_ids=[chain_allocation.id for chain_allocation in allocation_chain],
-        allocation_limits=[
-            _to_resolved_allocation_limit(chain_allocation) for chain_allocation in allocation_chain
-        ],
+        access_policy_id=route.access_policy_id,
+        access_policy_route_id=route.id,
+        model_offering_id=model_offering_id,
+        limit_policy_ids=list({rule.limit_policy_id for rule in limit_rules}),
+        limit_policies=[_to_resolved_limit_policy(rule) for rule in limit_rules],
         virtual_key_id=virtual_key.id,
         provider_id=provider_id,
         pool_id=pool_id,
@@ -606,26 +422,26 @@ async def resolve_access(*, payload: ResolveAccessRequest, db: AsyncSession) -> 
         provider_model=provider_model,
         input_price_per_million_tokens=input_price,
         output_price_per_million_tokens=output_price,
-        key_max_requests_per_minute=virtual_key.max_requests_per_minute,
-        key_max_tokens_per_minute=virtual_key.max_tokens_per_minute,
-        key_max_tokens_per_request=virtual_key.max_tokens_per_request,
     )
 
 
 async def list_accessible_models(*, raw_key: str, db: AsyncSession) -> list[AccessibleModel]:
-    virtual_key, _project, allocation, allocation_chain = await _resolve_key_allocation(
+    virtual_key, project = await _resolve_key_project(
         raw_key=raw_key,
         db=db,
     )
-
     models: list[AccessibleModel] = []
     seen: set[str] = set()
-    for offering in allocation.offerings:
-        pool_id = UUID(str(offering["pool_id"]))
-        model_offering_id = UUID(str(offering["model_offering_id"]))
+    for route, model_offering_id in await _effective_access_routes(
+        org_id=virtual_key.org_id,
+        team_id=project.team_id,
+        project_id=project.id,
+        virtual_key_id=virtual_key.id,
+        db=db,
+    ):
         try:
             pool = await providers_facade.get_credential_pool(
-                pool_id=pool_id,
+                pool_id=route.credential_pool_id,
                 scope=Scope(org_id=virtual_key.org_id),
                 db=db,
             )
@@ -643,14 +459,16 @@ async def list_accessible_models(*, raw_key: str, db: AsyncSession) -> list[Acce
             and model.provider_model_name not in virtual_key.allowed_models
         ):
             continue
-        if not await _allocation_chain_allows_route(
-            allocation_chain=allocation_chain[1:],
-            provider_id=model.provider_id,
-            pool_id=pool.id,
-            provider_model=model.provider_model_name,
-            scope=Scope(org_id=virtual_key.org_id),
+        limit_policies = await _matching_limit_policies(
+            org_id=virtual_key.org_id,
+            team_id=project.team_id,
+            project_id=project.id,
+            virtual_key_id=virtual_key.id,
+            route=route,
+            model_offering_id=model_offering_id,
             db=db,
-        ):
+        )
+        if not limit_policies:
             continue
         if model.provider_model_name in seen:
             continue
@@ -660,7 +478,8 @@ async def list_accessible_models(*, raw_key: str, db: AsyncSession) -> list[Acce
                 id=model.provider_model_name,
                 owned_by=model.provider_id.hex,
                 provider_id=model.provider_id,
-                allocation_id=allocation.id,
+                access_policy_id=route.access_policy_id,
+                access_policy_route_id=route.id,
                 pool_id=pool.id,
                 alias=model.alias,
             )
@@ -668,7 +487,7 @@ async def list_accessible_models(*, raw_key: str, db: AsyncSession) -> list[Acce
     return models
 
 
-async def _resolve_key_allocation(*, raw_key: str, db: AsyncSession) -> ResolvedKeyAllocation:
+async def _resolve_key_project(*, raw_key: str, db: AsyncSession) -> ResolvedKeyProject:
     virtual_key = await repository.get_virtual_key_by_hash(key_hash=hash_token(raw_key), db=db)
     if virtual_key is None:
         raise InvalidVirtualKeyError
@@ -684,193 +503,211 @@ async def _resolve_key_allocation(*, raw_key: str, db: AsyncSession) -> Resolved
     )
     if project is None or not project.is_active:
         raise InvalidVirtualKeyError
+    return virtual_key, project
 
-    if virtual_key.custom_allocation_id is not None:
-        allocation = await repository.get_allocation(
-            allocation_id=virtual_key.custom_allocation_id,
-            org_id=virtual_key.org_id,
-            db=db,
-        )
-        if allocation is None or not allocation.is_active or allocation.project_id != project.id:
-            raise AccessDeniedError
-    else:
-        allocation = await _resolve_effective_allocation(
-            project=project,
-            scope=Scope(org_id=virtual_key.org_id),
-            db=db,
-        )
-        if allocation is None:
-            raise AccessDeniedError
 
-    allocation_chain = await _runtime_allocation_chain(
-        allocation=allocation,
-        project=project,
-        org_id=virtual_key.org_id,
+async def _match_policy_route(
+    *,
+    org_id: UUID,
+    team_id: UUID,
+    project_id: UUID,
+    virtual_key_id: UUID,
+    requested_model: str,
+    db: AsyncSession,
+) -> ResolvedPolicyRoute | None:
+    candidates = await _effective_access_routes(
+        org_id=org_id,
+        team_id=team_id,
+        project_id=project_id,
+        virtual_key_id=virtual_key_id,
         db=db,
     )
-    if any(not chain_allocation.is_active for chain_allocation in allocation_chain):
-        raise AccessDeniedError
-    return virtual_key, project, allocation, allocation_chain
-
-
-async def _runtime_allocation_chain(
-    *,
-    allocation: Allocation,
-    project: Project,
-    org_id: UUID,
-    db: AsyncSession,
-) -> list[Allocation]:
-    chain = [allocation]
-    if allocation.project_id == project.id:
-        team_default = await repository.get_default_team_allocation(
-            org_id=org_id,
-            team_id=project.team_id,
-            db=db,
-        )
-        if team_default is not None and team_default.id != allocation.id:
-            chain.append(team_default)
-    return chain
-
-
-async def _match_offering(
-    *,
-    allocation: Allocation,
-    requested_model: str,
-    scope: Scope,
-    db: AsyncSession,
-) -> tuple[UUID, UUID, str, int | None, int | None] | None:
-    for offering in allocation.offerings:
-        pool_id = UUID(str(offering["pool_id"]))
-        model_offering_id = UUID(str(offering["model_offering_id"]))
+    candidates.sort(key=lambda item: (item[0].priority, -item[0].weight, item[0].created_at))
+    for route, model_offering_id in candidates:
         try:
-            pool = await providers_facade.get_credential_pool(pool_id=pool_id, scope=scope, db=db)
+            pool = await providers_facade.get_credential_pool(
+                pool_id=route.credential_pool_id,
+                scope=Scope(org_id=org_id),
+                db=db,
+            )
             model = await providers_facade.get_model_offering(
                 model_offering_id=model_offering_id,
-                scope=scope,
+                scope=Scope(org_id=org_id),
                 db=db,
             )
         except ProviderNotFoundError:
             continue
         if not pool.is_active or not model.is_active:
             continue
-        if pool.provider_id != model.provider_id:
+        if pool.provider_id != model.provider_id or model.provider_id != route.provider_id:
             continue
-        if requested_model in {model.provider_model_name, model.alias}:
-            return (
-                model.provider_id,
-                pool.id,
-                model.provider_model_name,
-                model.effective_input_price_per_million_tokens,
-                model.effective_output_price_per_million_tokens,
-            )
+        if requested_model not in {model.provider_model_name, model.alias}:
+            continue
+        return (
+            route,
+            model.id,
+            model.provider_id,
+            pool.id,
+            model.provider_model_name,
+            model.effective_input_price_per_million_tokens,
+            model.effective_output_price_per_million_tokens,
+        )
     return None
 
 
-async def _allocation_allows_route(
+async def _effective_access_routes(
     *,
-    allocation: Allocation,
-    provider_id: UUID,
-    pool_id: UUID,
-    provider_model: str,
-    scope: Scope,
+    org_id: UUID,
+    team_id: UUID,
+    project_id: UUID,
+    virtual_key_id: UUID | None,
     db: AsyncSession,
-) -> bool:
-    for offering in allocation.offerings:
-        offering_pool_id = UUID(str(offering["pool_id"]))
-        model_offering_id = UUID(str(offering["model_offering_id"]))
-        if offering_pool_id != pool_id:
-            continue
-        try:
-            model = await providers_facade.get_model_offering(
-                model_offering_id=model_offering_id,
-                scope=scope,
-                db=db,
-            )
-        except ProviderNotFoundError:
-            continue
-        if (
-            model.is_active
-            and model.provider_id == provider_id
-            and model.provider_model_name == provider_model
-        ):
-            return True
-    return False
-
-
-async def _allocation_chain_allows_route(
-    *,
-    allocation_chain: list[Allocation],
-    provider_id: UUID,
-    pool_id: UUID,
-    provider_model: str,
-    scope: Scope,
-    db: AsyncSession,
-) -> bool:
-    for ancestor in allocation_chain:
-        if not await _allocation_allows_route(
-            allocation=ancestor,
-            provider_id=provider_id,
-            pool_id=pool_id,
-            provider_model=provider_model,
-            scope=scope,
-            db=db,
-        ):
-            return False
-    return True
-
-
-async def _validate_allocation_target(
-    *,
-    payload: CreateAllocationRequest,
-    scope: Scope,
-    db: AsyncSession,
-) -> Project | None:
-    if payload.team_id is not None:
-        await teams_facade.get_team(team_id=payload.team_id, scope=scope, db=db)
-        return None
-    if payload.project_id is not None:
-        return await _get_project_or_raise(project_id=payload.project_id, scope=scope, db=db)
-    return None
-
-
-async def _validate_offerings(
-    offerings: list[AllocationOffering],
-    *,
-    scope: Scope,
-    db: AsyncSession,
-) -> None:
-    for offering in offerings:
-        pool = await providers_facade.get_credential_pool(
-            pool_id=offering.pool_id,
-            scope=scope,
-            db=db,
-        )
-        model = await providers_facade.get_model_offering(
-            model_offering_id=offering.model_offering_id,
-            scope=scope,
-            db=db,
-        )
-        if pool.provider_id != model.provider_id:
-            raise AccessDeniedError
-
-
-async def _resolve_effective_allocation(
-    *,
-    project: Project,
-    scope: Scope,
-    db: AsyncSession,
-) -> Allocation | None:
-    project_allocation = await repository.get_default_project_allocation(
-        org_id=scope.org_id,
-        project_id=project.id,
+) -> list[tuple[AccessPolicyRoute, UUID]]:
+    assignments = await policies_repository.list_active_policy_assignments_for_targets(
+        org_id=org_id,
+        team_id=team_id,
+        project_id=project_id,
+        virtual_key_id=virtual_key_id,
+        policy_type="access",
         db=db,
     )
-    if project_allocation is not None:
-        return project_allocation
-    return await repository.get_default_team_allocation(
-        org_id=scope.org_id,
-        team_id=project.team_id,
+    effective: list[tuple[AccessPolicyRoute, UUID]] | None = None
+    for scope_type in ("org", "team", "project", "virtual_key"):
+        scoped = [assignment for assignment in assignments if assignment.scope_type == scope_type]
+        candidates = await _access_route_candidates(org_id=org_id, assignments=scoped, db=db)
+        if not candidates:
+            continue
+        if effective is None:
+            effective = candidates
+            continue
+        effective = [
+            candidate
+            for candidate in candidates
+            if any(_route_candidate_matches(candidate, ancestor) for ancestor in effective)
+        ]
+    return effective or []
+
+
+async def _access_route_candidates(
+    *,
+    org_id: UUID,
+    assignments: list[PolicyAssignment],
+    db: AsyncSession,
+) -> list[tuple[AccessPolicyRoute, UUID]]:
+    candidates: list[tuple[AccessPolicyRoute, UUID]] = []
+    for assignment in assignments:
+        if assignment.access_policy_id is None:
+            continue
+        policy = await policies_repository.get_access_policy(
+            policy_id=assignment.access_policy_id,
+            org_id=org_id,
+            db=db,
+        )
+        if policy is None or not policy.is_active:
+            continue
+        routes = await policies_repository.list_access_policy_routes(
+            org_id=org_id,
+            access_policy_id=policy.id,
+            db=db,
+        )
+        for route in routes:
+            if not route.is_active:
+                continue
+            candidates.extend((route, UUID(str(model_id))) for model_id in route.model_offering_ids)
+    return candidates
+
+
+def _route_candidate_matches(
+    child: tuple[AccessPolicyRoute, UUID],
+    ancestor: tuple[AccessPolicyRoute, UUID],
+) -> bool:
+    child_route, child_model_id = child
+    ancestor_route, ancestor_model_id = ancestor
+    return (
+        child_route.provider_id == ancestor_route.provider_id
+        and child_route.credential_pool_id == ancestor_route.credential_pool_id
+        and child_model_id == ancestor_model_id
+    )
+
+
+async def _effective_limit_policies(
+    *,
+    org_id: UUID,
+    team_id: UUID,
+    project_id: UUID,
+    virtual_key_id: UUID | None,
+    db: AsyncSession,
+) -> list[LimitPolicy]:
+    assignments = await policies_repository.list_active_policy_assignments_for_targets(
+        org_id=org_id,
+        team_id=team_id,
+        project_id=project_id,
+        virtual_key_id=virtual_key_id,
+        policy_type="limit",
         db=db,
+    )
+    policies: list[LimitPolicy] = []
+    for assignment in assignments:
+        if assignment.limit_policy_id is None:
+            continue
+        policy = await policies_repository.get_limit_policy(
+            policy_id=assignment.limit_policy_id,
+            org_id=org_id,
+            db=db,
+        )
+        if policy is not None and policy.is_active:
+            policies.append(policy)
+    return policies
+
+
+async def _matching_limit_policies(
+    *,
+    org_id: UUID,
+    team_id: UUID,
+    project_id: UUID,
+    virtual_key_id: UUID,
+    route: AccessPolicyRoute,
+    model_offering_id: UUID,
+    db: AsyncSession,
+) -> list[LimitPolicyRule]:
+    policies = await _effective_limit_policies(
+        org_id=org_id,
+        team_id=team_id,
+        project_id=project_id,
+        virtual_key_id=virtual_key_id,
+        db=db,
+    )
+    rules: list[LimitPolicyRule] = []
+    for policy in policies:
+        policy_rules = await policies_repository.list_limit_policy_rules(
+            org_id=org_id,
+            limit_policy_id=policy.id,
+            db=db,
+        )
+        rules.extend(
+            rule
+            for rule in policy_rules
+            if rule.is_active
+            and _limit_rule_matches_route(
+                rule=rule,
+                route=route,
+                model_offering_id=model_offering_id,
+            )
+        )
+    return rules
+
+
+def _limit_rule_matches_route(
+    *,
+    rule: LimitPolicyRule,
+    route: AccessPolicyRoute,
+    model_offering_id: UUID,
+) -> bool:
+    return (
+        (rule.provider_id is None or rule.provider_id == route.provider_id)
+        and (rule.credential_pool_id is None or rule.credential_pool_id == route.credential_pool_id)
+        and (rule.model_offering_id is None or rule.model_offering_id == model_offering_id)
+        and (rule.access_policy_id is None or rule.access_policy_id == route.access_policy_id)
     )
 
 
@@ -879,22 +716,6 @@ async def _get_project_or_raise(*, project_id: UUID, scope: Scope, db: AsyncSess
     if project is None:
         raise ProjectNotFoundError
     return project
-
-
-async def _get_allocation_or_raise(
-    *,
-    allocation_id: UUID,
-    scope: Scope,
-    db: AsyncSession,
-) -> Allocation:
-    allocation = await repository.get_allocation(
-        allocation_id=allocation_id,
-        org_id=scope.org_id,
-        db=db,
-    )
-    if allocation is None:
-        raise AllocationNotFoundError
-    return allocation
 
 
 async def _get_virtual_key_or_raise(
@@ -919,62 +740,39 @@ def _to_project_response(project: Project) -> ProjectResponse:
     return ProjectResponse.model_validate(project)
 
 
-def _to_allocation_response(allocation: Allocation) -> AllocationResponse:
-    return AllocationResponse.model_validate(allocation)
-
-
-def _to_resolved_allocation_limit(allocation: Allocation) -> ResolvedAllocationLimit:
-    return ResolvedAllocationLimit(
-        allocation_id=allocation.id,
-        budget_cents=allocation.budget_cents,
-        max_requests=allocation.max_requests,
-        max_input_tokens=allocation.max_input_tokens,
-        max_output_tokens=allocation.max_output_tokens,
-        max_tokens_per_request=allocation.max_tokens_per_request,
-        window=allocation.window,
+def _to_resolved_limit_policy(policy: LimitPolicyRule) -> ResolvedLimitPolicy:
+    return ResolvedLimitPolicy(
+        limit_policy_id=policy.limit_policy_id,
+        limit_policy_rule_id=policy.id,
+        name=policy.name,
+        budget_cents=policy.budget_cents,
+        max_requests=policy.max_requests,
+        max_input_tokens=policy.max_input_tokens,
+        max_output_tokens=policy.max_output_tokens,
+        max_tokens_per_request=policy.max_tokens_per_request,
+        window=policy.window,
     )
 
 
-def _to_virtual_key_response(virtual_key: VirtualKey) -> VirtualKeyResponse:
-    return VirtualKeyResponse(
-        id=virtual_key.id,
-        org_id=virtual_key.org_id,
-        project_id=virtual_key.project_id,
-        allocation_id=virtual_key.allocation_id,
-        custom_allocation_id=virtual_key.custom_allocation_id,
-        allocation_mode="custom" if virtual_key.custom_allocation_id else "inherited",
-        name=virtual_key.name,
-        key_prefix=virtual_key.key_prefix,
-        allowed_models=virtual_key.allowed_models,
-        max_requests_per_minute=virtual_key.max_requests_per_minute,
-        max_tokens_per_minute=virtual_key.max_tokens_per_minute,
-        max_tokens_per_request=virtual_key.max_tokens_per_request,
-        expires_at=virtual_key.expires_at,
-        revoked_at=virtual_key.revoked_at,
-        created_at=virtual_key.created_at,
-        updated_at=virtual_key.updated_at,
-    )
-
-
-async def _to_virtual_key_response_with_effective_allocation(
+async def _to_virtual_key_response(
     virtual_key: VirtualKey,
     *,
     project: Project,
     scope: Scope,
     db: AsyncSession,
 ) -> VirtualKeyResponse:
-    allocation_id = virtual_key.allocation_id
-    if virtual_key.custom_allocation_id is None:
-        allocation = await _resolve_effective_allocation(project=project, scope=scope, db=db)
-        if allocation is not None:
-            allocation_id = allocation.id
-    response = _to_virtual_key_response(virtual_key)
-    response.allocation_id = allocation_id
-    return response
-
-
-def _offerings_to_json(offerings: list[AllocationOffering]) -> list[dict[str, str]]:
-    return [offering.model_dump(mode="json") for offering in offerings]
+    return VirtualKeyResponse(
+        id=virtual_key.id,
+        org_id=virtual_key.org_id,
+        project_id=virtual_key.project_id,
+        name=virtual_key.name,
+        key_prefix=virtual_key.key_prefix,
+        allowed_models=virtual_key.allowed_models,
+        expires_at=virtual_key.expires_at,
+        revoked_at=virtual_key.revoked_at,
+        created_at=virtual_key.created_at,
+        updated_at=virtual_key.updated_at,
+    )
 
 
 def _key_prefix(raw_key: str) -> str:

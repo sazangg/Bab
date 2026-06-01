@@ -4,8 +4,8 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { GuardrailRuleInput } from "./guardrailRuleInput";
-import type { GuardrailSimulationRequestMessagesItem } from "./guardrailSimulationRequestMessagesItem";
+import type { GuardrailRuleInput } from './guardrailRuleInput';
+import type { GuardrailSimulationRequestMessagesItem } from './guardrailSimulationRequestMessagesItem';
 
 export interface GuardrailSimulationRequest {
   policy_id?: string | null;

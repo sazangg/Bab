@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -21,10 +21,18 @@ class UsageRecord(Base):
         ForeignKey("projects.id", ondelete="RESTRICT"),
         index=True,
     )
-    allocation_id: Mapped[UUID] = mapped_column(
-        ForeignKey("allocations.id", ondelete="RESTRICT"),
+    access_policy_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("access_policies.id", ondelete="RESTRICT"),
+        nullable=True,
         index=True,
     )
+    access_policy_route_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("access_policy_routes.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+    limit_policy_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    limit_policy_rule_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     virtual_key_id: Mapped[UUID] = mapped_column(
         ForeignKey("virtual_keys.id", ondelete="RESTRICT"),
         index=True,
@@ -60,16 +68,22 @@ class UsageRecord(Base):
     )
 
 
-class AllocationReservation(Base):
-    __tablename__ = "allocation_reservations"
+class LimitPolicyReservation(Base):
+    __tablename__ = "limit_policy_reservations"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     org_id: Mapped[UUID] = mapped_column(
         ForeignKey("organizations.id", ondelete="RESTRICT"),
         index=True,
     )
-    allocation_id: Mapped[UUID] = mapped_column(
-        ForeignKey("allocations.id", ondelete="RESTRICT"),
+    limit_policy_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("limit_policies.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+    limit_policy_rule_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("limit_policy_rules.id", ondelete="RESTRICT"),
+        nullable=True,
         index=True,
     )
     virtual_key_id: Mapped[UUID] = mapped_column(

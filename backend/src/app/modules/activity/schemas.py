@@ -14,7 +14,6 @@ class RecordActivityEvent(BaseModel):
     actor_email: str | None = None
     team_id: UUID | None = None
     project_id: UUID | None = None
-    allocation_id: UUID | None = None
     virtual_key_id: UUID | None = None
     provider_id: UUID | None = None
     pool_id: UUID | None = None
@@ -36,7 +35,6 @@ class ActivityEventResponse(BaseModel):
     actor_email: str | None
     team_id: UUID | None
     project_id: UUID | None
-    allocation_id: UUID | None
     virtual_key_id: UUID | None
     provider_id: UUID | None
     pool_id: UUID | None

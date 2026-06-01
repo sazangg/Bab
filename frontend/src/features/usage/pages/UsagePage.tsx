@@ -38,7 +38,7 @@ import {
 import { httpClient } from "@/shared/api/http-client";
 import type {
   ActivityEventResponse,
-  AllocationBudgetBurnRow,
+  LimitPolicyBudgetBurnRow,
   UsageRecordResponse,
   UsageBreakdownRow,
   UsageTimeSeriesPoint,
@@ -93,7 +93,7 @@ export function UsagePage() {
   const filteredRecords = records.filter((record) => {
     const term = recordFilter.trim().toLowerCase();
     if (!term) return true;
-    return `${record.requested_model} ${record.provider_model} ${record.provider_credential_name ?? ""} ${record.provider_credential_prefix ?? ""} ${record.request_id ?? ""} ${record.http_status} ${record.error_code ?? ""} ${record.provider_id} ${record.project_id} ${record.allocation_id} ${record.virtual_key_id}`
+    return `${record.requested_model} ${record.provider_model} ${record.provider_credential_name ?? ""} ${record.provider_credential_prefix ?? ""} ${record.request_id ?? ""} ${record.http_status} ${record.error_code ?? ""} ${record.provider_id} ${record.project_id} ${record.access_policy_id ?? ""} ${record.virtual_key_id}`
       .toLowerCase()
       .includes(term);
   });
@@ -253,7 +253,7 @@ export function UsagePage() {
 
           <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,480px)]">
             <SpendDriversCard rows={spendInsights?.top_spend_drivers ?? summary.by_model} />
-            <BudgetBurnCard rows={spendInsights?.allocation_budget_burn ?? []} />
+            <BudgetBurnCard rows={spendInsights?.limit_policy_budget_burn ?? []} />
           </section>
 
           <section className="grid gap-4 xl:grid-cols-2">
@@ -262,7 +262,7 @@ export function UsagePage() {
             <BreakdownCard title="Pools" rows={summary.by_pool} />
             <BreakdownCard title="Teams" rows={summary.by_team} />
             <BreakdownCard title="Projects" rows={summary.by_project} />
-            <BreakdownCard title="Allocations" rows={summary.by_allocation} />
+            <BreakdownCard title="Access policies" rows={summary.by_access_policy} />
             <BreakdownCard
               title="Virtual keys"
               rows={summary.by_virtual_key}
@@ -620,7 +620,7 @@ function SpendDriversCard({ rows }: { rows: UsageBreakdownRow[] }) {
   );
 }
 
-function BudgetBurnCard({ rows }: { rows: AllocationBudgetBurnRow[] }) {
+function BudgetBurnCard({ rows }: { rows: LimitPolicyBudgetBurnRow[] }) {
   return (
     <Card>
       <CardHeader className="border-b">
@@ -629,19 +629,19 @@ function BudgetBurnCard({ rows }: { rows: AllocationBudgetBurnRow[] }) {
       <CardContent>
         {rows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No active allocations with budgets in this range.
+            No active limit policies with budgets in this range.
           </p>
         ) : (
           <div className="space-y-3">
             {rows.slice(0, 8).map((row) => {
               const burn = Math.min(row.burn_rate_pct, 100);
               return (
-                <div key={row.allocation_id} className="rounded-md border bg-background p-3">
+                <div key={row.limit_policy_id} className="rounded-md border bg-background p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-medium">{row.allocation_name}</div>
+                      <div className="truncate text-sm font-medium">{row.limit_policy_name}</div>
                       <div className="mt-1 text-xs text-muted-foreground">
-                        {row.target_type} · {row.window}
+                        {row.window}
                       </div>
                     </div>
                     <Badge variant={row.burn_rate_pct >= 90 ? "destructive" : "outline"}>

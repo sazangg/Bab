@@ -110,7 +110,6 @@ export function ActivityPage() {
                   <SelectItem value={ANY}>All categories</SelectItem>
                   <SelectItem value="provider">Provider</SelectItem>
                   <SelectItem value="workspace">Workspace</SelectItem>
-                  <SelectItem value="allocation">Allocation</SelectItem>
                   <SelectItem value="settings">Settings</SelectItem>
                   <SelectItem value="guardrail">Guardrail</SelectItem>
                   <SelectItem value="proxy">Proxy</SelectItem>
@@ -150,7 +149,6 @@ export function ActivityPage() {
                   <SelectItem value="provider">Provider</SelectItem>
                   <SelectItem value="team">Team</SelectItem>
                   <SelectItem value="project">Project</SelectItem>
-                  <SelectItem value="allocation">Allocation</SelectItem>
                   <SelectItem value="virtual_key">Virtual key</SelectItem>
                   <SelectItem value="pool">Pool</SelectItem>
                   <SelectItem value="model_offering">Model offering</SelectItem>
@@ -289,7 +287,6 @@ function eventContext(event: ActivityEventResponse) {
       provider: event.provider_id,
       team: event.team_id,
       project: event.project_id,
-      allocation: event.allocation_id,
       virtual_key: event.virtual_key_id,
       pool: event.pool_id,
       model_offering: event.model_offering_id,

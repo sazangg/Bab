@@ -4,13 +4,13 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { ProviderCredentialRoutingPolicy } from "./providerCredentialRoutingPolicy";
+import type { ProviderCredentialRoutingPolicy } from './providerCredentialRoutingPolicy';
 
 export interface CreateCredentialPoolRequest {
   /**
-   * @minLength 1
-   * @maxLength 255
-   */
+     * @minLength 1
+     * @maxLength 255
+     */
   name: string;
   description?: string | null;
   selection_policy?: ProviderCredentialRoutingPolicy;

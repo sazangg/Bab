@@ -11,5 +11,6 @@ export interface ProviderReadiness {
   has_active_pool?: boolean;
   has_active_pool_credential?: boolean;
   has_active_model?: boolean;
+  active_model_count?: number;
   is_ready?: boolean;
 }

@@ -4,17 +4,17 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { GetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetGrain } from "./getOrganizationUsageTimeseriesApiV1UsageTimeseriesGetGrain";
-import type { GetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetWindow } from "./getOrganizationUsageTimeseriesApiV1UsageTimeseriesGetWindow";
+import type { GetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetGrain } from './getOrganizationUsageTimeseriesApiV1UsageTimeseriesGetGrain';
+import type { GetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetWindow } from './getOrganizationUsageTimeseriesApiV1UsageTimeseriesGetWindow';
 
 export type GetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetParams = {
-  window?: GetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetWindow;
-  grain?: GetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetGrain;
-  start_at?: string | null;
-  end_at?: string | null;
-  team_id?: string | null;
-  provider_id?: string | null;
-  project_id?: string | null;
-  virtual_key_id?: string | null;
-  model?: string | null;
+window?: GetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetWindow;
+grain?: GetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetGrain;
+start_at?: string | null;
+end_at?: string | null;
+team_id?: string | null;
+provider_id?: string | null;
+project_id?: string | null;
+virtual_key_id?: string | null;
+model?: string | null;
 };

@@ -2,20 +2,18 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { ArrowLeft, Gauge, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { useForm, useWatch, type UseFormRegisterReturn } from "react-hook-form";
+import { useEffect, useState } from "react";
+import { useForm } from "react-hook-form";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { z } from "zod";
 
 import {
   useGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet,
   useGetVirtualKeyUsageApiV1ProjectsProjectIdKeysKeyIdUsageGet,
-  useListProjectAllocationsApiV1ProjectsProjectIdAllocationsGet,
   useListProjectsApiV1ProjectsGet,
   useRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete,
   useUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch,
 } from "@/shared/api/generated/projects/projects";
-import { useListTeamAllocationsApiV1TeamsTeamIdAllocationsGet } from "@/shared/api/generated/teams/teams";
 import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,13 +50,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import type { UsageBreakdownRow } from "@/shared/api/generated/schemas";
@@ -71,11 +62,6 @@ const editSchema = z.object({
   name: z.string().min(1).max(255),
   expires_at: z.string().optional(),
   allowed_models: z.string().optional(),
-  allocation_mode: z.enum(["inherited", "custom"]),
-  custom_allocation_id: z.string().optional(),
-  max_requests_per_minute: z.string().optional(),
-  max_tokens_per_minute: z.string().optional(),
-  max_tokens_per_request: z.string().optional(),
 });
 
 type EditValues = z.infer<typeof editSchema>;
@@ -96,14 +82,6 @@ export function KeyDetailPage() {
   const keyQuery = useGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet(projectId, keyId, {
     query: { enabled: Boolean(projectId && keyId) },
   });
-  const allocationsQuery = useListProjectAllocationsApiV1ProjectsProjectIdAllocationsGet(
-    projectId,
-    { query: { enabled: Boolean(projectId) } },
-  );
-  const teamAllocationsQuery = useListTeamAllocationsApiV1TeamsTeamIdAllocationsGet(
-    project?.team_id ?? "",
-    { query: { enabled: Boolean(project?.team_id) } },
-  );
   const usageQuery = useGetVirtualKeyUsageApiV1ProjectsProjectIdKeysKeyIdUsageGet(
     projectId,
     keyId,
@@ -112,18 +90,7 @@ export function KeyDetailPage() {
 
   const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
   const key = keyQuery.data?.status === 200 ? keyQuery.data.data : undefined;
-  const allocations = allocationsQuery.data?.status === 200 ? allocationsQuery.data.data : [];
-  const teamAllocations =
-    teamAllocationsQuery.data?.status === 200 ? teamAllocationsQuery.data.data : [];
-  const visibleAllocations = [...allocations, ...teamAllocations];
-  const allocation = visibleAllocations.find((item) => item.id === key?.allocation_id);
-  const customAllocation = allocations.find((item) => item.id === key?.custom_allocation_id);
-  const activeAllocations = allocations.filter((item) => item.is_active);
   const usage = usageQuery.data?.status === 200 ? usageQuery.data.data : undefined;
-  const allocationModelOfferings = useMemo(
-    () => allocation?.offerings.map((offering) => offering.model_offering_id) ?? [],
-    [allocation],
-  );
   const canManageKey = project
     ? hasPermission(currentUser, "keys.manage") || isTeamAdmin(currentUser, project.team_id)
     : false;
@@ -152,15 +119,8 @@ export function KeyDetailPage() {
       name: "",
       expires_at: "",
       allowed_models: "",
-      allocation_mode: "inherited",
-      custom_allocation_id: "",
-      max_requests_per_minute: "",
-      max_tokens_per_minute: "",
-      max_tokens_per_request: "",
     },
   });
-  const allocationMode = useWatch({ control: form.control, name: "allocation_mode" });
-  const customAllocationId = useWatch({ control: form.control, name: "custom_allocation_id" });
 
   useEffect(() => {
     if (key && editOpen) {
@@ -168,11 +128,6 @@ export function KeyDetailPage() {
         name: key.name,
         expires_at: key.expires_at ? toLocalInput(key.expires_at) : "",
         allowed_models: key.allowed_models?.join(", ") ?? "",
-        allocation_mode: key.allocation_mode === "custom" ? "custom" : "inherited",
-        custom_allocation_id: key.custom_allocation_id ?? "",
-        max_requests_per_minute: key.max_requests_per_minute?.toString() ?? "",
-        max_tokens_per_minute: key.max_tokens_per_minute?.toString() ?? "",
-        max_tokens_per_request: key.max_tokens_per_request?.toString() ?? "",
       });
     }
   }, [editOpen, key, form]);
@@ -254,28 +209,23 @@ export function KeyDetailPage() {
             label="Expires"
             value={key.expires_at ? new Date(key.expires_at).toLocaleString() : "Never"}
           />
-          <Fact label="Allocation" value={allocation?.name ?? key.allocation_id} />
-          <Fact label="Policy" value={key.allocation_mode === "custom" ? "Custom" : "Inherited"} />
+          <Fact label="Policy" value="Resolved at request time" />
           <Fact label="Allowed models" value={formatModels(key.allowed_models)} />
-          <Fact label="Requests/min" value={formatLimit(key.max_requests_per_minute)} />
-          <Fact label="Tokens/min" value={formatLimit(key.max_tokens_per_minute)} />
-          <Fact label="Tokens/request" value={formatLimit(key.max_tokens_per_request)} />
           <Fact label="Created" value={new Date(key.created_at).toLocaleString()} />
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Allocation scope</CardTitle>
+          <CardTitle>Policy scope</CardTitle>
           <CardDescription>
-            Inherited keys use the current project default, or the current team default when the
-            project has none. Custom overrides can only use project allocations.
+            Keys inherit access and limit policies from the organization, team, and project. The
+            key can only narrow model access.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-3">
-          <Fact label="Effective allocation" value={allocation?.name ?? "Unknown allocation"} />
-          <Fact label="Custom override" value={customAllocation?.name ?? "None"} />
-          <Fact label="Model offerings" value={formatModels(allocationModelOfferings)} />
+          <Fact label="Access" value="Policy governed" />
+          <Fact label="Limits" value="Policy governed" />
           <Fact label="Key model subset" value={formatModels(key.allowed_models)} />
         </CardContent>
       </Card>
@@ -293,7 +243,7 @@ export function KeyDetailPage() {
             <SheetHeader>
               <SheetTitle>Edit key</SheetTitle>
               <SheetDescription>
-                A key can narrow the selected allocation by allowed model names.
+                A key can narrow access by allowed model names.
               </SheetDescription>
             </SheetHeader>
             <form
@@ -309,15 +259,6 @@ export function KeyDetailPage() {
                       ? new Date(values.expires_at).toISOString()
                       : null,
                     allowed_models: parseModels(values.allowed_models),
-                    custom_allocation_id:
-                      values.allocation_mode === "custom"
-                        ? values.custom_allocation_id || null
-                        : null,
-                    max_requests_per_minute: parseOptionalNumber(
-                      values.max_requests_per_minute,
-                    ),
-                    max_tokens_per_minute: parseOptionalNumber(values.max_tokens_per_minute),
-                    max_tokens_per_request: parseOptionalNumber(values.max_tokens_per_request),
                   },
                 }),
               )}
@@ -326,43 +267,6 @@ export function KeyDetailPage() {
                 <Label htmlFor="edit-key-name">Label</Label>
                 <Input id="edit-key-name" autoFocus {...form.register("name")} />
               </div>
-              <div className="space-y-1.5">
-                <Label>Allocation policy</Label>
-                <Select
-                  value={allocationMode}
-                  onValueChange={(value) =>
-                    form.setValue("allocation_mode", value as EditValues["allocation_mode"])
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="inherited">Use current project/team default</SelectItem>
-                    <SelectItem value="custom">Use project allocation override</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {allocationMode === "custom" ? (
-                <div className="space-y-1.5">
-                  <Label>Custom allocation</Label>
-                  <Select
-                    value={customAllocationId || ""}
-                    onValueChange={(value) => form.setValue("custom_allocation_id", value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select allocation" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {activeAllocations.map((item) => (
-                        <SelectItem key={item.id} value={item.id}>
-                          {item.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              ) : null}
               <div className="space-y-1.5">
                 <Label htmlFor="edit-key-expires">Expires at</Label>
                 <Input
@@ -379,33 +283,8 @@ export function KeyDetailPage() {
                   {...form.register("allowed_models")}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Optional comma-separated subset of the allocation.
+                  Optional comma-separated subset of the models allowed by policies.
                 </p>
-              </div>
-              <div className="grid gap-3 rounded-md border bg-muted/20 p-3">
-                <div>
-                  <Label>Key-level limits</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Blank fields keep the key uncapped beyond its allocation.
-                  </p>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <LimitInput
-                    id="edit-key-max-requests-minute"
-                    label="Requests/min"
-                    registration={form.register("max_requests_per_minute")}
-                  />
-                  <LimitInput
-                    id="edit-key-max-tokens-minute"
-                    label="Tokens/min"
-                    registration={form.register("max_tokens_per_minute")}
-                  />
-                  <LimitInput
-                    id="edit-key-max-tokens-request"
-                    label="Tokens/request"
-                    registration={form.register("max_tokens_per_request")}
-                  />
-                </div>
               </div>
             </form>
             <SheetFooter>
@@ -463,7 +342,7 @@ function KeyUsageCard({
         by_provider: UsageBreakdownRow[];
         by_model: UsageBreakdownRow[];
         by_pool: UsageBreakdownRow[];
-        by_allocation: UsageBreakdownRow[];
+        by_access_policy: UsageBreakdownRow[];
       }
     | undefined;
 }) {
@@ -506,7 +385,7 @@ function KeyUsageCard({
             <BreakdownList title="Providers" rows={usage?.by_provider ?? []} />
             <BreakdownList title="Models" rows={usage?.by_model ?? []} />
             <BreakdownList title="Pools" rows={usage?.by_pool ?? []} />
-            <BreakdownList title="Allocations" rows={usage?.by_allocation ?? []} />
+            <BreakdownList title="Access policies" rows={usage?.by_access_policy ?? []} />
           </div>
         )}
       </CardContent>
@@ -542,29 +421,8 @@ function Fact({ label, value }: { label: string; value: string }) {
   );
 }
 
-function LimitInput({
-  id,
-  label,
-  registration,
-}: {
-  id: string;
-  label: string;
-  registration: UseFormRegisterReturn;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label htmlFor={id}>{label}</Label>
-      <Input id={id} type="number" min={1} inputMode="numeric" {...registration} />
-    </div>
-  );
-}
-
 function formatModels(models: string[] | null | undefined) {
-  return models && models.length > 0 ? models.join(", ") : "All allocation models";
-}
-
-function formatLimit(value: number | null | undefined) {
-  return value == null ? "No cap" : value.toLocaleString();
+  return models && models.length > 0 ? models.join(", ") : "All policy route models";
 }
 
 function toLocalInput(iso: string) {
@@ -579,13 +437,6 @@ function parseModels(value: string | undefined): string[] | null {
     .map((model) => model.trim())
     .filter(Boolean);
   return models && models.length > 0 ? models : null;
-}
-
-function parseOptionalNumber(value: string | undefined): number | null {
-  if (!value) {
-    return null;
-  }
-  return Number(value);
 }
 
 function formatCents(value: number | null | undefined) {

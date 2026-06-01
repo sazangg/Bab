@@ -4,7 +4,7 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { GuardrailRuleInput } from "./guardrailRuleInput";
+import type { GuardrailRuleInput } from './guardrailRuleInput';
 
 export interface UpdateGuardrailPolicyRequest {
   name?: string | null;

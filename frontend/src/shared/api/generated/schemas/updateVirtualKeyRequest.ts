@@ -9,11 +9,4 @@ export interface UpdateVirtualKeyRequest {
   name?: string | null;
   expires_at?: string | null;
   allowed_models?: string[] | null;
-  custom_allocation_id?: string | null;
-  /** @minimum 1 */
-  max_requests_per_minute?: number | null;
-  /** @minimum 1 */
-  max_tokens_per_minute?: number | null;
-  /** @minimum 1 */
-  max_tokens_per_request?: number | null;
 }

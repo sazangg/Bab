@@ -4,7 +4,10 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery
+} from '@tanstack/react-query';
 import type {
   DataTag,
   DefinedInitialDataOptions,
@@ -17,15 +20,17 @@ import type {
   UseMutationOptions,
   UseMutationResult,
   UseQueryOptions,
-  UseQueryResult,
-} from "@tanstack/react-query";
+  UseQueryResult
+} from '@tanstack/react-query';
 
 import type {
   AcceptInviteRequest,
   AuditEventResponse,
+  AuditVerificationResponse,
   AuthenticatedUser,
   CreateInviteRequest,
   CreateMemberRequest,
+  ExportAuditEventsApiV1AuthAuditExportGetParams,
   HTTPValidationError,
   InviteResponse,
   ListAuditEventsApiV1AuthAuditGetParams,
@@ -33,1535 +38,1505 @@ import type {
   MemberResponse,
   TokenResponse,
   UpdateMemberRequest,
-  UpdateMemberStatusRequest,
-} from "../schemas";
+  UpdateMemberStatusRequest
+} from '../schemas';
 
-import { apiMutator } from "../../orval-mutator";
+import { apiMutator } from '../../orval-mutator';
+
+
+
 
 export type loginApiV1AuthLoginPostResponse200 = {
-  data: TokenResponse;
-  status: 200;
-};
+  data: TokenResponse
+  status: 200
+}
 
 export type loginApiV1AuthLoginPostResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
-};
+  data: HTTPValidationError
+  status: 422
+}
 
-export type loginApiV1AuthLoginPostResponseSuccess = loginApiV1AuthLoginPostResponse200 & {
+export type loginApiV1AuthLoginPostResponseSuccess = (loginApiV1AuthLoginPostResponse200) & {
   headers: Headers;
 };
-export type loginApiV1AuthLoginPostResponseError = loginApiV1AuthLoginPostResponse422 & {
+export type loginApiV1AuthLoginPostResponseError = (loginApiV1AuthLoginPostResponse422) & {
   headers: Headers;
 };
 
-export type loginApiV1AuthLoginPostResponse =
-  | loginApiV1AuthLoginPostResponseSuccess
-  | loginApiV1AuthLoginPostResponseError;
+export type loginApiV1AuthLoginPostResponse = (loginApiV1AuthLoginPostResponseSuccess | loginApiV1AuthLoginPostResponseError)
 
 export const getLoginApiV1AuthLoginPostUrl = () => {
-  return `/api/v1/auth/login`;
-};
+
+
+
+
+  return `/api/v1/auth/login`
+}
 
 /**
  * @summary Login
  */
-export const loginApiV1AuthLoginPost = async (
-  loginRequest: LoginRequest,
-  options?: RequestInit,
-): Promise<loginApiV1AuthLoginPostResponse> => {
-  return apiMutator<loginApiV1AuthLoginPostResponse>(getLoginApiV1AuthLoginPostUrl(), {
+export const loginApiV1AuthLoginPost = async (loginRequest: LoginRequest, options?: RequestInit): Promise<loginApiV1AuthLoginPostResponse> => {
+
+  return apiMutator<loginApiV1AuthLoginPostResponse>(getLoginApiV1AuthLoginPostUrl(),
+  {
     ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(loginRequest),
-  });
-};
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      loginRequest,)
+  }
+);}
 
-export const getLoginApiV1AuthLoginPostMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>,
-    TError,
-    { data: LoginRequest },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>,
-  TError,
-  { data: LoginRequest },
-  TContext
-> => {
-  const mutationKey = ["loginApiV1AuthLoginPost"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>,
-    { data: LoginRequest }
-  > = (props) => {
-    const { data } = props ?? {};
 
-    return loginApiV1AuthLoginPost(data);
-  };
 
-  return { mutationFn, ...mutationOptions };
-};
+export const getLoginApiV1AuthLoginPostMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>, TError,{data: LoginRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>, TError,{data: LoginRequest}, TContext> => {
 
-export type LoginApiV1AuthLoginPostMutationResult = NonNullable<
-  Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>
->;
-export type LoginApiV1AuthLoginPostMutationBody = LoginRequest;
-export type LoginApiV1AuthLoginPostMutationError = HTTPValidationError;
+const mutationKey = ['loginApiV1AuthLoginPost'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
 
-/**
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>, {data: LoginRequest}> = (props) => {
+          const {data} = props ?? {};
+
+          return  loginApiV1AuthLoginPost(data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LoginApiV1AuthLoginPostMutationResult = NonNullable<Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>>
+    export type LoginApiV1AuthLoginPostMutationBody = LoginRequest
+    export type LoginApiV1AuthLoginPostMutationError = HTTPValidationError
+
+    /**
  * @summary Login
  */
-export const useLoginApiV1AuthLoginPost = <TError = HTTPValidationError, TContext = unknown>(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>,
-      TError,
-      { data: LoginRequest },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>,
-  TError,
-  { data: LoginRequest },
-  TContext
-> => {
-  return useMutation(getLoginApiV1AuthLoginPostMutationOptions(options), queryClient);
-};
-export type acceptInviteApiV1AuthInvitesAcceptPostResponse200 = {
-  data: TokenResponse;
-  status: 200;
-};
+export const useLoginApiV1AuthLoginPost = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>, TError,{data: LoginRequest}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>,
+        TError,
+        {data: LoginRequest},
+        TContext
+      > => {
+      return useMutation(getLoginApiV1AuthLoginPostMutationOptions(options), queryClient);
+    }
+    export type acceptInviteApiV1AuthInvitesAcceptPostResponse200 = {
+  data: TokenResponse
+  status: 200
+}
 
 export type acceptInviteApiV1AuthInvitesAcceptPostResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type acceptInviteApiV1AuthInvitesAcceptPostResponseSuccess = (acceptInviteApiV1AuthInvitesAcceptPostResponse200) & {
+  headers: Headers;
+};
+export type acceptInviteApiV1AuthInvitesAcceptPostResponseError = (acceptInviteApiV1AuthInvitesAcceptPostResponse422) & {
+  headers: Headers;
 };
 
-export type acceptInviteApiV1AuthInvitesAcceptPostResponseSuccess =
-  acceptInviteApiV1AuthInvitesAcceptPostResponse200 & {
-    headers: Headers;
-  };
-export type acceptInviteApiV1AuthInvitesAcceptPostResponseError =
-  acceptInviteApiV1AuthInvitesAcceptPostResponse422 & {
-    headers: Headers;
-  };
-
-export type acceptInviteApiV1AuthInvitesAcceptPostResponse =
-  | acceptInviteApiV1AuthInvitesAcceptPostResponseSuccess
-  | acceptInviteApiV1AuthInvitesAcceptPostResponseError;
+export type acceptInviteApiV1AuthInvitesAcceptPostResponse = (acceptInviteApiV1AuthInvitesAcceptPostResponseSuccess | acceptInviteApiV1AuthInvitesAcceptPostResponseError)
 
 export const getAcceptInviteApiV1AuthInvitesAcceptPostUrl = () => {
-  return `/api/v1/auth/invites/accept`;
-};
+
+
+
+
+  return `/api/v1/auth/invites/accept`
+}
 
 /**
  * @summary Accept Invite
  */
-export const acceptInviteApiV1AuthInvitesAcceptPost = async (
-  acceptInviteRequest: AcceptInviteRequest,
-  options?: RequestInit,
-): Promise<acceptInviteApiV1AuthInvitesAcceptPostResponse> => {
-  return apiMutator<acceptInviteApiV1AuthInvitesAcceptPostResponse>(
-    getAcceptInviteApiV1AuthInvitesAcceptPostUrl(),
-    {
-      ...options,
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(acceptInviteRequest),
-    },
-  );
-};
+export const acceptInviteApiV1AuthInvitesAcceptPost = async (acceptInviteRequest: AcceptInviteRequest, options?: RequestInit): Promise<acceptInviteApiV1AuthInvitesAcceptPostResponse> => {
 
-export const getAcceptInviteApiV1AuthInvitesAcceptPostMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof acceptInviteApiV1AuthInvitesAcceptPost>>,
-    TError,
-    { data: AcceptInviteRequest },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof acceptInviteApiV1AuthInvitesAcceptPost>>,
-  TError,
-  { data: AcceptInviteRequest },
-  TContext
-> => {
-  const mutationKey = ["acceptInviteApiV1AuthInvitesAcceptPost"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
+  return apiMutator<acceptInviteApiV1AuthInvitesAcceptPostResponse>(getAcceptInviteApiV1AuthInvitesAcceptPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      acceptInviteRequest,)
+  }
+);}
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof acceptInviteApiV1AuthInvitesAcceptPost>>,
-    { data: AcceptInviteRequest }
-  > = (props) => {
-    const { data } = props ?? {};
 
-    return acceptInviteApiV1AuthInvitesAcceptPost(data);
-  };
 
-  return { mutationFn, ...mutationOptions };
-};
 
-export type AcceptInviteApiV1AuthInvitesAcceptPostMutationResult = NonNullable<
-  Awaited<ReturnType<typeof acceptInviteApiV1AuthInvitesAcceptPost>>
->;
-export type AcceptInviteApiV1AuthInvitesAcceptPostMutationBody = AcceptInviteRequest;
-export type AcceptInviteApiV1AuthInvitesAcceptPostMutationError = HTTPValidationError;
+export const getAcceptInviteApiV1AuthInvitesAcceptPostMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acceptInviteApiV1AuthInvitesAcceptPost>>, TError,{data: AcceptInviteRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof acceptInviteApiV1AuthInvitesAcceptPost>>, TError,{data: AcceptInviteRequest}, TContext> => {
 
-/**
+const mutationKey = ['acceptInviteApiV1AuthInvitesAcceptPost'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof acceptInviteApiV1AuthInvitesAcceptPost>>, {data: AcceptInviteRequest}> = (props) => {
+          const {data} = props ?? {};
+
+          return  acceptInviteApiV1AuthInvitesAcceptPost(data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AcceptInviteApiV1AuthInvitesAcceptPostMutationResult = NonNullable<Awaited<ReturnType<typeof acceptInviteApiV1AuthInvitesAcceptPost>>>
+    export type AcceptInviteApiV1AuthInvitesAcceptPostMutationBody = AcceptInviteRequest
+    export type AcceptInviteApiV1AuthInvitesAcceptPostMutationError = HTTPValidationError
+
+    /**
  * @summary Accept Invite
  */
-export const useAcceptInviteApiV1AuthInvitesAcceptPost = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof acceptInviteApiV1AuthInvitesAcceptPost>>,
-      TError,
-      { data: AcceptInviteRequest },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof acceptInviteApiV1AuthInvitesAcceptPost>>,
-  TError,
-  { data: AcceptInviteRequest },
-  TContext
-> => {
-  return useMutation(
-    getAcceptInviteApiV1AuthInvitesAcceptPostMutationOptions(options),
-    queryClient,
-  );
-};
-export type refreshApiV1AuthRefreshPostResponse200 = {
-  data: TokenResponse;
-  status: 200;
-};
+export const useAcceptInviteApiV1AuthInvitesAcceptPost = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acceptInviteApiV1AuthInvitesAcceptPost>>, TError,{data: AcceptInviteRequest}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof acceptInviteApiV1AuthInvitesAcceptPost>>,
+        TError,
+        {data: AcceptInviteRequest},
+        TContext
+      > => {
+      return useMutation(getAcceptInviteApiV1AuthInvitesAcceptPostMutationOptions(options), queryClient);
+    }
+    export type refreshApiV1AuthRefreshPostResponse200 = {
+  data: TokenResponse
+  status: 200
+}
 
 export type refreshApiV1AuthRefreshPostResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
-};
+  data: HTTPValidationError
+  status: 422
+}
 
-export type refreshApiV1AuthRefreshPostResponseSuccess = refreshApiV1AuthRefreshPostResponse200 & {
+export type refreshApiV1AuthRefreshPostResponseSuccess = (refreshApiV1AuthRefreshPostResponse200) & {
   headers: Headers;
 };
-export type refreshApiV1AuthRefreshPostResponseError = refreshApiV1AuthRefreshPostResponse422 & {
+export type refreshApiV1AuthRefreshPostResponseError = (refreshApiV1AuthRefreshPostResponse422) & {
   headers: Headers;
 };
 
-export type refreshApiV1AuthRefreshPostResponse =
-  | refreshApiV1AuthRefreshPostResponseSuccess
-  | refreshApiV1AuthRefreshPostResponseError;
+export type refreshApiV1AuthRefreshPostResponse = (refreshApiV1AuthRefreshPostResponseSuccess | refreshApiV1AuthRefreshPostResponseError)
 
 export const getRefreshApiV1AuthRefreshPostUrl = () => {
-  return `/api/v1/auth/refresh`;
-};
+
+
+
+
+  return `/api/v1/auth/refresh`
+}
 
 /**
  * @summary Refresh
  */
-export const refreshApiV1AuthRefreshPost = async (
-  options?: RequestInit,
-): Promise<refreshApiV1AuthRefreshPostResponse> => {
-  return apiMutator<refreshApiV1AuthRefreshPostResponse>(getRefreshApiV1AuthRefreshPostUrl(), {
+export const refreshApiV1AuthRefreshPost = async ( options?: RequestInit): Promise<refreshApiV1AuthRefreshPostResponse> => {
+
+  return apiMutator<refreshApiV1AuthRefreshPostResponse>(getRefreshApiV1AuthRefreshPostUrl(),
+  {
     ...options,
-    method: "POST",
-  });
-};
+    method: 'POST'
 
-export const getRefreshApiV1AuthRefreshPostMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>,
-    TError,
-    void,
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>,
-  TError,
-  void,
-  TContext
-> => {
-  const mutationKey = ["refreshApiV1AuthRefreshPost"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>,
-    void
-  > = () => {
-    return refreshApiV1AuthRefreshPost();
-  };
+  }
+);}
 
-  return { mutationFn, ...mutationOptions };
-};
 
-export type RefreshApiV1AuthRefreshPostMutationResult = NonNullable<
-  Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>
->;
 
-export type RefreshApiV1AuthRefreshPostMutationError = HTTPValidationError;
 
-/**
+export const getRefreshApiV1AuthRefreshPostMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>, TError,void, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>, TError,void, TContext> => {
+
+const mutationKey = ['refreshApiV1AuthRefreshPost'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>, void> = () => {
+
+
+          return  refreshApiV1AuthRefreshPost()
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RefreshApiV1AuthRefreshPostMutationResult = NonNullable<Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>>
+
+    export type RefreshApiV1AuthRefreshPostMutationError = HTTPValidationError
+
+    /**
  * @summary Refresh
  */
-export const useRefreshApiV1AuthRefreshPost = <TError = HTTPValidationError, TContext = unknown>(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>,
-      TError,
-      void,
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>,
-  TError,
-  void,
-  TContext
-> => {
-  return useMutation(getRefreshApiV1AuthRefreshPostMutationOptions(options), queryClient);
-};
-export type logoutApiV1AuthLogoutPostResponse204 = {
-  data: void;
-  status: 204;
-};
+export const useRefreshApiV1AuthRefreshPost = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>, TError,void, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getRefreshApiV1AuthRefreshPostMutationOptions(options), queryClient);
+    }
+    export type logoutApiV1AuthLogoutPostResponse204 = {
+  data: void
+  status: 204
+}
 
 export type logoutApiV1AuthLogoutPostResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
-};
+  data: HTTPValidationError
+  status: 422
+}
 
-export type logoutApiV1AuthLogoutPostResponseSuccess = logoutApiV1AuthLogoutPostResponse204 & {
+export type logoutApiV1AuthLogoutPostResponseSuccess = (logoutApiV1AuthLogoutPostResponse204) & {
   headers: Headers;
 };
-export type logoutApiV1AuthLogoutPostResponseError = logoutApiV1AuthLogoutPostResponse422 & {
+export type logoutApiV1AuthLogoutPostResponseError = (logoutApiV1AuthLogoutPostResponse422) & {
   headers: Headers;
 };
 
-export type logoutApiV1AuthLogoutPostResponse =
-  | logoutApiV1AuthLogoutPostResponseSuccess
-  | logoutApiV1AuthLogoutPostResponseError;
+export type logoutApiV1AuthLogoutPostResponse = (logoutApiV1AuthLogoutPostResponseSuccess | logoutApiV1AuthLogoutPostResponseError)
 
 export const getLogoutApiV1AuthLogoutPostUrl = () => {
-  return `/api/v1/auth/logout`;
-};
+
+
+
+
+  return `/api/v1/auth/logout`
+}
 
 /**
  * @summary Logout
  */
-export const logoutApiV1AuthLogoutPost = async (
-  options?: RequestInit,
-): Promise<logoutApiV1AuthLogoutPostResponse> => {
-  return apiMutator<logoutApiV1AuthLogoutPostResponse>(getLogoutApiV1AuthLogoutPostUrl(), {
+export const logoutApiV1AuthLogoutPost = async ( options?: RequestInit): Promise<logoutApiV1AuthLogoutPostResponse> => {
+
+  return apiMutator<logoutApiV1AuthLogoutPostResponse>(getLogoutApiV1AuthLogoutPostUrl(),
+  {
     ...options,
-    method: "POST",
-  });
-};
+    method: 'POST'
 
-export const getLogoutApiV1AuthLogoutPostMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>,
-    TError,
-    void,
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>,
-  TError,
-  void,
-  TContext
-> => {
-  const mutationKey = ["logoutApiV1AuthLogoutPost"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>,
-    void
-  > = () => {
-    return logoutApiV1AuthLogoutPost();
-  };
+  }
+);}
 
-  return { mutationFn, ...mutationOptions };
-};
 
-export type LogoutApiV1AuthLogoutPostMutationResult = NonNullable<
-  Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>
->;
 
-export type LogoutApiV1AuthLogoutPostMutationError = HTTPValidationError;
 
-/**
+export const getLogoutApiV1AuthLogoutPostMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>, TError,void, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>, TError,void, TContext> => {
+
+const mutationKey = ['logoutApiV1AuthLogoutPost'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>, void> = () => {
+
+
+          return  logoutApiV1AuthLogoutPost()
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LogoutApiV1AuthLogoutPostMutationResult = NonNullable<Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>>
+
+    export type LogoutApiV1AuthLogoutPostMutationError = HTTPValidationError
+
+    /**
  * @summary Logout
  */
-export const useLogoutApiV1AuthLogoutPost = <TError = HTTPValidationError, TContext = unknown>(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>,
-      TError,
-      void,
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>,
-  TError,
-  void,
-  TContext
-> => {
-  return useMutation(getLogoutApiV1AuthLogoutPostMutationOptions(options), queryClient);
-};
-export type meApiV1AuthMeGetResponse200 = {
-  data: AuthenticatedUser;
-  status: 200;
-};
+export const useLogoutApiV1AuthLogoutPost = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>, TError,void, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getLogoutApiV1AuthLogoutPostMutationOptions(options), queryClient);
+    }
+    export type meApiV1AuthMeGetResponse200 = {
+  data: AuthenticatedUser
+  status: 200
+}
 
-export type meApiV1AuthMeGetResponseSuccess = meApiV1AuthMeGetResponse200 & {
+export type meApiV1AuthMeGetResponseSuccess = (meApiV1AuthMeGetResponse200) & {
   headers: Headers;
 };
-export type meApiV1AuthMeGetResponse = meApiV1AuthMeGetResponseSuccess;
+;
+
+export type meApiV1AuthMeGetResponse = (meApiV1AuthMeGetResponseSuccess)
 
 export const getMeApiV1AuthMeGetUrl = () => {
-  return `/api/v1/auth/me`;
-};
+
+
+
+
+  return `/api/v1/auth/me`
+}
 
 /**
  * @summary Me
  */
-export const meApiV1AuthMeGet = async (
-  options?: RequestInit,
-): Promise<meApiV1AuthMeGetResponse> => {
-  return apiMutator<meApiV1AuthMeGetResponse>(getMeApiV1AuthMeGetUrl(), {
+export const meApiV1AuthMeGet = async ( options?: RequestInit): Promise<meApiV1AuthMeGetResponse> => {
+
+  return apiMutator<meApiV1AuthMeGetResponse>(getMeApiV1AuthMeGetUrl(),
+  {
     ...options,
-    method: "GET",
-  });
-};
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
 
 export const getMeApiV1AuthMeGetQueryKey = () => {
-  return [`/api/v1/auth/me`] as const;
-};
+    return [
+    `/api/v1/auth/me`
+    ] as const;
+    }
 
-export const getMeApiV1AuthMeGetQueryOptions = <
-  TData = Awaited<ReturnType<typeof meApiV1AuthMeGet>>,
-  TError = unknown,
->(options?: {
-  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError, TData>>;
-}) => {
-  const { query: queryOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getMeApiV1AuthMeGetQueryKey();
+export const getMeApiV1AuthMeGetQueryOptions = <TData = Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError, TData>>, }
+) => {
 
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof meApiV1AuthMeGet>>> = ({ signal }) =>
-    meApiV1AuthMeGet({ signal });
+const {query: queryOptions} = options ?? {};
 
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof meApiV1AuthMeGet>>,
-    TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
-};
+  const queryKey =  queryOptions?.queryKey ?? getMeApiV1AuthMeGetQueryKey();
 
-export type MeApiV1AuthMeGetQueryResult = NonNullable<Awaited<ReturnType<typeof meApiV1AuthMeGet>>>;
-export type MeApiV1AuthMeGetQueryError = unknown;
 
-export function useMeApiV1AuthMeGet<
-  TData = Awaited<ReturnType<typeof meApiV1AuthMeGet>>,
-  TError = unknown,
->(
-  options: {
-    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError, TData>> &
-      Pick<
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof meApiV1AuthMeGet>>> = ({ signal }) => meApiV1AuthMeGet({ signal });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type MeApiV1AuthMeGetQueryResult = NonNullable<Awaited<ReturnType<typeof meApiV1AuthMeGet>>>
+export type MeApiV1AuthMeGetQueryError = unknown
+
+
+export function useMeApiV1AuthMeGet<TData = Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof meApiV1AuthMeGet>>,
           TError,
           Awaited<ReturnType<typeof meApiV1AuthMeGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useMeApiV1AuthMeGet<
-  TData = Awaited<ReturnType<typeof meApiV1AuthMeGet>>,
-  TError = unknown,
->(
-  options?: {
-    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError, TData>> &
-      Pick<
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useMeApiV1AuthMeGet<TData = Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof meApiV1AuthMeGet>>,
           TError,
           Awaited<ReturnType<typeof meApiV1AuthMeGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useMeApiV1AuthMeGet<
-  TData = Awaited<ReturnType<typeof meApiV1AuthMeGet>>,
-  TError = unknown,
->(
-  options?: {
-    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError, TData>>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useMeApiV1AuthMeGet<TData = Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary Me
  */
 
-export function useMeApiV1AuthMeGet<
-  TData = Awaited<ReturnType<typeof meApiV1AuthMeGet>>,
-  TError = unknown,
->(
-  options?: {
-    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError, TData>>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getMeApiV1AuthMeGetQueryOptions(options);
+export function useMeApiV1AuthMeGet<TData = Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
-    queryKey: DataTag<QueryKey, TData, TError>;
-  };
+  const queryOptions = getMeApiV1AuthMeGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+
+
+
+
 
 export type listMembersApiV1AuthMembersGetResponse200 = {
-  data: MemberResponse[];
-  status: 200;
-};
+  data: MemberResponse[]
+  status: 200
+}
 
-export type listMembersApiV1AuthMembersGetResponseSuccess =
-  listMembersApiV1AuthMembersGetResponse200 & {
-    headers: Headers;
-  };
-export type listMembersApiV1AuthMembersGetResponse = listMembersApiV1AuthMembersGetResponseSuccess;
+export type listMembersApiV1AuthMembersGetResponseSuccess = (listMembersApiV1AuthMembersGetResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listMembersApiV1AuthMembersGetResponse = (listMembersApiV1AuthMembersGetResponseSuccess)
 
 export const getListMembersApiV1AuthMembersGetUrl = () => {
-  return `/api/v1/auth/members`;
-};
+
+
+
+
+  return `/api/v1/auth/members`
+}
 
 /**
  * @summary List Members
  */
-export const listMembersApiV1AuthMembersGet = async (
-  options?: RequestInit,
-): Promise<listMembersApiV1AuthMembersGetResponse> => {
-  return apiMutator<listMembersApiV1AuthMembersGetResponse>(
-    getListMembersApiV1AuthMembersGetUrl(),
-    {
-      ...options,
-      method: "GET",
-    },
-  );
-};
+export const listMembersApiV1AuthMembersGet = async ( options?: RequestInit): Promise<listMembersApiV1AuthMembersGetResponse> => {
+
+  return apiMutator<listMembersApiV1AuthMembersGetResponse>(getListMembersApiV1AuthMembersGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
 
 export const getListMembersApiV1AuthMembersGetQueryKey = () => {
-  return [`/api/v1/auth/members`] as const;
-};
+    return [
+    `/api/v1/auth/members`
+    ] as const;
+    }
 
-export const getListMembersApiV1AuthMembersGetQueryOptions = <
-  TData = Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>,
-  TError = unknown,
->(options?: {
-  query?: Partial<
-    UseQueryOptions<Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError, TData>
-  >;
-}) => {
-  const { query: queryOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getListMembersApiV1AuthMembersGetQueryKey();
+export const getListMembersApiV1AuthMembersGetQueryOptions = <TData = Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError, TData>>, }
+) => {
 
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>> = ({
-    signal,
-  }) => listMembersApiV1AuthMembersGet({ signal });
+const {query: queryOptions} = options ?? {};
 
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>,
-    TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
-};
+  const queryKey =  queryOptions?.queryKey ?? getListMembersApiV1AuthMembersGetQueryKey();
 
-export type ListMembersApiV1AuthMembersGetQueryResult = NonNullable<
-  Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>
->;
-export type ListMembersApiV1AuthMembersGetQueryError = unknown;
 
-export function useListMembersApiV1AuthMembersGet<
-  TData = Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>,
-  TError = unknown,
->(
-  options: {
-    query: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError, TData>
-    > &
-      Pick<
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>> = ({ signal }) => listMembersApiV1AuthMembersGet({ signal });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListMembersApiV1AuthMembersGetQueryResult = NonNullable<Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>>
+export type ListMembersApiV1AuthMembersGetQueryError = unknown
+
+
+export function useListMembersApiV1AuthMembersGet<TData = Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>,
           TError,
           Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useListMembersApiV1AuthMembersGet<
-  TData = Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>,
-  TError = unknown,
->(
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError, TData>
-    > &
-      Pick<
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListMembersApiV1AuthMembersGet<TData = Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>,
           TError,
           Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useListMembersApiV1AuthMembersGet<
-  TData = Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>,
-  TError = unknown,
->(
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError, TData>
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListMembersApiV1AuthMembersGet<TData = Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary List Members
  */
 
-export function useListMembersApiV1AuthMembersGet<
-  TData = Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>,
-  TError = unknown,
->(
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError, TData>
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getListMembersApiV1AuthMembersGetQueryOptions(options);
+export function useListMembersApiV1AuthMembersGet<TData = Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
-    queryKey: DataTag<QueryKey, TData, TError>;
-  };
+  const queryOptions = getListMembersApiV1AuthMembersGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
+
+
+
+
+
 export type createMemberApiV1AuthMembersPostResponse201 = {
-  data: MemberResponse;
-  status: 201;
-};
+  data: MemberResponse
+  status: 201
+}
 
 export type createMemberApiV1AuthMembersPostResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type createMemberApiV1AuthMembersPostResponseSuccess = (createMemberApiV1AuthMembersPostResponse201) & {
+  headers: Headers;
+};
+export type createMemberApiV1AuthMembersPostResponseError = (createMemberApiV1AuthMembersPostResponse422) & {
+  headers: Headers;
 };
 
-export type createMemberApiV1AuthMembersPostResponseSuccess =
-  createMemberApiV1AuthMembersPostResponse201 & {
-    headers: Headers;
-  };
-export type createMemberApiV1AuthMembersPostResponseError =
-  createMemberApiV1AuthMembersPostResponse422 & {
-    headers: Headers;
-  };
-
-export type createMemberApiV1AuthMembersPostResponse =
-  | createMemberApiV1AuthMembersPostResponseSuccess
-  | createMemberApiV1AuthMembersPostResponseError;
+export type createMemberApiV1AuthMembersPostResponse = (createMemberApiV1AuthMembersPostResponseSuccess | createMemberApiV1AuthMembersPostResponseError)
 
 export const getCreateMemberApiV1AuthMembersPostUrl = () => {
-  return `/api/v1/auth/members`;
-};
+
+
+
+
+  return `/api/v1/auth/members`
+}
 
 /**
  * @summary Create Member
  */
-export const createMemberApiV1AuthMembersPost = async (
-  createMemberRequest: CreateMemberRequest,
-  options?: RequestInit,
-): Promise<createMemberApiV1AuthMembersPostResponse> => {
-  return apiMutator<createMemberApiV1AuthMembersPostResponse>(
-    getCreateMemberApiV1AuthMembersPostUrl(),
-    {
-      ...options,
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(createMemberRequest),
-    },
-  );
-};
+export const createMemberApiV1AuthMembersPost = async (createMemberRequest: CreateMemberRequest, options?: RequestInit): Promise<createMemberApiV1AuthMembersPostResponse> => {
 
-export const getCreateMemberApiV1AuthMembersPostMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof createMemberApiV1AuthMembersPost>>,
-    TError,
-    { data: CreateMemberRequest },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof createMemberApiV1AuthMembersPost>>,
-  TError,
-  { data: CreateMemberRequest },
-  TContext
-> => {
-  const mutationKey = ["createMemberApiV1AuthMembersPost"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
+  return apiMutator<createMemberApiV1AuthMembersPostResponse>(getCreateMemberApiV1AuthMembersPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      createMemberRequest,)
+  }
+);}
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof createMemberApiV1AuthMembersPost>>,
-    { data: CreateMemberRequest }
-  > = (props) => {
-    const { data } = props ?? {};
 
-    return createMemberApiV1AuthMembersPost(data);
-  };
 
-  return { mutationFn, ...mutationOptions };
-};
 
-export type CreateMemberApiV1AuthMembersPostMutationResult = NonNullable<
-  Awaited<ReturnType<typeof createMemberApiV1AuthMembersPost>>
->;
-export type CreateMemberApiV1AuthMembersPostMutationBody = CreateMemberRequest;
-export type CreateMemberApiV1AuthMembersPostMutationError = HTTPValidationError;
+export const getCreateMemberApiV1AuthMembersPostMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMemberApiV1AuthMembersPost>>, TError,{data: CreateMemberRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof createMemberApiV1AuthMembersPost>>, TError,{data: CreateMemberRequest}, TContext> => {
 
-/**
+const mutationKey = ['createMemberApiV1AuthMembersPost'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createMemberApiV1AuthMembersPost>>, {data: CreateMemberRequest}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createMemberApiV1AuthMembersPost(data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateMemberApiV1AuthMembersPostMutationResult = NonNullable<Awaited<ReturnType<typeof createMemberApiV1AuthMembersPost>>>
+    export type CreateMemberApiV1AuthMembersPostMutationBody = CreateMemberRequest
+    export type CreateMemberApiV1AuthMembersPostMutationError = HTTPValidationError
+
+    /**
  * @summary Create Member
  */
-export const useCreateMemberApiV1AuthMembersPost = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof createMemberApiV1AuthMembersPost>>,
-      TError,
-      { data: CreateMemberRequest },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof createMemberApiV1AuthMembersPost>>,
-  TError,
-  { data: CreateMemberRequest },
-  TContext
-> => {
-  return useMutation(getCreateMemberApiV1AuthMembersPostMutationOptions(options), queryClient);
-};
-export type updateMemberApiV1AuthMembersUserIdPatchResponse200 = {
-  data: MemberResponse;
-  status: 200;
-};
+export const useCreateMemberApiV1AuthMembersPost = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMemberApiV1AuthMembersPost>>, TError,{data: CreateMemberRequest}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createMemberApiV1AuthMembersPost>>,
+        TError,
+        {data: CreateMemberRequest},
+        TContext
+      > => {
+      return useMutation(getCreateMemberApiV1AuthMembersPostMutationOptions(options), queryClient);
+    }
+    export type updateMemberApiV1AuthMembersUserIdPatchResponse200 = {
+  data: MemberResponse
+  status: 200
+}
 
 export type updateMemberApiV1AuthMembersUserIdPatchResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type updateMemberApiV1AuthMembersUserIdPatchResponseSuccess = (updateMemberApiV1AuthMembersUserIdPatchResponse200) & {
+  headers: Headers;
+};
+export type updateMemberApiV1AuthMembersUserIdPatchResponseError = (updateMemberApiV1AuthMembersUserIdPatchResponse422) & {
+  headers: Headers;
 };
 
-export type updateMemberApiV1AuthMembersUserIdPatchResponseSuccess =
-  updateMemberApiV1AuthMembersUserIdPatchResponse200 & {
-    headers: Headers;
-  };
-export type updateMemberApiV1AuthMembersUserIdPatchResponseError =
-  updateMemberApiV1AuthMembersUserIdPatchResponse422 & {
-    headers: Headers;
-  };
+export type updateMemberApiV1AuthMembersUserIdPatchResponse = (updateMemberApiV1AuthMembersUserIdPatchResponseSuccess | updateMemberApiV1AuthMembersUserIdPatchResponseError)
 
-export type updateMemberApiV1AuthMembersUserIdPatchResponse =
-  | updateMemberApiV1AuthMembersUserIdPatchResponseSuccess
-  | updateMemberApiV1AuthMembersUserIdPatchResponseError;
+export const getUpdateMemberApiV1AuthMembersUserIdPatchUrl = (userId: string,) => {
 
-export const getUpdateMemberApiV1AuthMembersUserIdPatchUrl = (userId: string) => {
-  return `/api/v1/auth/members/${userId}`;
-};
+
+
+
+  return `/api/v1/auth/members/${userId}`
+}
 
 /**
  * @summary Update Member
  */
-export const updateMemberApiV1AuthMembersUserIdPatch = async (
-  userId: string,
-  updateMemberRequest: UpdateMemberRequest,
-  options?: RequestInit,
-): Promise<updateMemberApiV1AuthMembersUserIdPatchResponse> => {
-  return apiMutator<updateMemberApiV1AuthMembersUserIdPatchResponse>(
-    getUpdateMemberApiV1AuthMembersUserIdPatchUrl(userId),
-    {
-      ...options,
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(updateMemberRequest),
-    },
-  );
-};
+export const updateMemberApiV1AuthMembersUserIdPatch = async (userId: string,
+    updateMemberRequest: UpdateMemberRequest, options?: RequestInit): Promise<updateMemberApiV1AuthMembersUserIdPatchResponse> => {
 
-export const getUpdateMemberApiV1AuthMembersUserIdPatchMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof updateMemberApiV1AuthMembersUserIdPatch>>,
-    TError,
-    { userId: string; data: UpdateMemberRequest },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof updateMemberApiV1AuthMembersUserIdPatch>>,
-  TError,
-  { userId: string; data: UpdateMemberRequest },
-  TContext
-> => {
-  const mutationKey = ["updateMemberApiV1AuthMembersUserIdPatch"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
+  return apiMutator<updateMemberApiV1AuthMembersUserIdPatchResponse>(getUpdateMemberApiV1AuthMembersUserIdPatchUrl(userId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateMemberRequest,)
+  }
+);}
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof updateMemberApiV1AuthMembersUserIdPatch>>,
-    { userId: string; data: UpdateMemberRequest }
-  > = (props) => {
-    const { userId, data } = props ?? {};
 
-    return updateMemberApiV1AuthMembersUserIdPatch(userId, data);
-  };
 
-  return { mutationFn, ...mutationOptions };
-};
 
-export type UpdateMemberApiV1AuthMembersUserIdPatchMutationResult = NonNullable<
-  Awaited<ReturnType<typeof updateMemberApiV1AuthMembersUserIdPatch>>
->;
-export type UpdateMemberApiV1AuthMembersUserIdPatchMutationBody = UpdateMemberRequest;
-export type UpdateMemberApiV1AuthMembersUserIdPatchMutationError = HTTPValidationError;
+export const getUpdateMemberApiV1AuthMembersUserIdPatchMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateMemberApiV1AuthMembersUserIdPatch>>, TError,{userId: string;data: UpdateMemberRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof updateMemberApiV1AuthMembersUserIdPatch>>, TError,{userId: string;data: UpdateMemberRequest}, TContext> => {
 
-/**
+const mutationKey = ['updateMemberApiV1AuthMembersUserIdPatch'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateMemberApiV1AuthMembersUserIdPatch>>, {userId: string;data: UpdateMemberRequest}> = (props) => {
+          const {userId,data} = props ?? {};
+
+          return  updateMemberApiV1AuthMembersUserIdPatch(userId,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateMemberApiV1AuthMembersUserIdPatchMutationResult = NonNullable<Awaited<ReturnType<typeof updateMemberApiV1AuthMembersUserIdPatch>>>
+    export type UpdateMemberApiV1AuthMembersUserIdPatchMutationBody = UpdateMemberRequest
+    export type UpdateMemberApiV1AuthMembersUserIdPatchMutationError = HTTPValidationError
+
+    /**
  * @summary Update Member
  */
-export const useUpdateMemberApiV1AuthMembersUserIdPatch = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof updateMemberApiV1AuthMembersUserIdPatch>>,
-      TError,
-      { userId: string; data: UpdateMemberRequest },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof updateMemberApiV1AuthMembersUserIdPatch>>,
-  TError,
-  { userId: string; data: UpdateMemberRequest },
-  TContext
-> => {
-  return useMutation(
-    getUpdateMemberApiV1AuthMembersUserIdPatchMutationOptions(options),
-    queryClient,
-  );
-};
-export type updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponse200 = {
-  data: MemberResponse;
-  status: 200;
-};
+export const useUpdateMemberApiV1AuthMembersUserIdPatch = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateMemberApiV1AuthMembersUserIdPatch>>, TError,{userId: string;data: UpdateMemberRequest}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateMemberApiV1AuthMembersUserIdPatch>>,
+        TError,
+        {userId: string;data: UpdateMemberRequest},
+        TContext
+      > => {
+      return useMutation(getUpdateMemberApiV1AuthMembersUserIdPatchMutationOptions(options), queryClient);
+    }
+    export type updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponse200 = {
+  data: MemberResponse
+  status: 200
+}
 
 export type updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponseSuccess = (updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponse200) & {
+  headers: Headers;
+};
+export type updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponseError = (updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponse422) & {
+  headers: Headers;
 };
 
-export type updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponseSuccess =
-  updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponse200 & {
-    headers: Headers;
-  };
-export type updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponseError =
-  updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponse422 & {
-    headers: Headers;
-  };
+export type updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponse = (updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponseSuccess | updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponseError)
 
-export type updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponse =
-  | updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponseSuccess
-  | updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponseError;
+export const getUpdateMemberStatusApiV1AuthMembersUserIdStatusPatchUrl = (userId: string,) => {
 
-export const getUpdateMemberStatusApiV1AuthMembersUserIdStatusPatchUrl = (userId: string) => {
-  return `/api/v1/auth/members/${userId}/status`;
-};
+
+
+
+  return `/api/v1/auth/members/${userId}/status`
+}
 
 /**
  * @summary Update Member Status
  */
-export const updateMemberStatusApiV1AuthMembersUserIdStatusPatch = async (
-  userId: string,
-  updateMemberStatusRequest: UpdateMemberStatusRequest,
-  options?: RequestInit,
-): Promise<updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponse> => {
-  return apiMutator<updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponse>(
-    getUpdateMemberStatusApiV1AuthMembersUserIdStatusPatchUrl(userId),
-    {
-      ...options,
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(updateMemberStatusRequest),
-    },
-  );
-};
+export const updateMemberStatusApiV1AuthMembersUserIdStatusPatch = async (userId: string,
+    updateMemberStatusRequest: UpdateMemberStatusRequest, options?: RequestInit): Promise<updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponse> => {
 
-export const getUpdateMemberStatusApiV1AuthMembersUserIdStatusPatchMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof updateMemberStatusApiV1AuthMembersUserIdStatusPatch>>,
-    TError,
-    { userId: string; data: UpdateMemberStatusRequest },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof updateMemberStatusApiV1AuthMembersUserIdStatusPatch>>,
-  TError,
-  { userId: string; data: UpdateMemberStatusRequest },
-  TContext
-> => {
-  const mutationKey = ["updateMemberStatusApiV1AuthMembersUserIdStatusPatch"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
+  return apiMutator<updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponse>(getUpdateMemberStatusApiV1AuthMembersUserIdStatusPatchUrl(userId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateMemberStatusRequest,)
+  }
+);}
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof updateMemberStatusApiV1AuthMembersUserIdStatusPatch>>,
-    { userId: string; data: UpdateMemberStatusRequest }
-  > = (props) => {
-    const { userId, data } = props ?? {};
 
-    return updateMemberStatusApiV1AuthMembersUserIdStatusPatch(userId, data);
-  };
 
-  return { mutationFn, ...mutationOptions };
-};
 
-export type UpdateMemberStatusApiV1AuthMembersUserIdStatusPatchMutationResult = NonNullable<
-  Awaited<ReturnType<typeof updateMemberStatusApiV1AuthMembersUserIdStatusPatch>>
->;
-export type UpdateMemberStatusApiV1AuthMembersUserIdStatusPatchMutationBody =
-  UpdateMemberStatusRequest;
-export type UpdateMemberStatusApiV1AuthMembersUserIdStatusPatchMutationError = HTTPValidationError;
+export const getUpdateMemberStatusApiV1AuthMembersUserIdStatusPatchMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateMemberStatusApiV1AuthMembersUserIdStatusPatch>>, TError,{userId: string;data: UpdateMemberStatusRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof updateMemberStatusApiV1AuthMembersUserIdStatusPatch>>, TError,{userId: string;data: UpdateMemberStatusRequest}, TContext> => {
 
-/**
+const mutationKey = ['updateMemberStatusApiV1AuthMembersUserIdStatusPatch'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateMemberStatusApiV1AuthMembersUserIdStatusPatch>>, {userId: string;data: UpdateMemberStatusRequest}> = (props) => {
+          const {userId,data} = props ?? {};
+
+          return  updateMemberStatusApiV1AuthMembersUserIdStatusPatch(userId,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateMemberStatusApiV1AuthMembersUserIdStatusPatchMutationResult = NonNullable<Awaited<ReturnType<typeof updateMemberStatusApiV1AuthMembersUserIdStatusPatch>>>
+    export type UpdateMemberStatusApiV1AuthMembersUserIdStatusPatchMutationBody = UpdateMemberStatusRequest
+    export type UpdateMemberStatusApiV1AuthMembersUserIdStatusPatchMutationError = HTTPValidationError
+
+    /**
  * @summary Update Member Status
  */
-export const useUpdateMemberStatusApiV1AuthMembersUserIdStatusPatch = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof updateMemberStatusApiV1AuthMembersUserIdStatusPatch>>,
-      TError,
-      { userId: string; data: UpdateMemberStatusRequest },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof updateMemberStatusApiV1AuthMembersUserIdStatusPatch>>,
-  TError,
-  { userId: string; data: UpdateMemberStatusRequest },
-  TContext
-> => {
-  return useMutation(
-    getUpdateMemberStatusApiV1AuthMembersUserIdStatusPatchMutationOptions(options),
-    queryClient,
-  );
-};
-export type listInvitesApiV1AuthInvitesGetResponse200 = {
-  data: InviteResponse[];
-  status: 200;
-};
+export const useUpdateMemberStatusApiV1AuthMembersUserIdStatusPatch = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateMemberStatusApiV1AuthMembersUserIdStatusPatch>>, TError,{userId: string;data: UpdateMemberStatusRequest}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateMemberStatusApiV1AuthMembersUserIdStatusPatch>>,
+        TError,
+        {userId: string;data: UpdateMemberStatusRequest},
+        TContext
+      > => {
+      return useMutation(getUpdateMemberStatusApiV1AuthMembersUserIdStatusPatchMutationOptions(options), queryClient);
+    }
+    export type listInvitesApiV1AuthInvitesGetResponse200 = {
+  data: InviteResponse[]
+  status: 200
+}
 
-export type listInvitesApiV1AuthInvitesGetResponseSuccess =
-  listInvitesApiV1AuthInvitesGetResponse200 & {
-    headers: Headers;
-  };
-export type listInvitesApiV1AuthInvitesGetResponse = listInvitesApiV1AuthInvitesGetResponseSuccess;
+export type listInvitesApiV1AuthInvitesGetResponseSuccess = (listInvitesApiV1AuthInvitesGetResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listInvitesApiV1AuthInvitesGetResponse = (listInvitesApiV1AuthInvitesGetResponseSuccess)
 
 export const getListInvitesApiV1AuthInvitesGetUrl = () => {
-  return `/api/v1/auth/invites`;
-};
+
+
+
+
+  return `/api/v1/auth/invites`
+}
 
 /**
  * @summary List Invites
  */
-export const listInvitesApiV1AuthInvitesGet = async (
-  options?: RequestInit,
-): Promise<listInvitesApiV1AuthInvitesGetResponse> => {
-  return apiMutator<listInvitesApiV1AuthInvitesGetResponse>(
-    getListInvitesApiV1AuthInvitesGetUrl(),
-    {
-      ...options,
-      method: "GET",
-    },
-  );
-};
+export const listInvitesApiV1AuthInvitesGet = async ( options?: RequestInit): Promise<listInvitesApiV1AuthInvitesGetResponse> => {
+
+  return apiMutator<listInvitesApiV1AuthInvitesGetResponse>(getListInvitesApiV1AuthInvitesGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
 
 export const getListInvitesApiV1AuthInvitesGetQueryKey = () => {
-  return [`/api/v1/auth/invites`] as const;
-};
+    return [
+    `/api/v1/auth/invites`
+    ] as const;
+    }
 
-export const getListInvitesApiV1AuthInvitesGetQueryOptions = <
-  TData = Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>,
-  TError = unknown,
->(options?: {
-  query?: Partial<
-    UseQueryOptions<Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError, TData>
-  >;
-}) => {
-  const { query: queryOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getListInvitesApiV1AuthInvitesGetQueryKey();
+export const getListInvitesApiV1AuthInvitesGetQueryOptions = <TData = Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError, TData>>, }
+) => {
 
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>> = ({
-    signal,
-  }) => listInvitesApiV1AuthInvitesGet({ signal });
+const {query: queryOptions} = options ?? {};
 
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>,
-    TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
-};
+  const queryKey =  queryOptions?.queryKey ?? getListInvitesApiV1AuthInvitesGetQueryKey();
 
-export type ListInvitesApiV1AuthInvitesGetQueryResult = NonNullable<
-  Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>
->;
-export type ListInvitesApiV1AuthInvitesGetQueryError = unknown;
 
-export function useListInvitesApiV1AuthInvitesGet<
-  TData = Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>,
-  TError = unknown,
->(
-  options: {
-    query: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError, TData>
-    > &
-      Pick<
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>> = ({ signal }) => listInvitesApiV1AuthInvitesGet({ signal });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListInvitesApiV1AuthInvitesGetQueryResult = NonNullable<Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>>
+export type ListInvitesApiV1AuthInvitesGetQueryError = unknown
+
+
+export function useListInvitesApiV1AuthInvitesGet<TData = Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>,
           TError,
           Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useListInvitesApiV1AuthInvitesGet<
-  TData = Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>,
-  TError = unknown,
->(
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError, TData>
-    > &
-      Pick<
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListInvitesApiV1AuthInvitesGet<TData = Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>,
           TError,
           Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useListInvitesApiV1AuthInvitesGet<
-  TData = Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>,
-  TError = unknown,
->(
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError, TData>
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListInvitesApiV1AuthInvitesGet<TData = Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary List Invites
  */
 
-export function useListInvitesApiV1AuthInvitesGet<
-  TData = Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>,
-  TError = unknown,
->(
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError, TData>
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getListInvitesApiV1AuthInvitesGetQueryOptions(options);
+export function useListInvitesApiV1AuthInvitesGet<TData = Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
-    queryKey: DataTag<QueryKey, TData, TError>;
-  };
+  const queryOptions = getListInvitesApiV1AuthInvitesGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
+
+
+
+
+
 export type createInviteApiV1AuthInvitesPostResponse201 = {
-  data: InviteResponse;
-  status: 201;
-};
+  data: InviteResponse
+  status: 201
+}
 
 export type createInviteApiV1AuthInvitesPostResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type createInviteApiV1AuthInvitesPostResponseSuccess = (createInviteApiV1AuthInvitesPostResponse201) & {
+  headers: Headers;
+};
+export type createInviteApiV1AuthInvitesPostResponseError = (createInviteApiV1AuthInvitesPostResponse422) & {
+  headers: Headers;
 };
 
-export type createInviteApiV1AuthInvitesPostResponseSuccess =
-  createInviteApiV1AuthInvitesPostResponse201 & {
-    headers: Headers;
-  };
-export type createInviteApiV1AuthInvitesPostResponseError =
-  createInviteApiV1AuthInvitesPostResponse422 & {
-    headers: Headers;
-  };
-
-export type createInviteApiV1AuthInvitesPostResponse =
-  | createInviteApiV1AuthInvitesPostResponseSuccess
-  | createInviteApiV1AuthInvitesPostResponseError;
+export type createInviteApiV1AuthInvitesPostResponse = (createInviteApiV1AuthInvitesPostResponseSuccess | createInviteApiV1AuthInvitesPostResponseError)
 
 export const getCreateInviteApiV1AuthInvitesPostUrl = () => {
-  return `/api/v1/auth/invites`;
-};
+
+
+
+
+  return `/api/v1/auth/invites`
+}
 
 /**
  * @summary Create Invite
  */
-export const createInviteApiV1AuthInvitesPost = async (
-  createInviteRequest: CreateInviteRequest,
-  options?: RequestInit,
-): Promise<createInviteApiV1AuthInvitesPostResponse> => {
-  return apiMutator<createInviteApiV1AuthInvitesPostResponse>(
-    getCreateInviteApiV1AuthInvitesPostUrl(),
-    {
-      ...options,
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(createInviteRequest),
-    },
-  );
-};
+export const createInviteApiV1AuthInvitesPost = async (createInviteRequest: CreateInviteRequest, options?: RequestInit): Promise<createInviteApiV1AuthInvitesPostResponse> => {
 
-export const getCreateInviteApiV1AuthInvitesPostMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof createInviteApiV1AuthInvitesPost>>,
-    TError,
-    { data: CreateInviteRequest },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof createInviteApiV1AuthInvitesPost>>,
-  TError,
-  { data: CreateInviteRequest },
-  TContext
-> => {
-  const mutationKey = ["createInviteApiV1AuthInvitesPost"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
+  return apiMutator<createInviteApiV1AuthInvitesPostResponse>(getCreateInviteApiV1AuthInvitesPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      createInviteRequest,)
+  }
+);}
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof createInviteApiV1AuthInvitesPost>>,
-    { data: CreateInviteRequest }
-  > = (props) => {
-    const { data } = props ?? {};
 
-    return createInviteApiV1AuthInvitesPost(data);
-  };
 
-  return { mutationFn, ...mutationOptions };
-};
 
-export type CreateInviteApiV1AuthInvitesPostMutationResult = NonNullable<
-  Awaited<ReturnType<typeof createInviteApiV1AuthInvitesPost>>
->;
-export type CreateInviteApiV1AuthInvitesPostMutationBody = CreateInviteRequest;
-export type CreateInviteApiV1AuthInvitesPostMutationError = HTTPValidationError;
+export const getCreateInviteApiV1AuthInvitesPostMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createInviteApiV1AuthInvitesPost>>, TError,{data: CreateInviteRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof createInviteApiV1AuthInvitesPost>>, TError,{data: CreateInviteRequest}, TContext> => {
 
-/**
+const mutationKey = ['createInviteApiV1AuthInvitesPost'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createInviteApiV1AuthInvitesPost>>, {data: CreateInviteRequest}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createInviteApiV1AuthInvitesPost(data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateInviteApiV1AuthInvitesPostMutationResult = NonNullable<Awaited<ReturnType<typeof createInviteApiV1AuthInvitesPost>>>
+    export type CreateInviteApiV1AuthInvitesPostMutationBody = CreateInviteRequest
+    export type CreateInviteApiV1AuthInvitesPostMutationError = HTTPValidationError
+
+    /**
  * @summary Create Invite
  */
-export const useCreateInviteApiV1AuthInvitesPost = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof createInviteApiV1AuthInvitesPost>>,
-      TError,
-      { data: CreateInviteRequest },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof createInviteApiV1AuthInvitesPost>>,
-  TError,
-  { data: CreateInviteRequest },
-  TContext
-> => {
-  return useMutation(getCreateInviteApiV1AuthInvitesPostMutationOptions(options), queryClient);
-};
-export type revokeInviteApiV1AuthInvitesInviteIdDeleteResponse204 = {
-  data: void;
-  status: 204;
-};
+export const useCreateInviteApiV1AuthInvitesPost = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createInviteApiV1AuthInvitesPost>>, TError,{data: CreateInviteRequest}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createInviteApiV1AuthInvitesPost>>,
+        TError,
+        {data: CreateInviteRequest},
+        TContext
+      > => {
+      return useMutation(getCreateInviteApiV1AuthInvitesPostMutationOptions(options), queryClient);
+    }
+    export type revokeInviteApiV1AuthInvitesInviteIdDeleteResponse204 = {
+  data: void
+  status: 204
+}
 
 export type revokeInviteApiV1AuthInvitesInviteIdDeleteResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type revokeInviteApiV1AuthInvitesInviteIdDeleteResponseSuccess = (revokeInviteApiV1AuthInvitesInviteIdDeleteResponse204) & {
+  headers: Headers;
+};
+export type revokeInviteApiV1AuthInvitesInviteIdDeleteResponseError = (revokeInviteApiV1AuthInvitesInviteIdDeleteResponse422) & {
+  headers: Headers;
 };
 
-export type revokeInviteApiV1AuthInvitesInviteIdDeleteResponseSuccess =
-  revokeInviteApiV1AuthInvitesInviteIdDeleteResponse204 & {
-    headers: Headers;
-  };
-export type revokeInviteApiV1AuthInvitesInviteIdDeleteResponseError =
-  revokeInviteApiV1AuthInvitesInviteIdDeleteResponse422 & {
-    headers: Headers;
-  };
+export type revokeInviteApiV1AuthInvitesInviteIdDeleteResponse = (revokeInviteApiV1AuthInvitesInviteIdDeleteResponseSuccess | revokeInviteApiV1AuthInvitesInviteIdDeleteResponseError)
 
-export type revokeInviteApiV1AuthInvitesInviteIdDeleteResponse =
-  | revokeInviteApiV1AuthInvitesInviteIdDeleteResponseSuccess
-  | revokeInviteApiV1AuthInvitesInviteIdDeleteResponseError;
+export const getRevokeInviteApiV1AuthInvitesInviteIdDeleteUrl = (inviteId: string,) => {
 
-export const getRevokeInviteApiV1AuthInvitesInviteIdDeleteUrl = (inviteId: string) => {
-  return `/api/v1/auth/invites/${inviteId}`;
-};
+
+
+
+  return `/api/v1/auth/invites/${inviteId}`
+}
 
 /**
  * @summary Revoke Invite
  */
-export const revokeInviteApiV1AuthInvitesInviteIdDelete = async (
-  inviteId: string,
-  options?: RequestInit,
-): Promise<revokeInviteApiV1AuthInvitesInviteIdDeleteResponse> => {
-  return apiMutator<revokeInviteApiV1AuthInvitesInviteIdDeleteResponse>(
-    getRevokeInviteApiV1AuthInvitesInviteIdDeleteUrl(inviteId),
-    {
-      ...options,
-      method: "DELETE",
-    },
-  );
-};
+export const revokeInviteApiV1AuthInvitesInviteIdDelete = async (inviteId: string, options?: RequestInit): Promise<revokeInviteApiV1AuthInvitesInviteIdDeleteResponse> => {
 
-export const getRevokeInviteApiV1AuthInvitesInviteIdDeleteMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof revokeInviteApiV1AuthInvitesInviteIdDelete>>,
-    TError,
-    { inviteId: string },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof revokeInviteApiV1AuthInvitesInviteIdDelete>>,
-  TError,
-  { inviteId: string },
-  TContext
-> => {
-  const mutationKey = ["revokeInviteApiV1AuthInvitesInviteIdDelete"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
+  return apiMutator<revokeInviteApiV1AuthInvitesInviteIdDeleteResponse>(getRevokeInviteApiV1AuthInvitesInviteIdDeleteUrl(inviteId),
+  {
+    ...options,
+    method: 'DELETE'
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof revokeInviteApiV1AuthInvitesInviteIdDelete>>,
-    { inviteId: string }
-  > = (props) => {
-    const { inviteId } = props ?? {};
 
-    return revokeInviteApiV1AuthInvitesInviteIdDelete(inviteId);
-  };
+  }
+);}
 
-  return { mutationFn, ...mutationOptions };
-};
 
-export type RevokeInviteApiV1AuthInvitesInviteIdDeleteMutationResult = NonNullable<
-  Awaited<ReturnType<typeof revokeInviteApiV1AuthInvitesInviteIdDelete>>
->;
 
-export type RevokeInviteApiV1AuthInvitesInviteIdDeleteMutationError = HTTPValidationError;
 
-/**
+export const getRevokeInviteApiV1AuthInvitesInviteIdDeleteMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeInviteApiV1AuthInvitesInviteIdDelete>>, TError,{inviteId: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof revokeInviteApiV1AuthInvitesInviteIdDelete>>, TError,{inviteId: string}, TContext> => {
+
+const mutationKey = ['revokeInviteApiV1AuthInvitesInviteIdDelete'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokeInviteApiV1AuthInvitesInviteIdDelete>>, {inviteId: string}> = (props) => {
+          const {inviteId} = props ?? {};
+
+          return  revokeInviteApiV1AuthInvitesInviteIdDelete(inviteId,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokeInviteApiV1AuthInvitesInviteIdDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof revokeInviteApiV1AuthInvitesInviteIdDelete>>>
+
+    export type RevokeInviteApiV1AuthInvitesInviteIdDeleteMutationError = HTTPValidationError
+
+    /**
  * @summary Revoke Invite
  */
-export const useRevokeInviteApiV1AuthInvitesInviteIdDelete = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof revokeInviteApiV1AuthInvitesInviteIdDelete>>,
-      TError,
-      { inviteId: string },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof revokeInviteApiV1AuthInvitesInviteIdDelete>>,
-  TError,
-  { inviteId: string },
-  TContext
-> => {
-  return useMutation(
-    getRevokeInviteApiV1AuthInvitesInviteIdDeleteMutationOptions(options),
-    queryClient,
-  );
-};
-export type listAuditEventsApiV1AuthAuditGetResponse200 = {
-  data: AuditEventResponse[];
-  status: 200;
-};
+export const useRevokeInviteApiV1AuthInvitesInviteIdDelete = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeInviteApiV1AuthInvitesInviteIdDelete>>, TError,{inviteId: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof revokeInviteApiV1AuthInvitesInviteIdDelete>>,
+        TError,
+        {inviteId: string},
+        TContext
+      > => {
+      return useMutation(getRevokeInviteApiV1AuthInvitesInviteIdDeleteMutationOptions(options), queryClient);
+    }
+    export type listAuditEventsApiV1AuthAuditGetResponse200 = {
+  data: AuditEventResponse[]
+  status: 200
+}
 
 export type listAuditEventsApiV1AuthAuditGetResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type listAuditEventsApiV1AuthAuditGetResponseSuccess = (listAuditEventsApiV1AuthAuditGetResponse200) & {
+  headers: Headers;
+};
+export type listAuditEventsApiV1AuthAuditGetResponseError = (listAuditEventsApiV1AuthAuditGetResponse422) & {
+  headers: Headers;
 };
 
-export type listAuditEventsApiV1AuthAuditGetResponseSuccess =
-  listAuditEventsApiV1AuthAuditGetResponse200 & {
-    headers: Headers;
-  };
-export type listAuditEventsApiV1AuthAuditGetResponseError =
-  listAuditEventsApiV1AuthAuditGetResponse422 & {
-    headers: Headers;
-  };
+export type listAuditEventsApiV1AuthAuditGetResponse = (listAuditEventsApiV1AuthAuditGetResponseSuccess | listAuditEventsApiV1AuthAuditGetResponseError)
 
-export type listAuditEventsApiV1AuthAuditGetResponse =
-  | listAuditEventsApiV1AuthAuditGetResponseSuccess
-  | listAuditEventsApiV1AuthAuditGetResponseError;
-
-export const getListAuditEventsApiV1AuthAuditGetUrl = (
-  params?: ListAuditEventsApiV1AuthAuditGetParams,
-) => {
+export const getListAuditEventsApiV1AuthAuditGetUrl = (params?: ListAuditEventsApiV1AuthAuditGetParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
+
     if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
   });
 
   const stringifiedParams = normalizedParams.toString();
 
-  return stringifiedParams.length > 0
-    ? `/api/v1/auth/audit?${stringifiedParams}`
-    : `/api/v1/auth/audit`;
-};
+  return stringifiedParams.length > 0 ? `/api/v1/auth/audit?${stringifiedParams}` : `/api/v1/auth/audit`
+}
 
 /**
  * @summary List Audit Events
  */
-export const listAuditEventsApiV1AuthAuditGet = async (
-  params?: ListAuditEventsApiV1AuthAuditGetParams,
-  options?: RequestInit,
-): Promise<listAuditEventsApiV1AuthAuditGetResponse> => {
-  return apiMutator<listAuditEventsApiV1AuthAuditGetResponse>(
-    getListAuditEventsApiV1AuthAuditGetUrl(params),
-    {
-      ...options,
-      method: "GET",
-    },
-  );
-};
+export const listAuditEventsApiV1AuthAuditGet = async (params?: ListAuditEventsApiV1AuthAuditGetParams, options?: RequestInit): Promise<listAuditEventsApiV1AuthAuditGetResponse> => {
 
-export const getListAuditEventsApiV1AuthAuditGetQueryKey = (
-  params?: ListAuditEventsApiV1AuthAuditGetParams,
+  return apiMutator<listAuditEventsApiV1AuthAuditGetResponse>(getListAuditEventsApiV1AuthAuditGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAuditEventsApiV1AuthAuditGetQueryKey = (params?: ListAuditEventsApiV1AuthAuditGetParams,) => {
+    return [
+    `/api/v1/auth/audit`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListAuditEventsApiV1AuthAuditGetQueryOptions = <TData = Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>, TError = HTTPValidationError>(params?: ListAuditEventsApiV1AuthAuditGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>, TError, TData>>, }
 ) => {
-  return [`/api/v1/auth/audit`, ...(params ? [params] : [])] as const;
-};
 
-export const getListAuditEventsApiV1AuthAuditGetQueryOptions = <
-  TData = Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>,
-  TError = HTTPValidationError,
->(
-  params?: ListAuditEventsApiV1AuthAuditGetParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>, TError, TData>
-    >;
-  },
-) => {
-  const { query: queryOptions } = options ?? {};
+const {query: queryOptions} = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getListAuditEventsApiV1AuthAuditGetQueryKey(params);
+  const queryKey =  queryOptions?.queryKey ?? getListAuditEventsApiV1AuthAuditGetQueryKey(params);
 
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>> = ({
-    signal,
-  }) => listAuditEventsApiV1AuthAuditGet(params, { signal });
 
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>,
-    TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
-};
 
-export type ListAuditEventsApiV1AuthAuditGetQueryResult = NonNullable<
-  Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>
->;
-export type ListAuditEventsApiV1AuthAuditGetQueryError = HTTPValidationError;
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>> = ({ signal }) => listAuditEventsApiV1AuthAuditGet(params, { signal });
 
-export function useListAuditEventsApiV1AuthAuditGet<
-  TData = Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>,
-  TError = HTTPValidationError,
->(
-  params: undefined | ListAuditEventsApiV1AuthAuditGetParams,
-  options: {
-    query: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>, TError, TData>
-    > &
-      Pick<
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListAuditEventsApiV1AuthAuditGetQueryResult = NonNullable<Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>>
+export type ListAuditEventsApiV1AuthAuditGetQueryError = HTTPValidationError
+
+
+export function useListAuditEventsApiV1AuthAuditGet<TData = Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>, TError = HTTPValidationError>(
+ params: undefined |  ListAuditEventsApiV1AuthAuditGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>,
           TError,
           Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useListAuditEventsApiV1AuthAuditGet<
-  TData = Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>,
-  TError = HTTPValidationError,
->(
-  params?: ListAuditEventsApiV1AuthAuditGetParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>, TError, TData>
-    > &
-      Pick<
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListAuditEventsApiV1AuthAuditGet<TData = Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>, TError = HTTPValidationError>(
+ params?: ListAuditEventsApiV1AuthAuditGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>,
           TError,
           Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useListAuditEventsApiV1AuthAuditGet<
-  TData = Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>,
-  TError = HTTPValidationError,
->(
-  params?: ListAuditEventsApiV1AuthAuditGetParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>, TError, TData>
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListAuditEventsApiV1AuthAuditGet<TData = Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>, TError = HTTPValidationError>(
+ params?: ListAuditEventsApiV1AuthAuditGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary List Audit Events
  */
 
-export function useListAuditEventsApiV1AuthAuditGet<
-  TData = Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>,
-  TError = HTTPValidationError,
->(
-  params?: ListAuditEventsApiV1AuthAuditGetParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>, TError, TData>
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getListAuditEventsApiV1AuthAuditGetQueryOptions(params, options);
+export function useListAuditEventsApiV1AuthAuditGet<TData = Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>, TError = HTTPValidationError>(
+ params?: ListAuditEventsApiV1AuthAuditGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAuditEventsApiV1AuthAuditGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
-    queryKey: DataTag<QueryKey, TData, TError>;
-  };
+  const queryOptions = getListAuditEventsApiV1AuthAuditGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export type exportAuditEventsApiV1AuthAuditExportGetResponse200 = {
+  data: unknown
+  status: 200
+}
+
+export type exportAuditEventsApiV1AuthAuditExportGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type exportAuditEventsApiV1AuthAuditExportGetResponseSuccess = (exportAuditEventsApiV1AuthAuditExportGetResponse200) & {
+  headers: Headers;
+};
+export type exportAuditEventsApiV1AuthAuditExportGetResponseError = (exportAuditEventsApiV1AuthAuditExportGetResponse422) & {
+  headers: Headers;
+};
+
+export type exportAuditEventsApiV1AuthAuditExportGetResponse = (exportAuditEventsApiV1AuthAuditExportGetResponseSuccess | exportAuditEventsApiV1AuthAuditExportGetResponseError)
+
+export const getExportAuditEventsApiV1AuthAuditExportGetUrl = (params?: ExportAuditEventsApiV1AuthAuditExportGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/auth/audit/export?${stringifiedParams}` : `/api/v1/auth/audit/export`
+}
+
+/**
+ * @summary Export Audit Events
+ */
+export const exportAuditEventsApiV1AuthAuditExportGet = async (params?: ExportAuditEventsApiV1AuthAuditExportGetParams, options?: RequestInit): Promise<exportAuditEventsApiV1AuthAuditExportGetResponse> => {
+
+  return apiMutator<exportAuditEventsApiV1AuthAuditExportGetResponse>(getExportAuditEventsApiV1AuthAuditExportGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getExportAuditEventsApiV1AuthAuditExportGetQueryKey = (params?: ExportAuditEventsApiV1AuthAuditExportGetParams,) => {
+    return [
+    `/api/v1/auth/audit/export`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getExportAuditEventsApiV1AuthAuditExportGetQueryOptions = <TData = Awaited<ReturnType<typeof exportAuditEventsApiV1AuthAuditExportGet>>, TError = HTTPValidationError>(params?: ExportAuditEventsApiV1AuthAuditExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportAuditEventsApiV1AuthAuditExportGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExportAuditEventsApiV1AuthAuditExportGetQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof exportAuditEventsApiV1AuthAuditExportGet>>> = ({ signal }) => exportAuditEventsApiV1AuthAuditExportGet(params, { signal });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportAuditEventsApiV1AuthAuditExportGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ExportAuditEventsApiV1AuthAuditExportGetQueryResult = NonNullable<Awaited<ReturnType<typeof exportAuditEventsApiV1AuthAuditExportGet>>>
+export type ExportAuditEventsApiV1AuthAuditExportGetQueryError = HTTPValidationError
+
+
+export function useExportAuditEventsApiV1AuthAuditExportGet<TData = Awaited<ReturnType<typeof exportAuditEventsApiV1AuthAuditExportGet>>, TError = HTTPValidationError>(
+ params: undefined |  ExportAuditEventsApiV1AuthAuditExportGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportAuditEventsApiV1AuthAuditExportGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof exportAuditEventsApiV1AuthAuditExportGet>>,
+          TError,
+          Awaited<ReturnType<typeof exportAuditEventsApiV1AuthAuditExportGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useExportAuditEventsApiV1AuthAuditExportGet<TData = Awaited<ReturnType<typeof exportAuditEventsApiV1AuthAuditExportGet>>, TError = HTTPValidationError>(
+ params?: ExportAuditEventsApiV1AuthAuditExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportAuditEventsApiV1AuthAuditExportGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof exportAuditEventsApiV1AuthAuditExportGet>>,
+          TError,
+          Awaited<ReturnType<typeof exportAuditEventsApiV1AuthAuditExportGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useExportAuditEventsApiV1AuthAuditExportGet<TData = Awaited<ReturnType<typeof exportAuditEventsApiV1AuthAuditExportGet>>, TError = HTTPValidationError>(
+ params?: ExportAuditEventsApiV1AuthAuditExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportAuditEventsApiV1AuthAuditExportGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Export Audit Events
+ */
+
+export function useExportAuditEventsApiV1AuthAuditExportGet<TData = Awaited<ReturnType<typeof exportAuditEventsApiV1AuthAuditExportGet>>, TError = HTTPValidationError>(
+ params?: ExportAuditEventsApiV1AuthAuditExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportAuditEventsApiV1AuthAuditExportGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getExportAuditEventsApiV1AuthAuditExportGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export type verifyAuditChainApiV1AuthAuditVerifyGetResponse200 = {
+  data: AuditVerificationResponse
+  status: 200
+}
+
+export type verifyAuditChainApiV1AuthAuditVerifyGetResponseSuccess = (verifyAuditChainApiV1AuthAuditVerifyGetResponse200) & {
+  headers: Headers;
+};
+;
+
+export type verifyAuditChainApiV1AuthAuditVerifyGetResponse = (verifyAuditChainApiV1AuthAuditVerifyGetResponseSuccess)
+
+export const getVerifyAuditChainApiV1AuthAuditVerifyGetUrl = () => {
+
+
+
+
+  return `/api/v1/auth/audit/verify`
+}
+
+/**
+ * @summary Verify Audit Chain
+ */
+export const verifyAuditChainApiV1AuthAuditVerifyGet = async ( options?: RequestInit): Promise<verifyAuditChainApiV1AuthAuditVerifyGetResponse> => {
+
+  return apiMutator<verifyAuditChainApiV1AuthAuditVerifyGetResponse>(getVerifyAuditChainApiV1AuthAuditVerifyGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getVerifyAuditChainApiV1AuthAuditVerifyGetQueryKey = () => {
+    return [
+    `/api/v1/auth/audit/verify`
+    ] as const;
+    }
+
+
+export const getVerifyAuditChainApiV1AuthAuditVerifyGetQueryOptions = <TData = Awaited<ReturnType<typeof verifyAuditChainApiV1AuthAuditVerifyGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof verifyAuditChainApiV1AuthAuditVerifyGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getVerifyAuditChainApiV1AuthAuditVerifyGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof verifyAuditChainApiV1AuthAuditVerifyGet>>> = ({ signal }) => verifyAuditChainApiV1AuthAuditVerifyGet({ signal });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof verifyAuditChainApiV1AuthAuditVerifyGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type VerifyAuditChainApiV1AuthAuditVerifyGetQueryResult = NonNullable<Awaited<ReturnType<typeof verifyAuditChainApiV1AuthAuditVerifyGet>>>
+export type VerifyAuditChainApiV1AuthAuditVerifyGetQueryError = unknown
+
+
+export function useVerifyAuditChainApiV1AuthAuditVerifyGet<TData = Awaited<ReturnType<typeof verifyAuditChainApiV1AuthAuditVerifyGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof verifyAuditChainApiV1AuthAuditVerifyGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof verifyAuditChainApiV1AuthAuditVerifyGet>>,
+          TError,
+          Awaited<ReturnType<typeof verifyAuditChainApiV1AuthAuditVerifyGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useVerifyAuditChainApiV1AuthAuditVerifyGet<TData = Awaited<ReturnType<typeof verifyAuditChainApiV1AuthAuditVerifyGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof verifyAuditChainApiV1AuthAuditVerifyGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof verifyAuditChainApiV1AuthAuditVerifyGet>>,
+          TError,
+          Awaited<ReturnType<typeof verifyAuditChainApiV1AuthAuditVerifyGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useVerifyAuditChainApiV1AuthAuditVerifyGet<TData = Awaited<ReturnType<typeof verifyAuditChainApiV1AuthAuditVerifyGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof verifyAuditChainApiV1AuthAuditVerifyGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Verify Audit Chain
+ */
+
+export function useVerifyAuditChainApiV1AuthAuditVerifyGet<TData = Awaited<ReturnType<typeof verifyAuditChainApiV1AuthAuditVerifyGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof verifyAuditChainApiV1AuthAuditVerifyGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getVerifyAuditChainApiV1AuthAuditVerifyGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
   return { ...query, queryKey: queryOptions.queryKey };
 }

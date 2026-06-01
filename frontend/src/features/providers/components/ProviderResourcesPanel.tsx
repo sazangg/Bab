@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   ChevronDown,
@@ -122,11 +122,23 @@ import {
   type ProviderCredentialValues,
 } from "../lib/schemas";
 
-export function ProviderResourcesPanel({ provider }: { provider: ProviderResponse }) {
-  return <ProviderResourcesContent provider={provider} />;
+export function ProviderResourcesPanel({
+  provider,
+  canManage,
+}: {
+  provider: ProviderResponse;
+  canManage: boolean;
+}) {
+  return <ProviderResourcesContent provider={provider} canManage={canManage} />;
 }
 
-function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) {
+function ProviderResourcesContent({
+  provider,
+  canManage,
+}: {
+  provider: ProviderResponse;
+  canManage: boolean;
+}) {
   const queryClient = useQueryClient();
   const providerId = provider.id;
   const [tab, setTab] = useQueryState("tab", { defaultValue: "credentials" });
@@ -162,7 +174,7 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
     providerId,
     modelParams,
     {
-      query: { enabled: Boolean(providerId) },
+      query: { enabled: Boolean(providerId), placeholderData: keepPreviousData },
     },
   );
   const pools = poolsQuery.data?.status === 200 ? poolsQuery.data.data : [];
@@ -352,7 +364,7 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
         <CardHeader>
           <CardTitle>Provider resources</CardTitle>
           <CardDescription>
-            Pools group credentials for allocations. Models define what this provider can serve.
+            Pools group credentials for access policies. Models define what this provider can serve.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -370,28 +382,30 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
                     Credentials are encrypted and selected through credential pools.
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={bulkTestProgress !== null || !credentials.some((c) => c.is_active)}
-                    onClick={handleTestAllCredentials}
-                    title={
-                      credentials.some((c) => c.is_active)
-                        ? "Test every active credential, one after another."
-                        : "Add an active credential first."
-                    }
-                  >
-                    <Activity />
-                    {bulkTestProgress
-                      ? `Testing ${bulkTestProgress.index}/${bulkTestProgress.total}…`
-                      : "Test all"}
-                  </Button>
-                  <Button size="sm" onClick={() => setCreateCredentialOpen(true)}>
-                    <Plus />
-                    Add credential
-                  </Button>
-                </div>
+                {canManage ? (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={bulkTestProgress !== null || !credentials.some((c) => c.is_active)}
+                      onClick={handleTestAllCredentials}
+                      title={
+                        credentials.some((c) => c.is_active)
+                          ? "Test every active credential, one after another."
+                          : "Add an active credential first."
+                      }
+                    >
+                      <Activity />
+                      {bulkTestProgress
+                        ? `Testing ${bulkTestProgress.index}/${bulkTestProgress.total}…`
+                        : "Test all"}
+                    </Button>
+                    <Button size="sm" onClick={() => setCreateCredentialOpen(true)}>
+                      <Plus />
+                      Add credential
+                    </Button>
+                  </div>
+                ) : null}
               </div>
               <ResourceKeyTable
                 providerId={providerId}
@@ -426,6 +440,7 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
                   })
                 }
                 onTest={handleTestCredential}
+                canManage={canManage}
               />
             </TabsContent>
 
@@ -434,13 +449,15 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
                 <div>
                   <h3 className="text-base font-medium">Credential pools</h3>
                   <p className="text-sm text-muted-foreground">
-                    Pools are the routing resources allocations point to.
+                    Pools are the routing resources access policy routes point to.
                   </p>
                 </div>
-                <Button size="sm" onClick={() => setCreatePoolOpen(true)}>
-                  <Plus />
-                  New pool
-                </Button>
+                {canManage ? (
+                  <Button size="sm" onClick={() => setCreatePoolOpen(true)}>
+                    <Plus />
+                    New pool
+                  </Button>
+                ) : null}
               </div>
               <CredentialPoolTable
                 pools={pools}
@@ -473,6 +490,7 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
                     data: { is_active: true },
                   })
                 }
+                canManage={canManage}
               />
               <CredentialPoolMembersPanel
                 providerId={providerId}
@@ -504,6 +522,7 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
                     poolCredentialId: member.id,
                   })
                 }
+                canManage={canManage}
               />
             </TabsContent>
 
@@ -515,12 +534,13 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
                     Alias is optional and scoped to this provider.
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setCreateModelOpen(true)}>
-                    <Plus />
-                    Add model
-                  </Button>
-                  <DropdownMenu>
+                {canManage ? (
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" variant="outline" onClick={() => setCreateModelOpen(true)}>
+                      <Plus />
+                      Add model
+                    </Button>
+                    <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
                         size="sm"
@@ -563,8 +583,9 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
                         Overwrite with catalog metadata
                       </DropdownMenuItem>
                     </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
+                    </DropdownMenu>
+                  </div>
+                ) : null}
               </div>
               <ResourceModelTable
                 providerId={providerId}
@@ -629,12 +650,14 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
                   })
                 }
                 onTest={handleTestModel}
+                canManage={canManage}
               />
             </TabsContent>
           </Tabs>
         </CardContent>
       </Card>
-      <CreateProviderCredentialSheet
+      {canManage ? (
+        <CreateProviderCredentialSheet
         open={createCredentialOpen}
         onOpenChange={setCreateCredentialOpen}
         providerName={provider.name}
@@ -648,8 +671,10 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
           })
         }
         isPending={createCredential.isPending}
-      />
-      <CredentialPoolSheet
+        />
+      ) : null}
+      {canManage ? (
+        <CredentialPoolSheet
         open={createPoolOpen}
         onOpenChange={setCreatePoolOpen}
         title="New credential pool"
@@ -666,8 +691,10 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
             },
           })
         }
-      />
-      <CreateModelOfferingSheet
+        />
+      ) : null}
+      {canManage ? (
+        <CreateModelOfferingSheet
         open={createModelOpen}
         onOpenChange={setCreateModelOpen}
         providerName={provider.name}
@@ -694,7 +721,8 @@ function ProviderResourcesContent({ provider }: { provider: ProviderResponse }) 
           })
         }
         isPending={createModel.isPending}
-      />
+        />
+      ) : null}
     </>
   );
 }
@@ -736,6 +764,7 @@ function CredentialPoolTable({
   onUpdate,
   onDeactivate,
   onReactivate,
+  canManage,
 }: {
   pools: CredentialPoolResponse[];
   selectedPoolId: string | null;
@@ -745,6 +774,7 @@ function CredentialPoolTable({
   onUpdate: (pool: CredentialPoolResponse, values: CredentialPoolValues) => void;
   onDeactivate: (pool: CredentialPoolResponse) => void;
   onReactivate: (pool: CredentialPoolResponse) => void;
+  canManage: boolean;
 }) {
   const [editPool, setEditPool] = useState<CredentialPoolResponse | null>(null);
 
@@ -759,7 +789,7 @@ function CredentialPoolTable({
               <TableHead className="text-right">Active keys</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Updated</TableHead>
-              <TableHead className="w-[1%]" />
+              {canManage ? <TableHead className="w-[1%]" /> : null}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -814,7 +844,8 @@ function CredentialPoolTable({
                   <TableCell className="text-xs text-muted-foreground">
                     {formatDateTime(pool.updated_at)}
                   </TableCell>
-                  <TableCell className="flex justify-end gap-1">
+                  {canManage ? (
+                    <TableCell className="flex justify-end gap-1">
                     <Button
                       size="icon-sm"
                       variant="ghost"
@@ -854,7 +885,8 @@ function CredentialPoolTable({
                         <RotateCcw />
                       </Button>
                     )}
-                  </TableCell>
+                    </TableCell>
+                  ) : null}
                 </TableRow>
               );
             })}
@@ -898,6 +930,7 @@ function CredentialPoolMembersPanel({
   onAdd,
   onUpdate,
   onDelete,
+  canManage,
 }: {
   providerId: string;
   pool: CredentialPoolResponse | null;
@@ -913,6 +946,7 @@ function CredentialPoolMembersPanel({
     values: Partial<Pick<CredentialPoolCredentialResponse, "priority" | "weight" | "is_active">>,
   ) => void;
   onDelete: (pool: CredentialPoolResponse, member: CredentialPoolCredentialResponse) => void;
+  canManage: boolean;
 }) {
   const [editMember, setEditMember] = useState<CredentialPoolCredentialResponse | null>(null);
   const form = useForm<PoolMembershipInput, unknown, PoolMembershipValues>({
@@ -951,13 +985,14 @@ function CredentialPoolMembersPanel({
             Priority orders deterministic routing. Weight only affects weighted routing.
           </p>
         </div>
-        <form
-          className="grid gap-2 md:grid-cols-[minmax(220px,1fr)_92px_92px_auto]"
-          onSubmit={form.handleSubmit((values) => {
-            if (!pool) return;
-            onAdd(pool, values);
-          })}
-        >
+        {canManage ? (
+          <form
+            className="grid gap-2 md:grid-cols-[minmax(220px,1fr)_92px_92px_auto]"
+            onSubmit={form.handleSubmit((values) => {
+              if (!pool) return;
+              onAdd(pool, values);
+            })}
+          >
           <Select
             value={selectedCredentialId}
             onValueChange={(value) => form.setValue("provider_credential_id", value)}
@@ -997,7 +1032,8 @@ function CredentialPoolMembersPanel({
             <Plus />
             Assign
           </Button>
-        </form>
+          </form>
+        ) : null}
       </div>
 
       <Table>
@@ -1008,7 +1044,7 @@ function CredentialPoolMembersPanel({
             <TableHead className="text-right">Weight</TableHead>
             <TableHead>Health</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead className="w-[1%]" />
+            {canManage ? <TableHead className="w-[1%]" /> : null}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -1067,7 +1103,8 @@ function CredentialPoolMembersPanel({
                         : "Membership disabled"}
                     </StatusBadge>
                   </TableCell>
-                  <TableCell className="flex justify-end">
+                  {canManage ? (
+                    <TableCell className="flex justify-end">
                     <div className="flex justify-end gap-1">
                       <Button
                         size="icon-sm"
@@ -1099,7 +1136,8 @@ function CredentialPoolMembersPanel({
                         <Trash2 />
                       </Button>
                     </div>
-                  </TableCell>
+                    </TableCell>
+                  ) : null}
                 </TableRow>
               );
             })}
@@ -1300,6 +1338,7 @@ function ResourceKeyTable({
   onDeactivate,
   onReactivate,
   onTest,
+  canManage,
 }: {
   providerId: string;
   credentials: ProviderCredentialResponse[];
@@ -1311,6 +1350,7 @@ function ResourceKeyTable({
   onDeactivate: (credential: ProviderCredentialResponse) => void;
   onReactivate: (credential: ProviderCredentialResponse) => void;
   onTest: (credential: ProviderCredentialResponse) => void;
+  canManage: boolean;
 }) {
   const sortedCredentials = [...credentials].sort(
     (a, b) =>
@@ -1334,7 +1374,7 @@ function ResourceKeyTable({
               <TableHead>Status</TableHead>
               <TableHead>Created</TableHead>
               <TableHead>Last success</TableHead>
-              <TableHead className="w-[1%]" />
+              {canManage ? <TableHead className="w-[1%]" /> : null}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -1394,7 +1434,8 @@ function ResourceKeyTable({
                       ? formatDateTime(credential.last_successful_request_at)
                       : "Never"}
                   </TableCell>
-                  <TableCell className="flex justify-end gap-1">
+                  {canManage ? (
+                    <TableCell className="flex justify-end gap-1">
                     <Button
                       size="icon-sm"
                       variant="ghost"
@@ -1446,7 +1487,8 @@ function ResourceKeyTable({
                         <RotateCcw />
                       </Button>
                     )}
-                  </TableCell>
+                    </TableCell>
+                  ) : null}
                 </TableRow>
               );
             })}
@@ -1855,6 +1897,7 @@ function ResourceModelTable({
   onDeactivate,
   onReactivate,
   onTest,
+  canManage,
 }: {
   providerId: string;
   models: ModelOfferingResponse[];
@@ -1877,6 +1920,7 @@ function ResourceModelTable({
   onDeactivate: (model: ModelOfferingResponse) => void;
   onReactivate: (model: ModelOfferingResponse) => void;
   onTest: (model: ModelOfferingResponse) => void;
+  canManage: boolean;
 }) {
   const [editModel, setEditModel] = useState<ModelOfferingResponse | null>(null);
   const editForm = useForm<ModelOfferingFormInput, unknown, ModelOfferingValues>({
@@ -2012,7 +2056,7 @@ function ResourceModelTable({
                   <TableHead className="text-right">Price (in/out)</TableHead>
                   <TableHead>Source</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead className="w-[1%]" />
+                  {canManage ? <TableHead className="w-[1%]" /> : null}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -2092,7 +2136,8 @@ function ResourceModelTable({
                           {model.is_active ? "Active" : "Disabled"}
                         </StatusBadge>
                       </TableCell>
-                      <TableCell className="flex justify-end gap-1">
+                      {canManage ? (
+                        <TableCell className="flex justify-end gap-1">
                         <Button
                           size="icon-sm"
                           variant="ghost"
@@ -2141,7 +2186,8 @@ function ResourceModelTable({
                             <RotateCcw />
                           </Button>
                         )}
-                      </TableCell>
+                        </TableCell>
+                      ) : null}
                     </TableRow>
                   );
                 })}

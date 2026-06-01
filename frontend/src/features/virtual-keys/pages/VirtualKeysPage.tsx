@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { KeyRound, MoreHorizontal, Pencil, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useForm, type UseFormRegisterReturn } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -69,9 +69,6 @@ type KeyRow = {
 
 const editKeySchema = z.object({
   name: z.string().min(1, "Name is required").max(255),
-  max_requests_per_minute: z.string().optional(),
-  max_tokens_per_minute: z.string().optional(),
-  max_tokens_per_request: z.string().optional(),
 });
 
 type EditKeyValues = z.infer<typeof editKeySchema>;
@@ -139,7 +136,7 @@ export function VirtualKeysPage() {
         <EmptyState
           icon={KeyRound}
           title="No virtual keys yet"
-          description="Create keys from a project detail page once it has an effective allocation."
+          description="Create keys from a project detail page once it has effective access and limit policies."
         />
       ) : (
         <Card>
@@ -189,7 +186,7 @@ export function VirtualKeysPage() {
                       <TableHead>Prefix</TableHead>
                       <TableHead>Project</TableHead>
                       <TableHead>Team</TableHead>
-                      <TableHead>Allocation policy</TableHead>
+                      <TableHead>Policy source</TableHead>
                       <TableHead>Allowed models</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Updated</TableHead>
@@ -275,12 +272,10 @@ function VirtualKeyRow({
         )}
       </TableCell>
       <TableCell>
-        <StatusBadge variant={row.key.allocation_mode === "custom" ? "expired" : "muted"}>
-          {row.key.allocation_mode === "custom" ? "Custom" : "Inherited"}
-        </StatusBadge>
+        <StatusBadge variant="muted">Resolved at request time</StatusBadge>
       </TableCell>
       <TableCell className="max-w-64 truncate text-muted-foreground">
-        {row.key.allowed_models?.join(", ") ?? "All allocation models"}
+        {row.key.allowed_models?.join(", ") ?? "All policy models"}
       </TableCell>
       <TableCell>
         <StatusBadge variant={status === "active" ? "active" : status}>
@@ -331,9 +326,6 @@ function EditVirtualKeySheet({
     resolver: zodResolver(editKeySchema),
     defaultValues: {
       name: "",
-      max_requests_per_minute: "",
-      max_tokens_per_minute: "",
-      max_tokens_per_request: "",
     },
   });
   const updateKey = useUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch({
@@ -350,9 +342,6 @@ function EditVirtualKeySheet({
     if (row) {
       form.reset({
         name: row.key.name,
-        max_requests_per_minute: row.key.max_requests_per_minute?.toString() ?? "",
-        max_tokens_per_minute: row.key.max_tokens_per_minute?.toString() ?? "",
-        max_tokens_per_request: row.key.max_tokens_per_request?.toString() ?? "",
       });
     }
   }, [row, form]);
@@ -364,9 +353,6 @@ function EditVirtualKeySheet({
       keyId: row.key.id,
       data: {
         name: values.name,
-        max_requests_per_minute: parseOptionalNumber(values.max_requests_per_minute),
-        max_tokens_per_minute: parseOptionalNumber(values.max_tokens_per_minute),
-        max_tokens_per_request: parseOptionalNumber(values.max_tokens_per_request),
       },
     });
   });
@@ -389,31 +375,6 @@ function EditVirtualKeySheet({
             {form.formState.errors.name ? (
               <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
             ) : null}
-          </div>
-          <div className="grid gap-3 rounded-md border bg-muted/20 p-3">
-            <div>
-              <Label>Key-level limits</Label>
-              <p className="text-xs text-muted-foreground">
-                Blank fields keep this key uncapped beyond its allocation.
-              </p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <LimitInput
-                id="global-key-max-requests-minute"
-                label="Requests/min"
-                registration={form.register("max_requests_per_minute")}
-              />
-              <LimitInput
-                id="global-key-max-tokens-minute"
-                label="Tokens/min"
-                registration={form.register("max_tokens_per_minute")}
-              />
-              <LimitInput
-                id="global-key-max-tokens-request"
-                label="Tokens/request"
-                registration={form.register("max_tokens_per_request")}
-              />
-            </div>
           </div>
         </form>
         <SheetFooter>
@@ -472,30 +433,6 @@ function getKeyStatus(key: VirtualKeyResponse): Exclude<KeySegment, "all"> {
   if (key.revoked_at) return "revoked";
   if (key.expires_at && new Date(key.expires_at) < new Date()) return "expired";
   return "active";
-}
-
-function LimitInput({
-  id,
-  label,
-  registration,
-}: {
-  id: string;
-  label: string;
-  registration: UseFormRegisterReturn;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label htmlFor={id}>{label}</Label>
-      <Input id={id} type="number" min={1} inputMode="numeric" {...registration} />
-    </div>
-  );
-}
-
-function parseOptionalNumber(value: string | undefined): number | null {
-  if (!value) {
-    return null;
-  }
-  return Number(value);
 }
 
 function labelStatus(status: Exclude<KeySegment, "all">) {

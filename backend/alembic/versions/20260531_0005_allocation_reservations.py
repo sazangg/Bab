@@ -20,7 +20,8 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     bind = op.get_bind()
-    if "allocation_reservations" in inspect(bind).get_table_names():
+    table_names = set(inspect(bind).get_table_names())
+    if "allocation_reservations" in table_names or "allocations" not in table_names:
         return
     op.create_table(
         "allocation_reservations",

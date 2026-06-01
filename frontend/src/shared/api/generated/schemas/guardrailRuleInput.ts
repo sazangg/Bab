@@ -4,7 +4,7 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { GuardrailRuleInputConfig } from "./guardrailRuleInputConfig";
+import type { GuardrailRuleInputConfig } from './guardrailRuleInputConfig';
 
 export interface GuardrailRuleInput {
   /** @pattern ^(model|provider|pool|prompt_contains|prompt_regex|pii)$ */

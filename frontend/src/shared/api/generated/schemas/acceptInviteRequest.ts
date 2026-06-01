@@ -10,8 +10,8 @@ export interface AcceptInviteRequest {
   token: string;
   name?: string | null;
   /**
-   * @minLength 8
-   * @maxLength 72
-   */
+     * @minLength 8
+     * @maxLength 72
+     */
   password: string;
 }

@@ -334,7 +334,7 @@ async def list_model_offerings(
     search: str | None = Query(default=None, min_length=1, max_length=255),
     modality: str | None = Query(default=None, min_length=1, max_length=255),
     is_active: bool | None = Query(default=None),
-    limit: int = Query(default=24, ge=1, le=100),
+    limit: int = Query(default=24, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
 ) -> ModelOfferingPageResponse:
     try:

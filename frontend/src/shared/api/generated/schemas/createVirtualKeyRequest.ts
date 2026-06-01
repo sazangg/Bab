@@ -6,18 +6,11 @@
  */
 
 export interface CreateVirtualKeyRequest {
-  allocation_id?: string | null;
   /**
-   * @minLength 1
-   * @maxLength 255
-   */
+     * @minLength 1
+     * @maxLength 255
+     */
   name: string;
   expires_at?: string | null;
   allowed_models?: string[] | null;
-  /** @minimum 1 */
-  max_requests_per_minute?: number | null;
-  /** @minimum 1 */
-  max_tokens_per_minute?: number | null;
-  /** @minimum 1 */
-  max_tokens_per_request?: number | null;
 }

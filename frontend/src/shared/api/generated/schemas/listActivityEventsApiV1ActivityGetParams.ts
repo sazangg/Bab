@@ -6,13 +6,13 @@
  */
 
 export type ListActivityEventsApiV1ActivityGetParams = {
-  category?: string | null;
-  severity?: string | null;
-  entity_type?: string | null;
-  entity_id?: string | null;
-  /**
-   * @minimum 1
-   * @maximum 100
-   */
-  limit?: number;
+category?: string | null;
+severity?: string | null;
+entity_type?: string | null;
+entity_id?: string | null;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
 };

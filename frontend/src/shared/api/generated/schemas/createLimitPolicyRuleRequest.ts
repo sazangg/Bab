@@ -4,21 +4,13 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { AllocationOffering } from "./allocationOffering";
 
-export interface CreateAllocationRequest {
+export interface CreateLimitPolicyRuleRequest {
   /**
-   * @minLength 1
-   * @maxLength 255
-   */
+     * @minLength 1
+     * @maxLength 255
+     */
   name: string;
-  description?: string | null;
-  parent_allocation_id?: string | null;
-  team_id?: string | null;
-  project_id?: string | null;
-  /** @minItems 1 */
-  offerings: AllocationOffering[];
-  is_default?: boolean;
   budget_cents?: number | null;
   max_requests?: number | null;
   max_input_tokens?: number | null;
@@ -26,4 +18,9 @@ export interface CreateAllocationRequest {
   max_tokens_per_request?: number | null;
   /** @pattern ^(daily|weekly|monthly|lifetime)$ */
   window?: string;
+  provider_id?: string | null;
+  credential_pool_id?: string | null;
+  model_offering_id?: string | null;
+  access_policy_id?: string | null;
+  is_active?: boolean;
 }

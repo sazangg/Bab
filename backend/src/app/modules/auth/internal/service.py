@@ -60,7 +60,8 @@ ROLE_PERMISSIONS = {
     "org_admin": {
         "providers.manage",
         "providers.view",
-        "allocations.manage",
+        "policies.manage",
+        "policies.view",
         "teams.manage",
         "teams.view",
         "projects.manage",
@@ -77,6 +78,7 @@ ROLE_PERMISSIONS = {
     },
     "org_viewer": {
         "providers.view",
+        "policies.view",
         "teams.view",
         "projects.view",
         "usage.view",

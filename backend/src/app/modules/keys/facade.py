@@ -7,15 +7,12 @@ from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys.internal import service
 from app.modules.keys.schemas import (
     AccessibleModel,
-    AllocationResponse,
-    CreateAllocationRequest,
     CreatedVirtualKeyResponse,
     CreateProjectRequest,
     CreateVirtualKeyRequest,
     ProjectResponse,
     ResolveAccessRequest,
     ResolvedAccess,
-    UpdateAllocationRequest,
     UpdateProjectRequest,
     UpdateVirtualKeyRequest,
     VirtualKeyResponse,
@@ -81,55 +78,6 @@ async def deactivate_project(
     db: AsyncSession,
 ) -> None:
     await service.deactivate_project(project_id=project_id, actor=actor, scope=scope, db=db)
-
-
-async def create_allocation(
-    *,
-    payload: CreateAllocationRequest,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    db: AsyncSession,
-) -> AllocationResponse:
-    return await service.create_allocation(payload=payload, actor=actor, scope=scope, db=db)
-
-
-async def list_allocations(*, scope: Scope, db: AsyncSession) -> list[AllocationResponse]:
-    return await service.list_allocations(scope=scope, db=db)
-
-
-async def list_team_allocations(
-    *,
-    team_id: UUID,
-    scope: Scope,
-    db: AsyncSession,
-) -> list[AllocationResponse]:
-    return await service.list_team_allocations(team_id=team_id, scope=scope, db=db)
-
-
-async def list_project_allocations(
-    *,
-    project_id: UUID,
-    scope: Scope,
-    db: AsyncSession,
-) -> list[AllocationResponse]:
-    return await service.list_project_allocations(project_id=project_id, scope=scope, db=db)
-
-
-async def update_allocation(
-    *,
-    allocation_id: UUID,
-    payload: UpdateAllocationRequest,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    db: AsyncSession,
-) -> AllocationResponse:
-    return await service.update_allocation(
-        allocation_id=allocation_id,
-        payload=payload,
-        actor=actor,
-        scope=scope,
-        db=db,
-    )
 
 
 async def create_virtual_key(

@@ -4,10 +4,10 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { UpdateProviderRequestCapabilities } from "./updateProviderRequestCapabilities";
-import type { UpdateProviderRequestCircuitBreakerPolicy } from "./updateProviderRequestCircuitBreakerPolicy";
-import type { UpdateProviderRequestFallbackPolicy } from "./updateProviderRequestFallbackPolicy";
-import type { UpdateProviderRequestRetryPolicy } from "./updateProviderRequestRetryPolicy";
+import type { UpdateProviderRequestCapabilities } from './updateProviderRequestCapabilities';
+import type { UpdateProviderRequestCircuitBreakerPolicy } from './updateProviderRequestCircuitBreakerPolicy';
+import type { UpdateProviderRequestFallbackPolicy } from './updateProviderRequestFallbackPolicy';
+import type { UpdateProviderRequestRetryPolicy } from './updateProviderRequestRetryPolicy';
 
 export interface UpdateProviderRequest {
   name?: string | null;

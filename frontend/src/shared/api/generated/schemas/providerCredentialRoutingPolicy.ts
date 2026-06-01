@@ -5,14 +5,14 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type ProviderCredentialRoutingPolicy =
-  (typeof ProviderCredentialRoutingPolicy)[keyof typeof ProviderCredentialRoutingPolicy];
+export type ProviderCredentialRoutingPolicy = typeof ProviderCredentialRoutingPolicy[keyof typeof ProviderCredentialRoutingPolicy];
+
 
 export const ProviderCredentialRoutingPolicy = {
-  priority: "priority",
-  round_robin: "round_robin",
-  least_recently_used: "least_recently_used",
-  health_based: "health_based",
-  weighted: "weighted",
-  fallback: "fallback",
+  priority: 'priority',
+  round_robin: 'round_robin',
+  least_recently_used: 'least_recently_used',
+  health_based: 'health_based',
+  weighted: 'weighted',
+  fallback: 'fallback',
 } as const;

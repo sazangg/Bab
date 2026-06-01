@@ -4,7 +4,7 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { GuardrailRuleResponseConfig } from "./guardrailRuleResponseConfig";
+import type { GuardrailRuleResponseConfig } from './guardrailRuleResponseConfig';
 
 export interface GuardrailRuleResponse {
   id: string;

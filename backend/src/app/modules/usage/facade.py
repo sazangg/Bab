@@ -6,10 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.usage.accounting import UsageAccounting
 from app.modules.usage.internal import repository
 from app.modules.usage.schemas import (
-    AllocationReservationSummary,
-    AllocationUsageSummary,
+    LimitPolicyReservationSummary,
     OrganizationUsageSummary,
-    RecordAllocationReservation,
+    RecordLimitPolicyReservation,
     RecordUsage,
     SpendInsights,
     UsageRecordResponse,
@@ -23,24 +22,26 @@ async def record_usage(*, payload: RecordUsage, db: AsyncSession) -> None:
     await db.commit()
 
 
-async def create_allocation_reservation(
+async def create_limit_policy_reservation(
     *,
-    payload: RecordAllocationReservation,
+    payload: RecordLimitPolicyReservation,
     db: AsyncSession,
 ) -> UUID:
-    reservation = await repository.create_allocation_reservation(payload=payload, db=db)
+    reservation = await repository.create_limit_policy_reservation(payload=payload, db=db)
     return reservation.id
 
 
-async def summarize_active_allocation_reservations(
+async def summarize_active_limit_policy_reservations(
     *,
-    allocation_id: UUID,
+    limit_policy_id: UUID,
+    limit_policy_rule_id: UUID | None = None,
     since: datetime | None,
     now: datetime,
     db: AsyncSession,
-) -> AllocationReservationSummary:
-    return await repository.summarize_active_allocation_reservations(
-        allocation_id=allocation_id,
+) -> LimitPolicyReservationSummary:
+    return await repository.summarize_active_limit_policy_reservations(
+        limit_policy_id=limit_policy_id,
+        limit_policy_rule_id=limit_policy_rule_id,
         since=since,
         now=now,
         db=db,
@@ -53,7 +54,7 @@ async def summarize_active_virtual_key_reservations(
     since: datetime | None,
     now: datetime,
     db: AsyncSession,
-) -> AllocationReservationSummary:
+) -> LimitPolicyReservationSummary:
     return await repository.summarize_active_virtual_key_reservations(
         virtual_key_id=virtual_key_id,
         since=since,
@@ -62,14 +63,14 @@ async def summarize_active_virtual_key_reservations(
     )
 
 
-async def commit_allocation_reservations(
+async def commit_limit_policy_reservations(
     *,
     reservation_ids: list[UUID],
     usage: UsageAccounting,
     cost_cents: int | None,
     db: AsyncSession,
 ) -> None:
-    await repository.commit_allocation_reservations(
+    await repository.commit_limit_policy_reservations(
         reservation_ids=reservation_ids,
         usage=usage,
         cost_cents=cost_cents,
@@ -78,12 +79,12 @@ async def commit_allocation_reservations(
     await db.commit()
 
 
-async def release_allocation_reservations(
+async def release_limit_policy_reservations(
     *,
     reservation_ids: list[UUID],
     db: AsyncSession,
 ) -> None:
-    await repository.release_allocation_reservations(reservation_ids=reservation_ids, db=db)
+    await repository.release_limit_policy_reservations(reservation_ids=reservation_ids, db=db)
     await db.commit()
 
 
@@ -96,7 +97,6 @@ async def list_usage_records(
     team_id: UUID | None = None,
     provider_id: UUID | None = None,
     project_id: UUID | None = None,
-    allocation_id: UUID | None = None,
     virtual_key_id: UUID | None = None,
     model: str | None = None,
     limit: int | None = 100,
@@ -109,7 +109,6 @@ async def list_usage_records(
         team_id=team_id,
         provider_id=provider_id,
         project_id=project_id,
-        allocation_id=allocation_id,
         virtual_key_id=virtual_key_id,
         model=model,
         limit=limit,
@@ -118,14 +117,16 @@ async def list_usage_records(
     return records
 
 
-async def summarize_allocation_usage(
+async def summarize_limit_policy_usage(
     *,
-    allocation_id: UUID,
+    limit_policy_id: UUID,
+    limit_policy_rule_id: UUID | None = None,
     since: datetime | None,
     db: AsyncSession,
 ) -> tuple[int, int, int, int]:
-    return await repository.summarize_allocation_usage(
-        allocation_id=allocation_id,
+    return await repository.summarize_limit_policy_usage(
+        limit_policy_id=limit_policy_id,
+        limit_policy_rule_id=limit_policy_rule_id,
         since=since,
         db=db,
     )
@@ -140,22 +141,6 @@ async def summarize_virtual_key_usage(
     return await repository.summarize_virtual_key_usage(
         virtual_key_id=virtual_key_id,
         since=since,
-        db=db,
-    )
-
-
-async def get_allocation_usage_summary(
-    *,
-    allocation_id: UUID,
-    org_id: UUID,
-    window: str = "lifetime",
-    db: AsyncSession,
-) -> AllocationUsageSummary:
-    return await repository.get_allocation_usage_summary(
-        allocation_id=allocation_id,
-        org_id=org_id,
-        window=window,
-        since=allocation_window_start(window),
         db=db,
     )
 
@@ -268,7 +253,7 @@ def window_start(window: str) -> datetime | None:
     return None
 
 
-def allocation_window_start(window: str) -> datetime | None:
+def limit_policy_window_start(window: str) -> datetime | None:
     now = datetime.now(UTC)
     if window == "daily":
         return now - timedelta(days=1)

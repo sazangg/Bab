@@ -5,7 +5,4 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface AllocationOffering {
-  pool_id: string;
-  model_offering_id: string;
-}
+export type ReadinessCheckApiV1ReadyGet200 = { [key: string]: unknown };

@@ -16,9 +16,12 @@ async def test_health_check_returns_ok() -> None:
         base_url="http://testserver",
     ) as client:
         response = await client.get("/api/v1/health")
+        root_response = await client.get("/health")
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+    assert root_response.status_code == 200
+    assert root_response.json() == {"status": "ok"}
     assert response.headers["x-request-id"]
 
 
@@ -50,12 +53,16 @@ async def test_readiness_reports_database_and_migrations() -> None:
             base_url="http://testserver",
         ) as client:
             response = await client.get("/api/v1/ready")
+            readyz_response = await client.get("/readyz")
     finally:
         health_routes.engine = original_engine
         await test_engine.dispose()
 
     assert response.status_code == 200
+    assert readyz_response.status_code == 200
     body = response.json()
+    readyz_body = readyz_response.json()
     assert body["status"] == "ready"
+    assert readyz_body["status"] == "ready"
     assert body["checks"]["database"]["ok"] is True
     assert body["checks"]["migrations"]["ok"] is True

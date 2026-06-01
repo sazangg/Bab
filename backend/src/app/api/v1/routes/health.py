@@ -41,3 +41,8 @@ async def readiness_check(response: Response) -> dict[str, Any]:
     if not ready:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return {"status": "ready" if ready else "not_ready", "checks": checks}
+
+
+@router.get("/readyz")
+async def readiness_probe(response: Response) -> dict[str, Any]:
+    return await readiness_check(response)

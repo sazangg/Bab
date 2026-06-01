@@ -11,7 +11,7 @@ from app.modules.guardrails.internal.models import (
     GuardrailPolicy,
     GuardrailRule,
 )
-from app.modules.keys.internal.models import Allocation, Project, VirtualKey
+from app.modules.keys.internal.models import Project, VirtualKey
 
 
 async def list_policies(*, org_id: UUID, db: AsyncSession) -> list[GuardrailPolicy]:
@@ -120,7 +120,6 @@ async def create_assignment(
     scope_type: str,
     team_id: UUID | None,
     project_id: UUID | None,
-    allocation_id: UUID | None,
     virtual_key_id: UUID | None,
     enforcement_mode: str,
     is_active: bool,
@@ -132,7 +131,6 @@ async def create_assignment(
         scope_type=scope_type,
         team_id=team_id,
         project_id=project_id,
-        allocation_id=allocation_id,
         virtual_key_id=virtual_key_id,
         enforcement_mode=enforcement_mode,
         is_active=is_active,
@@ -149,7 +147,6 @@ async def find_assignment_for_scope(
     scope_type: str,
     team_id: UUID | None,
     project_id: UUID | None,
-    allocation_id: UUID | None,
     virtual_key_id: UUID | None,
     db: AsyncSession,
 ) -> GuardrailAssignment | None:
@@ -164,9 +161,6 @@ async def find_assignment_for_scope(
             GuardrailAssignment.project_id.is_(None)
             if project_id is None
             else GuardrailAssignment.project_id == project_id,
-            GuardrailAssignment.allocation_id.is_(None)
-            if allocation_id is None
-            else GuardrailAssignment.allocation_id == allocation_id,
             GuardrailAssignment.virtual_key_id.is_(None)
             if virtual_key_id is None
             else GuardrailAssignment.virtual_key_id == virtual_key_id,
@@ -188,7 +182,6 @@ async def assignment_target_exists(
     model = {
         "team": Team,
         "project": Project,
-        "allocation": Allocation,
         "virtual_key": VirtualKey,
     }.get(scope_type)
     if model is None:
@@ -207,7 +200,6 @@ async def list_effective_assignments(
     org_id: UUID,
     team_id: UUID,
     project_id: UUID,
-    allocation_ids: list[UUID],
     virtual_key_id: UUID,
     db: AsyncSession,
 ) -> list[GuardrailAssignment]:
@@ -219,7 +211,6 @@ async def list_effective_assignments(
                 GuardrailAssignment.scope_type == "org",
                 GuardrailAssignment.team_id == team_id,
                 GuardrailAssignment.project_id == project_id,
-                GuardrailAssignment.allocation_id.in_(allocation_ids),
                 GuardrailAssignment.virtual_key_id == virtual_key_id,
             ),
         )
@@ -237,7 +228,6 @@ async def create_event(
     reason: str,
     team_id: UUID,
     project_id: UUID,
-    allocation_id: UUID,
     virtual_key_id: UUID,
     provider_id: UUID,
     pool_id: UUID,
@@ -256,7 +246,6 @@ async def create_event(
         reason=reason,
         team_id=team_id,
         project_id=project_id,
-        allocation_id=allocation_id,
         virtual_key_id=virtual_key_id,
         provider_id=provider_id,
         pool_id=pool_id,
@@ -279,7 +268,6 @@ async def list_events(
     rule_id: UUID | None,
     team_id: UUID | None,
     project_id: UUID | None,
-    allocation_id: UUID | None,
     virtual_key_id: UUID | None,
     provider_id: UUID | None,
     pool_id: UUID | None,
@@ -300,8 +288,6 @@ async def list_events(
         filters.append(GuardrailEvent.team_id == team_id)
     if project_id is not None:
         filters.append(GuardrailEvent.project_id == project_id)
-    if allocation_id is not None:
-        filters.append(GuardrailEvent.allocation_id == allocation_id)
     if virtual_key_id is not None:
         filters.append(GuardrailEvent.virtual_key_id == virtual_key_id)
     if provider_id is not None:

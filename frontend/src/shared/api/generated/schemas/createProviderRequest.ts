@@ -4,22 +4,22 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { CreateProviderRequestCapabilities } from "./createProviderRequestCapabilities";
-import type { CreateProviderRequestCircuitBreakerPolicy } from "./createProviderRequestCircuitBreakerPolicy";
-import type { CreateProviderRequestFallbackPolicy } from "./createProviderRequestFallbackPolicy";
-import type { CreateProviderRequestRetryPolicy } from "./createProviderRequestRetryPolicy";
+import type { CreateProviderRequestCapabilities } from './createProviderRequestCapabilities';
+import type { CreateProviderRequestCircuitBreakerPolicy } from './createProviderRequestCircuitBreakerPolicy';
+import type { CreateProviderRequestFallbackPolicy } from './createProviderRequestFallbackPolicy';
+import type { CreateProviderRequestRetryPolicy } from './createProviderRequestRetryPolicy';
 
 export interface CreateProviderRequest {
   /**
-   * @minLength 1
-   * @maxLength 255
-   */
+     * @minLength 1
+     * @maxLength 255
+     */
   name: string;
   slug?: string | null;
   /**
-   * @minLength 1
-   * @maxLength 2083
-   */
+     * @minLength 1
+     * @maxLength 2083
+     */
   base_url: string;
   description?: string | null;
   capabilities?: CreateProviderRequestCapabilities;

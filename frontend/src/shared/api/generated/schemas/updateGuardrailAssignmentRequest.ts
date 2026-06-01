@@ -10,7 +10,6 @@ export interface UpdateGuardrailAssignmentRequest {
   scope_type?: string | null;
   team_id?: string | null;
   project_id?: string | null;
-  allocation_id?: string | null;
   virtual_key_id?: string | null;
   enforcement_mode?: string | null;
   is_active?: boolean | null;

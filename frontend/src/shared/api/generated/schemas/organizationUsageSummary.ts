@@ -4,8 +4,8 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { UsageBreakdownRow } from "./usageBreakdownRow";
-import type { UsageSummaryTotals } from "./usageSummaryTotals";
+import type { UsageBreakdownRow } from './usageBreakdownRow';
+import type { UsageSummaryTotals } from './usageSummaryTotals';
 
 export interface OrganizationUsageSummary {
   window: string;
@@ -15,6 +15,6 @@ export interface OrganizationUsageSummary {
   by_pool: UsageBreakdownRow[];
   by_team: UsageBreakdownRow[];
   by_project: UsageBreakdownRow[];
-  by_allocation: UsageBreakdownRow[];
+  by_access_policy: UsageBreakdownRow[];
   by_virtual_key: UsageBreakdownRow[];
 }

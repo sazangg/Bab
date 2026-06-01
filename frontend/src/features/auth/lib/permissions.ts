@@ -30,3 +30,8 @@ export function canViewWorkspace(user: AuthenticatedUser | null | undefined) {
 export function canManageKeys(user: AuthenticatedUser | null | undefined) {
   return hasPermission(user, "keys.manage") || hasAnyTeamAdminMembership(user);
 }
+
+export function canViewDashboardHome(user: AuthenticatedUser | null | undefined) {
+  const permissions = user?.permissions ?? [];
+  return permissions.length > 0 || hasAnyTeamMembership(user);
+}

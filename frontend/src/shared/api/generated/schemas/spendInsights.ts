@@ -4,11 +4,11 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { AllocationBudgetBurnRow } from "./allocationBudgetBurnRow";
-import type { UsageBreakdownRow } from "./usageBreakdownRow";
+import type { LimitPolicyBudgetBurnRow } from './limitPolicyBudgetBurnRow';
+import type { UsageBreakdownRow } from './usageBreakdownRow';
 
 export interface SpendInsights {
   window: string;
   top_spend_drivers: UsageBreakdownRow[];
-  allocation_budget_burn: AllocationBudgetBurnRow[];
+  limit_policy_budget_burn: LimitPolicyBudgetBurnRow[];
 }

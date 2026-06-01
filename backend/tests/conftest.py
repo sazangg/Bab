@@ -26,7 +26,13 @@ from app.modules.guardrails.internal.models import (  # noqa: F401
     GuardrailPolicy,
     GuardrailRule,
 )
-from app.modules.keys.internal.models import Allocation, Project, VirtualKey  # noqa: F401
+from app.modules.keys.internal.models import Project, VirtualKey  # noqa: F401
+from app.modules.policies.internal.models import (  # noqa: F401
+    AccessPolicy,
+    AccessPolicyRoute,
+    LimitPolicy,
+    PolicyAssignment,
+)
 from app.modules.providers.internal.models import (  # noqa: F401
     CredentialPool,
     ModelOffering,

@@ -4,7 +4,7 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { AuthenticatedTeamMembership } from "./authenticatedTeamMembership";
+import type { AuthenticatedTeamMembership } from './authenticatedTeamMembership';
 
 export interface AuthenticatedUser {
   id: string;

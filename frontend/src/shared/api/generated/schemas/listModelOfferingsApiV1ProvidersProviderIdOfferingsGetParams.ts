@@ -6,16 +6,16 @@
  */
 
 export type ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams = {
-  search?: string | null;
-  modality?: string | null;
-  is_active?: boolean | null;
-  /**
-   * @minimum 1
-   * @maximum 100
-   */
-  limit?: number;
-  /**
-   * @minimum 0
-   */
-  offset?: number;
+search?: string | null;
+modality?: string | null;
+is_active?: boolean | null;
+/**
+ * @minimum 1
+ * @maximum 1000
+ */
+limit?: number;
+/**
+ * @minimum 0
+ */
+offset?: number;
 };

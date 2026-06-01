@@ -145,7 +145,7 @@ export function ProjectsPage() {
     <>
       <PageHeader
         title="Projects"
-        description="Projects live inside teams and receive provider allocations + virtual keys."
+        description="Projects live inside teams and receive access and limit policies plus virtual keys."
         actions={
           <div className="flex items-center gap-2">
             <Button asChild variant="outline">

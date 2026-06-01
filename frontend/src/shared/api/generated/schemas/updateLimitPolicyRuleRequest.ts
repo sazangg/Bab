@@ -4,18 +4,18 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { AllocationOffering } from "./allocationOffering";
 
-export interface UpdateAllocationRequest {
+export interface UpdateLimitPolicyRuleRequest {
   name?: string | null;
-  description?: string | null;
-  offerings?: AllocationOffering[] | null;
-  is_default?: boolean | null;
   budget_cents?: number | null;
   max_requests?: number | null;
   max_input_tokens?: number | null;
   max_output_tokens?: number | null;
   max_tokens_per_request?: number | null;
   window?: string | null;
+  provider_id?: string | null;
+  credential_pool_id?: string | null;
+  model_offering_id?: string | null;
+  access_policy_id?: string | null;
   is_active?: boolean | null;
 }

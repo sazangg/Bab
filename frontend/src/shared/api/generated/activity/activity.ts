@@ -4,7 +4,9 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import { useQuery } from "@tanstack/react-query";
+import {
+  useQuery
+} from '@tanstack/react-query';
 import type {
   DataTag,
   DefinedInitialDataOptions,
@@ -14,184 +16,137 @@ import type {
   QueryKey,
   UndefinedInitialDataOptions,
   UseQueryOptions,
-  UseQueryResult,
-} from "@tanstack/react-query";
+  UseQueryResult
+} from '@tanstack/react-query';
 
 import type {
   ActivityEventResponse,
   HTTPValidationError,
-  ListActivityEventsApiV1ActivityGetParams,
-} from "../schemas";
+  ListActivityEventsApiV1ActivityGetParams
+} from '../schemas';
 
-import { apiMutator } from "../../orval-mutator";
+import { apiMutator } from '../../orval-mutator';
+
+
+
 
 export type listActivityEventsApiV1ActivityGetResponse200 = {
-  data: ActivityEventResponse[];
-  status: 200;
-};
+  data: ActivityEventResponse[]
+  status: 200
+}
 
 export type listActivityEventsApiV1ActivityGetResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type listActivityEventsApiV1ActivityGetResponseSuccess = (listActivityEventsApiV1ActivityGetResponse200) & {
+  headers: Headers;
+};
+export type listActivityEventsApiV1ActivityGetResponseError = (listActivityEventsApiV1ActivityGetResponse422) & {
+  headers: Headers;
 };
 
-export type listActivityEventsApiV1ActivityGetResponseSuccess =
-  listActivityEventsApiV1ActivityGetResponse200 & {
-    headers: Headers;
-  };
-export type listActivityEventsApiV1ActivityGetResponseError =
-  listActivityEventsApiV1ActivityGetResponse422 & {
-    headers: Headers;
-  };
+export type listActivityEventsApiV1ActivityGetResponse = (listActivityEventsApiV1ActivityGetResponseSuccess | listActivityEventsApiV1ActivityGetResponseError)
 
-export type listActivityEventsApiV1ActivityGetResponse =
-  | listActivityEventsApiV1ActivityGetResponseSuccess
-  | listActivityEventsApiV1ActivityGetResponseError;
-
-export const getListActivityEventsApiV1ActivityGetUrl = (
-  params?: ListActivityEventsApiV1ActivityGetParams,
-) => {
+export const getListActivityEventsApiV1ActivityGetUrl = (params?: ListActivityEventsApiV1ActivityGetParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
+
     if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
   });
 
   const stringifiedParams = normalizedParams.toString();
 
-  return stringifiedParams.length > 0
-    ? `/api/v1/activity?${stringifiedParams}`
-    : `/api/v1/activity`;
-};
+  return stringifiedParams.length > 0 ? `/api/v1/activity?${stringifiedParams}` : `/api/v1/activity`
+}
 
 /**
  * @summary List Activity Events
  */
-export const listActivityEventsApiV1ActivityGet = async (
-  params?: ListActivityEventsApiV1ActivityGetParams,
-  options?: RequestInit,
-): Promise<listActivityEventsApiV1ActivityGetResponse> => {
-  return apiMutator<listActivityEventsApiV1ActivityGetResponse>(
-    getListActivityEventsApiV1ActivityGetUrl(params),
-    {
-      ...options,
-      method: "GET",
-    },
-  );
-};
+export const listActivityEventsApiV1ActivityGet = async (params?: ListActivityEventsApiV1ActivityGetParams, options?: RequestInit): Promise<listActivityEventsApiV1ActivityGetResponse> => {
 
-export const getListActivityEventsApiV1ActivityGetQueryKey = (
-  params?: ListActivityEventsApiV1ActivityGetParams,
+  return apiMutator<listActivityEventsApiV1ActivityGetResponse>(getListActivityEventsApiV1ActivityGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListActivityEventsApiV1ActivityGetQueryKey = (params?: ListActivityEventsApiV1ActivityGetParams,) => {
+    return [
+    `/api/v1/activity`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListActivityEventsApiV1ActivityGetQueryOptions = <TData = Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError = HTTPValidationError>(params?: ListActivityEventsApiV1ActivityGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError, TData>>, }
 ) => {
-  return [`/api/v1/activity`, ...(params ? [params] : [])] as const;
-};
 
-export const getListActivityEventsApiV1ActivityGetQueryOptions = <
-  TData = Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>,
-  TError = HTTPValidationError,
->(
-  params?: ListActivityEventsApiV1ActivityGetParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError, TData>
-    >;
-  },
-) => {
-  const { query: queryOptions } = options ?? {};
+const {query: queryOptions} = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getListActivityEventsApiV1ActivityGetQueryKey(params);
+  const queryKey =  queryOptions?.queryKey ?? getListActivityEventsApiV1ActivityGetQueryKey(params);
 
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>> = ({
-    signal,
-  }) => listActivityEventsApiV1ActivityGet(params, { signal });
 
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>,
-    TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
-};
 
-export type ListActivityEventsApiV1ActivityGetQueryResult = NonNullable<
-  Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>
->;
-export type ListActivityEventsApiV1ActivityGetQueryError = HTTPValidationError;
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>> = ({ signal }) => listActivityEventsApiV1ActivityGet(params, { signal });
 
-export function useListActivityEventsApiV1ActivityGet<
-  TData = Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>,
-  TError = HTTPValidationError,
->(
-  params: undefined | ListActivityEventsApiV1ActivityGetParams,
-  options: {
-    query: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError, TData>
-    > &
-      Pick<
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListActivityEventsApiV1ActivityGetQueryResult = NonNullable<Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>>
+export type ListActivityEventsApiV1ActivityGetQueryError = HTTPValidationError
+
+
+export function useListActivityEventsApiV1ActivityGet<TData = Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError = HTTPValidationError>(
+ params: undefined |  ListActivityEventsApiV1ActivityGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>,
           TError,
           Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useListActivityEventsApiV1ActivityGet<
-  TData = Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>,
-  TError = HTTPValidationError,
->(
-  params?: ListActivityEventsApiV1ActivityGetParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError, TData>
-    > &
-      Pick<
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListActivityEventsApiV1ActivityGet<TData = Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError = HTTPValidationError>(
+ params?: ListActivityEventsApiV1ActivityGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>,
           TError,
           Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useListActivityEventsApiV1ActivityGet<
-  TData = Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>,
-  TError = HTTPValidationError,
->(
-  params?: ListActivityEventsApiV1ActivityGetParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError, TData>
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListActivityEventsApiV1ActivityGet<TData = Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError = HTTPValidationError>(
+ params?: ListActivityEventsApiV1ActivityGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary List Activity Events
  */
 
-export function useListActivityEventsApiV1ActivityGet<
-  TData = Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>,
-  TError = HTTPValidationError,
->(
-  params?: ListActivityEventsApiV1ActivityGetParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError, TData>
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getListActivityEventsApiV1ActivityGetQueryOptions(params, options);
+export function useListActivityEventsApiV1ActivityGet<TData = Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError = HTTPValidationError>(
+ params?: ListActivityEventsApiV1ActivityGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
-    queryKey: DataTag<QueryKey, TData, TError>;
-  };
+  const queryOptions = getListActivityEventsApiV1ActivityGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
   return { ...query, queryKey: queryOptions.queryKey };
 }

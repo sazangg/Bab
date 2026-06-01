@@ -43,8 +43,8 @@ const setupSteps = [
 
 const attentionItems = [
   {
-    label: "Allocation usage",
-    description: "Review budget, limits, and usage from allocation cards.",
+    label: "Policy usage",
+    description: "Review budget, limits, and usage from policy views.",
     icon: WalletCards,
   },
   {
@@ -78,7 +78,7 @@ export function DashboardHomePage() {
     <div className="space-y-6">
       <PageHeader
         title="Gateway home"
-        description="Super-admin command center for provider readiness, workspace structure, and allocation control."
+        description="Super-admin command center for provider readiness, workspace structure, and policy control."
         actions={
           <Button asChild>
             <Link to="/providers">
@@ -186,8 +186,8 @@ export function DashboardHomePage() {
           <CardContent>
             <div className="grid gap-2 text-sm">
               <FlowRow icon={Plug} label="Providers" value="Credentials, pools, models" />
-              <FlowRow icon={Route} label="Allocations" value="Pools, model offerings, limits" />
-              <FlowRow icon={KeyRound} label="Virtual keys" value="Project access to allocations" />
+              <FlowRow icon={Route} label="Policies" value="Routes, model offerings, limits" />
+              <FlowRow icon={KeyRound} label="Virtual keys" value="Project access to policies" />
               <FlowRow icon={Activity} label="Usage" value="Append-only attribution records" />
             </div>
           </CardContent>
@@ -203,7 +203,7 @@ export function DashboardHomePage() {
               settings.
             </p>
             <p>
-              Workspace views own domain structure: teams, projects, allocations, and future
+              Workspace views own domain structure: teams, projects, policies, and future
               guardrails. Scoped usage appears inside those entities instead of as a second global
               usage product.
             </p>

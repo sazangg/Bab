@@ -4,14 +4,14 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { CreateModelOfferingRequestCapabilities } from "./createModelOfferingRequestCapabilities";
-import type { CreateModelOfferingRequestRateLimitHints } from "./createModelOfferingRequestRateLimitHints";
+import type { CreateModelOfferingRequestCapabilities } from './createModelOfferingRequestCapabilities';
+import type { CreateModelOfferingRequestRateLimitHints } from './createModelOfferingRequestRateLimitHints';
 
 export interface CreateModelOfferingRequest {
   /**
-   * @minLength 1
-   * @maxLength 255
-   */
+     * @minLength 1
+     * @maxLength 255
+     */
   provider_model_name: string;
   alias?: string | null;
   version?: string | null;

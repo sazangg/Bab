@@ -1,4 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { z } from "zod";
@@ -20,6 +21,7 @@ type AcceptInviteValues = z.infer<typeof acceptInviteSchema>;
 export function AcceptInvitePage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const token = searchParams.get("token");
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const setSession = useAuthStore((state) => state.setSession);
@@ -34,6 +36,7 @@ export function AcceptInvitePage() {
     mutation: {
       onSuccess: (response) => {
         if (response.status === 200) {
+          queryClient.clear();
           setSession(response.data.access_token);
           navigate("/", { replace: true });
         }

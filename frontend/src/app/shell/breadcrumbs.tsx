@@ -24,7 +24,7 @@ export function useBreadcrumbs(): Breadcrumb[] {
   const usersMatch = useMatch("/users");
   const settingsMatch = useMatch("/settings");
   const apiDocsMatch = useMatch("/api-docs");
-  const allocationsMatch = useMatch("/allocations");
+  const policiesMatch = useMatch("/policies");
   const virtualKeysMatch = useMatch("/virtual-keys");
   const guardrailsMatch = useMatch("/guardrails");
   const designSystemMatch = useMatch("/design-system");
@@ -117,8 +117,8 @@ export function useBreadcrumbs(): Breadcrumb[] {
   if (apiDocsMatch) {
     return [{ label: "API Docs" }];
   }
-  if (allocationsMatch) {
-    return [{ label: "Allocations" }];
+  if (policiesMatch) {
+    return [{ label: "Policies" }];
   }
   if (virtualKeysMatch) {
     return [{ label: "Virtual keys" }];

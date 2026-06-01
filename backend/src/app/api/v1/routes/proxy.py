@@ -10,7 +10,6 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from pydantic import ValidationError
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
@@ -27,7 +26,6 @@ from app.modules.keys.errors import (
     AccessDeniedError,
     InvalidVirtualKeyError,
 )
-from app.modules.keys.internal.models import Allocation
 from app.modules.keys.schemas import ResolveAccessRequest
 from app.modules.providers import facade as providers_facade
 from app.modules.providers.errors import (
@@ -48,7 +46,7 @@ from app.modules.usage.accounting import (
 )
 from app.modules.usage.costing.base import CostingContext
 from app.modules.usage.costing.registry import default_cost_calculator_registry
-from app.modules.usage.schemas import RecordAllocationReservation, RecordUsage
+from app.modules.usage.schemas import RecordLimitPolicyReservation, RecordUsage
 
 router = APIRouter(prefix="/v1", tags=["proxy"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
@@ -81,7 +79,7 @@ async def list_models(
     except AccessDeniedError as exc:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="no active allocation",
+            detail="no active access policy",
         ) from exc
     return {"object": "list", "data": [model.model_dump(mode="json") for model in models]}
 
@@ -184,13 +182,7 @@ async def create_chat_completion(
         )
         _enforce_provider_body_size(raw_body, resolved_provider.max_body_bytes)
         estimated_tokens = estimate_request_tokens(provider_payload.messages)
-        await _enforce_virtual_key_limits(
-            resolved=resolved,
-            estimated_input_tokens=estimated_tokens,
-            requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
-            db=db,
-        )
-        reservation_ids = await _enforce_allocation_limits(
+        reservation_ids = await _enforce_limit_policies(
             resolved=resolved,
             estimated_input_tokens=estimated_tokens,
             requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
@@ -262,7 +254,7 @@ async def create_chat_completion(
             await _record_proxy_activity(
                 resolved=resolved,
                 action="proxy.denied",
-                message="Proxy request denied by allocation or provider routing policy.",
+                message="Proxy request denied by access, limit, or provider routing policy.",
                 severity="warning",
                 metadata={"reason": "access_denied"},
                 db=db,
@@ -451,13 +443,7 @@ async def _execute_chat_proxy(
         )
         _enforce_provider_body_size(raw_body, resolved_provider.max_body_bytes)
         estimated_tokens = estimate_request_tokens(provider_payload.messages)
-        await _enforce_virtual_key_limits(
-            resolved=resolved,
-            estimated_input_tokens=estimated_tokens,
-            requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
-            db=db,
-        )
-        reservation_ids = await _enforce_allocation_limits(
+        reservation_ids = await _enforce_limit_policies(
             resolved=resolved,
             estimated_input_tokens=estimated_tokens,
             requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
@@ -497,7 +483,7 @@ async def _execute_chat_proxy(
             await _record_proxy_activity(
                 resolved=resolved,
                 action="proxy.denied",
-                message="Proxy request denied by allocation or provider routing policy.",
+                message="Proxy request denied by access, limit, or provider routing policy.",
                 severity="warning",
                 metadata={"reason": "access_denied"},
                 db=db,
@@ -740,8 +726,6 @@ def _guardrail_context(
         org_id=resolved.org_id,
         team_id=resolved.team_id,
         project_id=resolved.project_id,
-        allocation_id=resolved.allocation_id,
-        allocation_chain_ids=resolved.allocation_chain_ids,
         virtual_key_id=resolved.virtual_key_id,
         provider_id=resolved.provider_id,
         pool_id=resolved.pool_id,
@@ -918,98 +902,39 @@ async def _record_proxy_request(
     provider_credential_id: UUID | None = None,
 ) -> int | None:
     cost_cents = _calculate_cost_cents(resolved=resolved, usage=usage)
-    for allocation_id in resolved.allocation_chain_ids:
-        await usage_facade.record_usage(
-            payload=RecordUsage(
-                org_id=resolved.org_id,
-                team_id=resolved.team_id,
-                project_id=resolved.project_id,
-                allocation_id=allocation_id,
-                virtual_key_id=resolved.virtual_key_id,
-                pool_id=resolved.pool_id,
-                provider_id=resolved.provider_id,
-                provider_credential_id=provider_credential_id or resolved.provider_key_id,
-                request_id=current_request_id(),
-                requested_model=resolved.requested_model,
-                provider_model=resolved.provider_model,
-                http_status=http_status,
-                latency_ms=latency_ms,
-                prompt_tokens=usage.prompt_tokens,
-                completion_tokens=usage.completion_tokens,
-                total_tokens=usage.total_tokens,
-                cost_cents=cost_cents,
-                usage_source=usage.usage_source,
-                error_code=error_code,
-            ),
-            db=db,
-        )
+    await usage_facade.record_usage(
+        payload=RecordUsage(
+            org_id=resolved.org_id,
+            team_id=resolved.team_id,
+            project_id=resolved.project_id,
+            access_policy_id=resolved.access_policy_id,
+            access_policy_route_id=resolved.access_policy_route_id,
+            limit_policy_ids=[str(limit_id) for limit_id in resolved.limit_policy_ids],
+            limit_policy_rule_ids=[
+                str(limit.limit_policy_rule_id) for limit in resolved.limit_policies
+            ],
+            virtual_key_id=resolved.virtual_key_id,
+            pool_id=resolved.pool_id,
+            provider_id=resolved.provider_id,
+            provider_credential_id=provider_credential_id or resolved.provider_key_id,
+            request_id=current_request_id(),
+            requested_model=resolved.requested_model,
+            provider_model=resolved.provider_model,
+            http_status=http_status,
+            latency_ms=latency_ms,
+            prompt_tokens=usage.prompt_tokens,
+            completion_tokens=usage.completion_tokens,
+            total_tokens=usage.total_tokens,
+            cost_cents=cost_cents,
+            usage_source=usage.usage_source,
+            error_code=error_code,
+        ),
+        db=db,
+    )
     return cost_cents
 
 
-async def _enforce_virtual_key_limits(
-    *,
-    resolved,
-    estimated_input_tokens: int,
-    requested_output_tokens: int | None,
-    db: AsyncSession,
-) -> None:
-    requested_total_tokens = estimated_input_tokens + (requested_output_tokens or 0)
-    if (
-        resolved.key_max_tokens_per_request is not None
-        and requested_total_tokens > resolved.key_max_tokens_per_request
-    ):
-        await _raise_proxy_denial(
-            resolved=resolved,
-            detail="virtual key request token limit exceeded",
-            reason="virtual_key_request_token_limit",
-            db=db,
-        )
-
-    if (
-        resolved.key_max_requests_per_minute is None
-        and resolved.key_max_tokens_per_minute is None
-    ):
-        return
-
-    now = datetime.now(UTC)
-    since = now - timedelta(minutes=1)
-    request_count, _prompt_tokens, _completion_tokens, total_tokens = (
-        await usage_facade.summarize_virtual_key_usage(
-            virtual_key_id=resolved.virtual_key_id,
-            since=since,
-            db=db,
-        )
-    )
-    reservations = await usage_facade.summarize_active_virtual_key_reservations(
-        virtual_key_id=resolved.virtual_key_id,
-        since=since,
-        now=now,
-        db=db,
-    )
-    if (
-        resolved.key_max_requests_per_minute is not None
-        and request_count + reservations.requests + 1 > resolved.key_max_requests_per_minute
-    ):
-        await _raise_proxy_denial(
-            resolved=resolved,
-            detail="virtual key request rate limit exceeded",
-            reason="virtual_key_request_rate_limit",
-            db=db,
-        )
-    if (
-        resolved.key_max_tokens_per_minute is not None
-        and total_tokens + reservations.total_tokens + requested_total_tokens
-        > resolved.key_max_tokens_per_minute
-    ):
-        await _raise_proxy_denial(
-            resolved=resolved,
-            detail="virtual key token rate limit exceeded",
-            reason="virtual_key_token_rate_limit",
-            db=db,
-        )
-
-
-async def _enforce_allocation_limits(
+async def _enforce_limit_policies(
     *,
     resolved,
     estimated_input_tokens: int,
@@ -1027,16 +952,11 @@ async def _enforce_allocation_limits(
         ),
     )
     expires_at = datetime.now(UTC) + timedelta(minutes=5)
-    await db.execute(
-        select(Allocation.id)
-        .where(Allocation.id.in_([limit.allocation_id for limit in resolved.allocation_limits]))
-        .with_for_update()
-    )
-    for limit in resolved.allocation_limits:
+    for limit in resolved.limit_policies:
         if limit.max_input_tokens is not None and estimated_input_tokens > limit.max_input_tokens:
             await _raise_proxy_denial(
                 resolved=resolved,
-                detail="allocation input token limit exceeded",
+                detail="limit policy input token limit exceeded",
                 reason="input_token_limit",
                 db=db,
             )
@@ -1047,7 +967,7 @@ async def _enforce_allocation_limits(
         ):
             await _raise_proxy_denial(
                 resolved=resolved,
-                detail="allocation output token limit exceeded",
+                detail="limit policy output token limit exceeded",
                 reason="output_token_limit",
                 db=db,
             )
@@ -1057,24 +977,26 @@ async def _enforce_allocation_limits(
         ):
             await _raise_proxy_denial(
                 resolved=resolved,
-                detail="allocation request token limit exceeded",
+                detail="limit policy request token limit exceeded",
                 reason="request_token_limit",
                 db=db,
             )
 
-        since = _allocation_window_start(limit.window)
+        since = _limit_policy_window_start(limit.window)
         (
             request_count,
             prompt_tokens,
             completion_tokens,
             cost_cents,
-        ) = await usage_facade.summarize_allocation_usage(
-            allocation_id=limit.allocation_id,
+        ) = await usage_facade.summarize_limit_policy_usage(
+            limit_policy_id=limit.limit_policy_id,
+            limit_policy_rule_id=limit.limit_policy_rule_id,
             since=since,
             db=db,
         )
-        reservations = await usage_facade.summarize_active_allocation_reservations(
-            allocation_id=limit.allocation_id,
+        reservations = await usage_facade.summarize_active_limit_policy_reservations(
+            limit_policy_id=limit.limit_policy_id,
+            limit_policy_rule_id=limit.limit_policy_rule_id,
             since=since,
             now=datetime.now(UTC),
             db=db,
@@ -1082,7 +1004,7 @@ async def _enforce_allocation_limits(
         if limit.max_requests is not None and request_count + 1 > limit.max_requests:
             await _raise_proxy_denial(
                 resolved=resolved,
-                detail="allocation request limit exceeded",
+                detail="limit policy request limit exceeded",
                 reason="request_limit",
                 db=db,
             )
@@ -1092,7 +1014,7 @@ async def _enforce_allocation_limits(
         ):
             await _raise_proxy_denial(
                 resolved=resolved,
-                detail="allocation request limit exceeded",
+                detail="limit policy request limit exceeded",
                 reason="request_limit",
                 db=db,
             )
@@ -1103,7 +1025,7 @@ async def _enforce_allocation_limits(
         ):
             await _raise_proxy_denial(
                 resolved=resolved,
-                detail="allocation input token limit exceeded",
+                detail="limit policy input token limit exceeded",
                 reason="input_token_limit",
                 db=db,
             )
@@ -1115,7 +1037,7 @@ async def _enforce_allocation_limits(
         ):
             await _raise_proxy_denial(
                 resolved=resolved,
-                detail="allocation output token limit exceeded",
+                detail="limit policy output token limit exceeded",
                 reason="output_token_limit",
                 db=db,
             )
@@ -1126,17 +1048,18 @@ async def _enforce_allocation_limits(
         ):
             await _raise_proxy_denial(
                 resolved=resolved,
-                detail="allocation budget exceeded",
+                detail="limit policy budget exceeded",
                 reason="budget_limit",
                 db=db,
             )
     reservation_ids: list[UUID] = []
-    for limit in resolved.allocation_limits:
+    for limit in resolved.limit_policies:
         reservation_ids.append(
-            await usage_facade.create_allocation_reservation(
-                payload=RecordAllocationReservation(
+            await usage_facade.create_limit_policy_reservation(
+                payload=RecordLimitPolicyReservation(
                     org_id=resolved.org_id,
-                    allocation_id=limit.allocation_id,
+                    limit_policy_id=limit.limit_policy_id,
+                    limit_policy_rule_id=limit.limit_policy_rule_id,
                     virtual_key_id=resolved.virtual_key_id,
                     request_id=current_request_id(),
                     reserved_prompt_tokens=estimated_input_tokens,
@@ -1159,7 +1082,7 @@ async def _commit_reservations(
     cost_cents: int | None,
     db: AsyncSession,
 ) -> None:
-    await usage_facade.commit_allocation_reservations(
+    await usage_facade.commit_limit_policy_reservations(
         reservation_ids=reservation_ids,
         usage=usage,
         cost_cents=cost_cents,
@@ -1168,7 +1091,7 @@ async def _commit_reservations(
 
 
 async def _release_reservations(*, reservation_ids: list[UUID], db: AsyncSession) -> None:
-    await usage_facade.release_allocation_reservations(reservation_ids=reservation_ids, db=db)
+    await usage_facade.release_limit_policy_reservations(reservation_ids=reservation_ids, db=db)
 
 
 async def _raise_proxy_denial(
@@ -1207,7 +1130,6 @@ async def _record_proxy_activity(
             message=message,
             team_id=resolved.team_id,
             project_id=resolved.project_id,
-            allocation_id=resolved.allocation_id,
             virtual_key_id=resolved.virtual_key_id,
             provider_id=resolved.provider_id,
             pool_id=resolved.pool_id,
@@ -1229,7 +1151,7 @@ def _requested_output_tokens(extra_body: dict[str, Any]) -> int | None:
     return None
 
 
-def _allocation_window_start(window: str) -> datetime | None:
+def _limit_policy_window_start(window: str) -> datetime | None:
     now = datetime.now(UTC)
     if window == "daily":
         return now - timedelta(days=1)

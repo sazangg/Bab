@@ -174,11 +174,10 @@ async def create_assignment(
         )
         if policy is None:
             raise GuardrailPolicyNotFoundError
-        team_id, project_id, allocation_id, virtual_key_id = _assignment_scope_ids_from_payload(
+        team_id, project_id, virtual_key_id = _assignment_scope_ids_from_payload(
             scope_type=payload.scope_type,
             team_id=payload.team_id,
             project_id=payload.project_id,
-            allocation_id=payload.allocation_id,
             virtual_key_id=payload.virtual_key_id,
         )
         await _validate_assignment_target(
@@ -186,7 +185,6 @@ async def create_assignment(
             scope_type=payload.scope_type,
             team_id=team_id,
             project_id=project_id,
-            allocation_id=allocation_id,
             virtual_key_id=virtual_key_id,
             db=db,
         )
@@ -196,7 +194,6 @@ async def create_assignment(
             scope_type=payload.scope_type,
             team_id=team_id,
             project_id=project_id,
-            allocation_id=allocation_id,
             virtual_key_id=virtual_key_id,
             db=db,
         )
@@ -208,7 +205,6 @@ async def create_assignment(
             scope_type=payload.scope_type,
             team_id=team_id,
             project_id=project_id,
-            allocation_id=allocation_id,
             virtual_key_id=virtual_key_id,
             enforcement_mode=payload.enforcement_mode,
             is_active=payload.is_active,
@@ -255,11 +251,10 @@ async def update_assignment(
         if policy is None:
             raise GuardrailPolicyNotFoundError
         scope_type = payload.scope_type if payload.scope_type is not None else assignment.scope_type
-        team_id, project_id, allocation_id, virtual_key_id = _assignment_scope_ids(
+        team_id, project_id, virtual_key_id = _assignment_scope_ids(
             scope_type=scope_type,
             team_id=payload.team_id,
             project_id=payload.project_id,
-            allocation_id=payload.allocation_id,
             virtual_key_id=payload.virtual_key_id,
             fallback=assignment,
         )
@@ -268,7 +263,6 @@ async def update_assignment(
             scope_type=scope_type,
             team_id=team_id,
             project_id=project_id,
-            allocation_id=allocation_id,
             virtual_key_id=virtual_key_id,
             db=db,
         )
@@ -278,7 +272,6 @@ async def update_assignment(
             scope_type=scope_type,
             team_id=team_id,
             project_id=project_id,
-            allocation_id=allocation_id,
             virtual_key_id=virtual_key_id,
             db=db,
         )
@@ -288,7 +281,6 @@ async def update_assignment(
         assignment.scope_type = scope_type
         assignment.team_id = team_id
         assignment.project_id = project_id
-        assignment.allocation_id = allocation_id
         assignment.virtual_key_id = virtual_key_id
         if payload.enforcement_mode is not None:
             assignment.enforcement_mode = payload.enforcement_mode
@@ -370,7 +362,6 @@ async def has_enforced_response_guardrails(
         org_id=context.org_id,
         team_id=context.team_id,
         project_id=context.project_id,
-        allocation_ids=context.allocation_chain_ids,
         virtual_key_id=context.virtual_key_id,
         db=db,
     )
@@ -411,7 +402,6 @@ async def _evaluate_context(
         org_id=context.org_id,
         team_id=context.team_id,
         project_id=context.project_id,
-        allocation_ids=context.allocation_chain_ids,
         virtual_key_id=context.virtual_key_id,
         db=db,
     )
@@ -483,7 +473,6 @@ async def list_events(
     phase: str | None = None,
     team_id: UUID | None = None,
     project_id: UUID | None = None,
-    allocation_id: UUID | None = None,
     virtual_key_id: UUID | None = None,
     provider_id: UUID | None = None,
     pool_id: UUID | None = None,
@@ -499,7 +488,6 @@ async def list_events(
         rule_id=rule_id,
         team_id=team_id,
         project_id=project_id,
-        allocation_id=allocation_id,
         virtual_key_id=virtual_key_id,
         provider_id=provider_id,
         pool_id=pool_id,
@@ -538,8 +526,6 @@ async def simulate(
         org_id=scope.org_id,
         team_id=scope.org_id,
         project_id=scope.org_id,
-        allocation_id=scope.org_id,
-        allocation_chain_ids=[],
         virtual_key_id=scope.org_id,
         provider_id=payload.provider_id or scope.org_id,
         pool_id=payload.pool_id or scope.org_id,
@@ -669,7 +655,6 @@ async def _record_event(
         reason=reason,
         team_id=context.team_id,
         project_id=context.project_id,
-        allocation_id=context.allocation_id,
         virtual_key_id=context.virtual_key_id,
         provider_id=context.provider_id,
         pool_id=context.pool_id,
@@ -714,19 +699,16 @@ def _assignment_scope_ids(
     scope_type: str,
     team_id: UUID | None,
     project_id: UUID | None,
-    allocation_id: UUID | None,
     virtual_key_id: UUID | None,
     fallback: GuardrailAssignment,
-) -> tuple[UUID | None, UUID | None, UUID | None, UUID | None]:
+) -> tuple[UUID | None, UUID | None, UUID | None]:
     if scope_type == "team":
-        return team_id or fallback.team_id, None, None, None
+        return team_id or fallback.team_id, None, None
     if scope_type == "project":
-        return None, project_id or fallback.project_id, None, None
-    if scope_type == "allocation":
-        return None, None, allocation_id or fallback.allocation_id, None
+        return None, project_id or fallback.project_id, None
     if scope_type == "virtual_key":
-        return None, None, None, virtual_key_id or fallback.virtual_key_id
-    return None, None, None, None
+        return None, None, virtual_key_id or fallback.virtual_key_id
+    return None, None, None
 
 
 def _effective_rule_mode(*, policy_mode: str, assignments: list[GuardrailAssignment]) -> str:
@@ -742,18 +724,15 @@ def _assignment_scope_ids_from_payload(
     scope_type: str,
     team_id: UUID | None,
     project_id: UUID | None,
-    allocation_id: UUID | None,
     virtual_key_id: UUID | None,
-) -> tuple[UUID | None, UUID | None, UUID | None, UUID | None]:
+) -> tuple[UUID | None, UUID | None, UUID | None]:
     if scope_type == "team":
-        return team_id, None, None, None
+        return team_id, None, None
     if scope_type == "project":
-        return None, project_id, None, None
-    if scope_type == "allocation":
-        return None, None, allocation_id, None
+        return None, project_id, None
     if scope_type == "virtual_key":
-        return None, None, None, virtual_key_id
-    return None, None, None, None
+        return None, None, virtual_key_id
+    return None, None, None
 
 
 async def _validate_assignment_target(
@@ -762,7 +741,6 @@ async def _validate_assignment_target(
     scope_type: str,
     team_id: UUID | None,
     project_id: UUID | None,
-    allocation_id: UUID | None,
     virtual_key_id: UUID | None,
     db: AsyncSession,
 ) -> None:
@@ -770,7 +748,6 @@ async def _validate_assignment_target(
         "org": None,
         "team": team_id,
         "project": project_id,
-        "allocation": allocation_id,
         "virtual_key": virtual_key_id,
     }[scope_type]
     exists = await repository.assignment_target_exists(
@@ -809,7 +786,6 @@ def _to_assignment_response(
         scope_type=assignment.scope_type,
         team_id=assignment.team_id,
         project_id=assignment.project_id,
-        allocation_id=assignment.allocation_id,
         virtual_key_id=assignment.virtual_key_id,
         enforcement_mode=assignment.enforcement_mode,
         is_active=assignment.is_active,
@@ -829,7 +805,6 @@ def _to_event_response(event: GuardrailEvent) -> GuardrailEventResponse:
         reason=event.reason,
         team_id=event.team_id,
         project_id=event.project_id,
-        allocation_id=event.allocation_id,
         virtual_key_id=event.virtual_key_id,
         provider_id=event.provider_id,
         pool_id=event.pool_id,

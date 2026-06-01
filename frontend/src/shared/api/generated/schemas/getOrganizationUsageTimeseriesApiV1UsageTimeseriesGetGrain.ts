@@ -5,11 +5,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type GetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetGrain =
-  (typeof GetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetGrain)[keyof typeof GetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetGrain];
+export type GetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetGrain = typeof GetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetGrain[keyof typeof GetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetGrain];
+
 
 export const GetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetGrain = {
-  hour: "hour",
-  day: "day",
-  week: "week",
+  hour: 'hour',
+  day: 'day',
+  week: 'week',
 } as const;

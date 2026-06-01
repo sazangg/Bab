@@ -4,7 +4,10 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery
+} from '@tanstack/react-query';
 import type {
   DataTag,
   DefinedInitialDataOptions,
@@ -17,8 +20,8 @@ import type {
   UseMutationOptions,
   UseMutationResult,
   UseQueryOptions,
-  UseQueryResult,
-} from "@tanstack/react-query";
+  UseQueryResult
+} from '@tanstack/react-query';
 
 import type {
   CreateGuardrailAssignmentRequest,
@@ -31,1291 +34,984 @@ import type {
   HTTPValidationError,
   ListEventsApiV1GuardrailsEventsGetParams,
   UpdateGuardrailAssignmentRequest,
-  UpdateGuardrailPolicyRequest,
-} from "../schemas";
+  UpdateGuardrailPolicyRequest
+} from '../schemas';
 
-import { apiMutator } from "../../orval-mutator";
+import { apiMutator } from '../../orval-mutator';
+
+
+
 
 export type listPoliciesApiV1GuardrailsPoliciesGetResponse200 = {
-  data: GuardrailPolicyResponse[];
-  status: 200;
-};
+  data: GuardrailPolicyResponse[]
+  status: 200
+}
 
-export type listPoliciesApiV1GuardrailsPoliciesGetResponseSuccess =
-  listPoliciesApiV1GuardrailsPoliciesGetResponse200 & {
-    headers: Headers;
-  };
-export type listPoliciesApiV1GuardrailsPoliciesGetResponse =
-  listPoliciesApiV1GuardrailsPoliciesGetResponseSuccess;
+export type listPoliciesApiV1GuardrailsPoliciesGetResponseSuccess = (listPoliciesApiV1GuardrailsPoliciesGetResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listPoliciesApiV1GuardrailsPoliciesGetResponse = (listPoliciesApiV1GuardrailsPoliciesGetResponseSuccess)
 
 export const getListPoliciesApiV1GuardrailsPoliciesGetUrl = () => {
-  return `/api/v1/guardrails/policies`;
-};
+
+
+
+
+  return `/api/v1/guardrails/policies`
+}
 
 /**
  * @summary List Policies
  */
-export const listPoliciesApiV1GuardrailsPoliciesGet = async (
-  options?: RequestInit,
-): Promise<listPoliciesApiV1GuardrailsPoliciesGetResponse> => {
-  return apiMutator<listPoliciesApiV1GuardrailsPoliciesGetResponse>(
-    getListPoliciesApiV1GuardrailsPoliciesGetUrl(),
-    {
-      ...options,
-      method: "GET",
-    },
-  );
-};
+export const listPoliciesApiV1GuardrailsPoliciesGet = async ( options?: RequestInit): Promise<listPoliciesApiV1GuardrailsPoliciesGetResponse> => {
+
+  return apiMutator<listPoliciesApiV1GuardrailsPoliciesGetResponse>(getListPoliciesApiV1GuardrailsPoliciesGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
 
 export const getListPoliciesApiV1GuardrailsPoliciesGetQueryKey = () => {
-  return [`/api/v1/guardrails/policies`] as const;
-};
+    return [
+    `/api/v1/guardrails/policies`
+    ] as const;
+    }
 
-export const getListPoliciesApiV1GuardrailsPoliciesGetQueryOptions = <
-  TData = Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>,
-  TError = unknown,
->(options?: {
-  query?: Partial<
-    UseQueryOptions<
-      Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>,
-      TError,
-      TData
-    >
-  >;
-}) => {
-  const { query: queryOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getListPoliciesApiV1GuardrailsPoliciesGetQueryKey();
+export const getListPoliciesApiV1GuardrailsPoliciesGetQueryOptions = <TData = Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>, TError, TData>>, }
+) => {
 
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>
-  > = ({ signal }) => listPoliciesApiV1GuardrailsPoliciesGet({ signal });
+const {query: queryOptions} = options ?? {};
 
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>,
-    TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
-};
+  const queryKey =  queryOptions?.queryKey ?? getListPoliciesApiV1GuardrailsPoliciesGetQueryKey();
 
-export type ListPoliciesApiV1GuardrailsPoliciesGetQueryResult = NonNullable<
-  Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>
->;
-export type ListPoliciesApiV1GuardrailsPoliciesGetQueryError = unknown;
 
-export function useListPoliciesApiV1GuardrailsPoliciesGet<
-  TData = Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>,
-  TError = unknown,
->(
-  options: {
-    query: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>> = ({ signal }) => listPoliciesApiV1GuardrailsPoliciesGet({ signal });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListPoliciesApiV1GuardrailsPoliciesGetQueryResult = NonNullable<Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>>
+export type ListPoliciesApiV1GuardrailsPoliciesGetQueryError = unknown
+
+
+export function useListPoliciesApiV1GuardrailsPoliciesGet<TData = Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>,
           TError,
           Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useListPoliciesApiV1GuardrailsPoliciesGet<
-  TData = Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>,
-  TError = unknown,
->(
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListPoliciesApiV1GuardrailsPoliciesGet<TData = Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>,
           TError,
           Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useListPoliciesApiV1GuardrailsPoliciesGet<
-  TData = Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>,
-  TError = unknown,
->(
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>,
-        TError,
-        TData
-      >
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListPoliciesApiV1GuardrailsPoliciesGet<TData = Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary List Policies
  */
 
-export function useListPoliciesApiV1GuardrailsPoliciesGet<
-  TData = Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>,
-  TError = unknown,
->(
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>,
-        TError,
-        TData
-      >
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getListPoliciesApiV1GuardrailsPoliciesGetQueryOptions(options);
+export function useListPoliciesApiV1GuardrailsPoliciesGet<TData = Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
-    queryKey: DataTag<QueryKey, TData, TError>;
-  };
+  const queryOptions = getListPoliciesApiV1GuardrailsPoliciesGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
+
+
+
+
+
 export type createPolicyApiV1GuardrailsPoliciesPostResponse201 = {
-  data: GuardrailPolicyResponse;
-  status: 201;
-};
+  data: GuardrailPolicyResponse
+  status: 201
+}
 
 export type createPolicyApiV1GuardrailsPoliciesPostResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type createPolicyApiV1GuardrailsPoliciesPostResponseSuccess = (createPolicyApiV1GuardrailsPoliciesPostResponse201) & {
+  headers: Headers;
+};
+export type createPolicyApiV1GuardrailsPoliciesPostResponseError = (createPolicyApiV1GuardrailsPoliciesPostResponse422) & {
+  headers: Headers;
 };
 
-export type createPolicyApiV1GuardrailsPoliciesPostResponseSuccess =
-  createPolicyApiV1GuardrailsPoliciesPostResponse201 & {
-    headers: Headers;
-  };
-export type createPolicyApiV1GuardrailsPoliciesPostResponseError =
-  createPolicyApiV1GuardrailsPoliciesPostResponse422 & {
-    headers: Headers;
-  };
-
-export type createPolicyApiV1GuardrailsPoliciesPostResponse =
-  | createPolicyApiV1GuardrailsPoliciesPostResponseSuccess
-  | createPolicyApiV1GuardrailsPoliciesPostResponseError;
+export type createPolicyApiV1GuardrailsPoliciesPostResponse = (createPolicyApiV1GuardrailsPoliciesPostResponseSuccess | createPolicyApiV1GuardrailsPoliciesPostResponseError)
 
 export const getCreatePolicyApiV1GuardrailsPoliciesPostUrl = () => {
-  return `/api/v1/guardrails/policies`;
-};
+
+
+
+
+  return `/api/v1/guardrails/policies`
+}
 
 /**
  * @summary Create Policy
  */
-export const createPolicyApiV1GuardrailsPoliciesPost = async (
-  createGuardrailPolicyRequest: CreateGuardrailPolicyRequest,
-  options?: RequestInit,
-): Promise<createPolicyApiV1GuardrailsPoliciesPostResponse> => {
-  return apiMutator<createPolicyApiV1GuardrailsPoliciesPostResponse>(
-    getCreatePolicyApiV1GuardrailsPoliciesPostUrl(),
-    {
-      ...options,
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(createGuardrailPolicyRequest),
-    },
-  );
-};
+export const createPolicyApiV1GuardrailsPoliciesPost = async (createGuardrailPolicyRequest: CreateGuardrailPolicyRequest, options?: RequestInit): Promise<createPolicyApiV1GuardrailsPoliciesPostResponse> => {
 
-export const getCreatePolicyApiV1GuardrailsPoliciesPostMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof createPolicyApiV1GuardrailsPoliciesPost>>,
-    TError,
-    { data: CreateGuardrailPolicyRequest },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof createPolicyApiV1GuardrailsPoliciesPost>>,
-  TError,
-  { data: CreateGuardrailPolicyRequest },
-  TContext
-> => {
-  const mutationKey = ["createPolicyApiV1GuardrailsPoliciesPost"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
+  return apiMutator<createPolicyApiV1GuardrailsPoliciesPostResponse>(getCreatePolicyApiV1GuardrailsPoliciesPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      createGuardrailPolicyRequest,)
+  }
+);}
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof createPolicyApiV1GuardrailsPoliciesPost>>,
-    { data: CreateGuardrailPolicyRequest }
-  > = (props) => {
-    const { data } = props ?? {};
 
-    return createPolicyApiV1GuardrailsPoliciesPost(data);
-  };
 
-  return { mutationFn, ...mutationOptions };
-};
 
-export type CreatePolicyApiV1GuardrailsPoliciesPostMutationResult = NonNullable<
-  Awaited<ReturnType<typeof createPolicyApiV1GuardrailsPoliciesPost>>
->;
-export type CreatePolicyApiV1GuardrailsPoliciesPostMutationBody = CreateGuardrailPolicyRequest;
-export type CreatePolicyApiV1GuardrailsPoliciesPostMutationError = HTTPValidationError;
+export const getCreatePolicyApiV1GuardrailsPoliciesPostMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPolicyApiV1GuardrailsPoliciesPost>>, TError,{data: CreateGuardrailPolicyRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof createPolicyApiV1GuardrailsPoliciesPost>>, TError,{data: CreateGuardrailPolicyRequest}, TContext> => {
 
-/**
+const mutationKey = ['createPolicyApiV1GuardrailsPoliciesPost'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createPolicyApiV1GuardrailsPoliciesPost>>, {data: CreateGuardrailPolicyRequest}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createPolicyApiV1GuardrailsPoliciesPost(data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreatePolicyApiV1GuardrailsPoliciesPostMutationResult = NonNullable<Awaited<ReturnType<typeof createPolicyApiV1GuardrailsPoliciesPost>>>
+    export type CreatePolicyApiV1GuardrailsPoliciesPostMutationBody = CreateGuardrailPolicyRequest
+    export type CreatePolicyApiV1GuardrailsPoliciesPostMutationError = HTTPValidationError
+
+    /**
  * @summary Create Policy
  */
-export const useCreatePolicyApiV1GuardrailsPoliciesPost = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof createPolicyApiV1GuardrailsPoliciesPost>>,
-      TError,
-      { data: CreateGuardrailPolicyRequest },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof createPolicyApiV1GuardrailsPoliciesPost>>,
-  TError,
-  { data: CreateGuardrailPolicyRequest },
-  TContext
-> => {
-  return useMutation(
-    getCreatePolicyApiV1GuardrailsPoliciesPostMutationOptions(options),
-    queryClient,
-  );
-};
-export type updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponse200 = {
-  data: GuardrailPolicyResponse;
-  status: 200;
-};
+export const useCreatePolicyApiV1GuardrailsPoliciesPost = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPolicyApiV1GuardrailsPoliciesPost>>, TError,{data: CreateGuardrailPolicyRequest}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createPolicyApiV1GuardrailsPoliciesPost>>,
+        TError,
+        {data: CreateGuardrailPolicyRequest},
+        TContext
+      > => {
+      return useMutation(getCreatePolicyApiV1GuardrailsPoliciesPostMutationOptions(options), queryClient);
+    }
+    export type updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponse200 = {
+  data: GuardrailPolicyResponse
+  status: 200
+}
 
 export type updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponseSuccess = (updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponse200) & {
+  headers: Headers;
+};
+export type updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponseError = (updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponse422) & {
+  headers: Headers;
 };
 
-export type updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponseSuccess =
-  updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponse200 & {
-    headers: Headers;
-  };
-export type updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponseError =
-  updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponse422 & {
-    headers: Headers;
-  };
+export type updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponse = (updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponseSuccess | updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponseError)
 
-export type updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponse =
-  | updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponseSuccess
-  | updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponseError;
+export const getUpdatePolicyApiV1GuardrailsPoliciesPolicyIdPatchUrl = (policyId: string,) => {
 
-export const getUpdatePolicyApiV1GuardrailsPoliciesPolicyIdPatchUrl = (policyId: string) => {
-  return `/api/v1/guardrails/policies/${policyId}`;
-};
+
+
+
+  return `/api/v1/guardrails/policies/${policyId}`
+}
 
 /**
  * @summary Update Policy
  */
-export const updatePolicyApiV1GuardrailsPoliciesPolicyIdPatch = async (
-  policyId: string,
-  updateGuardrailPolicyRequest: UpdateGuardrailPolicyRequest,
-  options?: RequestInit,
-): Promise<updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponse> => {
-  return apiMutator<updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponse>(
-    getUpdatePolicyApiV1GuardrailsPoliciesPolicyIdPatchUrl(policyId),
-    {
-      ...options,
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(updateGuardrailPolicyRequest),
-    },
-  );
-};
+export const updatePolicyApiV1GuardrailsPoliciesPolicyIdPatch = async (policyId: string,
+    updateGuardrailPolicyRequest: UpdateGuardrailPolicyRequest, options?: RequestInit): Promise<updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponse> => {
 
-export const getUpdatePolicyApiV1GuardrailsPoliciesPolicyIdPatchMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof updatePolicyApiV1GuardrailsPoliciesPolicyIdPatch>>,
-    TError,
-    { policyId: string; data: UpdateGuardrailPolicyRequest },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof updatePolicyApiV1GuardrailsPoliciesPolicyIdPatch>>,
-  TError,
-  { policyId: string; data: UpdateGuardrailPolicyRequest },
-  TContext
-> => {
-  const mutationKey = ["updatePolicyApiV1GuardrailsPoliciesPolicyIdPatch"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
+  return apiMutator<updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponse>(getUpdatePolicyApiV1GuardrailsPoliciesPolicyIdPatchUrl(policyId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateGuardrailPolicyRequest,)
+  }
+);}
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof updatePolicyApiV1GuardrailsPoliciesPolicyIdPatch>>,
-    { policyId: string; data: UpdateGuardrailPolicyRequest }
-  > = (props) => {
-    const { policyId, data } = props ?? {};
 
-    return updatePolicyApiV1GuardrailsPoliciesPolicyIdPatch(policyId, data);
-  };
 
-  return { mutationFn, ...mutationOptions };
-};
 
-export type UpdatePolicyApiV1GuardrailsPoliciesPolicyIdPatchMutationResult = NonNullable<
-  Awaited<ReturnType<typeof updatePolicyApiV1GuardrailsPoliciesPolicyIdPatch>>
->;
-export type UpdatePolicyApiV1GuardrailsPoliciesPolicyIdPatchMutationBody =
-  UpdateGuardrailPolicyRequest;
-export type UpdatePolicyApiV1GuardrailsPoliciesPolicyIdPatchMutationError = HTTPValidationError;
+export const getUpdatePolicyApiV1GuardrailsPoliciesPolicyIdPatchMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePolicyApiV1GuardrailsPoliciesPolicyIdPatch>>, TError,{policyId: string;data: UpdateGuardrailPolicyRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof updatePolicyApiV1GuardrailsPoliciesPolicyIdPatch>>, TError,{policyId: string;data: UpdateGuardrailPolicyRequest}, TContext> => {
 
-/**
+const mutationKey = ['updatePolicyApiV1GuardrailsPoliciesPolicyIdPatch'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePolicyApiV1GuardrailsPoliciesPolicyIdPatch>>, {policyId: string;data: UpdateGuardrailPolicyRequest}> = (props) => {
+          const {policyId,data} = props ?? {};
+
+          return  updatePolicyApiV1GuardrailsPoliciesPolicyIdPatch(policyId,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdatePolicyApiV1GuardrailsPoliciesPolicyIdPatchMutationResult = NonNullable<Awaited<ReturnType<typeof updatePolicyApiV1GuardrailsPoliciesPolicyIdPatch>>>
+    export type UpdatePolicyApiV1GuardrailsPoliciesPolicyIdPatchMutationBody = UpdateGuardrailPolicyRequest
+    export type UpdatePolicyApiV1GuardrailsPoliciesPolicyIdPatchMutationError = HTTPValidationError
+
+    /**
  * @summary Update Policy
  */
-export const useUpdatePolicyApiV1GuardrailsPoliciesPolicyIdPatch = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof updatePolicyApiV1GuardrailsPoliciesPolicyIdPatch>>,
-      TError,
-      { policyId: string; data: UpdateGuardrailPolicyRequest },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof updatePolicyApiV1GuardrailsPoliciesPolicyIdPatch>>,
-  TError,
-  { policyId: string; data: UpdateGuardrailPolicyRequest },
-  TContext
-> => {
-  return useMutation(
-    getUpdatePolicyApiV1GuardrailsPoliciesPolicyIdPatchMutationOptions(options),
-    queryClient,
-  );
-};
-export type deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponse204 = {
-  data: void;
-  status: 204;
-};
+export const useUpdatePolicyApiV1GuardrailsPoliciesPolicyIdPatch = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePolicyApiV1GuardrailsPoliciesPolicyIdPatch>>, TError,{policyId: string;data: UpdateGuardrailPolicyRequest}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updatePolicyApiV1GuardrailsPoliciesPolicyIdPatch>>,
+        TError,
+        {policyId: string;data: UpdateGuardrailPolicyRequest},
+        TContext
+      > => {
+      return useMutation(getUpdatePolicyApiV1GuardrailsPoliciesPolicyIdPatchMutationOptions(options), queryClient);
+    }
+    export type deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponse204 = {
+  data: void
+  status: 204
+}
 
 export type deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponseSuccess = (deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponse204) & {
+  headers: Headers;
+};
+export type deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponseError = (deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponse422) & {
+  headers: Headers;
 };
 
-export type deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponseSuccess =
-  deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponse204 & {
-    headers: Headers;
-  };
-export type deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponseError =
-  deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponse422 & {
-    headers: Headers;
-  };
+export type deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponse = (deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponseSuccess | deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponseError)
 
-export type deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponse =
-  | deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponseSuccess
-  | deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponseError;
+export const getDeletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteUrl = (policyId: string,) => {
 
-export const getDeletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteUrl = (policyId: string) => {
-  return `/api/v1/guardrails/policies/${policyId}`;
-};
+
+
+
+  return `/api/v1/guardrails/policies/${policyId}`
+}
 
 /**
  * @summary Delete Policy
  */
-export const deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete = async (
-  policyId: string,
-  options?: RequestInit,
-): Promise<deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponse> => {
-  return apiMutator<deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponse>(
-    getDeletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteUrl(policyId),
-    {
-      ...options,
-      method: "DELETE",
-    },
-  );
-};
+export const deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete = async (policyId: string, options?: RequestInit): Promise<deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponse> => {
 
-export const getDeletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete>>,
-    TError,
-    { policyId: string },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete>>,
-  TError,
-  { policyId: string },
-  TContext
-> => {
-  const mutationKey = ["deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
+  return apiMutator<deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponse>(getDeletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteUrl(policyId),
+  {
+    ...options,
+    method: 'DELETE'
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete>>,
-    { policyId: string }
-  > = (props) => {
-    const { policyId } = props ?? {};
 
-    return deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete(policyId);
-  };
+  }
+);}
 
-  return { mutationFn, ...mutationOptions };
-};
 
-export type DeletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteMutationResult = NonNullable<
-  Awaited<ReturnType<typeof deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete>>
->;
 
-export type DeletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteMutationError = HTTPValidationError;
 
-/**
+export const getDeletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete>>, TError,{policyId: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete>>, TError,{policyId: string}, TContext> => {
+
+const mutationKey = ['deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete>>, {policyId: string}> = (props) => {
+          const {policyId} = props ?? {};
+
+          return  deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete(policyId,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete>>>
+
+    export type DeletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteMutationError = HTTPValidationError
+
+    /**
  * @summary Delete Policy
  */
-export const useDeletePolicyApiV1GuardrailsPoliciesPolicyIdDelete = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete>>,
-      TError,
-      { policyId: string },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete>>,
-  TError,
-  { policyId: string },
-  TContext
-> => {
-  return useMutation(
-    getDeletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteMutationOptions(options),
-    queryClient,
-  );
-};
-export type listAssignmentsApiV1GuardrailsAssignmentsGetResponse200 = {
-  data: GuardrailAssignmentResponse[];
-  status: 200;
-};
+export const useDeletePolicyApiV1GuardrailsPoliciesPolicyIdDelete = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete>>, TError,{policyId: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete>>,
+        TError,
+        {policyId: string},
+        TContext
+      > => {
+      return useMutation(getDeletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteMutationOptions(options), queryClient);
+    }
+    export type listAssignmentsApiV1GuardrailsAssignmentsGetResponse200 = {
+  data: GuardrailAssignmentResponse[]
+  status: 200
+}
 
-export type listAssignmentsApiV1GuardrailsAssignmentsGetResponseSuccess =
-  listAssignmentsApiV1GuardrailsAssignmentsGetResponse200 & {
-    headers: Headers;
-  };
-export type listAssignmentsApiV1GuardrailsAssignmentsGetResponse =
-  listAssignmentsApiV1GuardrailsAssignmentsGetResponseSuccess;
+export type listAssignmentsApiV1GuardrailsAssignmentsGetResponseSuccess = (listAssignmentsApiV1GuardrailsAssignmentsGetResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listAssignmentsApiV1GuardrailsAssignmentsGetResponse = (listAssignmentsApiV1GuardrailsAssignmentsGetResponseSuccess)
 
 export const getListAssignmentsApiV1GuardrailsAssignmentsGetUrl = () => {
-  return `/api/v1/guardrails/assignments`;
-};
+
+
+
+
+  return `/api/v1/guardrails/assignments`
+}
 
 /**
  * @summary List Assignments
  */
-export const listAssignmentsApiV1GuardrailsAssignmentsGet = async (
-  options?: RequestInit,
-): Promise<listAssignmentsApiV1GuardrailsAssignmentsGetResponse> => {
-  return apiMutator<listAssignmentsApiV1GuardrailsAssignmentsGetResponse>(
-    getListAssignmentsApiV1GuardrailsAssignmentsGetUrl(),
-    {
-      ...options,
-      method: "GET",
-    },
-  );
-};
+export const listAssignmentsApiV1GuardrailsAssignmentsGet = async ( options?: RequestInit): Promise<listAssignmentsApiV1GuardrailsAssignmentsGetResponse> => {
+
+  return apiMutator<listAssignmentsApiV1GuardrailsAssignmentsGetResponse>(getListAssignmentsApiV1GuardrailsAssignmentsGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
 
 export const getListAssignmentsApiV1GuardrailsAssignmentsGetQueryKey = () => {
-  return [`/api/v1/guardrails/assignments`] as const;
-};
+    return [
+    `/api/v1/guardrails/assignments`
+    ] as const;
+    }
 
-export const getListAssignmentsApiV1GuardrailsAssignmentsGetQueryOptions = <
-  TData = Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>,
-  TError = unknown,
->(options?: {
-  query?: Partial<
-    UseQueryOptions<
-      Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>,
-      TError,
-      TData
-    >
-  >;
-}) => {
-  const { query: queryOptions } = options ?? {};
 
-  const queryKey =
-    queryOptions?.queryKey ?? getListAssignmentsApiV1GuardrailsAssignmentsGetQueryKey();
+export const getListAssignmentsApiV1GuardrailsAssignmentsGetQueryOptions = <TData = Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>, TError, TData>>, }
+) => {
 
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>
-  > = ({ signal }) => listAssignmentsApiV1GuardrailsAssignmentsGet({ signal });
+const {query: queryOptions} = options ?? {};
 
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>,
-    TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
-};
+  const queryKey =  queryOptions?.queryKey ?? getListAssignmentsApiV1GuardrailsAssignmentsGetQueryKey();
 
-export type ListAssignmentsApiV1GuardrailsAssignmentsGetQueryResult = NonNullable<
-  Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>
->;
-export type ListAssignmentsApiV1GuardrailsAssignmentsGetQueryError = unknown;
 
-export function useListAssignmentsApiV1GuardrailsAssignmentsGet<
-  TData = Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>,
-  TError = unknown,
->(
-  options: {
-    query: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>> = ({ signal }) => listAssignmentsApiV1GuardrailsAssignmentsGet({ signal });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListAssignmentsApiV1GuardrailsAssignmentsGetQueryResult = NonNullable<Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>>
+export type ListAssignmentsApiV1GuardrailsAssignmentsGetQueryError = unknown
+
+
+export function useListAssignmentsApiV1GuardrailsAssignmentsGet<TData = Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>,
           TError,
           Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useListAssignmentsApiV1GuardrailsAssignmentsGet<
-  TData = Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>,
-  TError = unknown,
->(
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListAssignmentsApiV1GuardrailsAssignmentsGet<TData = Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>,
           TError,
           Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useListAssignmentsApiV1GuardrailsAssignmentsGet<
-  TData = Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>,
-  TError = unknown,
->(
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>,
-        TError,
-        TData
-      >
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListAssignmentsApiV1GuardrailsAssignmentsGet<TData = Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary List Assignments
  */
 
-export function useListAssignmentsApiV1GuardrailsAssignmentsGet<
-  TData = Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>,
-  TError = unknown,
->(
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>,
-        TError,
-        TData
-      >
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getListAssignmentsApiV1GuardrailsAssignmentsGetQueryOptions(options);
+export function useListAssignmentsApiV1GuardrailsAssignmentsGet<TData = Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
-    queryKey: DataTag<QueryKey, TData, TError>;
-  };
+  const queryOptions = getListAssignmentsApiV1GuardrailsAssignmentsGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
+
+
+
+
+
 export type createAssignmentApiV1GuardrailsAssignmentsPostResponse201 = {
-  data: GuardrailAssignmentResponse;
-  status: 201;
-};
+  data: GuardrailAssignmentResponse
+  status: 201
+}
 
 export type createAssignmentApiV1GuardrailsAssignmentsPostResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type createAssignmentApiV1GuardrailsAssignmentsPostResponseSuccess = (createAssignmentApiV1GuardrailsAssignmentsPostResponse201) & {
+  headers: Headers;
+};
+export type createAssignmentApiV1GuardrailsAssignmentsPostResponseError = (createAssignmentApiV1GuardrailsAssignmentsPostResponse422) & {
+  headers: Headers;
 };
 
-export type createAssignmentApiV1GuardrailsAssignmentsPostResponseSuccess =
-  createAssignmentApiV1GuardrailsAssignmentsPostResponse201 & {
-    headers: Headers;
-  };
-export type createAssignmentApiV1GuardrailsAssignmentsPostResponseError =
-  createAssignmentApiV1GuardrailsAssignmentsPostResponse422 & {
-    headers: Headers;
-  };
-
-export type createAssignmentApiV1GuardrailsAssignmentsPostResponse =
-  | createAssignmentApiV1GuardrailsAssignmentsPostResponseSuccess
-  | createAssignmentApiV1GuardrailsAssignmentsPostResponseError;
+export type createAssignmentApiV1GuardrailsAssignmentsPostResponse = (createAssignmentApiV1GuardrailsAssignmentsPostResponseSuccess | createAssignmentApiV1GuardrailsAssignmentsPostResponseError)
 
 export const getCreateAssignmentApiV1GuardrailsAssignmentsPostUrl = () => {
-  return `/api/v1/guardrails/assignments`;
-};
+
+
+
+
+  return `/api/v1/guardrails/assignments`
+}
 
 /**
  * @summary Create Assignment
  */
-export const createAssignmentApiV1GuardrailsAssignmentsPost = async (
-  createGuardrailAssignmentRequest: CreateGuardrailAssignmentRequest,
-  options?: RequestInit,
-): Promise<createAssignmentApiV1GuardrailsAssignmentsPostResponse> => {
-  return apiMutator<createAssignmentApiV1GuardrailsAssignmentsPostResponse>(
-    getCreateAssignmentApiV1GuardrailsAssignmentsPostUrl(),
-    {
-      ...options,
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(createGuardrailAssignmentRequest),
-    },
-  );
-};
+export const createAssignmentApiV1GuardrailsAssignmentsPost = async (createGuardrailAssignmentRequest: CreateGuardrailAssignmentRequest, options?: RequestInit): Promise<createAssignmentApiV1GuardrailsAssignmentsPostResponse> => {
 
-export const getCreateAssignmentApiV1GuardrailsAssignmentsPostMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof createAssignmentApiV1GuardrailsAssignmentsPost>>,
-    TError,
-    { data: CreateGuardrailAssignmentRequest },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof createAssignmentApiV1GuardrailsAssignmentsPost>>,
-  TError,
-  { data: CreateGuardrailAssignmentRequest },
-  TContext
-> => {
-  const mutationKey = ["createAssignmentApiV1GuardrailsAssignmentsPost"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
+  return apiMutator<createAssignmentApiV1GuardrailsAssignmentsPostResponse>(getCreateAssignmentApiV1GuardrailsAssignmentsPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      createGuardrailAssignmentRequest,)
+  }
+);}
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof createAssignmentApiV1GuardrailsAssignmentsPost>>,
-    { data: CreateGuardrailAssignmentRequest }
-  > = (props) => {
-    const { data } = props ?? {};
 
-    return createAssignmentApiV1GuardrailsAssignmentsPost(data);
-  };
 
-  return { mutationFn, ...mutationOptions };
-};
 
-export type CreateAssignmentApiV1GuardrailsAssignmentsPostMutationResult = NonNullable<
-  Awaited<ReturnType<typeof createAssignmentApiV1GuardrailsAssignmentsPost>>
->;
-export type CreateAssignmentApiV1GuardrailsAssignmentsPostMutationBody =
-  CreateGuardrailAssignmentRequest;
-export type CreateAssignmentApiV1GuardrailsAssignmentsPostMutationError = HTTPValidationError;
+export const getCreateAssignmentApiV1GuardrailsAssignmentsPostMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAssignmentApiV1GuardrailsAssignmentsPost>>, TError,{data: CreateGuardrailAssignmentRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof createAssignmentApiV1GuardrailsAssignmentsPost>>, TError,{data: CreateGuardrailAssignmentRequest}, TContext> => {
 
-/**
+const mutationKey = ['createAssignmentApiV1GuardrailsAssignmentsPost'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createAssignmentApiV1GuardrailsAssignmentsPost>>, {data: CreateGuardrailAssignmentRequest}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createAssignmentApiV1GuardrailsAssignmentsPost(data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateAssignmentApiV1GuardrailsAssignmentsPostMutationResult = NonNullable<Awaited<ReturnType<typeof createAssignmentApiV1GuardrailsAssignmentsPost>>>
+    export type CreateAssignmentApiV1GuardrailsAssignmentsPostMutationBody = CreateGuardrailAssignmentRequest
+    export type CreateAssignmentApiV1GuardrailsAssignmentsPostMutationError = HTTPValidationError
+
+    /**
  * @summary Create Assignment
  */
-export const useCreateAssignmentApiV1GuardrailsAssignmentsPost = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof createAssignmentApiV1GuardrailsAssignmentsPost>>,
-      TError,
-      { data: CreateGuardrailAssignmentRequest },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof createAssignmentApiV1GuardrailsAssignmentsPost>>,
-  TError,
-  { data: CreateGuardrailAssignmentRequest },
-  TContext
-> => {
-  return useMutation(
-    getCreateAssignmentApiV1GuardrailsAssignmentsPostMutationOptions(options),
-    queryClient,
-  );
-};
-export type updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponse200 = {
-  data: GuardrailAssignmentResponse;
-  status: 200;
-};
+export const useCreateAssignmentApiV1GuardrailsAssignmentsPost = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAssignmentApiV1GuardrailsAssignmentsPost>>, TError,{data: CreateGuardrailAssignmentRequest}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createAssignmentApiV1GuardrailsAssignmentsPost>>,
+        TError,
+        {data: CreateGuardrailAssignmentRequest},
+        TContext
+      > => {
+      return useMutation(getCreateAssignmentApiV1GuardrailsAssignmentsPostMutationOptions(options), queryClient);
+    }
+    export type updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponse200 = {
+  data: GuardrailAssignmentResponse
+  status: 200
+}
 
 export type updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponseSuccess = (updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponse200) & {
+  headers: Headers;
+};
+export type updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponseError = (updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponse422) & {
+  headers: Headers;
 };
 
-export type updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponseSuccess =
-  updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponse200 & {
-    headers: Headers;
-  };
-export type updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponseError =
-  updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponse422 & {
-    headers: Headers;
-  };
+export type updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponse = (updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponseSuccess | updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponseError)
 
-export type updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponse =
-  | updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponseSuccess
-  | updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponseError;
+export const getUpdateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchUrl = (assignmentId: string,) => {
 
-export const getUpdateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchUrl = (
-  assignmentId: string,
-) => {
-  return `/api/v1/guardrails/assignments/${assignmentId}`;
-};
+
+
+
+  return `/api/v1/guardrails/assignments/${assignmentId}`
+}
 
 /**
  * @summary Update Assignment
  */
-export const updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch = async (
-  assignmentId: string,
-  updateGuardrailAssignmentRequest: UpdateGuardrailAssignmentRequest,
-  options?: RequestInit,
-): Promise<updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponse> => {
-  return apiMutator<updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponse>(
-    getUpdateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchUrl(assignmentId),
-    {
-      ...options,
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(updateGuardrailAssignmentRequest),
-    },
-  );
-};
+export const updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch = async (assignmentId: string,
+    updateGuardrailAssignmentRequest: UpdateGuardrailAssignmentRequest, options?: RequestInit): Promise<updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponse> => {
 
-export const getUpdateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch>>,
-    TError,
-    { assignmentId: string; data: UpdateGuardrailAssignmentRequest },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch>>,
-  TError,
-  { assignmentId: string; data: UpdateGuardrailAssignmentRequest },
-  TContext
-> => {
-  const mutationKey = ["updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
+  return apiMutator<updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponse>(getUpdateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchUrl(assignmentId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateGuardrailAssignmentRequest,)
+  }
+);}
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch>>,
-    { assignmentId: string; data: UpdateGuardrailAssignmentRequest }
-  > = (props) => {
-    const { assignmentId, data } = props ?? {};
 
-    return updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch(assignmentId, data);
-  };
 
-  return { mutationFn, ...mutationOptions };
-};
 
-export type UpdateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchMutationResult = NonNullable<
-  Awaited<ReturnType<typeof updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch>>
->;
-export type UpdateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchMutationBody =
-  UpdateGuardrailAssignmentRequest;
-export type UpdateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchMutationError =
-  HTTPValidationError;
+export const getUpdateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch>>, TError,{assignmentId: string;data: UpdateGuardrailAssignmentRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch>>, TError,{assignmentId: string;data: UpdateGuardrailAssignmentRequest}, TContext> => {
 
-/**
+const mutationKey = ['updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch>>, {assignmentId: string;data: UpdateGuardrailAssignmentRequest}> = (props) => {
+          const {assignmentId,data} = props ?? {};
+
+          return  updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch(assignmentId,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchMutationResult = NonNullable<Awaited<ReturnType<typeof updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch>>>
+    export type UpdateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchMutationBody = UpdateGuardrailAssignmentRequest
+    export type UpdateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchMutationError = HTTPValidationError
+
+    /**
  * @summary Update Assignment
  */
-export const useUpdateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch>>,
-      TError,
-      { assignmentId: string; data: UpdateGuardrailAssignmentRequest },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch>>,
-  TError,
-  { assignmentId: string; data: UpdateGuardrailAssignmentRequest },
-  TContext
-> => {
-  return useMutation(
-    getUpdateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchMutationOptions(options),
-    queryClient,
-  );
-};
-export type deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponse204 = {
-  data: void;
-  status: 204;
-};
+export const useUpdateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch>>, TError,{assignmentId: string;data: UpdateGuardrailAssignmentRequest}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch>>,
+        TError,
+        {assignmentId: string;data: UpdateGuardrailAssignmentRequest},
+        TContext
+      > => {
+      return useMutation(getUpdateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchMutationOptions(options), queryClient);
+    }
+    export type deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponse204 = {
+  data: void
+  status: 204
+}
 
 export type deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponseSuccess = (deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponse204) & {
+  headers: Headers;
+};
+export type deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponseError = (deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponse422) & {
+  headers: Headers;
 };
 
-export type deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponseSuccess =
-  deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponse204 & {
-    headers: Headers;
-  };
-export type deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponseError =
-  deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponse422 & {
-    headers: Headers;
-  };
+export type deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponse = (deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponseSuccess | deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponseError)
 
-export type deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponse =
-  | deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponseSuccess
-  | deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponseError;
+export const getDeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteUrl = (assignmentId: string,) => {
 
-export const getDeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteUrl = (
-  assignmentId: string,
-) => {
-  return `/api/v1/guardrails/assignments/${assignmentId}`;
-};
+
+
+
+  return `/api/v1/guardrails/assignments/${assignmentId}`
+}
 
 /**
  * @summary Delete Assignment
  */
-export const deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete = async (
-  assignmentId: string,
-  options?: RequestInit,
-): Promise<deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponse> => {
-  return apiMutator<deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponse>(
-    getDeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteUrl(assignmentId),
-    {
-      ...options,
-      method: "DELETE",
-    },
-  );
-};
+export const deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete = async (assignmentId: string, options?: RequestInit): Promise<deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponse> => {
 
-export const getDeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete>>,
-    TError,
-    { assignmentId: string },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete>>,
-  TError,
-  { assignmentId: string },
-  TContext
-> => {
-  const mutationKey = ["deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
+  return apiMutator<deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponse>(getDeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteUrl(assignmentId),
+  {
+    ...options,
+    method: 'DELETE'
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete>>,
-    { assignmentId: string }
-  > = (props) => {
-    const { assignmentId } = props ?? {};
 
-    return deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete(assignmentId);
-  };
+  }
+);}
 
-  return { mutationFn, ...mutationOptions };
-};
 
-export type DeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteMutationResult =
-  NonNullable<
-    Awaited<ReturnType<typeof deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete>>
-  >;
 
-export type DeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteMutationError =
-  HTTPValidationError;
 
-/**
+export const getDeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete>>, TError,{assignmentId: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete>>, TError,{assignmentId: string}, TContext> => {
+
+const mutationKey = ['deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete>>, {assignmentId: string}> = (props) => {
+          const {assignmentId} = props ?? {};
+
+          return  deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete(assignmentId,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete>>>
+
+    export type DeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteMutationError = HTTPValidationError
+
+    /**
  * @summary Delete Assignment
  */
-export const useDeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete>>,
-      TError,
-      { assignmentId: string },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete>>,
-  TError,
-  { assignmentId: string },
-  TContext
-> => {
-  return useMutation(
-    getDeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteMutationOptions(options),
-    queryClient,
-  );
-};
-export type listEventsApiV1GuardrailsEventsGetResponse200 = {
-  data: GuardrailEventResponse[];
-  status: 200;
-};
+export const useDeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete>>, TError,{assignmentId: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete>>,
+        TError,
+        {assignmentId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteMutationOptions(options), queryClient);
+    }
+    export type listEventsApiV1GuardrailsEventsGetResponse200 = {
+  data: GuardrailEventResponse[]
+  status: 200
+}
 
 export type listEventsApiV1GuardrailsEventsGetResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type listEventsApiV1GuardrailsEventsGetResponseSuccess = (listEventsApiV1GuardrailsEventsGetResponse200) & {
+  headers: Headers;
+};
+export type listEventsApiV1GuardrailsEventsGetResponseError = (listEventsApiV1GuardrailsEventsGetResponse422) & {
+  headers: Headers;
 };
 
-export type listEventsApiV1GuardrailsEventsGetResponseSuccess =
-  listEventsApiV1GuardrailsEventsGetResponse200 & {
-    headers: Headers;
-  };
-export type listEventsApiV1GuardrailsEventsGetResponseError =
-  listEventsApiV1GuardrailsEventsGetResponse422 & {
-    headers: Headers;
-  };
+export type listEventsApiV1GuardrailsEventsGetResponse = (listEventsApiV1GuardrailsEventsGetResponseSuccess | listEventsApiV1GuardrailsEventsGetResponseError)
 
-export type listEventsApiV1GuardrailsEventsGetResponse =
-  | listEventsApiV1GuardrailsEventsGetResponseSuccess
-  | listEventsApiV1GuardrailsEventsGetResponseError;
-
-export const getListEventsApiV1GuardrailsEventsGetUrl = (
-  params?: ListEventsApiV1GuardrailsEventsGetParams,
-) => {
+export const getListEventsApiV1GuardrailsEventsGetUrl = (params?: ListEventsApiV1GuardrailsEventsGetParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
+
     if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
   });
 
   const stringifiedParams = normalizedParams.toString();
 
-  return stringifiedParams.length > 0
-    ? `/api/v1/guardrails/events?${stringifiedParams}`
-    : `/api/v1/guardrails/events`;
-};
+  return stringifiedParams.length > 0 ? `/api/v1/guardrails/events?${stringifiedParams}` : `/api/v1/guardrails/events`
+}
 
 /**
  * @summary List Events
  */
-export const listEventsApiV1GuardrailsEventsGet = async (
-  params?: ListEventsApiV1GuardrailsEventsGetParams,
-  options?: RequestInit,
-): Promise<listEventsApiV1GuardrailsEventsGetResponse> => {
-  return apiMutator<listEventsApiV1GuardrailsEventsGetResponse>(
-    getListEventsApiV1GuardrailsEventsGetUrl(params),
-    {
-      ...options,
-      method: "GET",
-    },
-  );
-};
+export const listEventsApiV1GuardrailsEventsGet = async (params?: ListEventsApiV1GuardrailsEventsGetParams, options?: RequestInit): Promise<listEventsApiV1GuardrailsEventsGetResponse> => {
 
-export const getListEventsApiV1GuardrailsEventsGetQueryKey = (
-  params?: ListEventsApiV1GuardrailsEventsGetParams,
+  return apiMutator<listEventsApiV1GuardrailsEventsGetResponse>(getListEventsApiV1GuardrailsEventsGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListEventsApiV1GuardrailsEventsGetQueryKey = (params?: ListEventsApiV1GuardrailsEventsGetParams,) => {
+    return [
+    `/api/v1/guardrails/events`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListEventsApiV1GuardrailsEventsGetQueryOptions = <TData = Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError = HTTPValidationError>(params?: ListEventsApiV1GuardrailsEventsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError, TData>>, }
 ) => {
-  return [`/api/v1/guardrails/events`, ...(params ? [params] : [])] as const;
-};
 
-export const getListEventsApiV1GuardrailsEventsGetQueryOptions = <
-  TData = Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>,
-  TError = HTTPValidationError,
->(
-  params?: ListEventsApiV1GuardrailsEventsGetParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError, TData>
-    >;
-  },
-) => {
-  const { query: queryOptions } = options ?? {};
+const {query: queryOptions} = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getListEventsApiV1GuardrailsEventsGetQueryKey(params);
+  const queryKey =  queryOptions?.queryKey ?? getListEventsApiV1GuardrailsEventsGetQueryKey(params);
 
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>> = ({
-    signal,
-  }) => listEventsApiV1GuardrailsEventsGet(params, { signal });
 
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>,
-    TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
-};
 
-export type ListEventsApiV1GuardrailsEventsGetQueryResult = NonNullable<
-  Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>
->;
-export type ListEventsApiV1GuardrailsEventsGetQueryError = HTTPValidationError;
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>> = ({ signal }) => listEventsApiV1GuardrailsEventsGet(params, { signal });
 
-export function useListEventsApiV1GuardrailsEventsGet<
-  TData = Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>,
-  TError = HTTPValidationError,
->(
-  params: undefined | ListEventsApiV1GuardrailsEventsGetParams,
-  options: {
-    query: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError, TData>
-    > &
-      Pick<
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListEventsApiV1GuardrailsEventsGetQueryResult = NonNullable<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>>
+export type ListEventsApiV1GuardrailsEventsGetQueryError = HTTPValidationError
+
+
+export function useListEventsApiV1GuardrailsEventsGet<TData = Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError = HTTPValidationError>(
+ params: undefined |  ListEventsApiV1GuardrailsEventsGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>,
           TError,
           Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useListEventsApiV1GuardrailsEventsGet<
-  TData = Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>,
-  TError = HTTPValidationError,
->(
-  params?: ListEventsApiV1GuardrailsEventsGetParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError, TData>
-    > &
-      Pick<
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListEventsApiV1GuardrailsEventsGet<TData = Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError = HTTPValidationError>(
+ params?: ListEventsApiV1GuardrailsEventsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>,
           TError,
           Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useListEventsApiV1GuardrailsEventsGet<
-  TData = Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>,
-  TError = HTTPValidationError,
->(
-  params?: ListEventsApiV1GuardrailsEventsGetParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError, TData>
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListEventsApiV1GuardrailsEventsGet<TData = Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError = HTTPValidationError>(
+ params?: ListEventsApiV1GuardrailsEventsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary List Events
  */
 
-export function useListEventsApiV1GuardrailsEventsGet<
-  TData = Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>,
-  TError = HTTPValidationError,
->(
-  params?: ListEventsApiV1GuardrailsEventsGetParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError, TData>
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getListEventsApiV1GuardrailsEventsGetQueryOptions(params, options);
+export function useListEventsApiV1GuardrailsEventsGet<TData = Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError = HTTPValidationError>(
+ params?: ListEventsApiV1GuardrailsEventsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
-    queryKey: DataTag<QueryKey, TData, TError>;
-  };
+  const queryOptions = getListEventsApiV1GuardrailsEventsGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
+
+
+
+
+
 export type simulateGuardrailsApiV1GuardrailsSimulatePostResponse200 = {
-  data: GuardrailSimulationResponse;
-  status: 200;
-};
+  data: GuardrailSimulationResponse
+  status: 200
+}
 
 export type simulateGuardrailsApiV1GuardrailsSimulatePostResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type simulateGuardrailsApiV1GuardrailsSimulatePostResponseSuccess = (simulateGuardrailsApiV1GuardrailsSimulatePostResponse200) & {
+  headers: Headers;
+};
+export type simulateGuardrailsApiV1GuardrailsSimulatePostResponseError = (simulateGuardrailsApiV1GuardrailsSimulatePostResponse422) & {
+  headers: Headers;
 };
 
-export type simulateGuardrailsApiV1GuardrailsSimulatePostResponseSuccess =
-  simulateGuardrailsApiV1GuardrailsSimulatePostResponse200 & {
-    headers: Headers;
-  };
-export type simulateGuardrailsApiV1GuardrailsSimulatePostResponseError =
-  simulateGuardrailsApiV1GuardrailsSimulatePostResponse422 & {
-    headers: Headers;
-  };
-
-export type simulateGuardrailsApiV1GuardrailsSimulatePostResponse =
-  | simulateGuardrailsApiV1GuardrailsSimulatePostResponseSuccess
-  | simulateGuardrailsApiV1GuardrailsSimulatePostResponseError;
+export type simulateGuardrailsApiV1GuardrailsSimulatePostResponse = (simulateGuardrailsApiV1GuardrailsSimulatePostResponseSuccess | simulateGuardrailsApiV1GuardrailsSimulatePostResponseError)
 
 export const getSimulateGuardrailsApiV1GuardrailsSimulatePostUrl = () => {
-  return `/api/v1/guardrails/simulate`;
-};
+
+
+
+
+  return `/api/v1/guardrails/simulate`
+}
 
 /**
  * @summary Simulate Guardrails
  */
-export const simulateGuardrailsApiV1GuardrailsSimulatePost = async (
-  guardrailSimulationRequest: GuardrailSimulationRequest,
-  options?: RequestInit,
-): Promise<simulateGuardrailsApiV1GuardrailsSimulatePostResponse> => {
-  return apiMutator<simulateGuardrailsApiV1GuardrailsSimulatePostResponse>(
-    getSimulateGuardrailsApiV1GuardrailsSimulatePostUrl(),
-    {
-      ...options,
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(guardrailSimulationRequest),
-    },
-  );
-};
+export const simulateGuardrailsApiV1GuardrailsSimulatePost = async (guardrailSimulationRequest: GuardrailSimulationRequest, options?: RequestInit): Promise<simulateGuardrailsApiV1GuardrailsSimulatePostResponse> => {
 
-export const getSimulateGuardrailsApiV1GuardrailsSimulatePostMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof simulateGuardrailsApiV1GuardrailsSimulatePost>>,
-    TError,
-    { data: GuardrailSimulationRequest },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof simulateGuardrailsApiV1GuardrailsSimulatePost>>,
-  TError,
-  { data: GuardrailSimulationRequest },
-  TContext
-> => {
-  const mutationKey = ["simulateGuardrailsApiV1GuardrailsSimulatePost"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
+  return apiMutator<simulateGuardrailsApiV1GuardrailsSimulatePostResponse>(getSimulateGuardrailsApiV1GuardrailsSimulatePostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      guardrailSimulationRequest,)
+  }
+);}
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof simulateGuardrailsApiV1GuardrailsSimulatePost>>,
-    { data: GuardrailSimulationRequest }
-  > = (props) => {
-    const { data } = props ?? {};
 
-    return simulateGuardrailsApiV1GuardrailsSimulatePost(data);
-  };
 
-  return { mutationFn, ...mutationOptions };
-};
 
-export type SimulateGuardrailsApiV1GuardrailsSimulatePostMutationResult = NonNullable<
-  Awaited<ReturnType<typeof simulateGuardrailsApiV1GuardrailsSimulatePost>>
->;
-export type SimulateGuardrailsApiV1GuardrailsSimulatePostMutationBody = GuardrailSimulationRequest;
-export type SimulateGuardrailsApiV1GuardrailsSimulatePostMutationError = HTTPValidationError;
+export const getSimulateGuardrailsApiV1GuardrailsSimulatePostMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof simulateGuardrailsApiV1GuardrailsSimulatePost>>, TError,{data: GuardrailSimulationRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof simulateGuardrailsApiV1GuardrailsSimulatePost>>, TError,{data: GuardrailSimulationRequest}, TContext> => {
 
-/**
+const mutationKey = ['simulateGuardrailsApiV1GuardrailsSimulatePost'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof simulateGuardrailsApiV1GuardrailsSimulatePost>>, {data: GuardrailSimulationRequest}> = (props) => {
+          const {data} = props ?? {};
+
+          return  simulateGuardrailsApiV1GuardrailsSimulatePost(data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SimulateGuardrailsApiV1GuardrailsSimulatePostMutationResult = NonNullable<Awaited<ReturnType<typeof simulateGuardrailsApiV1GuardrailsSimulatePost>>>
+    export type SimulateGuardrailsApiV1GuardrailsSimulatePostMutationBody = GuardrailSimulationRequest
+    export type SimulateGuardrailsApiV1GuardrailsSimulatePostMutationError = HTTPValidationError
+
+    /**
  * @summary Simulate Guardrails
  */
-export const useSimulateGuardrailsApiV1GuardrailsSimulatePost = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof simulateGuardrailsApiV1GuardrailsSimulatePost>>,
-      TError,
-      { data: GuardrailSimulationRequest },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof simulateGuardrailsApiV1GuardrailsSimulatePost>>,
-  TError,
-  { data: GuardrailSimulationRequest },
-  TContext
-> => {
-  return useMutation(
-    getSimulateGuardrailsApiV1GuardrailsSimulatePostMutationOptions(options),
-    queryClient,
-  );
-};
+export const useSimulateGuardrailsApiV1GuardrailsSimulatePost = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof simulateGuardrailsApiV1GuardrailsSimulatePost>>, TError,{data: GuardrailSimulationRequest}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof simulateGuardrailsApiV1GuardrailsSimulatePost>>,
+        TError,
+        {data: GuardrailSimulationRequest},
+        TContext
+      > => {
+      return useMutation(getSimulateGuardrailsApiV1GuardrailsSimulatePostMutationOptions(options), queryClient);
+    }

@@ -4,7 +4,7 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { ActivityEventResponseMetadata } from "./activityEventResponseMetadata";
+import type { ActivityEventResponseMetadata } from './activityEventResponseMetadata';
 
 export interface ActivityEventResponse {
   id: string;
@@ -17,7 +17,6 @@ export interface ActivityEventResponse {
   actor_email: string | null;
   team_id: string | null;
   project_id: string | null;
-  allocation_id: string | null;
   virtual_key_id: string | null;
   provider_id: string | null;
   pool_id: string | null;

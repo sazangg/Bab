@@ -1,4 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { z } from "zod";
@@ -20,6 +21,7 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const queryClient = useQueryClient();
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const setSession = useAuthStore((state) => state.setSession);
   const form = useForm<LoginFormValues>({
@@ -33,6 +35,7 @@ export function LoginPage() {
     mutation: {
       onSuccess: (response) => {
         if (response.status === 200) {
+          queryClient.clear();
           setSession(response.data.access_token);
           const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
           navigate(from && from !== "/login" ? from : "/", { replace: true });

@@ -452,7 +452,7 @@ export function ProviderDetailPage() {
         filters={{ provider_id: provider.id }}
       />
 
-      <ProviderResourcesPanel provider={provider} />
+      <ProviderResourcesPanel provider={provider} canManage={canManageProviders} />
 
       <Dialog open={isDeactivateOpen} onOpenChange={setIsDeactivateOpen}>
         <DialogContent>

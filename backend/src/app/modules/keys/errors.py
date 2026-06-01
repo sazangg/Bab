@@ -2,7 +2,7 @@ class ProjectNotFoundError(Exception):
     pass
 
 
-class AllocationNotFoundError(Exception):
+class PolicyNotConfiguredError(Exception):
     pass
 
 

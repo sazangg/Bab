@@ -7,11 +7,10 @@
 
 export interface CreateGuardrailAssignmentRequest {
   policy_id: string;
-  /** @pattern ^(org|team|project|allocation|virtual_key)$ */
+  /** @pattern ^(org|team|project|virtual_key)$ */
   scope_type: string;
   team_id?: string | null;
   project_id?: string | null;
-  allocation_id?: string | null;
   virtual_key_id?: string | null;
   /** @pattern ^(enforce|dry_run)$ */
   enforcement_mode?: string;

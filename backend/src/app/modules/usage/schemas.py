@@ -8,7 +8,10 @@ class RecordUsage(BaseModel):
     org_id: UUID
     team_id: UUID
     project_id: UUID
-    allocation_id: UUID
+    access_policy_id: UUID | None = None
+    access_policy_route_id: UUID | None = None
+    limit_policy_ids: list[str] | None = None
+    limit_policy_rule_ids: list[str] | None = None
     virtual_key_id: UUID
     pool_id: UUID
     provider_id: UUID
@@ -35,9 +38,10 @@ class UsageRecordResponse(RecordUsage):
     provider_credential_prefix: str | None = None
 
 
-class RecordAllocationReservation(BaseModel):
+class RecordLimitPolicyReservation(BaseModel):
     org_id: UUID
-    allocation_id: UUID
+    limit_policy_id: UUID | None = None
+    limit_policy_rule_id: UUID | None = None
     virtual_key_id: UUID
     request_id: str | None = None
     reserved_prompt_tokens: int = 0
@@ -47,7 +51,7 @@ class RecordAllocationReservation(BaseModel):
     expires_at: datetime
 
 
-class AllocationReservationSummary(BaseModel):
+class LimitPolicyReservationSummary(BaseModel):
     requests: int = 0
     prompt_tokens: int = 0
     completion_tokens: int = 0
@@ -75,10 +79,11 @@ class UsageBreakdownRow(UsageSummaryTotals):
     label: str
 
 
-class AllocationBudgetBurnRow(BaseModel):
-    allocation_id: UUID
-    allocation_name: str
-    target_type: str
+class LimitPolicyBudgetBurnRow(BaseModel):
+    limit_policy_id: UUID
+    limit_policy_rule_id: UUID
+    limit_policy_name: str
+    rule_name: str
     window: str
     budget_cents: int
     spent_cents: int
@@ -89,17 +94,7 @@ class AllocationBudgetBurnRow(BaseModel):
 class SpendInsights(BaseModel):
     window: str
     top_spend_drivers: list[UsageBreakdownRow]
-    allocation_budget_burn: list[AllocationBudgetBurnRow]
-
-
-class AllocationUsageSummary(BaseModel):
-    allocation_id: UUID
-    window: str
-    totals: UsageSummaryTotals
-    by_virtual_key: list[UsageBreakdownRow]
-    by_provider: list[UsageBreakdownRow]
-    by_model: list[UsageBreakdownRow]
-    by_pool: list[UsageBreakdownRow]
+    limit_policy_budget_burn: list[LimitPolicyBudgetBurnRow]
 
 
 class VirtualKeyUsageSummary(BaseModel):
@@ -108,7 +103,7 @@ class VirtualKeyUsageSummary(BaseModel):
     by_provider: list[UsageBreakdownRow]
     by_model: list[UsageBreakdownRow]
     by_pool: list[UsageBreakdownRow]
-    by_allocation: list[UsageBreakdownRow]
+    by_access_policy: list[UsageBreakdownRow]
 
 
 class OrganizationUsageSummary(BaseModel):
@@ -119,5 +114,5 @@ class OrganizationUsageSummary(BaseModel):
     by_pool: list[UsageBreakdownRow]
     by_team: list[UsageBreakdownRow]
     by_project: list[UsageBreakdownRow]
-    by_allocation: list[UsageBreakdownRow]
+    by_access_policy: list[UsageBreakdownRow]
     by_virtual_key: list[UsageBreakdownRow]

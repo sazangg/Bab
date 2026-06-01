@@ -5,13 +5,13 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type GetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetWindow =
-  (typeof GetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetWindow)[keyof typeof GetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetWindow];
+export type GetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetWindow = typeof GetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetWindow[keyof typeof GetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetWindow];
+
 
 export const GetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetWindow = {
-  "24h": "24h",
-  "7d": "7d",
-  "30d": "30d",
-  "90d": "90d",
-  lifetime: "lifetime",
+  '24h': '24h',
+  '7d': '7d',
+  '30d': '30d',
+  '90d': '90d',
+  lifetime: 'lifetime',
 } as const;

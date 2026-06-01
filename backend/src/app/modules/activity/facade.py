@@ -28,7 +28,6 @@ async def record_admin_event(
     severity: str = "info",
     team_id: UUID | None = None,
     project_id: UUID | None = None,
-    allocation_id: UUID | None = None,
     virtual_key_id: UUID | None = None,
     provider_id: UUID | None = None,
     pool_id: UUID | None = None,
@@ -45,7 +44,6 @@ async def record_admin_event(
             entity_type=_audit_entity_type(
                 team_id=team_id,
                 project_id=project_id,
-                allocation_id=allocation_id,
                 virtual_key_id=virtual_key_id,
                 provider_id=provider_id,
                 pool_id=pool_id,
@@ -54,7 +52,6 @@ async def record_admin_event(
             entity_id=(
                 team_id
                 or project_id
-                or allocation_id
                 or virtual_key_id
                 or provider_id
                 or pool_id
@@ -74,7 +71,6 @@ async def record_admin_event(
             actor_email=str(actor.email),
             team_id=team_id,
             project_id=project_id,
-            allocation_id=allocation_id,
             virtual_key_id=virtual_key_id,
             provider_id=provider_id,
             pool_id=pool_id,
@@ -89,7 +85,6 @@ def _audit_entity_type(
     *,
     team_id: UUID | None,
     project_id: UUID | None,
-    allocation_id: UUID | None,
     virtual_key_id: UUID | None,
     provider_id: UUID | None,
     pool_id: UUID | None,
@@ -99,8 +94,6 @@ def _audit_entity_type(
         return "team"
     if project_id:
         return "project"
-    if allocation_id:
-        return "allocation"
     if virtual_key_id:
         return "virtual_key"
     if provider_id:

@@ -4,7 +4,10 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery
+} from '@tanstack/react-query';
 import type {
   DataTag,
   DefinedInitialDataOptions,
@@ -17,373 +20,310 @@ import type {
   UseMutationOptions,
   UseMutationResult,
   UseQueryOptions,
-  UseQueryResult,
-} from "@tanstack/react-query";
+  UseQueryResult
+} from '@tanstack/react-query';
 
 import type {
   BodyUploadOrganizationLogoApiV1SettingsOrganizationLogoPost,
   HTTPValidationError,
   OrganizationSettingsResponse,
-  UpdateOrganizationSettingsRequest,
-} from "../schemas";
+  UpdateOrganizationSettingsRequest
+} from '../schemas';
 
-import { apiMutator } from "../../orval-mutator";
+import { apiMutator } from '../../orval-mutator';
+
+
+
 
 export type getSettingsApiV1SettingsGetResponse200 = {
-  data: OrganizationSettingsResponse;
-  status: 200;
-};
+  data: OrganizationSettingsResponse
+  status: 200
+}
 
-export type getSettingsApiV1SettingsGetResponseSuccess = getSettingsApiV1SettingsGetResponse200 & {
+export type getSettingsApiV1SettingsGetResponseSuccess = (getSettingsApiV1SettingsGetResponse200) & {
   headers: Headers;
 };
-export type getSettingsApiV1SettingsGetResponse = getSettingsApiV1SettingsGetResponseSuccess;
+;
+
+export type getSettingsApiV1SettingsGetResponse = (getSettingsApiV1SettingsGetResponseSuccess)
 
 export const getGetSettingsApiV1SettingsGetUrl = () => {
-  return `/api/v1/settings`;
-};
+
+
+
+
+  return `/api/v1/settings`
+}
 
 /**
  * @summary Get Settings
  */
-export const getSettingsApiV1SettingsGet = async (
-  options?: RequestInit,
-): Promise<getSettingsApiV1SettingsGetResponse> => {
-  return apiMutator<getSettingsApiV1SettingsGetResponse>(getGetSettingsApiV1SettingsGetUrl(), {
+export const getSettingsApiV1SettingsGet = async ( options?: RequestInit): Promise<getSettingsApiV1SettingsGetResponse> => {
+
+  return apiMutator<getSettingsApiV1SettingsGetResponse>(getGetSettingsApiV1SettingsGetUrl(),
+  {
     ...options,
-    method: "GET",
-  });
-};
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
 
 export const getGetSettingsApiV1SettingsGetQueryKey = () => {
-  return [`/api/v1/settings`] as const;
-};
+    return [
+    `/api/v1/settings`
+    ] as const;
+    }
 
-export const getGetSettingsApiV1SettingsGetQueryOptions = <
-  TData = Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>,
-  TError = unknown,
->(options?: {
-  query?: Partial<
-    UseQueryOptions<Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError, TData>
-  >;
-}) => {
-  const { query: queryOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getGetSettingsApiV1SettingsGetQueryKey();
+export const getGetSettingsApiV1SettingsGetQueryOptions = <TData = Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError, TData>>, }
+) => {
 
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>> = ({
-    signal,
-  }) => getSettingsApiV1SettingsGet({ signal });
+const {query: queryOptions} = options ?? {};
 
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>,
-    TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
-};
+  const queryKey =  queryOptions?.queryKey ?? getGetSettingsApiV1SettingsGetQueryKey();
 
-export type GetSettingsApiV1SettingsGetQueryResult = NonNullable<
-  Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>
->;
-export type GetSettingsApiV1SettingsGetQueryError = unknown;
 
-export function useGetSettingsApiV1SettingsGet<
-  TData = Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>,
-  TError = unknown,
->(
-  options: {
-    query: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError, TData>
-    > &
-      Pick<
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>> = ({ signal }) => getSettingsApiV1SettingsGet({ signal });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSettingsApiV1SettingsGetQueryResult = NonNullable<Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>>
+export type GetSettingsApiV1SettingsGetQueryError = unknown
+
+
+export function useGetSettingsApiV1SettingsGet<TData = Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>,
           TError,
           Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useGetSettingsApiV1SettingsGet<
-  TData = Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>,
-  TError = unknown,
->(
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError, TData>
-    > &
-      Pick<
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSettingsApiV1SettingsGet<TData = Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>,
           TError,
           Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useGetSettingsApiV1SettingsGet<
-  TData = Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>,
-  TError = unknown,
->(
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError, TData>
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSettingsApiV1SettingsGet<TData = Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary Get Settings
  */
 
-export function useGetSettingsApiV1SettingsGet<
-  TData = Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>,
-  TError = unknown,
->(
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError, TData>
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getGetSettingsApiV1SettingsGetQueryOptions(options);
+export function useGetSettingsApiV1SettingsGet<TData = Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
-    queryKey: DataTag<QueryKey, TData, TError>;
-  };
+  const queryOptions = getGetSettingsApiV1SettingsGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
+
+
+
+
+
 export type updateSettingsApiV1SettingsPatchResponse200 = {
-  data: OrganizationSettingsResponse;
-  status: 200;
-};
+  data: OrganizationSettingsResponse
+  status: 200
+}
 
 export type updateSettingsApiV1SettingsPatchResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type updateSettingsApiV1SettingsPatchResponseSuccess = (updateSettingsApiV1SettingsPatchResponse200) & {
+  headers: Headers;
+};
+export type updateSettingsApiV1SettingsPatchResponseError = (updateSettingsApiV1SettingsPatchResponse422) & {
+  headers: Headers;
 };
 
-export type updateSettingsApiV1SettingsPatchResponseSuccess =
-  updateSettingsApiV1SettingsPatchResponse200 & {
-    headers: Headers;
-  };
-export type updateSettingsApiV1SettingsPatchResponseError =
-  updateSettingsApiV1SettingsPatchResponse422 & {
-    headers: Headers;
-  };
-
-export type updateSettingsApiV1SettingsPatchResponse =
-  | updateSettingsApiV1SettingsPatchResponseSuccess
-  | updateSettingsApiV1SettingsPatchResponseError;
+export type updateSettingsApiV1SettingsPatchResponse = (updateSettingsApiV1SettingsPatchResponseSuccess | updateSettingsApiV1SettingsPatchResponseError)
 
 export const getUpdateSettingsApiV1SettingsPatchUrl = () => {
-  return `/api/v1/settings`;
-};
+
+
+
+
+  return `/api/v1/settings`
+}
 
 /**
  * @summary Update Settings
  */
-export const updateSettingsApiV1SettingsPatch = async (
-  updateOrganizationSettingsRequest: UpdateOrganizationSettingsRequest,
-  options?: RequestInit,
-): Promise<updateSettingsApiV1SettingsPatchResponse> => {
-  return apiMutator<updateSettingsApiV1SettingsPatchResponse>(
-    getUpdateSettingsApiV1SettingsPatchUrl(),
-    {
-      ...options,
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(updateOrganizationSettingsRequest),
-    },
-  );
-};
+export const updateSettingsApiV1SettingsPatch = async (updateOrganizationSettingsRequest: UpdateOrganizationSettingsRequest, options?: RequestInit): Promise<updateSettingsApiV1SettingsPatchResponse> => {
 
-export const getUpdateSettingsApiV1SettingsPatchMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof updateSettingsApiV1SettingsPatch>>,
-    TError,
-    { data: UpdateOrganizationSettingsRequest },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof updateSettingsApiV1SettingsPatch>>,
-  TError,
-  { data: UpdateOrganizationSettingsRequest },
-  TContext
-> => {
-  const mutationKey = ["updateSettingsApiV1SettingsPatch"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
+  return apiMutator<updateSettingsApiV1SettingsPatchResponse>(getUpdateSettingsApiV1SettingsPatchUrl(),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateOrganizationSettingsRequest,)
+  }
+);}
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof updateSettingsApiV1SettingsPatch>>,
-    { data: UpdateOrganizationSettingsRequest }
-  > = (props) => {
-    const { data } = props ?? {};
 
-    return updateSettingsApiV1SettingsPatch(data);
-  };
 
-  return { mutationFn, ...mutationOptions };
-};
 
-export type UpdateSettingsApiV1SettingsPatchMutationResult = NonNullable<
-  Awaited<ReturnType<typeof updateSettingsApiV1SettingsPatch>>
->;
-export type UpdateSettingsApiV1SettingsPatchMutationBody = UpdateOrganizationSettingsRequest;
-export type UpdateSettingsApiV1SettingsPatchMutationError = HTTPValidationError;
+export const getUpdateSettingsApiV1SettingsPatchMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSettingsApiV1SettingsPatch>>, TError,{data: UpdateOrganizationSettingsRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof updateSettingsApiV1SettingsPatch>>, TError,{data: UpdateOrganizationSettingsRequest}, TContext> => {
 
-/**
+const mutationKey = ['updateSettingsApiV1SettingsPatch'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateSettingsApiV1SettingsPatch>>, {data: UpdateOrganizationSettingsRequest}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateSettingsApiV1SettingsPatch(data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateSettingsApiV1SettingsPatchMutationResult = NonNullable<Awaited<ReturnType<typeof updateSettingsApiV1SettingsPatch>>>
+    export type UpdateSettingsApiV1SettingsPatchMutationBody = UpdateOrganizationSettingsRequest
+    export type UpdateSettingsApiV1SettingsPatchMutationError = HTTPValidationError
+
+    /**
  * @summary Update Settings
  */
-export const useUpdateSettingsApiV1SettingsPatch = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof updateSettingsApiV1SettingsPatch>>,
-      TError,
-      { data: UpdateOrganizationSettingsRequest },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof updateSettingsApiV1SettingsPatch>>,
-  TError,
-  { data: UpdateOrganizationSettingsRequest },
-  TContext
-> => {
-  return useMutation(getUpdateSettingsApiV1SettingsPatchMutationOptions(options), queryClient);
-};
-export type uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponse200 = {
-  data: OrganizationSettingsResponse;
-  status: 200;
-};
+export const useUpdateSettingsApiV1SettingsPatch = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSettingsApiV1SettingsPatch>>, TError,{data: UpdateOrganizationSettingsRequest}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateSettingsApiV1SettingsPatch>>,
+        TError,
+        {data: UpdateOrganizationSettingsRequest},
+        TContext
+      > => {
+      return useMutation(getUpdateSettingsApiV1SettingsPatchMutationOptions(options), queryClient);
+    }
+    export type uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponse200 = {
+  data: OrganizationSettingsResponse
+  status: 200
+}
 
 export type uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponseSuccess = (uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponse200) & {
+  headers: Headers;
+};
+export type uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponseError = (uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponse422) & {
+  headers: Headers;
 };
 
-export type uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponseSuccess =
-  uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponse200 & {
-    headers: Headers;
-  };
-export type uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponseError =
-  uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponse422 & {
-    headers: Headers;
-  };
-
-export type uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponse =
-  | uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponseSuccess
-  | uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponseError;
+export type uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponse = (uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponseSuccess | uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponseError)
 
 export const getUploadOrganizationLogoApiV1SettingsOrganizationLogoPostUrl = () => {
-  return `/api/v1/settings/organization-logo`;
-};
+
+
+
+
+  return `/api/v1/settings/organization-logo`
+}
 
 /**
  * @summary Upload Organization Logo
  */
-export const uploadOrganizationLogoApiV1SettingsOrganizationLogoPost = async (
-  bodyUploadOrganizationLogoApiV1SettingsOrganizationLogoPost: BodyUploadOrganizationLogoApiV1SettingsOrganizationLogoPost,
-  options?: RequestInit,
-): Promise<uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponse> => {
-  const formData = new FormData();
-  formData.append(`file`, bodyUploadOrganizationLogoApiV1SettingsOrganizationLogoPost.file);
+export const uploadOrganizationLogoApiV1SettingsOrganizationLogoPost = async (bodyUploadOrganizationLogoApiV1SettingsOrganizationLogoPost: BodyUploadOrganizationLogoApiV1SettingsOrganizationLogoPost, options?: RequestInit): Promise<uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponse> => {
+    const formData = new FormData();
+formData.append(`file`, bodyUploadOrganizationLogoApiV1SettingsOrganizationLogoPost.file);
 
-  return apiMutator<uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponse>(
-    getUploadOrganizationLogoApiV1SettingsOrganizationLogoPostUrl(),
-    {
-      ...options,
-      method: "POST",
-      body: formData,
-    },
-  );
-};
+  return apiMutator<uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponse>(getUploadOrganizationLogoApiV1SettingsOrganizationLogoPostUrl(),
+  {
+    ...options,
+    method: 'POST'
+    ,
+    body:
+      formData,
+  }
+);}
 
-export const getUploadOrganizationLogoApiV1SettingsOrganizationLogoPostMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof uploadOrganizationLogoApiV1SettingsOrganizationLogoPost>>,
-    TError,
-    { data: BodyUploadOrganizationLogoApiV1SettingsOrganizationLogoPost },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof uploadOrganizationLogoApiV1SettingsOrganizationLogoPost>>,
-  TError,
-  { data: BodyUploadOrganizationLogoApiV1SettingsOrganizationLogoPost },
-  TContext
-> => {
-  const mutationKey = ["uploadOrganizationLogoApiV1SettingsOrganizationLogoPost"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof uploadOrganizationLogoApiV1SettingsOrganizationLogoPost>>,
-    { data: BodyUploadOrganizationLogoApiV1SettingsOrganizationLogoPost }
-  > = (props) => {
-    const { data } = props ?? {};
 
-    return uploadOrganizationLogoApiV1SettingsOrganizationLogoPost(data);
-  };
 
-  return { mutationFn, ...mutationOptions };
-};
+export const getUploadOrganizationLogoApiV1SettingsOrganizationLogoPostMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadOrganizationLogoApiV1SettingsOrganizationLogoPost>>, TError,{data: BodyUploadOrganizationLogoApiV1SettingsOrganizationLogoPost}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof uploadOrganizationLogoApiV1SettingsOrganizationLogoPost>>, TError,{data: BodyUploadOrganizationLogoApiV1SettingsOrganizationLogoPost}, TContext> => {
 
-export type UploadOrganizationLogoApiV1SettingsOrganizationLogoPostMutationResult = NonNullable<
-  Awaited<ReturnType<typeof uploadOrganizationLogoApiV1SettingsOrganizationLogoPost>>
->;
-export type UploadOrganizationLogoApiV1SettingsOrganizationLogoPostMutationBody =
-  BodyUploadOrganizationLogoApiV1SettingsOrganizationLogoPost;
-export type UploadOrganizationLogoApiV1SettingsOrganizationLogoPostMutationError =
-  HTTPValidationError;
+const mutationKey = ['uploadOrganizationLogoApiV1SettingsOrganizationLogoPost'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
 
-/**
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof uploadOrganizationLogoApiV1SettingsOrganizationLogoPost>>, {data: BodyUploadOrganizationLogoApiV1SettingsOrganizationLogoPost}> = (props) => {
+          const {data} = props ?? {};
+
+          return  uploadOrganizationLogoApiV1SettingsOrganizationLogoPost(data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UploadOrganizationLogoApiV1SettingsOrganizationLogoPostMutationResult = NonNullable<Awaited<ReturnType<typeof uploadOrganizationLogoApiV1SettingsOrganizationLogoPost>>>
+    export type UploadOrganizationLogoApiV1SettingsOrganizationLogoPostMutationBody = BodyUploadOrganizationLogoApiV1SettingsOrganizationLogoPost
+    export type UploadOrganizationLogoApiV1SettingsOrganizationLogoPostMutationError = HTTPValidationError
+
+    /**
  * @summary Upload Organization Logo
  */
-export const useUploadOrganizationLogoApiV1SettingsOrganizationLogoPost = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof uploadOrganizationLogoApiV1SettingsOrganizationLogoPost>>,
-      TError,
-      { data: BodyUploadOrganizationLogoApiV1SettingsOrganizationLogoPost },
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof uploadOrganizationLogoApiV1SettingsOrganizationLogoPost>>,
-  TError,
-  { data: BodyUploadOrganizationLogoApiV1SettingsOrganizationLogoPost },
-  TContext
-> => {
-  return useMutation(
-    getUploadOrganizationLogoApiV1SettingsOrganizationLogoPostMutationOptions(options),
-    queryClient,
-  );
-};
+export const useUploadOrganizationLogoApiV1SettingsOrganizationLogoPost = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadOrganizationLogoApiV1SettingsOrganizationLogoPost>>, TError,{data: BodyUploadOrganizationLogoApiV1SettingsOrganizationLogoPost}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof uploadOrganizationLogoApiV1SettingsOrganizationLogoPost>>,
+        TError,
+        {data: BodyUploadOrganizationLogoApiV1SettingsOrganizationLogoPost},
+        TContext
+      > => {
+      return useMutation(getUploadOrganizationLogoApiV1SettingsOrganizationLogoPostMutationOptions(options), queryClient);
+    }

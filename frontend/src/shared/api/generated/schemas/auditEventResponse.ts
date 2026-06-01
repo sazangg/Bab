@@ -4,7 +4,7 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { AuditEventResponseMetadata } from "./auditEventResponseMetadata";
+import type { AuditEventResponseMetadata } from './auditEventResponseMetadata';
 
 export interface AuditEventResponse {
   id: string;

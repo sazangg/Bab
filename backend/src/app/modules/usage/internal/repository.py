@@ -1,21 +1,21 @@
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import case, func, select, update
+from sqlalchemy import String, case, cast, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.request_ids import current_request_id
 from app.modules.auth.internal.models import Team
-from app.modules.keys.internal.models import Allocation, Project, VirtualKey
+from app.modules.keys.internal.models import Project, VirtualKey
+from app.modules.policies.internal.models import AccessPolicy, LimitPolicy, LimitPolicyRule
 from app.modules.providers.internal.models import CredentialPool, Provider, ProviderCredential
 from app.modules.usage.accounting import UsageAccounting
-from app.modules.usage.internal.models import AllocationReservation, UsageRecord
+from app.modules.usage.internal.models import LimitPolicyReservation, UsageRecord
 from app.modules.usage.schemas import (
-    AllocationBudgetBurnRow,
-    AllocationReservationSummary,
-    AllocationUsageSummary,
+    LimitPolicyBudgetBurnRow,
+    LimitPolicyReservationSummary,
     OrganizationUsageSummary,
-    RecordAllocationReservation,
+    RecordLimitPolicyReservation,
     RecordUsage,
     SpendInsights,
     UsageBreakdownRow,
@@ -35,45 +35,48 @@ async def create_usage_record(*, payload: RecordUsage, db: AsyncSession) -> Usag
     return usage_record
 
 
-async def create_allocation_reservation(
+async def create_limit_policy_reservation(
     *,
-    payload: RecordAllocationReservation,
+    payload: RecordLimitPolicyReservation,
     db: AsyncSession,
-) -> AllocationReservation:
+) -> LimitPolicyReservation:
     data = payload.model_dump()
     data["request_id"] = data["request_id"] or current_request_id()
-    reservation = AllocationReservation(**data)
+    reservation = LimitPolicyReservation(**data)
     db.add(reservation)
     await db.flush()
     return reservation
 
 
-async def summarize_active_allocation_reservations(
+async def summarize_active_limit_policy_reservations(
     *,
-    allocation_id: UUID,
+    limit_policy_id: UUID,
+    limit_policy_rule_id: UUID | None,
     since: datetime | None,
     now: datetime,
     db: AsyncSession,
-) -> AllocationReservationSummary:
+) -> LimitPolicyReservationSummary:
     filters = [
-        AllocationReservation.allocation_id == allocation_id,
-        AllocationReservation.status == "active",
-        AllocationReservation.expires_at > now,
+        LimitPolicyReservation.limit_policy_id == limit_policy_id,
+        LimitPolicyReservation.status == "active",
+        LimitPolicyReservation.expires_at > now,
     ]
+    if limit_policy_rule_id is not None:
+        filters.append(LimitPolicyReservation.limit_policy_rule_id == limit_policy_rule_id)
     if since is not None:
-        filters.append(AllocationReservation.created_at >= since)
+        filters.append(LimitPolicyReservation.created_at >= since)
     row = (
         await db.execute(
             select(
-                func.count(AllocationReservation.id),
-                func.coalesce(func.sum(AllocationReservation.reserved_prompt_tokens), 0),
-                func.coalesce(func.sum(AllocationReservation.reserved_completion_tokens), 0),
-                func.coalesce(func.sum(AllocationReservation.reserved_total_tokens), 0),
-                func.coalesce(func.sum(AllocationReservation.reserved_cost_cents), 0),
+                func.count(LimitPolicyReservation.id),
+                func.coalesce(func.sum(LimitPolicyReservation.reserved_prompt_tokens), 0),
+                func.coalesce(func.sum(LimitPolicyReservation.reserved_completion_tokens), 0),
+                func.coalesce(func.sum(LimitPolicyReservation.reserved_total_tokens), 0),
+                func.coalesce(func.sum(LimitPolicyReservation.reserved_cost_cents), 0),
             ).where(*filters)
         )
     ).one()
-    return AllocationReservationSummary(
+    return LimitPolicyReservationSummary(
         requests=int(row[0]),
         prompt_tokens=int(row[1]),
         completion_tokens=int(row[2]),
@@ -88,26 +91,26 @@ async def summarize_active_virtual_key_reservations(
     since: datetime | None,
     now: datetime,
     db: AsyncSession,
-) -> AllocationReservationSummary:
+) -> LimitPolicyReservationSummary:
     filters = [
-        AllocationReservation.virtual_key_id == virtual_key_id,
-        AllocationReservation.status == "active",
-        AllocationReservation.expires_at > now,
+        LimitPolicyReservation.virtual_key_id == virtual_key_id,
+        LimitPolicyReservation.status == "active",
+        LimitPolicyReservation.expires_at > now,
     ]
     if since is not None:
-        filters.append(AllocationReservation.created_at >= since)
+        filters.append(LimitPolicyReservation.created_at >= since)
     row = (
         await db.execute(
             select(
-                func.count(AllocationReservation.id),
-                func.coalesce(func.sum(AllocationReservation.reserved_prompt_tokens), 0),
-                func.coalesce(func.sum(AllocationReservation.reserved_completion_tokens), 0),
-                func.coalesce(func.sum(AllocationReservation.reserved_total_tokens), 0),
-                func.coalesce(func.sum(AllocationReservation.reserved_cost_cents), 0),
+                func.count(LimitPolicyReservation.id),
+                func.coalesce(func.sum(LimitPolicyReservation.reserved_prompt_tokens), 0),
+                func.coalesce(func.sum(LimitPolicyReservation.reserved_completion_tokens), 0),
+                func.coalesce(func.sum(LimitPolicyReservation.reserved_total_tokens), 0),
+                func.coalesce(func.sum(LimitPolicyReservation.reserved_cost_cents), 0),
             ).where(*filters)
         )
     ).one()
-    return AllocationReservationSummary(
+    return LimitPolicyReservationSummary(
         requests=int(row[0]),
         prompt_tokens=int(row[1]),
         completion_tokens=int(row[2]),
@@ -116,7 +119,7 @@ async def summarize_active_virtual_key_reservations(
     )
 
 
-async def commit_allocation_reservations(
+async def commit_limit_policy_reservations(
     *,
     reservation_ids: list[UUID],
     usage: UsageAccounting,
@@ -126,10 +129,10 @@ async def commit_allocation_reservations(
     if not reservation_ids:
         return
     await db.execute(
-        update(AllocationReservation)
+        update(LimitPolicyReservation)
         .where(
-            AllocationReservation.id.in_(reservation_ids),
-            AllocationReservation.status == "active",
+            LimitPolicyReservation.id.in_(reservation_ids),
+            LimitPolicyReservation.status == "active",
         )
         .values(
             status="committed",
@@ -141,7 +144,7 @@ async def commit_allocation_reservations(
     )
 
 
-async def release_allocation_reservations(
+async def release_limit_policy_reservations(
     *,
     reservation_ids: list[UUID],
     db: AsyncSession,
@@ -149,10 +152,10 @@ async def release_allocation_reservations(
     if not reservation_ids:
         return
     await db.execute(
-        update(AllocationReservation)
+        update(LimitPolicyReservation)
         .where(
-            AllocationReservation.id.in_(reservation_ids),
-            AllocationReservation.status == "active",
+            LimitPolicyReservation.id.in_(reservation_ids),
+            LimitPolicyReservation.status == "active",
         )
         .values(status="released")
     )
@@ -166,7 +169,6 @@ async def list_usage_records(
     team_id: UUID | None,
     provider_id: UUID | None,
     project_id: UUID | None,
-    allocation_id: UUID | None,
     virtual_key_id: UUID | None,
     model: str | None,
     limit: int | None,
@@ -183,8 +185,6 @@ async def list_usage_records(
         filters.append(UsageRecord.provider_id == provider_id)
     if project_id is not None:
         filters.append(UsageRecord.project_id == project_id)
-    if allocation_id is not None:
-        filters.append(UsageRecord.allocation_id == allocation_id)
     if virtual_key_id is not None:
         filters.append(UsageRecord.virtual_key_id == virtual_key_id)
     if model:
@@ -210,21 +210,30 @@ async def list_usage_records(
     ]
 
 
-async def summarize_allocation_usage(
+async def summarize_limit_policy_usage(
     *,
-    allocation_id: UUID,
+    limit_policy_id: UUID,
+    limit_policy_rule_id: UUID | None,
     since: datetime | None,
     db: AsyncSession,
 ) -> tuple[int, int, int, int]:
-    query = select(
-        func.count(UsageRecord.id),
-        func.coalesce(func.sum(UsageRecord.prompt_tokens), 0),
-        func.coalesce(func.sum(UsageRecord.completion_tokens), 0),
-        func.coalesce(func.sum(UsageRecord.cost_cents), 0),
-    ).where(UsageRecord.allocation_id == allocation_id)
+    filters = [cast(UsageRecord.limit_policy_ids, String).contains(str(limit_policy_id))]
+    if limit_policy_rule_id is not None:
+        filters.append(
+            cast(UsageRecord.limit_policy_rule_ids, String).contains(str(limit_policy_rule_id))
+        )
     if since is not None:
-        query = query.where(UsageRecord.created_at >= since)
-    row = (await db.execute(query)).one()
+        filters.append(UsageRecord.created_at >= since)
+    row = (
+        await db.execute(
+            select(
+                func.count(UsageRecord.id),
+                func.coalesce(func.sum(UsageRecord.prompt_tokens), 0),
+                func.coalesce(func.sum(UsageRecord.completion_tokens), 0),
+                func.coalesce(func.sum(UsageRecord.cost_cents), 0),
+            ).where(*filters)
+        )
+    ).one()
     return int(row[0]), int(row[1]), int(row[2]), int(row[3])
 
 
@@ -244,55 +253,6 @@ async def summarize_virtual_key_usage(
         query = query.where(UsageRecord.created_at >= since)
     row = (await db.execute(query)).one()
     return int(row[0]), int(row[1]), int(row[2]), int(row[3])
-
-
-async def get_allocation_usage_summary(
-    *,
-    allocation_id: UUID,
-    org_id: UUID,
-    window: str,
-    since: datetime | None,
-    db: AsyncSession,
-) -> AllocationUsageSummary:
-    base_filters_list = [UsageRecord.org_id == org_id, UsageRecord.allocation_id == allocation_id]
-    if since is not None:
-        base_filters_list.append(UsageRecord.created_at >= since)
-    base_filters = tuple(base_filters_list)
-    return AllocationUsageSummary(
-        allocation_id=allocation_id,
-        window=window,
-        totals=await _totals(*base_filters, db=db),
-        by_virtual_key=await _breakdown(
-            UsageRecord.virtual_key_id,
-            VirtualKey.name,
-            *base_filters,
-            join_model=VirtualKey,
-            join_on=VirtualKey.id == UsageRecord.virtual_key_id,
-            db=db,
-        ),
-        by_provider=await _breakdown(
-            UsageRecord.provider_id,
-            Provider.name,
-            *base_filters,
-            join_model=Provider,
-            join_on=Provider.id == UsageRecord.provider_id,
-            db=db,
-        ),
-        by_model=await _breakdown(
-            UsageRecord.provider_model,
-            UsageRecord.provider_model,
-            *base_filters,
-            db=db,
-        ),
-        by_pool=await _breakdown(
-            UsageRecord.pool_id,
-            CredentialPool.name,
-            *base_filters,
-            join_model=CredentialPool,
-            join_on=CredentialPool.id == UsageRecord.pool_id,
-            db=db,
-        ),
-    )
 
 
 async def get_organization_usage_summary(
@@ -365,12 +325,12 @@ async def get_organization_usage_summary(
             join_on=Project.id == UsageRecord.project_id,
             db=db,
         ),
-        by_allocation=await _breakdown(
-            UsageRecord.allocation_id,
-            Allocation.name,
+        by_access_policy=await _breakdown(
+            UsageRecord.access_policy_id,
+            AccessPolicy.name,
             *filters,
-            join_model=Allocation,
-            join_on=Allocation.id == UsageRecord.allocation_id,
+            join_model=AccessPolicy,
+            join_on=AccessPolicy.id == UsageRecord.access_policy_id,
             db=db,
         ),
         by_virtual_key=await _breakdown(
@@ -469,7 +429,7 @@ async def get_spend_insights(
             key=lambda row: row.cost_cents,
             reverse=True,
         )[:10],
-        allocation_budget_burn=await _allocation_budget_burn(
+        limit_policy_budget_burn=await _limit_policy_budget_burn(
             org_id=org_id,
             since=since,
             until=until,
@@ -515,18 +475,18 @@ async def get_virtual_key_usage_summary(
             join_on=CredentialPool.id == UsageRecord.pool_id,
             db=db,
         ),
-        by_allocation=await _breakdown(
-            UsageRecord.allocation_id,
-            Allocation.name,
+        by_access_policy=await _breakdown(
+            UsageRecord.access_policy_id,
+            AccessPolicy.name,
             *base_filters,
-            join_model=Allocation,
-            join_on=Allocation.id == UsageRecord.allocation_id,
+            join_model=AccessPolicy,
+            join_on=AccessPolicy.id == UsageRecord.access_policy_id,
             db=db,
         ),
     )
 
 
-async def _allocation_budget_burn(
+async def _limit_policy_budget_burn(
     *,
     org_id: UUID,
     since: datetime | None,
@@ -537,59 +497,60 @@ async def _allocation_budget_burn(
     virtual_key_id: UUID | None = None,
     model: str | None = None,
     db: AsyncSession,
-) -> list[AllocationBudgetBurnRow]:
-    usage_filters = [UsageRecord.allocation_id == Allocation.id]
-    if since is not None:
-        usage_filters.append(UsageRecord.created_at >= since)
-    if until is not None:
-        usage_filters.append(UsageRecord.created_at <= until)
-    if team_id is not None:
-        usage_filters.append(UsageRecord.team_id == team_id)
-    if provider_id is not None:
-        usage_filters.append(UsageRecord.provider_id == provider_id)
-    if project_id is not None:
-        usage_filters.append(UsageRecord.project_id == project_id)
-    if virtual_key_id is not None:
-        usage_filters.append(UsageRecord.virtual_key_id == virtual_key_id)
-    if model:
-        usage_filters.append(UsageRecord.provider_model == model)
-    spent_subquery = (
-        select(func.coalesce(func.sum(UsageRecord.cost_cents), 0))
-        .where(*usage_filters)
-        .scalar_subquery()
-    )
-    rows = (
-        await db.execute(
-            select(
-                Allocation.id,
-                Allocation.name,
-                Allocation.target_type,
-                Allocation.window,
-                Allocation.budget_cents,
-                spent_subquery,
-            )
+) -> list[LimitPolicyBudgetBurnRow]:
+    rules = (
+        await db.scalars(
+            select(LimitPolicyRule)
+            .join(LimitPolicy, LimitPolicy.id == LimitPolicyRule.limit_policy_id)
             .where(
-                Allocation.org_id == org_id,
-                Allocation.budget_cents.is_not(None),
-                Allocation.is_active.is_(True),
+                LimitPolicyRule.org_id == org_id,
+                LimitPolicyRule.budget_cents.is_not(None),
+                LimitPolicyRule.is_active.is_(True),
+                LimitPolicy.is_active.is_(True),
             )
-            .order_by(spent_subquery.desc(), Allocation.name.asc())
-            .limit(20)
+            .order_by(LimitPolicyRule.name.asc())
         )
     ).all()
-    return [
-        AllocationBudgetBurnRow(
-            allocation_id=row[0],
-            allocation_name=row[1],
-            target_type=row[2],
-            window=row[3],
-            budget_cents=int(row[4]),
-            spent_cents=int(row[5]),
-            remaining_cents=max(0, int(row[4]) - int(row[5])),
-            burn_rate_pct=round((int(row[5]) / int(row[4])) * 100, 1) if int(row[4]) > 0 else 0,
+    rows: list[LimitPolicyBudgetBurnRow] = []
+    for rule in rules:
+        policy = await db.get(LimitPolicy, rule.limit_policy_id)
+        if policy is None:
+            continue
+        filters = [
+            UsageRecord.org_id == org_id,
+            cast(UsageRecord.limit_policy_ids, String).contains(str(rule.limit_policy_id)),
+            cast(UsageRecord.limit_policy_rule_ids, String).contains(str(rule.id)),
+        ]
+        if since is not None:
+            filters.append(UsageRecord.created_at >= since)
+        if until is not None:
+            filters.append(UsageRecord.created_at <= until)
+        if team_id is not None:
+            filters.append(UsageRecord.team_id == team_id)
+        if provider_id is not None:
+            filters.append(UsageRecord.provider_id == provider_id)
+        if project_id is not None:
+            filters.append(UsageRecord.project_id == project_id)
+        if virtual_key_id is not None:
+            filters.append(UsageRecord.virtual_key_id == virtual_key_id)
+        if model:
+            filters.append(UsageRecord.provider_model == model)
+        spent_query = select(func.coalesce(func.sum(UsageRecord.cost_cents), 0)).where(*filters)
+        spent = (await db.scalar(spent_query)) or 0
+        rows.append(
+            LimitPolicyBudgetBurnRow(
+                limit_policy_id=rule.limit_policy_id,
+                limit_policy_rule_id=rule.id,
+                limit_policy_name=policy.name,
+                rule_name=rule.name,
+                window=rule.window,
+                budget_cents=int(rule.budget_cents or 0),
+                spent_cents=int(spent),
+                remaining_cents=max(0, int(rule.budget_cents or 0) - int(spent)),
+                burn_rate_pct=round((int(spent) / int(rule.budget_cents or 1)) * 100, 1),
+            )
         )
-        for row in rows
-    ]
+    return sorted(rows, key=lambda row: row.spent_cents, reverse=True)[:20]
 
 
 async def _totals(*filters, db: AsyncSession) -> UsageSummaryTotals:

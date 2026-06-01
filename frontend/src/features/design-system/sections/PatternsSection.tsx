@@ -268,7 +268,7 @@ export function PatternsSection() {
             <CardHeader>
               <CardTitle>Projects</CardTitle>
               <CardDescription>
-                Projects inside this team receive allocations and issue virtual keys.
+                Projects inside this team receive policies and issue virtual keys.
               </CardDescription>
               <CardAction>
                 <Button size="sm">
@@ -281,7 +281,7 @@ export function PatternsSection() {
               <div className="rounded-md border border-dashed p-6 text-center">
                 <p className="text-sm font-medium">No projects yet</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Create a project to start assigning allocations and keys.
+                  Create a project to start assigning policies and keys.
                 </p>
               </div>
             </CardContent>

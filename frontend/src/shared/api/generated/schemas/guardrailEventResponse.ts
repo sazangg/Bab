@@ -4,7 +4,7 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { GuardrailEventResponseMetadata } from "./guardrailEventResponseMetadata";
+import type { GuardrailEventResponseMetadata } from './guardrailEventResponseMetadata';
 
 export interface GuardrailEventResponse {
   id: string;
@@ -16,7 +16,6 @@ export interface GuardrailEventResponse {
   reason: string;
   team_id: string | null;
   project_id: string | null;
-  allocation_id: string | null;
   virtual_key_id: string | null;
   provider_id: string | null;
   pool_id: string | null;

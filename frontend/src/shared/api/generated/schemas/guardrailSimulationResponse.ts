@@ -4,7 +4,7 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { GuardrailSimulationMatch } from "./guardrailSimulationMatch";
+import type { GuardrailSimulationMatch } from './guardrailSimulationMatch';
 
 export interface GuardrailSimulationResponse {
   decision: string;

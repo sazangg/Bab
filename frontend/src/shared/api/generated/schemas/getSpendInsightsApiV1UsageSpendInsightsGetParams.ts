@@ -4,15 +4,15 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { GetSpendInsightsApiV1UsageSpendInsightsGetWindow } from "./getSpendInsightsApiV1UsageSpendInsightsGetWindow";
+import type { GetSpendInsightsApiV1UsageSpendInsightsGetWindow } from './getSpendInsightsApiV1UsageSpendInsightsGetWindow';
 
 export type GetSpendInsightsApiV1UsageSpendInsightsGetParams = {
-  window?: GetSpendInsightsApiV1UsageSpendInsightsGetWindow;
-  start_at?: string | null;
-  end_at?: string | null;
-  team_id?: string | null;
-  provider_id?: string | null;
-  project_id?: string | null;
-  virtual_key_id?: string | null;
-  model?: string | null;
+window?: GetSpendInsightsApiV1UsageSpendInsightsGetWindow;
+start_at?: string | null;
+end_at?: string | null;
+team_id?: string | null;
+provider_id?: string | null;
+project_id?: string | null;
+virtual_key_id?: string | null;
+model?: string | null;
 };

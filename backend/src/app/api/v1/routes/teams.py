@@ -22,12 +22,12 @@ from app.modules.auth.schemas import (
     UpsertTeamMemberRequest,
 )
 from app.modules.keys import facade as projects_facade
-from app.modules.keys.schemas import AllocationResponse, CreateProjectRequest, ProjectResponse
+from app.modules.keys.schemas import CreateProjectRequest, ProjectResponse
 from app.modules.teams import facade
 from app.modules.teams.errors import TeamNotFoundError, TeamSlugAlreadyExistsError
 from app.modules.teams.schemas import CreateTeamRequest, TeamResponse, UpdateTeamRequest
 from app.modules.usage import facade as usage_facade
-from app.modules.usage.schemas import AllocationUsageSummary, OrganizationUsageSummary
+from app.modules.usage.schemas import OrganizationUsageSummary
 
 router = APIRouter(prefix="/teams", tags=["teams"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
@@ -226,25 +226,6 @@ async def remove_team_member(
         raise HTTPException(status_code=404, detail="team member not found") from exc
 
 
-@router.get("/{team_id}/allocations")
-async def list_team_allocations(
-    team_id: UUID,
-    scope: RequestScope,
-    db: DatabaseSession,
-    user: CurrentUser,
-) -> list[AllocationResponse]:
-    try:
-        await require_team_view_or_permission(
-            team_id=str(team_id),
-            permission="teams.view",
-            user=user,
-            db=db,
-        )
-        return await projects_facade.list_team_allocations(team_id=team_id, scope=scope, db=db)
-    except TeamNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="team not found") from exc
-
-
 @router.get("/{team_id}/usage")
 async def get_team_usage(
     team_id: UUID,
@@ -268,36 +249,6 @@ async def get_team_usage(
         window="30d",
         db=db,
     )
-
-
-@router.get("/{team_id}/allocations/usage")
-async def list_team_allocation_usage(
-    team_id: UUID,
-    scope: RequestScope,
-    db: DatabaseSession,
-    user: CurrentUser,
-) -> list[AllocationUsageSummary]:
-    try:
-        await require_team_view_or_permission(
-            team_id=str(team_id),
-            permission="teams.view",
-            user=user,
-            db=db,
-        )
-        allocations = await projects_facade.list_team_allocations(
-            team_id=team_id, scope=scope, db=db
-        )
-    except TeamNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="team not found") from exc
-    return [
-        await usage_facade.get_allocation_usage_summary(
-            allocation_id=allocation.id,
-            org_id=scope.org_id,
-            window=allocation.window,
-            db=db,
-        )
-        for allocation in allocations
-    ]
 
 
 @router.post("/{team_id}/projects", status_code=status.HTTP_201_CREATED)

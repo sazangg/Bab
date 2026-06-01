@@ -24,7 +24,6 @@ class ActivityEvent(Base):
     actor_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     team_id: Mapped[UUID | None] = mapped_column(nullable=True, index=True)
     project_id: Mapped[UUID | None] = mapped_column(nullable=True, index=True)
-    allocation_id: Mapped[UUID | None] = mapped_column(nullable=True, index=True)
     virtual_key_id: Mapped[UUID | None] = mapped_column(nullable=True, index=True)
     provider_id: Mapped[UUID | None] = mapped_column(nullable=True, index=True)
     pool_id: Mapped[UUID | None] = mapped_column(nullable=True, index=True)

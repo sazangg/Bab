@@ -87,7 +87,7 @@ import type {
 } from "@/shared/api/generated/schemas";
 
 import { formatDateTime, formatRelativeFromNow } from "@/features/providers/lib/format";
-import { AllocationManagementSection } from "@/features/projects/sections/AllocationManagementSection";
+import { PolicyScopeSection } from "@/features/policies/components/PolicyScopeSection";
 import { hasPermission, isTeamAdmin } from "@/features/auth/lib/permissions";
 import { ForbiddenPage } from "@/features/auth/components/ProtectedRoute";
 import { slugify } from "@/features/teams/lib/slug";
@@ -119,6 +119,7 @@ export function TeamDetailPage() {
   const [projectSheetOpen, setProjectSheetOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const [selfRemoval, setSelfRemoval] = useState<TeamMemberResponse | null>(null);
   const currentUserQuery = useMeApiV1AuthMeGet();
   const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
 
@@ -340,6 +341,7 @@ export function TeamDetailPage() {
       <TeamMembersCard
         orgMembers={orgMembers}
         teamMembers={teamMembers}
+        currentUserId={currentUser?.id}
         canManage={canManageTeam}
         isLoading={orgMembersQuery.isPending || teamMembersQuery.isPending}
         isPending={
@@ -347,23 +349,29 @@ export function TeamDetailPage() {
         }
         onAdd={(userId, role) => addTeamMember.mutate({ teamId, data: { user_id: userId, role } })}
         onRoleChange={(userId, role) => updateTeamMember.mutate({ teamId, userId, data: { role } })}
-        onRemove={(userId) => removeTeamMember.mutate({ teamId, userId })}
+        onRemove={(member) => {
+          if (member.user_id === currentUser?.id) {
+            setSelfRemoval(member);
+            return;
+          }
+          removeTeamMember.mutate({ teamId, userId: member.user_id });
+        }}
       />
 
       <EntityUsageCard
         usage={usage}
         isLoading={usageQuery.isPending}
-        description="Aggregate team usage across projects, virtual keys, and inherited allocations."
+        description="Aggregate team usage across projects, virtual keys, and inherited policies."
       />
       <UsageRecordsDrilldown title="Team usage records" filters={{ team_id: team.id }} />
 
-      <AllocationManagementSection target={{ type: "team", teamId: team.id }} />
+      <PolicyScopeSection target={{ type: "team", teamId: team.id }} canManage={canManageTeam} />
 
       <Card>
         <CardHeader>
           <CardTitle>Projects</CardTitle>
           <CardDescription>
-            Projects inside this team receive allocations and issue virtual keys.
+            Projects inside this team receive policies and issue virtual keys.
           </CardDescription>
           <CardAction>
             {canManageTeam ? (
@@ -444,7 +452,7 @@ export function TeamDetailPage() {
             <div className="rounded-md border border-dashed p-8 text-center">
               <p className="text-sm font-medium">No projects yet</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Create a project to start assigning allocations and keys.
+                Create a project to start assigning policies and keys.
               </p>
               {canManageTeam ? (
                 <Button
@@ -568,6 +576,36 @@ export function TeamDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={Boolean(selfRemoval)} onOpenChange={(open) => !open && setSelfRemoval(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove your team access?</DialogTitle>
+            <DialogDescription>
+              You are removing yourself from {team.name}. If this is your only scoped role, you may
+              lose access to this team and its projects immediately.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="destructive"
+              disabled={removeTeamMember.isPending}
+              onClick={() => {
+                if (!selfRemoval) return;
+                removeTeamMember.mutate(
+                  { teamId, userId: selfRemoval.user_id },
+                  { onSuccess: () => setSelfRemoval(null) },
+                );
+              }}
+            >
+              {removeTeamMember.isPending ? "Removing..." : "Remove my access"}
+            </Button>
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -575,6 +613,7 @@ export function TeamDetailPage() {
 function TeamMembersCard({
   orgMembers,
   teamMembers,
+  currentUserId,
   canManage,
   isLoading,
   isPending,
@@ -584,12 +623,13 @@ function TeamMembersCard({
 }: {
   orgMembers: MemberResponse[];
   teamMembers: TeamMemberResponse[];
+  currentUserId?: string;
   canManage: boolean;
   isLoading: boolean;
   isPending: boolean;
   onAdd: (userId: string, role: string) => void;
   onRoleChange: (userId: string, role: string) => void;
-  onRemove: (userId: string) => void;
+  onRemove: (member: TeamMemberResponse) => void;
 }) {
   const [selectedUserId, setSelectedUserId] = useState("");
   const [role, setRole] = useState("team_member");
@@ -717,8 +757,12 @@ function TeamMembersCard({
                           size="icon-sm"
                           variant="ghost"
                           disabled={isPending}
-                          onClick={() => onRemove(member.user_id)}
-                          aria-label="Remove team member"
+                          onClick={() => onRemove(member)}
+                          aria-label={
+                            member.user_id === currentUserId
+                              ? "Remove yourself from team"
+                              : "Remove team member"
+                          }
                         >
                           <Trash2 />
                         </Button>

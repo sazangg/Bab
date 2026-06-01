@@ -129,6 +129,35 @@ async def test_priority_routing_uses_lowest_priority_active_credential(
     assert response.body == {"id": "chatcmpl_priority"}
 
 
+async def test_provider_connection_failure_returns_upstream_error(
+    db_session: AsyncSession,
+) -> None:
+    _actor, scope, provider, pool, *_ = await _create_provider_with_credentials(
+        db_session,
+        routing_policy=ProviderCredentialRoutingPolicy.priority,
+    )
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("All connection attempts failed", request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        with pytest.raises(ProviderUpstreamError) as exc_info:
+            await providers_facade.create_chat_completion(
+                provider_id=provider.id,
+                payload=ProviderChatCompletionRequest(
+                    model="gpt-5.4-mini",
+                    messages=[{"role": "user", "content": "Hello"}],
+                ),
+                scope=scope,
+                pool_id=pool.id,
+                db=db_session,
+                http_client=http_client,
+            )
+
+    assert exc_info.value.status_code == 502
+    assert exc_info.value.body == {"error": "provider upstream connection failed"}
+
+
 async def test_least_recently_used_routing_uses_oldest_used_credential(
     db_session: AsyncSession,
 ) -> None:

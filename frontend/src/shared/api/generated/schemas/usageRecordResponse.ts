@@ -9,7 +9,10 @@ export interface UsageRecordResponse {
   org_id: string;
   team_id: string;
   project_id: string;
-  allocation_id: string;
+  access_policy_id?: string | null;
+  access_policy_route_id?: string | null;
+  limit_policy_ids?: string[] | null;
+  limit_policy_rule_ids?: string[] | null;
   virtual_key_id: string;
   pool_id: string;
   provider_id: string;
@@ -25,8 +28,8 @@ export interface UsageRecordResponse {
   cost_cents?: number | null;
   usage_source?: string;
   error_code?: string | null;
-  provider_credential_name?: string | null;
-  provider_credential_prefix?: string | null;
   id: string;
   created_at: string;
+  provider_credential_name?: string | null;
+  provider_credential_prefix?: string | null;
 }

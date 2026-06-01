@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.keys.internal.models import Allocation
+from app.modules.policies.internal.models import LimitPolicy, LimitPolicyRule
 from app.modules.usage import facade as usage_facade
 from app.modules.usage.internal.models import UsageRecord
 from app.modules.usage.internal.repository import _bucket_datetime, _records_to_totals
@@ -50,18 +50,25 @@ def test_records_to_totals_keeps_known_spend_and_errors() -> None:
 
 
 @pytest.mark.asyncio
-async def test_spend_insights_returns_allocation_budget_burn(db_session: AsyncSession) -> None:
+async def test_spend_insights_returns_limit_policy_budget_burn(db_session: AsyncSession) -> None:
     org_id = uuid4()
     team_id = uuid4()
     project_id = uuid4()
-    allocation_id = uuid4()
+    limit_policy_id = uuid4()
+    limit_policy_rule_id = uuid4()
     db_session.add(
-        Allocation(
-            id=allocation_id,
+        LimitPolicy(
+            id=limit_policy_id,
             org_id=org_id,
-            target_type="team",
-            team_id=team_id,
             name="Platform budget",
+        )
+    )
+    db_session.add(
+        LimitPolicyRule(
+            id=limit_policy_rule_id,
+            org_id=org_id,
+            limit_policy_id=limit_policy_id,
+            name="Monthly budget",
             budget_cents=1000,
             window="monthly",
         )
@@ -71,7 +78,8 @@ async def test_spend_insights_returns_allocation_budget_burn(db_session: AsyncSe
             org_id=org_id,
             team_id=team_id,
             project_id=project_id,
-            allocation_id=allocation_id,
+            limit_policy_ids=[str(limit_policy_id)],
+            limit_policy_rule_ids=[str(limit_policy_rule_id)],
             virtual_key_id=uuid4(),
             pool_id=uuid4(),
             provider_id=uuid4(),
@@ -93,7 +101,8 @@ async def test_spend_insights_returns_allocation_budget_burn(db_session: AsyncSe
         db=db_session,
     )
 
-    assert insights.allocation_budget_burn[0].allocation_id == allocation_id
-    assert insights.allocation_budget_burn[0].spent_cents == 250
-    assert insights.allocation_budget_burn[0].remaining_cents == 750
-    assert insights.allocation_budget_burn[0].burn_rate_pct == 25
+    assert insights.limit_policy_budget_burn[0].limit_policy_id == limit_policy_id
+    assert insights.limit_policy_budget_burn[0].limit_policy_rule_id == limit_policy_rule_id
+    assert insights.limit_policy_budget_burn[0].spent_cents == 250
+    assert insights.limit_policy_budget_burn[0].remaining_cents == 750
+    assert insights.limit_policy_budget_burn[0].burn_rate_pct == 25

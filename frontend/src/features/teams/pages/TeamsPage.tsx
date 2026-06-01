@@ -472,7 +472,7 @@ function CreateTeamSheet({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="team-slug">Slug</Label>
-            <Input id="team-slug" placeholder="mobile-division" {...form.register("slug")} />
+            <Input id="team-slug" placeholder="Leave blank to auto-generate" {...form.register("slug")} />
             {form.formState.errors.slug ? (
               <p className="text-xs text-destructive">{form.formState.errors.slug.message}</p>
             ) : slugPreview ? (

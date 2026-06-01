@@ -5,10 +5,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface AllocationBudgetBurnRow {
-  allocation_id: string;
-  allocation_name: string;
-  target_type: string;
+export interface LimitPolicyBudgetBurnRow {
+  limit_policy_id: string;
+  limit_policy_rule_id: string;
+  limit_policy_name: string;
+  rule_name: string;
   window: string;
   budget_cents: number;
   spent_cents: number;

@@ -9,15 +9,9 @@ export interface VirtualKeyResponse {
   id: string;
   org_id: string;
   project_id: string;
-  allocation_id: string;
-  custom_allocation_id: string | null;
-  allocation_mode: string;
   name: string;
   key_prefix: string;
   allowed_models: string[] | null;
-  max_requests_per_minute: number | null;
-  max_tokens_per_minute: number | null;
-  max_tokens_per_request: number | null;
   expires_at: string | null;
   revoked_at: string | null;
   created_at: string;

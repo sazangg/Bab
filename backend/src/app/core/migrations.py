@@ -15,7 +15,8 @@ APP_TABLES = {
     "providers",
     "provider_credentials",
     "credential_pools",
-    "allocations",
+    "access_policies",
+    "limit_policies",
     "virtual_keys",
     "usage_records",
 }

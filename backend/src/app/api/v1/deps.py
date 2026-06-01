@@ -12,7 +12,7 @@ from app.modules.auth import facade as auth_facade
 from app.modules.auth.errors import InvalidAccessTokenError
 from app.modules.auth.internal.models import TeamMembership
 from app.modules.auth.schemas import AuthenticatedUser
-from app.modules.keys.internal.models import Allocation, Project
+from app.modules.keys.internal.models import Project
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
@@ -98,41 +98,6 @@ def require_project_team_admin_or_permission(permission: str) -> Callable:
     return check
 
 
-async def require_allocation_team_admin_or_permission(
-    *,
-    allocation_id: str,
-    permission: str,
-    user: AuthenticatedUser,
-    db: AsyncSession,
-) -> None:
-    if auth_facade.has_permission(user, permission):
-        return
-    try:
-        parsed_allocation_id = UUID(str(allocation_id))
-    except ValueError:
-        parsed_allocation_id = None
-    if parsed_allocation_id is None:
-        return
-    allocation = await db.scalar(
-        select(Allocation).where(
-            Allocation.id == parsed_allocation_id,
-            Allocation.org_id == user.org_id,
-        )
-    )
-    if allocation is None:
-        return
-    team_id = allocation.team_id
-    if team_id is None and allocation.project_id is not None:
-        project = await _get_project(project_id=str(allocation.project_id), user=user, db=db)
-        team_id = project.team_id if project else None
-    if team_id and await _is_team_admin(team_id=str(team_id), user=user, db=db):
-        return
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="insufficient permissions",
-    )
-
-
 async def require_team_view_or_permission(
     *,
     team_id: str,
@@ -163,28 +128,6 @@ async def require_project_view_or_permission(
         return
     project = await _get_project(project_id=project_id, user=user, db=db)
     if project and await _has_team_membership(team_id=str(project.team_id), user=user, db=db):
-        return
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="insufficient permissions",
-    )
-
-
-async def require_allocation_target_team_admin_or_permission(
-    *,
-    team_id: str | None,
-    project_id: str | None,
-    permission: str,
-    user: AuthenticatedUser,
-    db: AsyncSession,
-) -> None:
-    if auth_facade.has_permission(user, permission):
-        return
-    target_team_id = team_id
-    if target_team_id is None and project_id is not None:
-        project = await _get_project(project_id=project_id, user=user, db=db)
-        target_team_id = str(project.team_id) if project else None
-    if target_team_id and await _is_team_admin(team_id=target_team_id, user=user, db=db):
         return
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,

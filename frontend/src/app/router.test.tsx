@@ -10,6 +10,10 @@ vi.mock("@/features/auth/components/AuthGate", () => ({
   AuthGate: () => <Outlet />,
 }));
 
+vi.mock("@/features/auth/components/ProtectedRoute", () => ({
+  ProtectedRoute: () => <Outlet />,
+}));
+
 function renderRoute(path: string) {
   const queryClient = new QueryClient({
     defaultOptions: {

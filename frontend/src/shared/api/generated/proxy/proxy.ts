@@ -4,7 +4,10 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery
+} from '@tanstack/react-query';
 import type {
   DataTag,
   DefinedInitialDataOptions,
@@ -17,463 +20,480 @@ import type {
   UseMutationOptions,
   UseMutationResult,
   UseQueryOptions,
-  UseQueryResult,
-} from "@tanstack/react-query";
+  UseQueryResult
+} from '@tanstack/react-query';
 
-import type { HTTPValidationError, ListModelsV1ModelsGet200 } from "../schemas";
+import type {
+  HTTPValidationError,
+  ListModelsV1ModelsGet200
+} from '../schemas';
 
-import { apiMutator } from "../../orval-mutator";
+import { apiMutator } from '../../orval-mutator';
+
+
+
 
 export type listModelsV1ModelsGetResponse200 = {
-  data: ListModelsV1ModelsGet200;
-  status: 200;
-};
+  data: ListModelsV1ModelsGet200
+  status: 200
+}
 
 export type listModelsV1ModelsGetResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
-};
+  data: HTTPValidationError
+  status: 422
+}
 
-export type listModelsV1ModelsGetResponseSuccess = listModelsV1ModelsGetResponse200 & {
+export type listModelsV1ModelsGetResponseSuccess = (listModelsV1ModelsGetResponse200) & {
   headers: Headers;
 };
-export type listModelsV1ModelsGetResponseError = listModelsV1ModelsGetResponse422 & {
+export type listModelsV1ModelsGetResponseError = (listModelsV1ModelsGetResponse422) & {
   headers: Headers;
 };
 
-export type listModelsV1ModelsGetResponse =
-  | listModelsV1ModelsGetResponseSuccess
-  | listModelsV1ModelsGetResponseError;
+export type listModelsV1ModelsGetResponse = (listModelsV1ModelsGetResponseSuccess | listModelsV1ModelsGetResponseError)
 
 export const getListModelsV1ModelsGetUrl = () => {
-  return `/v1/models`;
-};
+
+
+
+
+  return `/v1/models`
+}
 
 /**
  * @summary List Models
  */
-export const listModelsV1ModelsGet = async (
-  options?: RequestInit,
-): Promise<listModelsV1ModelsGetResponse> => {
-  return apiMutator<listModelsV1ModelsGetResponse>(getListModelsV1ModelsGetUrl(), {
+export const listModelsV1ModelsGet = async ( options?: RequestInit): Promise<listModelsV1ModelsGetResponse> => {
+
+  return apiMutator<listModelsV1ModelsGetResponse>(getListModelsV1ModelsGetUrl(),
+  {
     ...options,
-    method: "GET",
-  });
-};
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
 
 export const getListModelsV1ModelsGetQueryKey = () => {
-  return [`/v1/models`] as const;
-};
+    return [
+    `/v1/models`
+    ] as const;
+    }
 
-export const getListModelsV1ModelsGetQueryOptions = <
-  TData = Awaited<ReturnType<typeof listModelsV1ModelsGet>>,
-  TError = HTTPValidationError,
->(options?: {
-  query?: Partial<
-    UseQueryOptions<Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError, TData>
-  >;
-}) => {
-  const { query: queryOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getListModelsV1ModelsGetQueryKey();
+export const getListModelsV1ModelsGetQueryOptions = <TData = Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError = HTTPValidationError>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError, TData>>, }
+) => {
 
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof listModelsV1ModelsGet>>> = ({ signal }) =>
-    listModelsV1ModelsGet({ signal });
+const {query: queryOptions} = options ?? {};
 
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof listModelsV1ModelsGet>>,
-    TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
-};
+  const queryKey =  queryOptions?.queryKey ?? getListModelsV1ModelsGetQueryKey();
 
-export type ListModelsV1ModelsGetQueryResult = NonNullable<
-  Awaited<ReturnType<typeof listModelsV1ModelsGet>>
->;
-export type ListModelsV1ModelsGetQueryError = HTTPValidationError;
 
-export function useListModelsV1ModelsGet<
-  TData = Awaited<ReturnType<typeof listModelsV1ModelsGet>>,
-  TError = HTTPValidationError,
->(
-  options: {
-    query: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError, TData>
-    > &
-      Pick<
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listModelsV1ModelsGet>>> = ({ signal }) => listModelsV1ModelsGet({ signal });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListModelsV1ModelsGetQueryResult = NonNullable<Awaited<ReturnType<typeof listModelsV1ModelsGet>>>
+export type ListModelsV1ModelsGetQueryError = HTTPValidationError
+
+
+export function useListModelsV1ModelsGet<TData = Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError = HTTPValidationError>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listModelsV1ModelsGet>>,
           TError,
           Awaited<ReturnType<typeof listModelsV1ModelsGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useListModelsV1ModelsGet<
-  TData = Awaited<ReturnType<typeof listModelsV1ModelsGet>>,
-  TError = HTTPValidationError,
->(
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError, TData>
-    > &
-      Pick<
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListModelsV1ModelsGet<TData = Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError = HTTPValidationError>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listModelsV1ModelsGet>>,
           TError,
           Awaited<ReturnType<typeof listModelsV1ModelsGet>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useListModelsV1ModelsGet<
-  TData = Awaited<ReturnType<typeof listModelsV1ModelsGet>>,
-  TError = HTTPValidationError,
->(
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError, TData>
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListModelsV1ModelsGet<TData = Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError = HTTPValidationError>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary List Models
  */
 
-export function useListModelsV1ModelsGet<
-  TData = Awaited<ReturnType<typeof listModelsV1ModelsGet>>,
-  TError = HTTPValidationError,
->(
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError, TData>
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getListModelsV1ModelsGetQueryOptions(options);
+export function useListModelsV1ModelsGet<TData = Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError = HTTPValidationError>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
-    queryKey: DataTag<QueryKey, TData, TError>;
-  };
+  const queryOptions = getListModelsV1ModelsGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
+
+
+
+
+
 export type createCompletionV1CompletionsPostResponse200 = {
-  data: unknown;
-  status: 200;
-};
+  data: unknown
+  status: 200
+}
 
 export type createCompletionV1CompletionsPostResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type createCompletionV1CompletionsPostResponseSuccess = (createCompletionV1CompletionsPostResponse200) & {
+  headers: Headers;
+};
+export type createCompletionV1CompletionsPostResponseError = (createCompletionV1CompletionsPostResponse422) & {
+  headers: Headers;
 };
 
-export type createCompletionV1CompletionsPostResponseSuccess =
-  createCompletionV1CompletionsPostResponse200 & {
-    headers: Headers;
-  };
-export type createCompletionV1CompletionsPostResponseError =
-  createCompletionV1CompletionsPostResponse422 & {
-    headers: Headers;
-  };
-
-export type createCompletionV1CompletionsPostResponse =
-  | createCompletionV1CompletionsPostResponseSuccess
-  | createCompletionV1CompletionsPostResponseError;
+export type createCompletionV1CompletionsPostResponse = (createCompletionV1CompletionsPostResponseSuccess | createCompletionV1CompletionsPostResponseError)
 
 export const getCreateCompletionV1CompletionsPostUrl = () => {
-  return `/v1/completions`;
-};
+
+
+
+
+  return `/v1/completions`
+}
 
 /**
  * @summary Create Completion
  */
-export const createCompletionV1CompletionsPost = async (
-  options?: RequestInit,
-): Promise<createCompletionV1CompletionsPostResponse> => {
-  return apiMutator<createCompletionV1CompletionsPostResponse>(
-    getCreateCompletionV1CompletionsPostUrl(),
-    {
-      ...options,
-      method: "POST",
-    },
-  );
-};
+export const createCompletionV1CompletionsPost = async ( options?: RequestInit): Promise<createCompletionV1CompletionsPostResponse> => {
 
-export const getCreateCompletionV1CompletionsPostMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof createCompletionV1CompletionsPost>>,
-    TError,
-    void,
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof createCompletionV1CompletionsPost>>,
-  TError,
-  void,
-  TContext
-> => {
-  const mutationKey = ["createCompletionV1CompletionsPost"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
+  return apiMutator<createCompletionV1CompletionsPostResponse>(getCreateCompletionV1CompletionsPostUrl(),
+  {
+    ...options,
+    method: 'POST'
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof createCompletionV1CompletionsPost>>,
-    void
-  > = () => {
-    return createCompletionV1CompletionsPost();
-  };
 
-  return { mutationFn, ...mutationOptions };
-};
+  }
+);}
 
-export type CreateCompletionV1CompletionsPostMutationResult = NonNullable<
-  Awaited<ReturnType<typeof createCompletionV1CompletionsPost>>
->;
 
-export type CreateCompletionV1CompletionsPostMutationError = HTTPValidationError;
 
-/**
+
+export const getCreateCompletionV1CompletionsPostMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCompletionV1CompletionsPost>>, TError,void, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof createCompletionV1CompletionsPost>>, TError,void, TContext> => {
+
+const mutationKey = ['createCompletionV1CompletionsPost'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCompletionV1CompletionsPost>>, void> = () => {
+
+
+          return  createCompletionV1CompletionsPost()
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateCompletionV1CompletionsPostMutationResult = NonNullable<Awaited<ReturnType<typeof createCompletionV1CompletionsPost>>>
+
+    export type CreateCompletionV1CompletionsPostMutationError = HTTPValidationError
+
+    /**
  * @summary Create Completion
  */
-export const useCreateCompletionV1CompletionsPost = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof createCompletionV1CompletionsPost>>,
-      TError,
-      void,
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof createCompletionV1CompletionsPost>>,
-  TError,
-  void,
-  TContext
-> => {
-  return useMutation(getCreateCompletionV1CompletionsPostMutationOptions(options), queryClient);
-};
-export type createResponseV1ResponsesPostResponse200 = {
-  data: unknown;
-  status: 200;
-};
+export const useCreateCompletionV1CompletionsPost = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCompletionV1CompletionsPost>>, TError,void, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createCompletionV1CompletionsPost>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getCreateCompletionV1CompletionsPostMutationOptions(options), queryClient);
+    }
+    export type createResponseV1ResponsesPostResponse200 = {
+  data: unknown
+  status: 200
+}
 
 export type createResponseV1ResponsesPostResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type createResponseV1ResponsesPostResponseSuccess = (createResponseV1ResponsesPostResponse200) & {
+  headers: Headers;
+};
+export type createResponseV1ResponsesPostResponseError = (createResponseV1ResponsesPostResponse422) & {
+  headers: Headers;
 };
 
-export type createResponseV1ResponsesPostResponseSuccess =
-  createResponseV1ResponsesPostResponse200 & {
-    headers: Headers;
-  };
-export type createResponseV1ResponsesPostResponseError =
-  createResponseV1ResponsesPostResponse422 & {
-    headers: Headers;
-  };
-
-export type createResponseV1ResponsesPostResponse =
-  | createResponseV1ResponsesPostResponseSuccess
-  | createResponseV1ResponsesPostResponseError;
+export type createResponseV1ResponsesPostResponse = (createResponseV1ResponsesPostResponseSuccess | createResponseV1ResponsesPostResponseError)
 
 export const getCreateResponseV1ResponsesPostUrl = () => {
-  return `/v1/responses`;
-};
+
+
+
+
+  return `/v1/responses`
+}
 
 /**
  * @summary Create Response
  */
-export const createResponseV1ResponsesPost = async (
-  options?: RequestInit,
-): Promise<createResponseV1ResponsesPostResponse> => {
-  return apiMutator<createResponseV1ResponsesPostResponse>(getCreateResponseV1ResponsesPostUrl(), {
+export const createResponseV1ResponsesPost = async ( options?: RequestInit): Promise<createResponseV1ResponsesPostResponse> => {
+
+  return apiMutator<createResponseV1ResponsesPostResponse>(getCreateResponseV1ResponsesPostUrl(),
+  {
     ...options,
-    method: "POST",
-  });
-};
+    method: 'POST'
 
-export const getCreateResponseV1ResponsesPostMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof createResponseV1ResponsesPost>>,
-    TError,
-    void,
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof createResponseV1ResponsesPost>>,
-  TError,
-  void,
-  TContext
-> => {
-  const mutationKey = ["createResponseV1ResponsesPost"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof createResponseV1ResponsesPost>>,
-    void
-  > = () => {
-    return createResponseV1ResponsesPost();
-  };
+  }
+);}
 
-  return { mutationFn, ...mutationOptions };
-};
 
-export type CreateResponseV1ResponsesPostMutationResult = NonNullable<
-  Awaited<ReturnType<typeof createResponseV1ResponsesPost>>
->;
 
-export type CreateResponseV1ResponsesPostMutationError = HTTPValidationError;
 
-/**
+export const getCreateResponseV1ResponsesPostMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createResponseV1ResponsesPost>>, TError,void, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof createResponseV1ResponsesPost>>, TError,void, TContext> => {
+
+const mutationKey = ['createResponseV1ResponsesPost'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createResponseV1ResponsesPost>>, void> = () => {
+
+
+          return  createResponseV1ResponsesPost()
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateResponseV1ResponsesPostMutationResult = NonNullable<Awaited<ReturnType<typeof createResponseV1ResponsesPost>>>
+
+    export type CreateResponseV1ResponsesPostMutationError = HTTPValidationError
+
+    /**
  * @summary Create Response
  */
-export const useCreateResponseV1ResponsesPost = <TError = HTTPValidationError, TContext = unknown>(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof createResponseV1ResponsesPost>>,
-      TError,
-      void,
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof createResponseV1ResponsesPost>>,
-  TError,
-  void,
-  TContext
-> => {
-  return useMutation(getCreateResponseV1ResponsesPostMutationOptions(options), queryClient);
-};
-export type createChatCompletionV1ChatCompletionsPostResponse200 = {
-  data: unknown;
-  status: 200;
-};
+export const useCreateResponseV1ResponsesPost = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createResponseV1ResponsesPost>>, TError,void, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createResponseV1ResponsesPost>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getCreateResponseV1ResponsesPostMutationOptions(options), queryClient);
+    }
+    export type createChatCompletionV1ChatCompletionsPostResponse200 = {
+  data: unknown
+  status: 200
+}
 
 export type createChatCompletionV1ChatCompletionsPostResponse422 = {
-  data: HTTPValidationError;
-  status: 422;
+  data: HTTPValidationError
+  status: 422
+}
+
+export type createChatCompletionV1ChatCompletionsPostResponseSuccess = (createChatCompletionV1ChatCompletionsPostResponse200) & {
+  headers: Headers;
+};
+export type createChatCompletionV1ChatCompletionsPostResponseError = (createChatCompletionV1ChatCompletionsPostResponse422) & {
+  headers: Headers;
 };
 
-export type createChatCompletionV1ChatCompletionsPostResponseSuccess =
-  createChatCompletionV1ChatCompletionsPostResponse200 & {
-    headers: Headers;
-  };
-export type createChatCompletionV1ChatCompletionsPostResponseError =
-  createChatCompletionV1ChatCompletionsPostResponse422 & {
-    headers: Headers;
-  };
-
-export type createChatCompletionV1ChatCompletionsPostResponse =
-  | createChatCompletionV1ChatCompletionsPostResponseSuccess
-  | createChatCompletionV1ChatCompletionsPostResponseError;
+export type createChatCompletionV1ChatCompletionsPostResponse = (createChatCompletionV1ChatCompletionsPostResponseSuccess | createChatCompletionV1ChatCompletionsPostResponseError)
 
 export const getCreateChatCompletionV1ChatCompletionsPostUrl = () => {
-  return `/v1/chat/completions`;
-};
+
+
+
+
+  return `/v1/chat/completions`
+}
 
 /**
  * @summary Create Chat Completion
  */
-export const createChatCompletionV1ChatCompletionsPost = async (
-  options?: RequestInit,
-): Promise<createChatCompletionV1ChatCompletionsPostResponse> => {
-  return apiMutator<createChatCompletionV1ChatCompletionsPostResponse>(
-    getCreateChatCompletionV1ChatCompletionsPostUrl(),
-    {
-      ...options,
-      method: "POST",
-    },
-  );
-};
+export const createChatCompletionV1ChatCompletionsPost = async ( options?: RequestInit): Promise<createChatCompletionV1ChatCompletionsPostResponse> => {
 
-export const getCreateChatCompletionV1ChatCompletionsPostMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>,
-    TError,
-    void,
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>,
-  TError,
-  void,
-  TContext
-> => {
-  const mutationKey = ["createChatCompletionV1ChatCompletionsPost"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
+  return apiMutator<createChatCompletionV1ChatCompletionsPostResponse>(getCreateChatCompletionV1ChatCompletionsPostUrl(),
+  {
+    ...options,
+    method: 'POST'
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>,
-    void
-  > = () => {
-    return createChatCompletionV1ChatCompletionsPost();
-  };
 
-  return { mutationFn, ...mutationOptions };
-};
+  }
+);}
 
-export type CreateChatCompletionV1ChatCompletionsPostMutationResult = NonNullable<
-  Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>
->;
 
-export type CreateChatCompletionV1ChatCompletionsPostMutationError = HTTPValidationError;
 
-/**
+
+export const getCreateChatCompletionV1ChatCompletionsPostMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>, TError,void, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>, TError,void, TContext> => {
+
+const mutationKey = ['createChatCompletionV1ChatCompletionsPost'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>, void> = () => {
+
+
+          return  createChatCompletionV1ChatCompletionsPost()
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateChatCompletionV1ChatCompletionsPostMutationResult = NonNullable<Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>>
+
+    export type CreateChatCompletionV1ChatCompletionsPostMutationError = HTTPValidationError
+
+    /**
  * @summary Create Chat Completion
  */
-export const useCreateChatCompletionV1ChatCompletionsPost = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>,
-      TError,
-      void,
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>,
-  TError,
-  void,
-  TContext
-> => {
-  return useMutation(
-    getCreateChatCompletionV1ChatCompletionsPostMutationOptions(options),
-    queryClient,
-  );
+export const useCreateChatCompletionV1ChatCompletionsPost = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>, TError,void, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getCreateChatCompletionV1ChatCompletionsPostMutationOptions(options), queryClient);
+    }
+    export type createEmbeddingsV1EmbeddingsPostResponse200 = {
+  data: unknown
+  status: 200
+}
+
+export type createEmbeddingsV1EmbeddingsPostResponseSuccess = (createEmbeddingsV1EmbeddingsPostResponse200) & {
+  headers: Headers;
 };
+;
+
+export type createEmbeddingsV1EmbeddingsPostResponse = (createEmbeddingsV1EmbeddingsPostResponseSuccess)
+
+export const getCreateEmbeddingsV1EmbeddingsPostUrl = () => {
+
+
+
+
+  return `/v1/embeddings`
+}
+
+/**
+ * @summary Create Embeddings
+ */
+export const createEmbeddingsV1EmbeddingsPost = async ( options?: RequestInit): Promise<createEmbeddingsV1EmbeddingsPostResponse> => {
+
+  return apiMutator<createEmbeddingsV1EmbeddingsPostResponse>(getCreateEmbeddingsV1EmbeddingsPostUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getCreateEmbeddingsV1EmbeddingsPostMutationOptions = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmbeddingsV1EmbeddingsPost>>, TError,void, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof createEmbeddingsV1EmbeddingsPost>>, TError,void, TContext> => {
+
+const mutationKey = ['createEmbeddingsV1EmbeddingsPost'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createEmbeddingsV1EmbeddingsPost>>, void> = () => {
+
+
+          return  createEmbeddingsV1EmbeddingsPost()
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateEmbeddingsV1EmbeddingsPostMutationResult = NonNullable<Awaited<ReturnType<typeof createEmbeddingsV1EmbeddingsPost>>>
+
+    export type CreateEmbeddingsV1EmbeddingsPostMutationError = unknown
+
+    /**
+ * @summary Create Embeddings
+ */
+export const useCreateEmbeddingsV1EmbeddingsPost = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmbeddingsV1EmbeddingsPost>>, TError,void, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createEmbeddingsV1EmbeddingsPost>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getCreateEmbeddingsV1EmbeddingsPostMutationOptions(options), queryClient);
+    }

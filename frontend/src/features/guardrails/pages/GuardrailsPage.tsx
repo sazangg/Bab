@@ -56,16 +56,19 @@ import {
 } from "@/shared/api/generated/guardrails/guardrails";
 import {
   listVirtualKeysApiV1ProjectsProjectIdKeysGet,
-  useListAllocationsApiV1ProjectsAllocationsGet,
   useListProjectsApiV1ProjectsGet,
 } from "@/shared/api/generated/projects/projects";
+import {
+  listModelOfferingsApiV1ProvidersProviderIdOfferingsGet,
+  useListProvidersApiV1ProvidersGet,
+} from "@/shared/api/generated/providers/providers";
 import type {
-  AllocationResponse,
   GuardrailAssignmentResponse,
   GuardrailEventResponse,
   GuardrailPolicyResponse,
   GuardrailRuleInput,
   GuardrailSimulationResponse,
+  ModelOfferingResponse,
   ProjectResponse,
   TeamResponse,
   VirtualKeyResponse,
@@ -100,7 +103,7 @@ const ruleTypeLabels: Record<string, string> = {
   pii: "PII detector",
 };
 
-type ScopeType = "org" | "team" | "project" | "allocation" | "virtual_key";
+type ScopeType = "org" | "team" | "project" | "virtual_key";
 type EventScopeType = "all" | ScopeType;
 type ScopeOption = { id: string; label: string };
 type ScopeOptions = Record<ScopeType, ScopeOption[]>;
@@ -161,8 +164,6 @@ export function GuardrailsPage() {
     policy_id: eventPolicyId === "all" ? undefined : eventPolicyId,
     team_id: eventScopeType === "team" && eventScopeId !== "all" ? eventScopeId : undefined,
     project_id: eventScopeType === "project" && eventScopeId !== "all" ? eventScopeId : undefined,
-    allocation_id:
-      eventScopeType === "allocation" && eventScopeId !== "all" ? eventScopeId : undefined,
     virtual_key_id:
       eventScopeType === "virtual_key" && eventScopeId !== "all" ? eventScopeId : undefined,
     model: eventModel.trim() || undefined,
@@ -170,13 +171,13 @@ export function GuardrailsPage() {
   });
   const teamsQuery = useListTeamsApiV1TeamsGet();
   const projectsQuery = useListProjectsApiV1ProjectsGet();
-  const allocationsQuery = useListAllocationsApiV1ProjectsAllocationsGet();
+  const providersQuery = useListProvidersApiV1ProvidersGet();
   const policies = policiesQuery.data?.status === 200 ? policiesQuery.data.data : [];
   const assignments = assignmentsQuery.data?.status === 200 ? assignmentsQuery.data.data : [];
   const events = eventsQuery.data?.status === 200 ? eventsQuery.data.data : [];
   const teams = teamsQuery.data?.status === 200 ? teamsQuery.data.data : [];
   const projects = projectsQuery.data?.status === 200 ? projectsQuery.data.data : [];
-  const allocations = allocationsQuery.data?.status === 200 ? allocationsQuery.data.data : [];
+  const providers = providersQuery.data?.status === 200 ? providersQuery.data.data : [];
   const virtualKeyQueries = useQueries({
     queries: projects.map((project) => ({
       queryKey: ["guardrail-assignment-virtual-keys", project.id],
@@ -190,7 +191,24 @@ export function GuardrailsPage() {
     if (query.data?.status !== 200 || !project) return [];
     return query.data.data.map((key) => ({ ...key, project_name: project.name }));
   });
-  const scopeOptions = buildScopeOptions({ teams, projects, allocations, virtualKeys });
+  const modelOfferingQueries = useQueries({
+    queries: providers.map((provider) => ({
+      queryKey: ["guardrail-policy-model-offerings", provider.id],
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        listModelOfferingsApiV1ProvidersProviderIdOfferingsGet(
+          provider.id,
+          { limit: 500, is_active: true },
+          { signal },
+        ),
+      enabled: providers.length > 0,
+    })),
+  });
+  const modelOptions = uniqueModelOptions(
+    modelOfferingQueries.flatMap((query) =>
+      query.data?.status === 200 ? query.data.data.items : [],
+    ),
+  );
+  const scopeOptions = buildScopeOptions({ teams, projects, virtualKeys });
   const scopeLabels = buildScopeLabels(scopeOptions);
   const policyLabels = Object.fromEntries(policies.map((policy) => [policy.id, policy.name]));
   const activePolicies = policies.filter((policy) => policy.is_active);
@@ -320,7 +338,6 @@ export function GuardrailsPage() {
       scope_id:
         assignment.team_id ??
         assignment.project_id ??
-        assignment.allocation_id ??
         assignment.virtual_key_id ??
         "",
       enforcement_mode: assignment.enforcement_mode,
@@ -408,7 +425,6 @@ export function GuardrailsPage() {
       scope_type: scopeType,
       team_id: scopeType === "team" ? assignmentForm.scope_id : null,
       project_id: scopeType === "project" ? assignmentForm.scope_id : null,
-      allocation_id: scopeType === "allocation" ? assignmentForm.scope_id : null,
       virtual_key_id: scopeType === "virtual_key" ? assignmentForm.scope_id : null,
       enforcement_mode: assignmentForm.enforcement_mode,
       is_active: editingAssignment?.is_active ?? true,
@@ -663,7 +679,7 @@ export function GuardrailsPage() {
               <EmptyState
                 icon={ShieldCheck}
                 title="No assignments"
-                description="Assign a policy to org, team, project, allocation, or virtual key."
+                description="Assign a policy to org, team, project, or virtual key."
               />
             ) : (
               <Table>
@@ -801,7 +817,6 @@ export function GuardrailsPage() {
                   <SelectItem value="all">All scopes</SelectItem>
                   <SelectItem value="team">Team</SelectItem>
                   <SelectItem value="project">Project</SelectItem>
-                  <SelectItem value="allocation">Allocation</SelectItem>
                   <SelectItem value="virtual_key">Virtual key</SelectItem>
                 </SelectContent>
               </Select>
@@ -968,6 +983,7 @@ export function GuardrailsPage() {
                           rules: policyForm.rules.filter((item) => item.id !== rule.id),
                         })
                       }
+                      modelOptions={modelOptions}
                     />
                   ))}
                 </div>
@@ -1016,7 +1032,7 @@ export function GuardrailsPage() {
           <SheetHeader>
             <SheetTitle>{editingAssignment ? "Edit assignment" : "Assign policy"}</SheetTitle>
             <SheetDescription>
-              Assignments compose restrictively across org, team, project, allocation, and key.
+              Assignments compose restrictively across org, team, project, and key.
             </SheetDescription>
           </SheetHeader>
           <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
@@ -1040,7 +1056,7 @@ export function GuardrailsPage() {
                     scope_id: "",
                   })
                 }
-                options={["org", "team", "project", "allocation", "virtual_key"]}
+                options={["org", "team", "project", "virtual_key"]}
               />
               {assignmentForm.scope_type !== "org" ? (
                 <div className="grid gap-2">
@@ -1144,12 +1160,14 @@ function RuleEditor({
   canRemove,
   onChange,
   onRemove,
+  modelOptions,
 }: {
   rule: PolicyRuleForm;
   index: number;
   canRemove: boolean;
   onChange: (rule: PolicyRuleForm) => void;
   onRemove: () => void;
+  modelOptions: string[];
 }) {
   return (
     <div className="grid gap-4 rounded-md border bg-background p-3">
@@ -1211,14 +1229,22 @@ function RuleEditor({
           />
         </Field>
       </div>
-      <Field label="Values">
-        <Textarea
+      {rule.rule_type === "model" ? (
+        <ModelRuleValues
           value={rule.values}
-          onChange={(event) => onChange({ ...rule, values: event.target.value })}
-          placeholder={ruleValuePlaceholder(rule.rule_type)}
-          className="min-h-28 font-mono text-sm"
+          onChange={(values) => onChange({ ...rule, values })}
+          options={modelOptions}
         />
-      </Field>
+      ) : (
+        <Field label="Values">
+          <Textarea
+            value={rule.values}
+            onChange={(event) => onChange({ ...rule, values: event.target.value })}
+            placeholder={ruleValuePlaceholder(rule.rule_type)}
+            className="min-h-28 font-mono text-sm"
+          />
+        </Field>
+      )}
       {rule.rule_type === "pii" ? (
         <SelectField
           label="Detector"
@@ -1230,6 +1256,93 @@ function RuleEditor({
       ) : null}
     </div>
   );
+}
+
+function ModelRuleValues({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+}) {
+  const [search, setSearch] = useState("");
+  const selected = parseRuleValues(value);
+  const searchTerm = search.toLowerCase().trim();
+  const filtered = searchTerm
+    ? options
+        .filter((option) => option.toLowerCase().includes(searchTerm) && !selected.includes(option))
+        .slice(0, 8)
+    : [];
+
+  const addValue = (nextValue: string) => {
+    onChange([...selected, nextValue].join("\n"));
+    setSearch("");
+  };
+  const removeValue = (removedValue: string) => {
+    onChange(selected.filter((item) => item !== removedValue).join("\n"));
+  };
+
+  return (
+    <Field label="Models">
+      <div className="grid gap-2">
+        <Input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search synced model offerings..."
+        />
+        {filtered.length > 0 ? (
+          <div className="rounded-md border bg-background p-1">
+            {filtered.map((option) => (
+              <button
+                key={option}
+                type="button"
+                className="block w-full rounded px-2 py-1.5 text-left font-mono text-xs hover:bg-muted"
+                onClick={() => addValue(option)}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {selected.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5">
+            {selected.map((item) => (
+              <Button
+                key={item}
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => removeValue(item)}
+              >
+                <span className="max-w-80 truncate font-mono text-xs">{item}</span>
+                <Trash2 data-icon="inline-end" />
+              </Button>
+            ))}
+          </div>
+        ) : null}
+        <Textarea
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={ruleValuePlaceholder("model")}
+          className="min-h-20 font-mono text-sm"
+        />
+      </div>
+    </Field>
+  );
+}
+
+function uniqueModelOptions(models: ModelOfferingResponse[]) {
+  return Array.from(
+    new Set(
+      models.flatMap((model) =>
+        [model.provider_model_name, model.alias].filter(
+          (value): value is string => typeof value === "string" && value.length > 0,
+        ),
+      ),
+    ),
+  ).sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" }));
 }
 
 function ruleValuePlaceholder(ruleType: string) {
@@ -1308,29 +1421,16 @@ function parseRuleValues(value: string) {
 function buildScopeOptions({
   teams,
   projects,
-  allocations,
   virtualKeys,
 }: {
   teams: TeamResponse[];
   projects: ProjectResponse[];
-  allocations: AllocationResponse[];
   virtualKeys: ScopedVirtualKey[];
 }): ScopeOptions {
-  const projectById = Object.fromEntries(projects.map((project) => [project.id, project]));
   return {
     org: [{ id: "org", label: "Organization" }],
     team: teams.map((team) => ({ id: team.id, label: team.name })),
     project: projects.map((project) => ({ id: project.id, label: project.name })),
-    allocation: allocations.map((allocation) => {
-      const projectName = allocation.project_id
-        ? projectById[allocation.project_id]?.name
-        : undefined;
-      const owner = projectName ?? allocation.target_type;
-      return {
-        id: allocation.id,
-        label: `${allocation.name} · ${owner}`,
-      };
-    }),
     virtual_key: virtualKeys.map((key) => ({
       id: key.id,
       label: `${key.name} · ${key.project_name} · ${key.key_prefix}`,
@@ -1353,15 +1453,13 @@ function labelAssignmentScope(
   const scopeId =
     assignment.team_id ??
     assignment.project_id ??
-    assignment.allocation_id ??
     assignment.virtual_key_id;
   if (!scopeId) return "Organization";
   return scopeLabels[scopeId] ?? scopeId;
 }
 
 function labelEventScope(event: GuardrailEventResponse, scopeLabels: Record<string, string>) {
-  const scopeId =
-    event.virtual_key_id ?? event.allocation_id ?? event.project_id ?? event.team_id ?? null;
+  const scopeId = event.virtual_key_id ?? event.project_id ?? event.team_id ?? null;
   if (!scopeId) return "Organization";
   return scopeLabels[scopeId] ?? scopeId;
 }

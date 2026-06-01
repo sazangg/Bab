@@ -4,17 +4,16 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { ListUsageRecordsApiV1UsageRecordsGetWindow } from "./listUsageRecordsApiV1UsageRecordsGetWindow";
+import type { ListUsageRecordsApiV1UsageRecordsGetWindow } from './listUsageRecordsApiV1UsageRecordsGetWindow';
 
 export type ListUsageRecordsApiV1UsageRecordsGetParams = {
-  window?: ListUsageRecordsApiV1UsageRecordsGetWindow;
-  start_at?: string | null;
-  end_at?: string | null;
-  team_id?: string | null;
-  provider_id?: string | null;
-  project_id?: string | null;
-  allocation_id?: string | null;
-  virtual_key_id?: string | null;
-  model?: string | null;
-  limit?: number;
+window?: ListUsageRecordsApiV1UsageRecordsGetWindow;
+start_at?: string | null;
+end_at?: string | null;
+team_id?: string | null;
+provider_id?: string | null;
+project_id?: string | null;
+virtual_key_id?: string | null;
+model?: string | null;
+limit?: number;
 };

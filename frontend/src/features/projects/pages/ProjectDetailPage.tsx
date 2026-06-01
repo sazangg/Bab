@@ -165,7 +165,7 @@ export function ProjectDetailPage() {
       <EntityUsageCard
         usage={usage}
         isLoading={usageQuery.isPending}
-        description="Aggregate project usage across all virtual keys, including inherited team allocations."
+        description="Aggregate project usage across all virtual keys, including inherited team policies."
       />
       <UsageRecordsDrilldown title="Project usage records" filters={{ project_id: project.id }} />
       <RecentGuardrailEventsCard filters={{ project_id: project.id }} />
@@ -176,7 +176,7 @@ export function ProjectDetailPage() {
             <KeyRound className="size-3.5" />
             Keys ({keys.length})
           </TabsTrigger>
-          <TabsTrigger value="access">Allocations</TabsTrigger>
+          <TabsTrigger value="access">Policies</TabsTrigger>
         </TabsList>
         <TabsContent value="keys" className="space-y-4">
           <ProjectKeysSection
@@ -189,7 +189,11 @@ export function ProjectDetailPage() {
           />
         </TabsContent>
         <TabsContent value="access" className="space-y-4">
-          <ProjectAccessSection projectId={projectId} teamId={project.team_id} />
+          <ProjectAccessSection
+            projectId={projectId}
+            teamId={project.team_id}
+            canManage={canManageProject}
+          />
         </TabsContent>
       </Tabs>
 

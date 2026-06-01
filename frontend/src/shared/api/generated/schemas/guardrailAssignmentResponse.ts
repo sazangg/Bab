@@ -13,7 +13,6 @@ export interface GuardrailAssignmentResponse {
   scope_type: string;
   team_id: string | null;
   project_id: string | null;
-  allocation_id: string | null;
   virtual_key_id: string | null;
   enforcement_mode: string;
   is_active: boolean;

@@ -5,13 +5,13 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type GetSpendInsightsApiV1UsageSpendInsightsGetWindow =
-  (typeof GetSpendInsightsApiV1UsageSpendInsightsGetWindow)[keyof typeof GetSpendInsightsApiV1UsageSpendInsightsGetWindow];
+export type GetSpendInsightsApiV1UsageSpendInsightsGetWindow = typeof GetSpendInsightsApiV1UsageSpendInsightsGetWindow[keyof typeof GetSpendInsightsApiV1UsageSpendInsightsGetWindow];
+
 
 export const GetSpendInsightsApiV1UsageSpendInsightsGetWindow = {
-  "24h": "24h",
-  "7d": "7d",
-  "30d": "30d",
-  "90d": "90d",
-  lifetime: "lifetime",
+  '24h': '24h',
+  '7d': '7d',
+  '30d': '30d',
+  '90d': '90d',
+  lifetime: 'lifetime',
 } as const;

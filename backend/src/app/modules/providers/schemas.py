@@ -147,6 +147,7 @@ class ProviderReadiness(BaseModel):
     has_active_pool: bool = False
     has_active_pool_credential: bool = False
     has_active_model: bool = False
+    active_model_count: int = 0
     is_ready: bool = False
 
 

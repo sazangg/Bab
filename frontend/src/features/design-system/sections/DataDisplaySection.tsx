@@ -144,15 +144,15 @@ export function DataDisplaySection() {
               <KeyRound className="size-3.5" />
               Keys (4)
             </TabsTrigger>
-            <TabsTrigger value="allocations">Allocations</TabsTrigger>
+            <TabsTrigger value="policies">Policies</TabsTrigger>
             <TabsTrigger value="controls">Controls</TabsTrigger>
             <TabsTrigger value="activity">Activity</TabsTrigger>
           </TabsList>
           <TabsContent value="keys">
             <p className="text-sm text-muted-foreground">Keys tab content.</p>
           </TabsContent>
-          <TabsContent value="allocations">
-            <p className="text-sm text-muted-foreground">Allocations tab content.</p>
+          <TabsContent value="policies">
+            <p className="text-sm text-muted-foreground">Policies tab content.</p>
           </TabsContent>
           <TabsContent value="controls">
             <p className="text-sm text-muted-foreground">Limits tab content.</p>

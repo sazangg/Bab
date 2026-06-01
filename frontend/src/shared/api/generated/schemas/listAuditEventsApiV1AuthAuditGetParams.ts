@@ -6,5 +6,11 @@
  */
 
 export type ListAuditEventsApiV1AuthAuditGetParams = {
-  limit?: number;
+start_at?: string | null;
+end_at?: string | null;
+actor_user_id?: string | null;
+action?: string | null;
+entity_type?: string | null;
+entity_id?: string | null;
+limit?: number;
 };

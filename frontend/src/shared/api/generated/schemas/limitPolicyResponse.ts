@@ -4,25 +4,24 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { AllocationOffering } from "./allocationOffering";
+import type { LimitPolicyRuleResponse } from './limitPolicyRuleResponse';
 
-export interface AllocationResponse {
+export interface LimitPolicyResponse {
   id: string;
   org_id: string;
-  parent_allocation_id: string | null;
-  target_type: string;
-  team_id: string | null;
-  project_id: string | null;
   name: string;
   description: string | null;
-  offerings: AllocationOffering[];
-  is_default: boolean;
   budget_cents: number | null;
   max_requests: number | null;
   max_input_tokens: number | null;
   max_output_tokens: number | null;
   max_tokens_per_request: number | null;
   window: string;
+  provider_id: string | null;
+  credential_pool_id: string | null;
+  model_offering_id: string | null;
+  access_policy_id: string | null;
+  rules?: LimitPolicyRuleResponse[];
   is_active: boolean;
   created_at: string;
   updated_at: string;

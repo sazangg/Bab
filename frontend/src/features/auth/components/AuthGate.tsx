@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 
 import { useRefreshApiV1AuthRefreshPost } from "@/shared/api/generated/auth/auth";
@@ -6,6 +7,7 @@ import { useAuthStore } from "@/features/auth/model/auth-store";
 
 export function AuthGate() {
   const location = useLocation();
+  const queryClient = useQueryClient();
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const setSession = useAuthStore((state) => state.setSession);
   const clearSession = useAuthStore((state) => state.clearSession);
@@ -14,11 +16,13 @@ export function AuthGate() {
     mutation: {
       onSuccess: (response) => {
         if (response.status === 200) {
+          queryClient.clear();
           setSession(response.data.access_token);
         }
       },
       onError: () => {
         clearSession();
+        queryClient.clear();
       },
       onSettled: () => {
         setRefreshChecked(true);

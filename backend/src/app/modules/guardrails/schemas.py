@@ -82,10 +82,9 @@ class GuardrailPolicyResponse(BaseModel):
 
 class CreateGuardrailAssignmentRequest(BaseModel):
     policy_id: UUID
-    scope_type: str = Field(pattern="^(org|team|project|allocation|virtual_key)$")
+    scope_type: str = Field(pattern="^(org|team|project|virtual_key)$")
     team_id: UUID | None = None
     project_id: UUID | None = None
-    allocation_id: UUID | None = None
     virtual_key_id: UUID | None = None
     enforcement_mode: str = Field(default="enforce", pattern="^(enforce|dry_run)$")
     is_active: bool = True
@@ -96,7 +95,6 @@ class CreateGuardrailAssignmentRequest(BaseModel):
             "org": None,
             "team": self.team_id,
             "project": self.project_id,
-            "allocation": self.allocation_id,
             "virtual_key": self.virtual_key_id,
         }[self.scope_type]
         if self.scope_type != "org" and expected is None:
@@ -108,11 +106,10 @@ class UpdateGuardrailAssignmentRequest(BaseModel):
     policy_id: UUID | None = None
     scope_type: str | None = Field(
         default=None,
-        pattern="^(org|team|project|allocation|virtual_key)$",
+        pattern="^(org|team|project|virtual_key)$",
     )
     team_id: UUID | None = None
     project_id: UUID | None = None
-    allocation_id: UUID | None = None
     virtual_key_id: UUID | None = None
     enforcement_mode: str | None = Field(default=None, pattern="^(enforce|dry_run)$")
     is_active: bool | None = None
@@ -125,7 +122,6 @@ class UpdateGuardrailAssignmentRequest(BaseModel):
             "org": None,
             "team": self.team_id,
             "project": self.project_id,
-            "allocation": self.allocation_id,
             "virtual_key": self.virtual_key_id,
         }[self.scope_type]
         if self.scope_type != "org" and expected is None:
@@ -143,7 +139,6 @@ class GuardrailAssignmentResponse(BaseModel):
     scope_type: str
     team_id: UUID | None
     project_id: UUID | None
-    allocation_id: UUID | None
     virtual_key_id: UUID | None
     enforcement_mode: str
     is_active: bool
@@ -163,7 +158,6 @@ class GuardrailEventResponse(BaseModel):
     reason: str
     team_id: UUID | None
     project_id: UUID | None
-    allocation_id: UUID | None
     virtual_key_id: UUID | None
     provider_id: UUID | None
     pool_id: UUID | None
@@ -178,8 +172,6 @@ class GuardrailEvaluationContext(BaseModel):
     org_id: UUID
     team_id: UUID
     project_id: UUID
-    allocation_id: UUID
-    allocation_chain_ids: list[UUID]
     virtual_key_id: UUID
     provider_id: UUID
     pool_id: UUID

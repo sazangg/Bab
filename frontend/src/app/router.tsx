@@ -8,11 +8,15 @@ import { ApiDocsPage } from "@/features/api-docs/pages/ApiDocsPage";
 import { AuditPage } from "@/features/audit/pages/AuditPage";
 import { AcceptInvitePage } from "@/features/auth/pages/AcceptInvitePage";
 import { LoginPage } from "@/features/auth/pages/LoginPage";
-import { AllocationsPage } from "@/features/allocations/pages/AllocationsPage";
 import { DesignSystemPage } from "@/features/design-system/pages/DesignSystemPage";
 import { GuardrailsPage } from "@/features/guardrails/pages/GuardrailsPage";
 import { DashboardHomePage } from "@/features/home/pages/DashboardHomePage";
 import { KeyDetailPage } from "@/features/projects/pages/KeyDetailPage";
+import {
+  AccessPolicyDetailPage,
+  LimitPolicyDetailPage,
+  PoliciesPage,
+} from "@/features/policies/pages/PoliciesPage";
 import { PlaygroundPage } from "@/features/playground/pages/PlaygroundPage";
 import { ProjectDetailPage } from "@/features/projects/pages/ProjectDetailPage";
 import { ProjectsPage } from "@/features/projects/pages/ProjectsPage";
@@ -27,23 +31,51 @@ import { ActivityPage } from "@/features/activity/pages/ActivityPage";
 import { UsagePage } from "@/features/usage/pages/UsagePage";
 import { UsersPage } from "@/features/users/pages/UsersPage";
 
+function ProbePage({ kind }: { kind: "health" | "readyz" }) {
+  return (
+    <main className="grid min-h-svh place-items-center bg-background p-6 text-foreground">
+      <div className="w-full max-w-lg rounded-md border bg-card p-6 shadow-sm">
+        <p className="text-sm text-muted-foreground">Bab probe</p>
+        <h1 className="mt-1 text-2xl font-semibold">{kind === "health" ? "Health" : "Readiness"}</h1>
+        <p className="mt-3 text-sm text-muted-foreground">
+          Use the backend endpoint{" "}
+          <code className="rounded bg-muted px-1 py-0.5">
+            {kind === "health" ? "/health" : "/readyz"}
+          </code>{" "}
+          or{" "}
+          <code className="rounded bg-muted px-1 py-0.5">
+            {kind === "health" ? "/api/v1/health" : "/api/v1/readyz"}
+          </code>
+          .
+        </p>
+      </div>
+    </main>
+  );
+}
+
 export function AppRoutes() {
   return (
     <Routes>
+      <Route path="/health" element={<ProbePage kind="health" />} />
+      <Route path="/readyz" element={<ProbePage kind="readyz" />} />
       <Route element={<AuthLayout />}>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/accept-invite" element={<AcceptInvitePage />} />
       </Route>
       <Route element={<AuthGate />}>
         <Route element={<DashboardLayout />}>
-          <Route path="/" element={<DashboardHomePage />} />
+          <Route element={<ProtectedRoute allowDashboardHome />}>
+            <Route path="/" element={<DashboardHomePage />} />
+          </Route>
           <Route element={<ProtectedRoute allowWorkspaceScope />}>
             <Route path="/teams" element={<TeamsPage />} />
             <Route path="/teams/:teamId" element={<TeamDetailPage />} />
             <Route path="/projects" element={<ProjectsPage />} />
             <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
             <Route path="/projects/:projectId/keys/:keyId" element={<KeyDetailPage />} />
-            <Route path="/allocations" element={<AllocationsPage />} />
+            <Route path="/policies" element={<PoliciesPage />} />
+            <Route path="/policies/access/:policyId" element={<AccessPolicyDetailPage />} />
+            <Route path="/policies/limits/:policyId" element={<LimitPolicyDetailPage />} />
           </Route>
           <Route element={<ProtectedRoute requireKeyManager />}>
             <Route path="/virtual-keys" element={<VirtualKeysPage />} />

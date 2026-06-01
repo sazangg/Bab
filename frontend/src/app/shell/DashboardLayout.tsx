@@ -18,7 +18,7 @@ import {
   Users,
 } from "lucide-react";
 import { useTheme } from "next-themes";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 
@@ -61,6 +61,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   canManageKeys,
+  canViewDashboardHome,
   hasAnyTeamMembership,
   hasPermission,
 } from "@/features/auth/lib/permissions";
@@ -89,10 +90,10 @@ const workspaceNav = [
     scoped: true,
   },
   {
-    to: "/allocations",
-    label: "Allocations",
+    to: "/policies",
+    label: "Policies",
     icon: Route,
-    permission: "allocations.manage",
+    permission: "policies.view",
     scoped: true,
   },
   { to: "/virtual-keys", label: "Virtual keys", icon: KeyRound, keyManager: true },
@@ -147,6 +148,7 @@ function LogoSidebarTrigger({ logoUrl }: { logoUrl?: string | null }) {
 
 export function DashboardLayout() {
   const location = useLocation();
+  const queryClient = useQueryClient();
   const { resolvedTheme, setTheme } = useTheme();
   const settingsQuery = useGetSettingsApiV1SettingsGet();
   const currentUserQuery = useMeApiV1AuthMeGet();
@@ -168,8 +170,13 @@ export function DashboardLayout() {
     if (item.scoped) return canView(item.permission) || hasAnyTeamMembership(currentUser);
     return canView(item.permission);
   };
-  const visibleOrganizationNav = organizationNav.filter((item) => canView(item.permission));
-  const visibleWorkspaceNav = workspaceNav.filter(canViewWorkspaceItem);
+  const visibleOrganizationNav = organizationNav.filter((item) => {
+    if (item.to === "/") return canViewDashboardHome(currentUser);
+    return canView(item.permission);
+  });
+  const visibleWorkspaceNav = workspaceNav.filter((item) => {
+    return canViewWorkspaceItem(item);
+  });
   const showApiDocs = canManageKeys(currentUser) || hasPermission(currentUser, "providers.view");
   const organizationName = settings?.organization_name ?? fallbackOrganizationName;
   const clearSession = useAuthStore((state) => state.clearSession);
@@ -177,6 +184,7 @@ export function DashboardLayout() {
     mutation: {
       onSettled: () => {
         clearSession();
+        queryClient.clear();
       },
     },
   });
@@ -226,9 +234,11 @@ export function DashboardLayout() {
           </Breadcrumb>
         </div>
         <div className="flex items-center gap-2">
-          <Button asChild variant="ghost" size="sm">
-            <Link to="/">Dashboard</Link>
-          </Button>
+          {canViewDashboardHome(currentUser) ? (
+            <Button asChild variant="ghost" size="sm">
+              <Link to="/">Dashboard</Link>
+            </Button>
+          ) : null}
           {showApiDocs ? (
             <Button asChild variant="ghost" size="sm">
               <Link to="/api-docs">API Docs</Link>
@@ -255,7 +265,12 @@ export function DashboardLayout() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent side="bottom" align="end" className="w-56">
-              <DropdownMenuLabel>Account</DropdownMenuLabel>
+              <DropdownMenuLabel>
+                <span className="block truncate">{currentUser?.email ?? "Account"}</span>
+                <span className="block text-xs font-normal text-muted-foreground">
+                  {formatRole(currentUser?.role)}
+                </span>
+              </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 onSelect={() => logoutMutation.mutate()}
@@ -271,44 +286,48 @@ export function DashboardLayout() {
       <Sidebar collapsible="icon" id="primary-sidebar" aria-label="Primary navigation">
         <SidebarHeader className="h-12" />
         <SidebarContent>
-          <SidebarGroup>
-            <SidebarGroupLabel>Organization</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {visibleOrganizationNav.map((item) => (
-                  <SidebarMenuItem key={item.to}>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={isActive(item.to, item.end)}
-                      tooltip={item.label}
-                    >
-                      <Link to={item.to}>
-                        <item.icon />
-                        <span>{item.label}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-          <SidebarGroup>
-            <SidebarGroupLabel>Workspace</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {visibleWorkspaceNav.map((item) => (
-                  <SidebarMenuItem key={item.to}>
-                    <SidebarMenuButton asChild isActive={isActive(item.to)} tooltip={item.label}>
-                      <Link to={item.to}>
-                        <item.icon />
-                        <span>{item.label}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
+          {visibleOrganizationNav.length > 0 ? (
+            <SidebarGroup>
+              <SidebarGroupLabel>Organization</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {visibleOrganizationNav.map((item) => (
+                    <SidebarMenuItem key={item.to}>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={isActive(item.to, item.end)}
+                        tooltip={item.label}
+                      >
+                        <Link to={item.to}>
+                          <item.icon />
+                          <span>{item.label}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          ) : null}
+          {visibleWorkspaceNav.length > 0 ? (
+            <SidebarGroup>
+              <SidebarGroupLabel>Workspace</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {visibleWorkspaceNav.map((item) => (
+                    <SidebarMenuItem key={item.to}>
+                      <SidebarMenuButton asChild isActive={isActive(item.to)} tooltip={item.label}>
+                        <Link to={item.to}>
+                          <item.icon />
+                          <span>{item.label}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          ) : null}
         </SidebarContent>
         <SidebarFooter className="mb-7 border-t p-2">
           <SidebarMenu>
@@ -391,4 +410,12 @@ function resolveAssetUrl(url: string) {
   if (/^https?:\/\//i.test(url)) return url;
   const apiBaseUrl = import.meta.env.VITE_BAB_API_URL as string | undefined;
   return apiBaseUrl ? new URL(url, apiBaseUrl).toString() : url;
+}
+
+function formatRole(role?: string) {
+  if (role === "org_owner") return "Owner";
+  if (role === "org_admin") return "Admin";
+  if (role === "org_viewer") return "Viewer";
+  if (role === "org_member") return "Member";
+  return "Unknown role";
 }

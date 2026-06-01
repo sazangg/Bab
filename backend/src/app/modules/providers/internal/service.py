@@ -1300,6 +1300,13 @@ async def _call_with_retries(
             )
             if attempt >= max_attempts or 504 not in retry_policy["retry_on_status"]:
                 raise last_error from exc
+        except httpx.RequestError as exc:
+            last_error = ProviderUpstreamError(
+                status_code=502,
+                body={"error": "provider upstream connection failed"},
+            )
+            if attempt >= max_attempts or 502 not in retry_policy["retry_on_status"]:
+                raise last_error from exc
         except ProviderUpstreamError as exc:
             last_error = exc
             if attempt >= max_attempts or exc.status_code not in retry_policy["retry_on_status"]:
@@ -1556,6 +1563,20 @@ async def stream_chat_completion(
                     )
                 if provider_credential_id is not None:
                     raise last_error from exc
+            except httpx.RequestError as exc:
+                last_error = ProviderUpstreamError(
+                    status_code=502,
+                    body={"error": "provider upstream connection failed"},
+                )
+                _record_circuit_failure(provider)
+                if credential is not None:
+                    await _mark_provider_credential_failed(
+                        provider_credential=credential,
+                        error=last_error,
+                        db=db,
+                    )
+                if provider_credential_id is not None:
+                    raise last_error from exc
             except ProviderUpstreamError as exc:
                 last_error = exc
                 _record_circuit_failure(provider)
@@ -1701,6 +1722,7 @@ def _provider_readiness(
         has_active_pool=active_pool_count > 0,
         has_active_pool_credential=active_pool_credential_count > 0,
         has_active_model=active_model_count > 0,
+        active_model_count=active_model_count,
         is_ready=all(
             [
                 provider.is_active,

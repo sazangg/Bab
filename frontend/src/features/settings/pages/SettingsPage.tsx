@@ -19,6 +19,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { hasPermission } from "@/features/auth/lib/permissions";
+import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
 import {
   useGetSettingsApiV1SettingsGet,
   useUpdateSettingsApiV1SettingsPatch,
@@ -52,7 +54,10 @@ export function SettingsPage() {
   const queryClient = useQueryClient();
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const settingsQuery = useGetSettingsApiV1SettingsGet();
+  const currentUserQuery = useMeApiV1AuthMeGet();
   const settings = settingsQuery.data?.status === 200 ? settingsQuery.data.data : undefined;
+  const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
+  const canManageSettings = hasPermission(currentUser, "settings.manage");
   const form = useForm<SettingsInput, unknown, SettingsValues>({
     resolver: zodResolver(settingsSchema),
     defaultValues: {
@@ -108,6 +113,7 @@ export function SettingsPage() {
   }, [form, settings]);
 
   const submit = form.handleSubmit((values) => {
+    if (!canManageSettings) return;
     const payload: UpdateOrganizationSettingsRequest = {
       ...values,
       public_base_url: values.public_base_url?.trim() ? values.public_base_url : null,
@@ -132,14 +138,16 @@ export function SettingsPage() {
         title="Settings"
         description="Organization identity, gateway defaults, and security defaults."
         actions={
-          <Button
-            type="submit"
-            form="settings-form"
-            disabled={updateSettings.isPending || settingsQuery.isPending}
-          >
-            <Save data-icon="inline-start" />
-            {updateSettings.isPending ? "Saving..." : "Save settings"}
-          </Button>
+          canManageSettings ? (
+            <Button
+              type="submit"
+              form="settings-form"
+              disabled={updateSettings.isPending || settingsQuery.isPending}
+            >
+              <Save data-icon="inline-start" />
+              {updateSettings.isPending ? "Saving..." : "Save settings"}
+            </Button>
+          ) : null
         }
       />
       {settingsQuery.isPending ? (
@@ -183,19 +191,24 @@ export function SettingsPage() {
                   type="button"
                   variant="outline"
                   onClick={() => logoInputRef.current?.click()}
-                  disabled={uploadLogo.isPending}
+                  disabled={uploadLogo.isPending || !canManageSettings}
                 >
                   <Upload data-icon="inline-start" />
                   {uploadLogo.isPending ? "Uploading..." : "Upload"}
                 </Button>
               </div>
               <Field label="Organization name" htmlFor="settings-org-name">
-                <Input id="settings-org-name" {...form.register("organization_name")} />
+                <Input
+                  id="settings-org-name"
+                  disabled={!canManageSettings}
+                  {...form.register("organization_name")}
+                />
               </Field>
               <Field label="Public base URL" htmlFor="settings-public-url">
                 <Input
                   id="settings-public-url"
                   placeholder="https://gateway.example.com"
+                  disabled={!canManageSettings}
                   {...form.register("public_base_url")}
                 />
               </Field>
@@ -214,12 +227,24 @@ export function SettingsPage() {
                 label="Request timeout (seconds)"
                 name="default_request_timeout_seconds"
                 form={form}
+                disabled={!canManageSettings}
               />
-              <NumberField label="Retry count" name="default_retry_count" form={form} />
-              <NumberField label="Max body bytes" name="default_max_body_bytes" form={form} />
+              <NumberField
+                label="Retry count"
+                name="default_retry_count"
+                form={form}
+                disabled={!canManageSettings}
+              />
+              <NumberField
+                label="Max body bytes"
+                name="default_max_body_bytes"
+                form={form}
+                disabled={!canManageSettings}
+              />
               <Field label="Model sync mode">
                 <Select
                   value={modelSyncMode}
+                  disabled={!canManageSettings}
                   onValueChange={(value) =>
                     form.setValue(
                       "default_model_sync_mode",
@@ -254,12 +279,17 @@ export function SettingsPage() {
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-2">
               <Field label="Key prefix" htmlFor="settings-key-prefix">
-                <Input id="settings-key-prefix" {...form.register("virtual_key_prefix")} />
+                <Input
+                  id="settings-key-prefix"
+                  disabled={!canManageSettings}
+                  {...form.register("virtual_key_prefix")}
+                />
               </Field>
               <NumberField
                 label="Default expiration days"
                 name="default_virtual_key_expiration_days"
                 form={form}
+                disabled={!canManageSettings}
                 placeholder="No default"
               />
               <div className="flex items-center justify-between gap-4 rounded-md border p-3 md:col-span-2">
@@ -273,6 +303,7 @@ export function SettingsPage() {
                 <Switch
                   id="settings-secret-copy"
                   checked={allowSecretCopy}
+                  disabled={!canManageSettings}
                   onCheckedChange={(checked) =>
                     form.setValue("allow_secret_copy", checked, { shouldDirty: true })
                   }
@@ -308,6 +339,7 @@ function NumberField({
   name,
   form,
   placeholder,
+  disabled,
 }: {
   label: string;
   name:
@@ -317,6 +349,7 @@ function NumberField({
     | "default_virtual_key_expiration_days";
   form: ReturnType<typeof useForm<SettingsInput, unknown, SettingsValues>>;
   placeholder?: string;
+  disabled?: boolean;
 }) {
   return (
     <Field label={label} htmlFor={`settings-${name}`}>
@@ -324,6 +357,7 @@ function NumberField({
         id={`settings-${name}`}
         type="number"
         placeholder={placeholder}
+        disabled={disabled}
         {...form.register(name)}
       />
     </Field>
