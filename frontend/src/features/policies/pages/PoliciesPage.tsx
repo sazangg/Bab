@@ -10,7 +10,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -57,6 +57,7 @@ import {
   useDeleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDelete,
   useDeletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDelete,
   useGetAccessPolicyApiV1PoliciesAccessPolicyIdGet,
+  useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet,
   useGetLimitPolicyApiV1PoliciesLimitsPolicyIdGet,
   useListAccessPoliciesApiV1PoliciesAccessGet,
   useListLimitPoliciesApiV1PoliciesLimitsGet,
@@ -71,6 +72,7 @@ import {
 } from "@/shared/api/generated/providers/providers";
 import type {
   AccessPolicyResponse,
+  AccessPolicyProviderOption,
   AccessPolicyRouteResponse,
   LimitPolicyResponse,
   LimitPolicyRuleResponse,
@@ -1131,21 +1133,14 @@ function RouteSheet({
   const [editingRoute, setEditingRoute] = useState<AccessPolicyRouteResponse | null>(null);
   const [priority, setPriority] = useState("100");
   const [weight, setWeight] = useState("100");
-  const providersQuery = useListProvidersApiV1ProvidersGet();
-  const poolsQuery = useListCredentialPoolsApiV1ProvidersProviderIdPoolsGet(providerId, {
-    query: { enabled: Boolean(providerId) },
-  });
-  const modelsQuery = useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet(
-    providerId,
-    { limit: 1000, is_active: true },
-    { query: { enabled: Boolean(providerId) } },
+  const accessOptionsQuery = useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet(
+    { scope_type: "org", exclude_policy_id: state?.policy.id },
+    { query: { enabled: Boolean(state) } },
   );
-  const providers = providersQuery.data?.status === 200 ? providersQuery.data.data : [];
-  const pools = poolsQuery.data?.status === 200 ? poolsQuery.data.data : [];
-  const models = useMemo(
-    () => (modelsQuery.data?.status === 200 ? modelsQuery.data.data.items : []),
-    [modelsQuery.data],
-  );
+  const accessOptions =
+    accessOptionsQuery.data?.status === 200 ? accessOptionsQuery.data.data.providers ?? [] : [];
+  const pools = accessOptions.find((provider) => provider.id === providerId)?.pools ?? [];
+  const models = pools.find((pool) => pool.id === poolId)?.models ?? [];
   const filteredModels = models.filter((model) => {
     const term = modelSearch.trim().toLowerCase();
     if (!term) return true;
@@ -1162,8 +1157,7 @@ function RouteSheet({
       onSuccess: async () => {
         toast.success("Access route added.");
         await onChanged();
-        setPoolId("");
-        setSelectedModels([]);
+        resetForm();
       },
       onError: () => toast.error("Access route could not be added."),
     },
@@ -1187,9 +1181,8 @@ function RouteSheet({
       onError: () => toast.error("Access route could not be updated."),
     },
   });
-  const routeModelLabels = useMemo(
-    () => Object.fromEntries(models.map((model) => [model.id, model.provider_model_name])),
-    [models],
+  const routeModelLabels = Object.fromEntries(
+    models.map((model) => [model.id, model.provider_model_name]),
   );
   const selectVisibleModels = () => {
     setSelectedModels((current) => Array.from(new Set([...current, ...filteredModelIds])));
@@ -1314,19 +1307,25 @@ function RouteSheet({
                   label="Provider"
                   value={providerId}
                   onValueChange={(value) => {
+                    const provider = accessOptions.find((option) => option.id === value);
+                    const pool = provider?.pools?.[0];
                     setProviderId(value);
-                    setPoolId("");
-                    setSelectedModels([]);
+                    setPoolId(pool?.id ?? "");
+                    setSelectedModels(pool?.models?.map((model) => model.id) ?? []);
                   }}
-                  options={providers.filter((provider) => provider.is_active).map((provider) => provider.id)}
-                  labels={Object.fromEntries(providers.map((provider) => [provider.id, provider.name]))}
+                  options={accessOptions.map((provider) => provider.id)}
+                  labels={providerOptionLabels(accessOptions)}
                   placeholder="Choose provider"
                 />
                 <SelectField
                   label="Credential pool"
                   value={poolId}
-                  onValueChange={setPoolId}
-                  options={pools.filter((pool) => pool.is_active).map((pool) => pool.id)}
+                  onValueChange={(value) => {
+                    const pool = pools.find((option) => option.id === value);
+                    setPoolId(value);
+                    setSelectedModels(pool?.models?.map((model) => model.id) ?? []);
+                  }}
+                  options={pools.map((pool) => pool.id)}
                   labels={Object.fromEntries(pools.map((pool) => [pool.id, pool.name]))}
                   placeholder="Choose pool"
                 />
@@ -1347,7 +1346,7 @@ function RouteSheet({
                         variant="outline"
                         size="sm"
                         onClick={allVisibleModelsSelected ? clearVisibleModels : selectVisibleModels}
-                        disabled={!providerId || filteredModelIds.length === 0 || modelsQuery.isLoading}
+                        disabled={!providerId || filteredModelIds.length === 0 || accessOptionsQuery.isLoading}
                       >
                         {allVisibleModelsSelected ? "Clear visible" : "Select all visible"}
                       </Button>
@@ -1364,11 +1363,11 @@ function RouteSheet({
                       <div className="px-3 py-6 text-sm text-muted-foreground">
                         Choose a provider to load model offerings.
                       </div>
-                    ) : modelsQuery.isLoading ? (
+                    ) : accessOptionsQuery.isLoading ? (
                       <div className="px-3 py-6 text-sm text-muted-foreground">
                         Loading model offerings...
                       </div>
-                    ) : modelsQuery.isError ? (
+                    ) : accessOptionsQuery.isError ? (
                       <div className="px-3 py-6 text-sm text-destructive">
                         Model offerings could not be loaded.
                       </div>
@@ -1895,6 +1894,10 @@ function teamLabels(teams: TeamResponse[]) {
 
 function projectLabels(projects: ProjectResponse[]) {
   return Object.fromEntries(projects.map((project) => [project.id, project.name]));
+}
+
+function providerOptionLabels(providers: AccessPolicyProviderOption[]) {
+  return Object.fromEntries(providers.map((provider) => [provider.id, provider.display_name]));
 }
 
 function toNumber(value: string) {

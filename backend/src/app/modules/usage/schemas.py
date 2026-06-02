@@ -12,6 +12,7 @@ class RecordUsage(BaseModel):
     access_policy_route_id: UUID | None = None
     limit_policy_ids: list[str] | None = None
     limit_policy_rule_ids: list[str] | None = None
+    limit_policy_assignment_ids: list[str] | None = None
     virtual_key_id: UUID
     pool_id: UUID
     provider_id: UUID
@@ -42,6 +43,7 @@ class RecordLimitPolicyReservation(BaseModel):
     org_id: UUID
     limit_policy_id: UUID | None = None
     limit_policy_rule_id: UUID | None = None
+    limit_policy_assignment_id: UUID | None = None
     virtual_key_id: UUID
     request_id: str | None = None
     reserved_prompt_tokens: int = 0

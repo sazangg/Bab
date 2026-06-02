@@ -33,6 +33,7 @@ class UsageRecord(Base):
     )
     limit_policy_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     limit_policy_rule_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    limit_policy_assignment_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     virtual_key_id: Mapped[UUID] = mapped_column(
         ForeignKey("virtual_keys.id", ondelete="RESTRICT"),
         index=True,
@@ -83,6 +84,11 @@ class LimitPolicyReservation(Base):
     )
     limit_policy_rule_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("limit_policy_rules.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+    limit_policy_assignment_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("policy_assignments.id", ondelete="RESTRICT"),
         nullable=True,
         index=True,
     )

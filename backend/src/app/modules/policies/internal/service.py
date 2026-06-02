@@ -3,15 +3,21 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope, transaction
+from app.modules.keys import facade as keys_facade
 from app.modules.policies.errors import PolicyNotFoundError, PolicyValidationError
 from app.modules.policies.internal import repository
 from app.modules.policies.internal.models import (
     AccessPolicy,
+    AccessPolicyRoute,
     LimitPolicy,
     LimitPolicyRule,
     PolicyAssignment,
 )
 from app.modules.policies.schemas import (
+    AccessPolicyModelOption,
+    AccessPolicyOptionsResponse,
+    AccessPolicyPoolOption,
+    AccessPolicyProviderOption,
     AccessPolicyResponse,
     AccessPolicyRouteInput,
     AccessPolicyRouteResponse,
@@ -95,6 +101,9 @@ async def update_access_policy(
 async def delete_access_policy(*, policy_id: UUID, scope: Scope, db: AsyncSession) -> None:
     async with transaction(db):
         policy = await _get_access_policy_or_raise(policy_id=policy_id, scope=scope, db=db)
+        await repository.delete_assignments_for_access_policy(
+            org_id=scope.org_id, access_policy_id=policy.id, db=db
+        )
         await db.delete(policy)
 
 
@@ -299,7 +308,38 @@ async def delete_limit_policy_rule(*, rule_id: UUID, scope: Scope, db: AsyncSess
 async def delete_limit_policy(*, policy_id: UUID, scope: Scope, db: AsyncSession) -> None:
     async with transaction(db):
         policy = await _get_limit_policy_or_raise(policy_id=policy_id, scope=scope, db=db)
+        await repository.delete_assignments_for_limit_policy(
+            org_id=scope.org_id, limit_policy_id=policy.id, db=db
+        )
         await db.delete(policy)
+
+
+async def get_access_policy_options(
+    *,
+    scope_type: str,
+    team_id: UUID | None,
+    project_id: UUID | None,
+    virtual_key_id: UUID | None,
+    exclude_policy_id: UUID | None,
+    scope: Scope,
+    db: AsyncSession,
+) -> AccessPolicyOptionsResponse:
+    parent_routes = await _parent_access_route_options(
+        scope_type=scope_type,
+        team_id=team_id,
+        project_id=project_id,
+        virtual_key_id=virtual_key_id,
+        exclude_policy_id=exclude_policy_id,
+        scope=scope,
+        db=db,
+    )
+    if parent_routes:
+        return await _options_from_route_candidates(
+            route_candidates=parent_routes,
+            scope=scope,
+            db=db,
+        )
+    return await _all_access_options(scope=scope, db=db)
 
 
 async def list_policy_assignments(
@@ -405,6 +445,244 @@ async def _get_policy_assignment_or_raise(
     if assignment is None:
         raise PolicyNotFoundError
     return assignment
+
+
+async def _parent_access_route_options(
+    *,
+    scope_type: str,
+    team_id: UUID | None,
+    project_id: UUID | None,
+    virtual_key_id: UUID | None,
+    exclude_policy_id: UUID | None,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[tuple[AccessPolicyRoute, UUID]]:
+    if scope_type == "org":
+        return []
+    parent_scopes = ["org"] if scope_type == "team" else ["org", "team"]
+    if scope_type == "virtual_key":
+        parent_scopes.append("project")
+    resolved_team_id = team_id
+    if project_id is not None:
+        project = await keys_facade.get_project(project_id=project_id, scope=scope, db=db)
+        resolved_team_id = project.team_id
+    assignments: list[PolicyAssignment] = []
+    for parent_scope in parent_scopes:
+        scoped = await repository.list_active_policy_assignments_for_scope(
+            org_id=scope.org_id,
+            scope_type=parent_scope,
+            policy_type="access",
+            db=db,
+        )
+        assignments.extend(
+            assignment
+            for assignment in scoped
+            if _assignment_applies_to_parent(
+                assignment=assignment,
+                team_id=resolved_team_id,
+                project_id=project_id,
+            )
+        )
+    return await _effective_access_route_candidates(
+        assignments=assignments,
+        exclude_policy_id=exclude_policy_id,
+        scope=scope,
+        db=db,
+    )
+
+
+def _assignment_applies_to_parent(
+    *,
+    assignment: PolicyAssignment,
+    team_id: UUID | None,
+    project_id: UUID | None,
+) -> bool:
+    if assignment.scope_type == "org":
+        return True
+    if assignment.scope_type == "team":
+        return team_id is not None and assignment.team_id == team_id
+    if assignment.scope_type == "project":
+        return project_id is not None and assignment.project_id == project_id
+    return False
+
+
+async def _effective_access_route_candidates(
+    *,
+    assignments: list[PolicyAssignment],
+    exclude_policy_id: UUID | None,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[tuple[AccessPolicyRoute, UUID]]:
+    effective: list[tuple[AccessPolicyRoute, UUID]] | None = None
+    for scope_type in ("org", "team", "project"):
+        candidates = await _access_route_candidates(
+            assignments=[
+                assignment
+                for assignment in assignments
+                if assignment.scope_type == scope_type
+                and assignment.access_policy_id != exclude_policy_id
+            ],
+            scope=scope,
+            db=db,
+        )
+        if not candidates:
+            continue
+        if effective is None:
+            effective = candidates
+            continue
+        effective = [
+            candidate
+            for candidate in candidates
+            if any(_route_candidate_matches(candidate, parent) for parent in effective)
+        ]
+    return effective or []
+
+
+async def _access_route_candidates(
+    *,
+    assignments: list[PolicyAssignment],
+    scope: Scope,
+    db: AsyncSession,
+) -> list[tuple[AccessPolicyRoute, UUID]]:
+    candidates: list[tuple[AccessPolicyRoute, UUID]] = []
+    for assignment in assignments:
+        if assignment.access_policy_id is None:
+            continue
+        policy = await repository.get_access_policy(
+            policy_id=assignment.access_policy_id,
+            org_id=scope.org_id,
+            db=db,
+        )
+        if policy is None or not policy.is_active:
+            continue
+        routes = await repository.list_access_policy_routes(
+            org_id=scope.org_id,
+            access_policy_id=policy.id,
+            db=db,
+        )
+        for route in routes:
+            if route.is_active:
+                candidates.extend(
+                    (route, UUID(str(model_id))) for model_id in route.model_offering_ids
+                )
+    return candidates
+
+
+def _route_candidate_matches(
+    child: tuple[AccessPolicyRoute, UUID],
+    parent: tuple[AccessPolicyRoute, UUID],
+) -> bool:
+    child_route, child_model_id = child
+    parent_route, parent_model_id = parent
+    return (
+        child_route.provider_id == parent_route.provider_id
+        and child_route.credential_pool_id == parent_route.credential_pool_id
+        and child_model_id == parent_model_id
+    )
+
+
+async def _all_access_options(*, scope: Scope, db: AsyncSession) -> AccessPolicyOptionsResponse:
+    providers = await providers_facade.list_providers(scope=scope, db=db)
+    groups: dict[UUID, AccessPolicyProviderOption] = {}
+    for provider in providers:
+        if not provider.is_active:
+            continue
+        pools = await providers_facade.list_credential_pools(
+            provider_id=provider.id,
+            scope=scope,
+            db=db,
+        )
+        models = await providers_facade.list_model_offerings(
+            provider_id=provider.id,
+            search=None,
+            modalities=None,
+            is_active=True,
+            limit=1000,
+            offset=0,
+            scope=scope,
+            db=db,
+        )
+        pool_options = [
+            AccessPolicyPoolOption(
+                id=pool.id,
+                name=pool.name,
+                models=[
+                    AccessPolicyModelOption(
+                        id=model.id,
+                        provider_model_name=model.provider_model_name,
+                        alias=model.alias,
+                    )
+                    for model in models.items
+                ],
+            )
+            for pool in pools
+            if pool.is_active
+        ]
+        if pool_options:
+            groups[provider.id] = AccessPolicyProviderOption(
+                id=provider.id,
+                display_name=provider.display_name or provider.name,
+                pools=pool_options,
+            )
+    return AccessPolicyOptionsResponse(providers=list(groups.values()))
+
+
+async def _options_from_route_candidates(
+    *,
+    route_candidates: list[tuple[AccessPolicyRoute, UUID]],
+    scope: Scope,
+    db: AsyncSession,
+) -> AccessPolicyOptionsResponse:
+    providers: dict[UUID, AccessPolicyProviderOption] = {}
+    pools: dict[tuple[UUID, UUID], AccessPolicyPoolOption] = {}
+    seen_models: set[tuple[UUID, UUID, UUID]] = set()
+    for route, model_id in route_candidates:
+        try:
+            provider = await providers_facade.get_provider(
+                provider_id=route.provider_id,
+                scope=scope,
+                db=db,
+            )
+            pool = await providers_facade.get_credential_pool(
+                pool_id=route.credential_pool_id,
+                scope=scope,
+                db=db,
+            )
+            model = await providers_facade.get_model_offering(
+                model_offering_id=model_id,
+                scope=scope,
+                db=db,
+            )
+        except ProviderNotFoundError:
+            continue
+        if not provider.is_active or not pool.is_active or not model.is_active:
+            continue
+        provider_option = providers.setdefault(
+            provider.id,
+            AccessPolicyProviderOption(
+                id=provider.id,
+                display_name=provider.display_name or provider.name,
+                pools=[],
+            ),
+        )
+        pool_key = (provider.id, pool.id)
+        pool_option = pools.get(pool_key)
+        if pool_option is None:
+            pool_option = AccessPolicyPoolOption(id=pool.id, name=pool.name, models=[])
+            pools[pool_key] = pool_option
+            provider_option.pools.append(pool_option)
+        model_key = (provider.id, pool.id, model.id)
+        if model_key in seen_models:
+            continue
+        seen_models.add(model_key)
+        pool_option.models.append(
+            AccessPolicyModelOption(
+                id=model.id,
+                provider_model_name=model.provider_model_name,
+                alias=model.alias,
+            )
+        )
+    return AccessPolicyOptionsResponse(providers=list(providers.values()))
 
 
 async def _validate_access_route(

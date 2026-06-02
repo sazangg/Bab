@@ -13,11 +13,14 @@ from app.modules.auth.schemas import (
     InviteResponse,
     LoginRequest,
     MemberResponse,
+    ProjectMemberResponse,
     TeamMemberResponse,
     TokenResponse,
     UpdateMemberRequest,
     UpdateMemberStatusRequest,
+    UpdateProjectMemberRequest,
     UpdateTeamMemberRequest,
+    UpsertProjectMemberRequest,
     UpsertTeamMemberRequest,
 )
 
@@ -142,6 +145,65 @@ async def remove_team_member(
 ) -> None:
     await service.remove_team_member(
         team_id=team_id,
+        user_id=user_id,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def list_project_members(
+    *, project_id: UUID, scope: Scope, db: AsyncSession
+) -> list[ProjectMemberResponse]:
+    return await service.list_project_members(project_id=project_id, scope=scope, db=db)
+
+
+async def upsert_project_member(
+    *,
+    project_id: UUID,
+    payload: UpsertProjectMemberRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProjectMemberResponse:
+    return await service.upsert_project_member(
+        project_id=project_id,
+        payload=payload,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def update_project_member(
+    *,
+    project_id: UUID,
+    user_id: UUID,
+    payload: UpdateProjectMemberRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProjectMemberResponse:
+    return await service.update_project_member(
+        project_id=project_id,
+        user_id=user_id,
+        payload=payload,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def remove_project_member(
+    *,
+    project_id: UUID,
+    user_id: UUID,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> None:
+    await service.remove_project_member(
+        project_id=project_id,
         user_id=user_id,
         actor=actor,
         scope=scope,

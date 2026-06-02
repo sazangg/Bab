@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.policies.internal.models import (
@@ -184,6 +184,48 @@ async def list_policy_assignments(*, org_id: UUID, db: AsyncSession) -> list[Pol
         select(PolicyAssignment)
         .where(PolicyAssignment.org_id == org_id)
         .order_by(PolicyAssignment.created_at.desc())
+    )
+    return list(result)
+
+
+async def delete_assignments_for_access_policy(
+    *, org_id: UUID, access_policy_id: UUID, db: AsyncSession
+) -> None:
+    await db.execute(
+        delete(PolicyAssignment).where(
+            PolicyAssignment.org_id == org_id,
+            PolicyAssignment.access_policy_id == access_policy_id,
+        )
+    )
+
+
+async def delete_assignments_for_limit_policy(
+    *, org_id: UUID, limit_policy_id: UUID, db: AsyncSession
+) -> None:
+    await db.execute(
+        delete(PolicyAssignment).where(
+            PolicyAssignment.org_id == org_id,
+            PolicyAssignment.limit_policy_id == limit_policy_id,
+        )
+    )
+
+
+async def list_active_policy_assignments_for_scope(
+    *,
+    org_id: UUID,
+    scope_type: str,
+    policy_type: str,
+    db: AsyncSession,
+) -> list[PolicyAssignment]:
+    result = await db.scalars(
+        select(PolicyAssignment)
+        .where(
+            PolicyAssignment.org_id == org_id,
+            PolicyAssignment.scope_type == scope_type,
+            PolicyAssignment.policy_type == policy_type,
+            PolicyAssignment.is_active.is_(True),
+        )
+        .order_by(PolicyAssignment.created_at)
     )
     return list(result)
 

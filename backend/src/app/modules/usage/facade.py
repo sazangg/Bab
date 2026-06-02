@@ -35,6 +35,7 @@ async def summarize_active_limit_policy_reservations(
     *,
     limit_policy_id: UUID,
     limit_policy_rule_id: UUID | None = None,
+    limit_policy_assignment_id: UUID | None = None,
     since: datetime | None,
     now: datetime,
     db: AsyncSession,
@@ -42,6 +43,7 @@ async def summarize_active_limit_policy_reservations(
     return await repository.summarize_active_limit_policy_reservations(
         limit_policy_id=limit_policy_id,
         limit_policy_rule_id=limit_policy_rule_id,
+        limit_policy_assignment_id=limit_policy_assignment_id,
         since=since,
         now=now,
         db=db,
@@ -121,12 +123,14 @@ async def summarize_limit_policy_usage(
     *,
     limit_policy_id: UUID,
     limit_policy_rule_id: UUID | None = None,
+    limit_policy_assignment_id: UUID | None = None,
     since: datetime | None,
     db: AsyncSession,
 ) -> tuple[int, int, int, int]:
     return await repository.summarize_limit_policy_usage(
         limit_policy_id=limit_policy_id,
         limit_policy_rule_id=limit_policy_rule_id,
+        limit_policy_assignment_id=limit_policy_assignment_id,
         since=since,
         db=db,
     )

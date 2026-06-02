@@ -53,15 +53,15 @@ import {
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import type { UsageBreakdownRow } from "@/shared/api/generated/schemas";
-import { hasPermission, isTeamAdmin } from "@/features/auth/lib/permissions";
+import { hasPermission, isProjectAdmin, isTeamAdmin } from "@/features/auth/lib/permissions";
 import { ForbiddenPage } from "@/features/auth/components/ProtectedRoute";
 import { UsageRecordsDrilldown } from "@/features/usage/components/UsageRecordsDrilldown";
 import { RecentGuardrailEventsCard } from "@/features/guardrails/components/RecentGuardrailEventsCard";
+import { PolicyScopeSection } from "@/features/policies/components/PolicyScopeSection";
 
 const editSchema = z.object({
   name: z.string().min(1).max(255),
   expires_at: z.string().optional(),
-  allowed_models: z.string().optional(),
 });
 
 type EditValues = z.infer<typeof editSchema>;
@@ -92,7 +92,9 @@ export function KeyDetailPage() {
   const key = keyQuery.data?.status === 200 ? keyQuery.data.data : undefined;
   const usage = usageQuery.data?.status === 200 ? usageQuery.data.data : undefined;
   const canManageKey = project
-    ? hasPermission(currentUser, "keys.manage") || isTeamAdmin(currentUser, project.team_id)
+    ? hasPermission(currentUser, "keys.manage") ||
+      isTeamAdmin(currentUser, project.team_id) ||
+      isProjectAdmin(currentUser, project.id)
     : false;
 
   const updateMutation = useUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch({
@@ -118,7 +120,6 @@ export function KeyDetailPage() {
     defaultValues: {
       name: "",
       expires_at: "",
-      allowed_models: "",
     },
   });
 
@@ -127,7 +128,6 @@ export function KeyDetailPage() {
       form.reset({
         name: key.name,
         expires_at: key.expires_at ? toLocalInput(key.expires_at) : "",
-        allowed_models: key.allowed_models?.join(", ") ?? "",
       });
     }
   }, [editOpen, key, form]);
@@ -170,7 +170,10 @@ export function KeyDetailPage() {
         actions={
           canManageKey ? (
             <div className="flex items-center gap-2">
-              <Button variant="outline" onClick={() => setEditOpen(true)}>
+              <Button
+                variant="outline"
+                onClick={() => setEditOpen(true)}
+              >
                 <Pencil />
                 Edit key
               </Button>
@@ -210,7 +213,6 @@ export function KeyDetailPage() {
             value={key.expires_at ? new Date(key.expires_at).toLocaleString() : "Never"}
           />
           <Fact label="Policy" value="Resolved at request time" />
-          <Fact label="Allowed models" value={formatModels(key.allowed_models)} />
           <Fact label="Created" value={new Date(key.created_at).toLocaleString()} />
         </CardContent>
       </Card>
@@ -220,15 +222,19 @@ export function KeyDetailPage() {
           <CardTitle>Policy scope</CardTitle>
           <CardDescription>
             Keys inherit access and limit policies from the organization, team, and project. The
-            key can only narrow model access.
+            key can define narrower policies through virtual key policy assignments.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-3">
+        <CardContent className="grid gap-4 md:grid-cols-2">
           <Fact label="Access" value="Policy governed" />
           <Fact label="Limits" value="Policy governed" />
-          <Fact label="Key model subset" value={formatModels(key.allowed_models)} />
         </CardContent>
       </Card>
+
+      <PolicyScopeSection
+        target={{ type: "virtual_key", projectId: project.id, virtualKeyId: key.id }}
+        canManage={canManageKey}
+      />
 
       <KeyUsageCard usage={usage} />
       <UsageRecordsDrilldown
@@ -258,7 +264,6 @@ export function KeyDetailPage() {
                     expires_at: values.expires_at
                       ? new Date(values.expires_at).toISOString()
                       : null,
-                    allowed_models: parseModels(values.allowed_models),
                   },
                 }),
               )}
@@ -275,20 +280,13 @@ export function KeyDetailPage() {
                   {...form.register("expires_at")}
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="edit-key-models">Allowed models</Label>
-                <Input
-                  id="edit-key-models"
-                  placeholder="gpt-4o-mini"
-                  {...form.register("allowed_models")}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Optional comma-separated subset of the models allowed by policies.
-                </p>
-              </div>
             </form>
             <SheetFooter>
-              <Button type="submit" form="edit-key-form" disabled={updateMutation.isPending}>
+              <Button
+                type="submit"
+                form="edit-key-form"
+                disabled={updateMutation.isPending}
+              >
                 {updateMutation.isPending ? "Saving..." : "Save changes"}
               </Button>
               <SheetClose asChild>
@@ -421,22 +419,10 @@ function Fact({ label, value }: { label: string; value: string }) {
   );
 }
 
-function formatModels(models: string[] | null | undefined) {
-  return models && models.length > 0 ? models.join(", ") : "All policy route models";
-}
-
 function toLocalInput(iso: string) {
   const d = new Date(iso);
   const offset = d.getTimezoneOffset() * 60_000;
   return new Date(d.getTime() - offset).toISOString().slice(0, 16);
-}
-
-function parseModels(value: string | undefined): string[] | null {
-  const models = value
-    ?.split(",")
-    .map((model) => model.trim())
-    .filter(Boolean);
-  return models && models.length > 0 ? models : null;
 }
 
 function formatCents(value: number | null | undefined) {

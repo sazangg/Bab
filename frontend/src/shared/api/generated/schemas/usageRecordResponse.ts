@@ -13,6 +13,7 @@ export interface UsageRecordResponse {
   access_policy_route_id?: string | null;
   limit_policy_ids?: string[] | null;
   limit_policy_rule_ids?: string[] | null;
+  limit_policy_assignment_ids?: string[] | null;
   virtual_key_id: string;
   pool_id: string;
   provider_id: string;

@@ -52,6 +52,7 @@ async def summarize_active_limit_policy_reservations(
     *,
     limit_policy_id: UUID,
     limit_policy_rule_id: UUID | None,
+    limit_policy_assignment_id: UUID | None,
     since: datetime | None,
     now: datetime,
     db: AsyncSession,
@@ -63,6 +64,10 @@ async def summarize_active_limit_policy_reservations(
     ]
     if limit_policy_rule_id is not None:
         filters.append(LimitPolicyReservation.limit_policy_rule_id == limit_policy_rule_id)
+    if limit_policy_assignment_id is not None:
+        filters.append(
+            LimitPolicyReservation.limit_policy_assignment_id == limit_policy_assignment_id
+        )
     if since is not None:
         filters.append(LimitPolicyReservation.created_at >= since)
     row = (
@@ -214,6 +219,7 @@ async def summarize_limit_policy_usage(
     *,
     limit_policy_id: UUID,
     limit_policy_rule_id: UUID | None,
+    limit_policy_assignment_id: UUID | None,
     since: datetime | None,
     db: AsyncSession,
 ) -> tuple[int, int, int, int]:
@@ -221,6 +227,12 @@ async def summarize_limit_policy_usage(
     if limit_policy_rule_id is not None:
         filters.append(
             cast(UsageRecord.limit_policy_rule_ids, String).contains(str(limit_policy_rule_id))
+        )
+    if limit_policy_assignment_id is not None:
+        filters.append(
+            cast(UsageRecord.limit_policy_assignment_ids, String).contains(
+                str(limit_policy_assignment_id)
+            )
         )
     if since is not None:
         filters.append(UsageRecord.created_at >= since)

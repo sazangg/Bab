@@ -12,5 +12,4 @@ export interface CreateVirtualKeyRequest {
      */
   name: string;
   expires_at?: string | null;
-  allowed_models?: string[] | null;
 }

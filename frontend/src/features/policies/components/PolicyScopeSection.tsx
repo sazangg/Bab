@@ -1,18 +1,64 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import { Plus, Trash2 } from "lucide-react";
+import type { ReactNode } from "react";
+import { useState } from "react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  useCreateAccessPolicyApiV1PoliciesAccessPost,
+  useCreateLimitPolicyApiV1PoliciesLimitsPost,
+  useCreatePolicyAssignmentApiV1PoliciesAssignmentsPost,
+  useDeletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDelete,
+  useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet,
   useListAccessPoliciesApiV1PoliciesAccessGet,
   useListLimitPoliciesApiV1PoliciesLimitsGet,
   useListPolicyAssignmentsApiV1PoliciesAssignmentsGet,
 } from "@/shared/api/generated/policies/policies";
+import type {
+  AccessPolicyProviderOption,
+  LimitPolicyRuleInput,
+} from "@/shared/api/generated/schemas";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 
 type ScopeTarget =
   | { type: "team"; teamId: string }
-  | { type: "project"; projectId: string; teamId: string };
+  | { type: "project"; projectId: string; teamId: string }
+  | { type: "virtual_key"; projectId: string; virtualKeyId: string };
+
+type SheetKind = "access" | "limit" | null;
+type DraftLimitRule = {
+  name: string;
+  budgetDollars: string;
+  maxRequests: string;
+  maxInputTokens: string;
+  maxOutputTokens: string;
+  maxTokensPerRequest: string;
+  window: string;
+};
 
 export function PolicyScopeSection({
   target,
@@ -21,9 +67,20 @@ export function PolicyScopeSection({
   target: ScopeTarget;
   canManage: boolean;
 }) {
+  const [sheetKind, setSheetKind] = useState<SheetKind>(null);
+  const queryClient = useQueryClient();
   const accessQuery = useListAccessPoliciesApiV1PoliciesAccessGet();
   const limitsQuery = useListLimitPoliciesApiV1PoliciesLimitsGet();
   const assignmentsQuery = useListPolicyAssignmentsApiV1PoliciesAssignmentsGet();
+  const deleteAssignment = useDeletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDelete({
+    mutation: {
+      onSuccess: async () => {
+        toast.success("Policy assignment removed.");
+        await queryClient.invalidateQueries();
+      },
+      onError: () => toast.error("Policy assignment could not be removed."),
+    },
+  });
   const accessPolicies = accessQuery.data?.status === 200 ? accessQuery.data.data : [];
   const limitPolicies = limitsQuery.data?.status === 200 ? limitsQuery.data.data : [];
   const assignments = assignmentsQuery.data?.status === 200 ? assignmentsQuery.data.data : [];
@@ -31,62 +88,564 @@ export function PolicyScopeSection({
     if (target.type === "team") {
       return assignment.scope_type === "team" && assignment.team_id === target.teamId;
     }
+    if (target.type === "virtual_key") {
+      return (
+        assignment.scope_type === "virtual_key" &&
+        assignment.virtual_key_id === target.virtualKeyId
+      );
+    }
     return assignment.scope_type === "project" && assignment.project_id === target.projectId;
   });
   const accessById = new Map(accessPolicies.map((policy) => [policy.id, policy]));
   const limitById = new Map(limitPolicies.map((policy) => [policy.id, policy]));
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Policies</CardTitle>
-        <CardDescription>
-          Assigned access policies define available provider routes. Assigned limit policies define
-          budgets and caps. Higher scopes still apply.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {scopedAssignments.length === 0 ? (
-          <EmptyState
-            title="No policies assigned"
-            description="Assign reusable access and limit policies from the Policies page."
-            action={
-              canManage ? (
-                <Button asChild size="sm">
-                  <Link to="/policies">Open policies</Link>
-                </Button>
-              ) : null
-            }
-          />
-        ) : (
-          <div className="grid gap-3 md:grid-cols-2">
-            {scopedAssignments.map((assignment) => {
-              const policy =
-                assignment.policy_type === "access"
-                  ? accessById.get(assignment.access_policy_id ?? "")
-                  : limitById.get(assignment.limit_policy_id ?? "");
-              return (
-                <div key={assignment.id} className="rounded-md border p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium">{policy?.name ?? "Unknown policy"}</p>
-                      <p className="text-xs capitalize text-muted-foreground">
-                        {assignment.policy_type} policy
-                      </p>
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle>Policies</CardTitle>
+          <CardDescription>
+            Direct assignments for this {target.type}. Higher-scope policies still apply at runtime.
+          </CardDescription>
+          {canManage ? (
+            <CardAction className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => setSheetKind("limit")}>
+                <Plus />
+                Limit policy
+              </Button>
+              <Button size="sm" onClick={() => setSheetKind("access")}>
+                <Plus />
+                Access policy
+              </Button>
+            </CardAction>
+          ) : null}
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {scopedAssignments.length === 0 ? (
+            <EmptyState
+              title="No direct policies assigned"
+              description="This scope currently relies on inherited organization, team, or project policies."
+            />
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2">
+              {scopedAssignments.map((assignment) => {
+                const policy =
+                  assignment.policy_type === "access"
+                    ? accessById.get(assignment.access_policy_id ?? "")
+                    : limitById.get(assignment.limit_policy_id ?? "");
+                const href =
+                  assignment.policy_type === "access"
+                    ? `/policies/access/${assignment.access_policy_id}`
+                    : `/policies/limits/${assignment.limit_policy_id}`;
+                return (
+                  <div key={assignment.id} className="rounded-md border p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <Link to={href} className="text-sm font-medium hover:underline">
+                          {policy?.name ?? "Unknown policy"}
+                        </Link>
+                        <p className="text-xs capitalize text-muted-foreground">
+                          {assignment.policy_type} policy
+                        </p>
+                      </div>
+                      <StatusBadge variant={assignment.is_active ? "active" : "inactive"}>
+                        {assignment.is_active ? "Active" : "Inactive"}
+                      </StatusBadge>
                     </div>
-                    <StatusBadge variant={assignment.is_active ? "active" : "inactive"}>
-                      {assignment.is_active ? "Active" : "Inactive"}
-                    </StatusBadge>
+                    {policy?.description ? (
+                      <p className="mt-2 text-xs text-muted-foreground">{policy.description}</p>
+                    ) : null}
+                    {canManage ? (
+                      <Button
+                        className="mt-3"
+                        size="sm"
+                        variant="outline"
+                        disabled={deleteAssignment.isPending}
+                        onClick={() => deleteAssignment.mutate({ assignmentId: assignment.id })}
+                      >
+                        Remove assignment
+                      </Button>
+                    ) : null}
                   </div>
-                  {policy?.description ? (
-                    <p className="mt-2 text-xs text-muted-foreground">{policy.description}</p>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+      <ScopedPolicySheet
+        kind={sheetKind}
+        target={target}
+        onOpenChange={(open) => !open && setSheetKind(null)}
+      />
+    </>
   );
+}
+
+function ScopedPolicySheet({
+  kind,
+  target,
+  onOpenChange,
+}: {
+  kind: SheetKind;
+  target: ScopeTarget;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [providerId, setProviderId] = useState("");
+  const [poolId, setPoolId] = useState("");
+  const [selectedModels, setSelectedModels] = useState<string[] | null>(null);
+  const [draftRules, setDraftRules] = useState<DraftLimitRule[]>([]);
+  const [ruleName, setRuleName] = useState("Rule");
+  const [budgetDollars, setBudgetDollars] = useState("");
+  const [maxRequests, setMaxRequests] = useState("");
+  const [maxInputTokens, setMaxInputTokens] = useState("");
+  const [maxOutputTokens, setMaxOutputTokens] = useState("");
+  const [maxTokensPerRequest, setMaxTokensPerRequest] = useState("");
+  const [window, setWindow] = useState("monthly");
+  const isAccess = kind === "access";
+  const accessOptionsQuery = useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet(
+    accessOptionsParams(target),
+    { query: { enabled: Boolean(isAccess) } },
+  );
+  const accessOptions =
+    accessOptionsQuery.data?.status === 200 ? accessOptionsQuery.data.data.providers ?? [] : [];
+  const createAccess = useCreateAccessPolicyApiV1PoliciesAccessPost();
+  const createLimit = useCreateLimitPolicyApiV1PoliciesLimitsPost();
+  const createAssignment = useCreatePolicyAssignmentApiV1PoliciesAssignmentsPost();
+  const reset = () => {
+    setName("");
+    setDescription("");
+    setProviderId("");
+    setPoolId("");
+    setSelectedModels(null);
+    setDraftRules([]);
+    setRuleName("Rule");
+    setBudgetDollars("");
+    setMaxRequests("");
+    setMaxInputTokens("");
+    setMaxOutputTokens("");
+    setMaxTokensPerRequest("");
+    setWindow("monthly");
+  };
+  const assignTarget =
+    target.type === "team"
+      ? { scope_type: "team", team_id: target.teamId }
+      : target.type === "project"
+        ? { scope_type: "project", project_id: target.projectId }
+        : { scope_type: "virtual_key", virtual_key_id: target.virtualKeyId };
+  const currentLimitRule = (): DraftLimitRule => ({
+    name: ruleName.trim() || "Rule",
+    budgetDollars,
+    maxRequests,
+    maxInputTokens,
+    maxOutputTokens,
+    maxTokensPerRequest,
+    window,
+  });
+  const currentLimitRuleHasLimits = hasLimitRuleValues(currentLimitRule());
+  const submit = async () => {
+    if (!name.trim()) return;
+    try {
+      if (kind === "limit") {
+        const rules = [...draftRules];
+        if (currentLimitRuleHasLimits) {
+          rules.push(currentLimitRule());
+        }
+        const response = await createLimit.mutateAsync({
+          data: {
+            name,
+            description: description || null,
+            rules: rules.map(toLimitRuleInput),
+          },
+        });
+        if (response.status === 201) {
+          await createAssignment.mutateAsync({
+            data: {
+              policy_type: "limit",
+              limit_policy_id: response.data.id,
+              ...assignTarget,
+            },
+          });
+        }
+      }
+      if (kind === "access") {
+        const response = await createAccess.mutateAsync({
+          data: {
+            name,
+            description: description || null,
+            routes: [
+              {
+                provider_id: providerId,
+                credential_pool_id: poolId,
+                model_offering_ids: effectiveSelectedModels,
+              },
+            ],
+          },
+        });
+        if (response.status === 201) {
+          await createAssignment.mutateAsync({
+            data: {
+              policy_type: "access",
+              access_policy_id: response.data.id,
+              ...assignTarget,
+            },
+          });
+        }
+      }
+      toast.success("Policy created and assigned.");
+      reset();
+      onOpenChange(false);
+      await queryClient.invalidateQueries();
+    } catch {
+      toast.error("Policy could not be created.");
+    }
+  };
+  const pools = accessOptions.find((provider) => provider.id === providerId)?.pools ?? [];
+  const providerModels = pools.find((pool) => pool.id === poolId)?.models ?? [];
+  const effectiveSelectedModels =
+    selectedModels ?? providerModels.map((model) => model.id);
+  const canSubmit =
+    Boolean(name.trim()) &&
+    ((kind === "limit" && (draftRules.length > 0 || currentLimitRuleHasLimits)) ||
+      (kind === "access" && providerId && poolId && effectiveSelectedModels.length > 0));
+  const addDraftRule = () => {
+    if (!currentLimitRuleHasLimits) return;
+    setDraftRules((current) => [...current, currentLimitRule()]);
+    setRuleName(`Rule ${draftRules.length + 2}`);
+    setBudgetDollars("");
+    setMaxRequests("");
+    setMaxInputTokens("");
+    setMaxOutputTokens("");
+    setMaxTokensPerRequest("");
+    setWindow("monthly");
+  };
+
+  return (
+    <Sheet
+      open={Boolean(kind)}
+      onOpenChange={(open) => {
+        if (!open) reset();
+        onOpenChange(open);
+      }}
+    >
+      <SheetContent>
+        <SheetHeader>
+          <SheetTitle>{isAccess ? "New access policy" : "New limit policy"}</SheetTitle>
+          <SheetDescription>
+            This policy will be created and assigned directly to this {target.type}.
+          </SheetDescription>
+        </SheetHeader>
+        <div className="grid gap-4 overflow-y-auto px-6 py-5">
+          <Field label="Name">
+            <Input value={name} onChange={(event) => setName(event.target.value)} />
+          </Field>
+          <Field label="Description">
+            <Textarea value={description} onChange={(event) => setDescription(event.target.value)} />
+          </Field>
+          {kind === "limit" ? (
+            <>
+              <div className="space-y-2 rounded-md border p-3">
+                <div>
+                  <div className="text-sm font-medium">Rules</div>
+                  <p className="text-xs text-muted-foreground">
+                    Add one rule at a time. Rules in the same policy are enforced together.
+                  </p>
+                </div>
+                {draftRules.length > 0 ? (
+                  <div className="space-y-2">
+                    {draftRules.map((rule, index) => (
+                      <div
+                        key={`${rule.name}-${index}`}
+                        className="flex items-center justify-between gap-3 rounded-md bg-muted/40 px-3 py-2 text-xs"
+                      >
+                        <span className="min-w-0 truncate">
+                          {formatDraftLimitRule(rule)} · {rule.window}
+                        </span>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          aria-label="Remove rule"
+                          onClick={() =>
+                            setDraftRules((current) =>
+                              current.filter((_, ruleIndex) => ruleIndex !== index),
+                            )
+                          }
+                        >
+                          <Trash2 />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+              <Field label="Rule name">
+                <Input value={ruleName} onChange={(event) => setRuleName(event.target.value)} />
+              </Field>
+              <Field label="Window">
+                <Select value={window} onValueChange={setWindow}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="daily">Daily</SelectItem>
+                    <SelectItem value="weekly">Weekly</SelectItem>
+                    <SelectItem value="monthly">Monthly</SelectItem>
+                    <SelectItem value="lifetime">Lifetime</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="Budget ($)">
+                <Input type="number" min={0} value={budgetDollars} onChange={(event) => setBudgetDollars(event.target.value)} />
+              </Field>
+              <Field label="Max requests">
+                <Input type="number" min={1} value={maxRequests} onChange={(event) => setMaxRequests(event.target.value)} />
+              </Field>
+              <Field label="Max input tokens">
+                <Input type="number" min={1} value={maxInputTokens} onChange={(event) => setMaxInputTokens(event.target.value)} />
+              </Field>
+              <Field label="Max output tokens">
+                <Input type="number" min={1} value={maxOutputTokens} onChange={(event) => setMaxOutputTokens(event.target.value)} />
+              </Field>
+              <Field label="Max tokens per request">
+                <Input type="number" min={1} value={maxTokensPerRequest} onChange={(event) => setMaxTokensPerRequest(event.target.value)} />
+              </Field>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={addDraftRule}
+                disabled={!currentLimitRuleHasLimits}
+              >
+                <Plus />
+                Add rule
+              </Button>
+            </>
+          ) : null}
+          {kind === "access" ? (
+            <AccessRouteFields
+              providers={accessOptions}
+              providerId={providerId}
+              poolId={poolId}
+              selectedModels={effectiveSelectedModels}
+              onProviderChange={(value) => {
+                const nextProvider = accessOptions.find((provider) => provider.id === value);
+                const nextPool = nextProvider?.pools?.[0];
+                setProviderId(value);
+                setPoolId(nextPool?.id ?? "");
+                setSelectedModels(nextPool?.models?.map((model) => model.id) ?? []);
+              }}
+              onPoolChange={(value) => {
+                const nextPool = pools.find((pool) => pool.id === value);
+                setPoolId(value);
+                setSelectedModels(nextPool?.models?.map((model) => model.id) ?? []);
+              }}
+              onModelsChange={setSelectedModels}
+            />
+          ) : null}
+        </div>
+        <SheetFooter>
+          <Button onClick={submit} disabled={!canSubmit || createAccess.isPending || createLimit.isPending || createAssignment.isPending}>
+            Create and assign
+          </Button>
+          <SheetClose asChild>
+            <Button variant="outline">Cancel</Button>
+          </SheetClose>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function parseOptionalInt(value: string) {
+  return value ? Number(value) : null;
+}
+
+function hasLimitRuleValues(rule: DraftLimitRule) {
+  return Boolean(
+    rule.budgetDollars ||
+      rule.maxRequests ||
+      rule.maxInputTokens ||
+      rule.maxOutputTokens ||
+      rule.maxTokensPerRequest,
+  );
+}
+
+function toLimitRuleInput(rule: DraftLimitRule): LimitPolicyRuleInput {
+  return {
+    name: rule.name,
+    budget_cents: rule.budgetDollars ? Math.round(Number(rule.budgetDollars) * 100) : null,
+    max_requests: parseOptionalInt(rule.maxRequests),
+    max_input_tokens: parseOptionalInt(rule.maxInputTokens),
+    max_output_tokens: parseOptionalInt(rule.maxOutputTokens),
+    max_tokens_per_request: parseOptionalInt(rule.maxTokensPerRequest),
+    window: rule.window,
+    is_active: true,
+  };
+}
+
+function formatDraftLimitRule(rule: DraftLimitRule) {
+  const parts = [
+    rule.budgetDollars ? `$${rule.budgetDollars}` : null,
+    rule.maxRequests ? `${Number(rule.maxRequests).toLocaleString()} req` : null,
+    rule.maxInputTokens ? `${Number(rule.maxInputTokens).toLocaleString()} input tok` : null,
+    rule.maxOutputTokens ? `${Number(rule.maxOutputTokens).toLocaleString()} output tok` : null,
+    rule.maxTokensPerRequest
+      ? `${Number(rule.maxTokensPerRequest).toLocaleString()} tok/request`
+      : null,
+  ].filter(Boolean);
+  return `${rule.name}: ${parts.join(" / ")}`;
+}
+
+function AccessRouteFields({
+  providers,
+  providerId,
+  poolId,
+  selectedModels,
+  onProviderChange,
+  onPoolChange,
+  onModelsChange,
+}: {
+  providers: AccessPolicyProviderOption[];
+  providerId: string;
+  poolId: string;
+  selectedModels: string[];
+  onProviderChange: (providerId: string) => void;
+  onPoolChange: (poolId: string) => void;
+  onModelsChange: (models: string[]) => void;
+}) {
+  const pools = providers.find((provider) => provider.id === providerId)?.pools ?? [];
+  const models = pools.find((pool) => pool.id === poolId)?.models ?? [];
+  return (
+    <>
+      <Field label="Provider">
+        <Select value={providerId} onValueChange={onProviderChange}>
+          <SelectTrigger>
+            <SelectValue placeholder="Select provider" />
+          </SelectTrigger>
+          <SelectContent>
+            {providers.map((provider) => (
+              <SelectItem key={provider.id} value={provider.id}>
+                {provider.display_name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+      <Field label="Credential pool">
+        <Select value={poolId} onValueChange={onPoolChange} disabled={!providerId}>
+          <SelectTrigger>
+            <SelectValue placeholder="Select pool" />
+          </SelectTrigger>
+          <SelectContent>
+            {pools.map((pool) => (
+              <SelectItem key={pool.id} value={pool.id}>
+                {pool.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+      <ModelChecklist
+        models={models.map((model) => ({
+          id: model.id,
+          label: model.provider_model_name,
+          sublabel: model.alias,
+        }))}
+        selected={selectedModels}
+        onChange={onModelsChange}
+      />
+    </>
+  );
+}
+
+function ModelChecklist({
+  models,
+  selected,
+  onChange,
+}: {
+  models: { id: string; label: string; sublabel?: string | null }[];
+  selected: string[];
+  onChange: (models: string[]) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const filtered = models.filter((model) => {
+    const term = search.trim().toLowerCase();
+    return !term || [model.label, model.sublabel].filter(Boolean).some((value) => value?.toLowerCase().includes(term));
+  });
+  const visibleIds = filtered.map((model) => model.id);
+  return (
+    <div className="grid gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <Label>Models</Label>
+        <div className="flex gap-1">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => onChange(Array.from(new Set([...selected, ...visibleIds])))}
+          >
+            Select visible
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => onChange(selected.filter((id) => !visibleIds.includes(id)))}
+          >
+            Clear visible
+          </Button>
+        </div>
+      </div>
+      <Input placeholder="Search models" value={search} onChange={(event) => setSearch(event.target.value)} />
+      <div className="max-h-72 overflow-y-auto rounded-md border">
+        {filtered.length === 0 ? (
+          <p className="p-3 text-sm text-muted-foreground">No models available.</p>
+        ) : (
+          filtered.map((model) => (
+            <label key={model.id} className="flex cursor-pointer items-start gap-2 border-b px-3 py-2 text-sm last:border-b-0 hover:bg-muted/50">
+              <Checkbox
+                checked={selected.includes(model.id)}
+                onCheckedChange={(checked) =>
+                  onChange(
+                    checked
+                      ? Array.from(new Set([...selected, model.id]))
+                      : selected.filter((id) => id !== model.id),
+                  )
+                }
+              />
+              <span>
+                <span className="block font-medium">{model.label}</span>
+                {model.sublabel ? <span className="block text-xs text-muted-foreground">{model.sublabel}</span> : null}
+              </span>
+            </label>
+          ))
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground">{selected.length} models selected.</p>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      {children}
+    </div>
+  );
+}
+
+function accessOptionsParams(target: ScopeTarget) {
+  if (target.type === "team") {
+    return { scope_type: "team", team_id: target.teamId };
+  }
+  if (target.type === "project") {
+    return { scope_type: "project", project_id: target.projectId };
+  }
+  return {
+    scope_type: "virtual_key",
+    project_id: target.projectId,
+    virtual_key_id: target.virtualKeyId,
+  };
 }

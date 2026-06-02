@@ -11,8 +11,14 @@ export function isTeamAdmin(user: AuthenticatedUser | null | undefined, teamId: 
   );
 }
 
+export function isProjectAdmin(user: AuthenticatedUser | null | undefined, projectId: string) {
+  return (user?.project_memberships ?? []).some(
+    (membership) => membership.project_id === projectId && membership.role === "project_admin",
+  );
+}
+
 export function hasAnyTeamMembership(user: AuthenticatedUser | null | undefined) {
-  return (user?.team_memberships ?? []).length > 0;
+  return (user?.team_memberships ?? []).length > 0 || (user?.project_memberships ?? []).length > 0;
 }
 
 export function hasAnyTeamAdminMembership(user: AuthenticatedUser | null | undefined) {
@@ -28,7 +34,11 @@ export function canViewWorkspace(user: AuthenticatedUser | null | undefined) {
 }
 
 export function canManageKeys(user: AuthenticatedUser | null | undefined) {
-  return hasPermission(user, "keys.manage") || hasAnyTeamAdminMembership(user);
+  return (
+    hasPermission(user, "keys.manage") ||
+    hasAnyTeamAdminMembership(user) ||
+    (user?.project_memberships ?? []).some((membership) => membership.role === "project_admin")
+  );
 }
 
 export function canViewDashboardHome(user: AuthenticatedUser | null | undefined) {

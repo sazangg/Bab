@@ -158,3 +158,9 @@ async def resolve_access(*, payload: ResolveAccessRequest, db: AsyncSession) -> 
 
 async def list_accessible_models(*, raw_key: str, db: AsyncSession) -> list[AccessibleModel]:
     return await service.list_accessible_models(raw_key=raw_key, db=db)
+
+
+async def list_project_accessible_models(
+    *, project_id: UUID, scope: Scope, db: AsyncSession
+) -> list[AccessibleModel]:
+    return await service.list_project_accessible_models(project_id=project_id, scope=scope, db=db)

@@ -29,6 +29,7 @@ from app.modules.auth.internal.models import (
     IdentityAccount,
     Invite,
     OrganizationMembership,
+    ProjectMembership,
     Team,
     TeamMembership,
     User,
@@ -36,6 +37,7 @@ from app.modules.auth.internal.models import (
 from app.modules.auth.schemas import (
     AcceptInviteRequest,
     AuditEventResponse,
+    AuthenticatedProjectMembership,
     AuthenticatedTeamMembership,
     AuthenticatedUser,
     CreateInviteRequest,
@@ -43,13 +45,17 @@ from app.modules.auth.schemas import (
     InviteResponse,
     LoginRequest,
     MemberResponse,
+    ProjectMemberResponse,
     TeamMemberResponse,
     TokenResponse,
     UpdateMemberRequest,
     UpdateMemberStatusRequest,
+    UpdateProjectMemberRequest,
     UpdateTeamMemberRequest,
+    UpsertProjectMemberRequest,
     UpsertTeamMemberRequest,
 )
+from app.modules.keys.internal.models import Project
 
 MOCK_ADMIN_ID = UUID("00000000-0000-4000-8000-000000000001")
 REFRESH_TOKEN_TTL = timedelta(days=30)
@@ -440,6 +446,138 @@ async def remove_team_member(
         )
 
 
+async def list_project_members(
+    *, project_id: UUID, scope: Scope, db: AsyncSession
+) -> list[ProjectMemberResponse]:
+    await _require_project(project_id=project_id, scope=scope, db=db)
+    rows = await db.execute(
+        select(User, OrganizationMembership, ProjectMembership)
+        .join(OrganizationMembership, OrganizationMembership.user_id == User.id)
+        .join(ProjectMembership, ProjectMembership.user_id == User.id)
+        .where(
+            OrganizationMembership.org_id == scope.org_id,
+            OrganizationMembership.status == "active",
+            ProjectMembership.org_id == scope.org_id,
+            ProjectMembership.project_id == project_id,
+        )
+        .order_by(User.email)
+    )
+    return [
+        ProjectMemberResponse(
+            user_id=user.id,
+            email=user.email,
+            name=user.name,
+            org_role=org_membership.role,
+            project_role=project_membership.role,
+            created_at=project_membership.created_at,
+        )
+        for user, org_membership, project_membership in rows
+    ]
+
+
+async def upsert_project_member(
+    *,
+    project_id: UUID,
+    payload: UpsertProjectMemberRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProjectMemberResponse:
+    async with transaction(db):
+        await _require_project(project_id=project_id, scope=scope, db=db)
+        org_membership = await db.scalar(
+            select(OrganizationMembership).where(
+                OrganizationMembership.org_id == scope.org_id,
+                OrganizationMembership.user_id == payload.user_id,
+                OrganizationMembership.status == "active",
+            )
+        )
+        if org_membership is None:
+            raise InvalidAccessTokenError
+        project_membership = await db.scalar(
+            select(ProjectMembership).where(
+                ProjectMembership.org_id == scope.org_id,
+                ProjectMembership.project_id == project_id,
+                ProjectMembership.user_id == payload.user_id,
+            )
+        )
+        action = "project_member.added"
+        if project_membership is None:
+            project_membership = ProjectMembership(
+                org_id=scope.org_id,
+                project_id=project_id,
+                user_id=payload.user_id,
+                role=payload.role,
+            )
+            db.add(project_membership)
+        else:
+            action = "project_member.role_updated"
+            project_membership.role = payload.role
+        await db.flush()
+        await record_audit_event(
+            actor=actor,
+            action=action,
+            entity_type="project_member",
+            entity_id=project_membership.id,
+            metadata={
+                "project_id": str(project_id),
+                "user_id": str(payload.user_id),
+                "role": payload.role,
+            },
+            db=db,
+        )
+    members = await list_project_members(project_id=project_id, scope=scope, db=db)
+    return next(member for member in members if member.user_id == payload.user_id)
+
+
+async def update_project_member(
+    *,
+    project_id: UUID,
+    user_id: UUID,
+    payload: UpdateProjectMemberRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProjectMemberResponse:
+    return await upsert_project_member(
+        project_id=project_id,
+        payload=UpsertProjectMemberRequest(user_id=user_id, role=payload.role),
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def remove_project_member(
+    *,
+    project_id: UUID,
+    user_id: UUID,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> None:
+    async with transaction(db):
+        await _require_project(project_id=project_id, scope=scope, db=db)
+        project_membership = await db.scalar(
+            select(ProjectMembership).where(
+                ProjectMembership.org_id == scope.org_id,
+                ProjectMembership.project_id == project_id,
+                ProjectMembership.user_id == user_id,
+            )
+        )
+        if project_membership is None:
+            return
+        await db.delete(project_membership)
+        await record_audit_event(
+            actor=actor,
+            action="project_member.removed",
+            entity_type="project_member",
+            entity_id=project_membership.id,
+            metadata={"project_id": str(project_id), "user_id": str(user_id)},
+            db=db,
+        )
+
+
 async def create_invite(
     *,
     payload: CreateInviteRequest,
@@ -576,6 +714,15 @@ async def _require_team(*, team_id: UUID, scope: Scope, db: AsyncSession) -> Tea
     if team is None:
         raise InvalidAccessTokenError
     return team
+
+
+async def _require_project(*, project_id: UUID, scope: Scope, db: AsyncSession) -> Project:
+    project = await db.scalar(
+        select(Project).where(Project.id == project_id, Project.org_id == scope.org_id)
+    )
+    if project is None:
+        raise InvalidAccessTokenError
+    return project
 
 
 async def record_audit_event(
@@ -796,6 +943,12 @@ async def _principal_for_user(user_id: UUID, db: AsyncSession) -> AuthenticatedU
             TeamMembership.user_id == user.id,
         )
     )
+    project_memberships = await db.scalars(
+        select(ProjectMembership).where(
+            ProjectMembership.org_id == membership.org_id,
+            ProjectMembership.user_id == user.id,
+        )
+    )
     return AuthenticatedUser(
         id=user.id,
         org_id=membership.org_id,
@@ -806,6 +959,10 @@ async def _principal_for_user(user_id: UUID, db: AsyncSession) -> AuthenticatedU
         team_memberships=[
             AuthenticatedTeamMembership(team_id=item.team_id, role=item.role)
             for item in team_memberships
+        ],
+        project_memberships=[
+            AuthenticatedProjectMembership(project_id=item.project_id, role=item.role)
+            for item in project_memberships
         ],
     )
 

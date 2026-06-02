@@ -5,7 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface UpdateVirtualKeyRequest {
-  name?: string | null;
-  expires_at?: string | null;
+export interface AuthenticatedProjectMembership {
+  project_id: string;
+  role: string;
 }

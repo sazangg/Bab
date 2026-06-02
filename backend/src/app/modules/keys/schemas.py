@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CreateProjectRequest(BaseModel):
@@ -31,20 +31,11 @@ class ProjectResponse(BaseModel):
 class CreateVirtualKeyRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     expires_at: datetime | None = None
-    allowed_models: list[str] | None = None
-
-    @field_validator("allowed_models")
-    @classmethod
-    def reject_empty_model_list(cls, value: list[str] | None) -> list[str] | None:
-        if value == []:
-            raise ValueError("allowed_models must be null or contain at least one model")
-        return value
 
 
 class UpdateVirtualKeyRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     expires_at: datetime | None = None
-    allowed_models: list[str] | None = None
 
 
 class VirtualKeyResponse(BaseModel):
@@ -55,7 +46,6 @@ class VirtualKeyResponse(BaseModel):
     project_id: UUID
     name: str
     key_prefix: str
-    allowed_models: list[str] | None
     expires_at: datetime | None
     revoked_at: datetime | None
     created_at: datetime
@@ -72,6 +62,7 @@ class ResolveAccessRequest(BaseModel):
 
 
 class ResolvedLimitPolicy(BaseModel):
+    limit_policy_assignment_id: UUID
     limit_policy_id: UUID
     limit_policy_rule_id: UUID
     name: str
@@ -107,6 +98,7 @@ class AccessibleModel(BaseModel):
     object: str = "model"
     owned_by: str
     provider_id: UUID
+    model_offering_id: UUID
     access_policy_id: UUID | None = None
     access_policy_route_id: UUID | None = None
     pool_id: UUID

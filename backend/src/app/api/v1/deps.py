@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import Scope, get_db
 from app.modules.auth import facade as auth_facade
 from app.modules.auth.errors import InvalidAccessTokenError
-from app.modules.auth.internal.models import TeamMembership
+from app.modules.auth.internal.models import ProjectMembership, TeamMembership
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys.internal.models import Project
 
@@ -88,7 +88,10 @@ def require_project_team_admin_or_permission(permission: str) -> Callable:
         if auth_facade.has_permission(user, permission):
             return user
         project = await _get_project(project_id=project_id, user=user, db=db)
-        if project and await _is_team_admin(team_id=str(project.team_id), user=user, db=db):
+        if project and (
+            await _is_team_admin(team_id=str(project.team_id), user=user, db=db)
+            or await _is_project_admin(project_id=str(project.id), user=user, db=db)
+        ):
             return user
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -127,7 +130,10 @@ async def require_project_view_or_permission(
     if auth_facade.has_permission(user, permission):
         return
     project = await _get_project(project_id=project_id, user=user, db=db)
-    if project and await _has_team_membership(team_id=str(project.team_id), user=user, db=db):
+    if project and (
+        await _has_team_membership(team_id=str(project.team_id), user=user, db=db)
+        or await _has_project_membership(project_id=str(project.id), user=user, db=db)
+    ):
         return
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
@@ -137,6 +143,10 @@ async def require_project_view_or_permission(
 
 def accessible_team_ids(user: AuthenticatedUser) -> set[UUID]:
     return {membership.team_id for membership in user.team_memberships}
+
+
+def accessible_project_ids(user: AuthenticatedUser) -> set[UUID]:
+    return {membership.project_id for membership in user.project_memberships}
 
 
 def get_scope(user: Annotated[AuthenticatedUser, Depends(get_current_user)]) -> Scope:
@@ -169,6 +179,39 @@ async def _is_team_admin(*, team_id: str, user: AuthenticatedUser, db: AsyncSess
             TeamMembership.team_id == parsed_team_id,
             TeamMembership.user_id == user.id,
             TeamMembership.role == "team_admin",
+        )
+    )
+    return membership is not None
+
+
+async def _has_project_membership(
+    *, project_id: str, user: AuthenticatedUser, db: AsyncSession
+) -> bool:
+    try:
+        parsed_project_id = UUID(str(project_id))
+    except ValueError:
+        return False
+    membership = await db.scalar(
+        select(ProjectMembership).where(
+            ProjectMembership.org_id == user.org_id,
+            ProjectMembership.project_id == parsed_project_id,
+            ProjectMembership.user_id == user.id,
+        )
+    )
+    return membership is not None
+
+
+async def _is_project_admin(*, project_id: str, user: AuthenticatedUser, db: AsyncSession) -> bool:
+    try:
+        parsed_project_id = UUID(str(project_id))
+    except ValueError:
+        return False
+    membership = await db.scalar(
+        select(ProjectMembership).where(
+            ProjectMembership.org_id == user.org_id,
+            ProjectMembership.project_id == parsed_project_id,
+            ProjectMembership.user_id == user.id,
+            ProjectMembership.role == "project_admin",
         )
     )
     return membership is not None

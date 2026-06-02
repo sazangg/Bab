@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import Scope
 from app.modules.policies.internal import service
 from app.modules.policies.schemas import (
+    AccessPolicyOptionsResponse,
     AccessPolicyResponse,
     AccessPolicyRouteResponse,
     CreateAccessPolicyRequest,
@@ -69,6 +70,27 @@ async def update_access_policy_route(
 
 async def delete_access_policy_route(*, route_id: UUID, scope: Scope, db: AsyncSession) -> None:
     await service.delete_access_policy_route(route_id=route_id, scope=scope, db=db)
+
+
+async def get_access_policy_options(
+    *,
+    scope_type: str,
+    team_id: UUID | None,
+    project_id: UUID | None,
+    virtual_key_id: UUID | None,
+    exclude_policy_id: UUID | None,
+    scope: Scope,
+    db: AsyncSession,
+) -> AccessPolicyOptionsResponse:
+    return await service.get_access_policy_options(
+        scope_type=scope_type,
+        team_id=team_id,
+        project_id=project_id,
+        virtual_key_id=virtual_key_id,
+        exclude_policy_id=exclude_policy_id,
+        scope=scope,
+        db=db,
+    )
 
 
 async def list_limit_policies(*, scope: Scope, db: AsyncSession) -> list[LimitPolicyResponse]:

@@ -913,6 +913,9 @@ async def _record_proxy_request(
             limit_policy_rule_ids=[
                 str(limit.limit_policy_rule_id) for limit in resolved.limit_policies
             ],
+            limit_policy_assignment_ids=[
+                str(limit.limit_policy_assignment_id) for limit in resolved.limit_policies
+            ],
             virtual_key_id=resolved.virtual_key_id,
             pool_id=resolved.pool_id,
             provider_id=resolved.provider_id,
@@ -991,12 +994,14 @@ async def _enforce_limit_policies(
         ) = await usage_facade.summarize_limit_policy_usage(
             limit_policy_id=limit.limit_policy_id,
             limit_policy_rule_id=limit.limit_policy_rule_id,
+            limit_policy_assignment_id=limit.limit_policy_assignment_id,
             since=since,
             db=db,
         )
         reservations = await usage_facade.summarize_active_limit_policy_reservations(
             limit_policy_id=limit.limit_policy_id,
             limit_policy_rule_id=limit.limit_policy_rule_id,
+            limit_policy_assignment_id=limit.limit_policy_assignment_id,
             since=since,
             now=datetime.now(UTC),
             db=db,
@@ -1060,6 +1065,7 @@ async def _enforce_limit_policies(
                     org_id=resolved.org_id,
                     limit_policy_id=limit.limit_policy_id,
                     limit_policy_rule_id=limit.limit_policy_rule_id,
+                    limit_policy_assignment_id=limit.limit_policy_assignment_id,
                     virtual_key_id=resolved.virtual_key_id,
                     request_id=current_request_id(),
                     reserved_prompt_tokens=estimated_input_tokens,
@@ -1088,10 +1094,12 @@ async def _commit_reservations(
         cost_cents=cost_cents,
         db=db,
     )
+    await db.commit()
 
 
 async def _release_reservations(*, reservation_ids: list[UUID], db: AsyncSession) -> None:
     await usage_facade.release_limit_policy_reservations(reservation_ids=reservation_ids, db=db)
+    await db.commit()
 
 
 async def _raise_proxy_denial(

@@ -1,8 +1,10 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
+import { isAxiosError } from "axios";
 import { Check, Copy, KeyRound, Plus } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
+import { toast } from "sonner";
 import { z } from "zod";
 
 import {
@@ -59,7 +61,6 @@ import { StatusBadge } from "@/shared/components/StatusBadge";
 const keySchema = z.object({
   name: z.string().min(1).max(255),
   expires_at: z.string().optional(),
-  allowed_models: z.string().optional(),
 });
 
 type KeyValues = z.infer<typeof keySchema>;
@@ -90,7 +91,6 @@ export function ProjectKeysSection({
     defaultValues: {
       name: "",
       expires_at: "",
-      allowed_models: "",
     },
   });
   const keyUsageQueries = useQueries({
@@ -109,11 +109,13 @@ export function ProjectKeysSection({
           form.reset({
             name: "",
             expires_at: "",
-            allowed_models: "",
           });
           setCreateOpen(false);
           await queryClient.invalidateQueries();
         }
+      },
+      onError: (error) => {
+        toast.error(getMutationDetail(error, "Virtual key could not be created."));
       },
     },
   });
@@ -132,7 +134,6 @@ export function ProjectKeysSection({
       data: {
         name: values.name,
         expires_at: values.expires_at ? new Date(values.expires_at).toISOString() : null,
-        allowed_models: parseModels(values.allowed_models),
       },
     });
 
@@ -143,11 +144,14 @@ export function ProjectKeysSection({
           <CardTitle>Virtual keys</CardTitle>
           <CardDescription>
             Each key uses the access and limit policies assigned to its project, team, and
-            organization. Allowed models can narrow that policy route set.
+            organization. Key-specific access is managed through virtual key policy assignments.
           </CardDescription>
           {canManage ? (
             <CardAction>
-              <Sheet open={createOpen} onOpenChange={setCreateOpen}>
+              <Sheet
+                open={createOpen}
+                onOpenChange={setCreateOpen}
+              >
                 <SheetTrigger asChild>
                   <Button size="sm" disabled={!project.is_active}>
                     <Plus />
@@ -183,18 +187,6 @@ export function ProjectKeysSection({
                       />
                       <p className="text-xs text-muted-foreground">
                         Optional. Blank uses the organization default if configured.
-                      </p>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="key-models">Allowed models</Label>
-                      <Input
-                        id="key-models"
-                        placeholder="gpt-4o-mini, gpt-5-mini"
-                        {...form.register("allowed_models")}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Optional comma-separated subset of the models allowed by access policies.
-                        Leave blank to allow every policy route model.
                       </p>
                     </div>
                   </form>
@@ -404,10 +396,8 @@ function KeyUsageInline({
   );
 }
 
-function parseModels(value: string | undefined): string[] | null {
-  const models = value
-    ?.split(",")
-    .map((m) => m.trim())
-    .filter(Boolean);
-  return models && models.length > 0 ? models : null;
+function getMutationDetail(error: unknown, fallback: string) {
+  if (!isAxiosError(error)) return fallback;
+  const detail = error.response?.data?.detail;
+  return typeof detail === "string" && detail.length > 0 ? detail : fallback;
 }

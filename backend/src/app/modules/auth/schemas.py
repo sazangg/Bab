@@ -19,6 +19,11 @@ class AuthenticatedTeamMembership(BaseModel):
     role: str
 
 
+class AuthenticatedProjectMembership(BaseModel):
+    project_id: UUID
+    role: str
+
+
 class AuthenticatedUser(BaseModel):
     id: UUID
     org_id: UUID
@@ -27,6 +32,7 @@ class AuthenticatedUser(BaseModel):
     role: str
     permissions: list[str] = []
     team_memberships: list[AuthenticatedTeamMembership] = []
+    project_memberships: list[AuthenticatedProjectMembership] = []
 
 
 class CreateInviteRequest(BaseModel):
@@ -89,6 +95,15 @@ class TeamMemberResponse(BaseModel):
     created_at: datetime
 
 
+class ProjectMemberResponse(BaseModel):
+    user_id: UUID
+    email: EmailStr
+    name: str | None
+    org_role: str
+    project_role: str
+    created_at: datetime
+
+
 class UpsertTeamMemberRequest(BaseModel):
     user_id: UUID
     role: str = Field(default="team_member", pattern="^(team_admin|team_member)$")
@@ -96,6 +111,15 @@ class UpsertTeamMemberRequest(BaseModel):
 
 class UpdateTeamMemberRequest(BaseModel):
     role: str = Field(pattern="^(team_admin|team_member)$")
+
+
+class UpsertProjectMemberRequest(BaseModel):
+    user_id: UUID
+    role: str = Field(default="project_admin", pattern="^(project_admin)$")
+
+
+class UpdateProjectMemberRequest(BaseModel):
+    role: str = Field(pattern="^(project_admin)$")
 
 
 class AcceptInviteRequest(BaseModel):

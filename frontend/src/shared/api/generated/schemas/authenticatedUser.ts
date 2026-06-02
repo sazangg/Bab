@@ -4,6 +4,7 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
+import type { AuthenticatedProjectMembership } from './authenticatedProjectMembership';
 import type { AuthenticatedTeamMembership } from './authenticatedTeamMembership';
 
 export interface AuthenticatedUser {
@@ -14,4 +15,5 @@ export interface AuthenticatedUser {
   role: string;
   permissions?: string[];
   team_memberships?: AuthenticatedTeamMembership[];
+  project_memberships?: AuthenticatedProjectMembership[];
 }

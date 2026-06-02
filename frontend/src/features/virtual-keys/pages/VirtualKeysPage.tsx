@@ -187,7 +187,6 @@ export function VirtualKeysPage() {
                       <TableHead>Project</TableHead>
                       <TableHead>Team</TableHead>
                       <TableHead>Policy source</TableHead>
-                      <TableHead>Allowed models</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Updated</TableHead>
                       <TableHead className="w-12">
@@ -273,9 +272,6 @@ function VirtualKeyRow({
       </TableCell>
       <TableCell>
         <StatusBadge variant="muted">Resolved at request time</StatusBadge>
-      </TableCell>
-      <TableCell className="max-w-64 truncate text-muted-foreground">
-        {row.key.allowed_models?.join(", ") ?? "All policy models"}
       </TableCell>
       <TableCell>
         <StatusBadge variant={status === "active" ? "active" : status}>

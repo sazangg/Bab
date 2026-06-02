@@ -147,6 +147,7 @@ export function TeamDetailPage() {
   const canManageTeam =
     team !== undefined &&
     (hasPermission(currentUser, "teams.manage") || isTeamAdmin(currentUser, team.id));
+  const canManageTeamPolicies = team !== undefined && hasPermission(currentUser, "teams.manage");
 
   const projectForm = useForm<ProjectFormValues>({
     resolver: zodResolver(projectSchema),
@@ -365,7 +366,10 @@ export function TeamDetailPage() {
       />
       <UsageRecordsDrilldown title="Team usage records" filters={{ team_id: team.id }} />
 
-      <PolicyScopeSection target={{ type: "team", teamId: team.id }} canManage={canManageTeam} />
+      <PolicyScopeSection
+        target={{ type: "team", teamId: team.id }}
+        canManage={canManageTeamPolicies}
+      />
 
       <Card>
         <CardHeader>

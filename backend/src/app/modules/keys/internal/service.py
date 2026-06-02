@@ -189,14 +189,7 @@ async def create_virtual_key(
             virtual_key_id=None,
             db=db,
         )
-        limit_policies = await _effective_limit_policies(
-            org_id=scope.org_id,
-            team_id=project.team_id,
-            project_id=project.id,
-            virtual_key_id=None,
-            db=db,
-        )
-        if not access_routes or not limit_policies:
+        if not access_routes:
             raise PolicyNotConfiguredError
         raw_key = generate_virtual_key(prefix=org_settings.virtual_key_prefix)
         expires_at = payload.expires_at
@@ -210,7 +203,6 @@ async def create_virtual_key(
             name=payload.name,
             key_hash=hash_token(raw_key),
             key_prefix=_key_prefix(raw_key),
-            allowed_models=payload.allowed_models,
             expires_at=expires_at,
             db=db,
         )
@@ -309,8 +301,6 @@ async def update_virtual_key(
             virtual_key.name = payload.name
         if "expires_at" in payload.model_fields_set:
             virtual_key.expires_at = payload.expires_at
-        if "allowed_models" in payload.model_fields_set:
-            virtual_key.allowed_models = payload.allowed_models
         await db.flush()
         await activity_facade.record_admin_event(
             actor=actor,
@@ -391,8 +381,6 @@ async def resolve_access(*, payload: ResolveAccessRequest, db: AsyncSession) -> 
     route, model_offering_id, provider_id, pool_id, provider_model, input_price, output_price = (
         matched
     )
-    if virtual_key.allowed_models is not None and provider_model not in virtual_key.allowed_models:
-        raise AccessDeniedError
     limit_rules = await _matching_limit_policies(
         org_id=virtual_key.org_id,
         team_id=project.team_id,
@@ -402,8 +390,6 @@ async def resolve_access(*, payload: ResolveAccessRequest, db: AsyncSession) -> 
         model_offering_id=model_offering_id,
         db=db,
     )
-    if not limit_rules:
-        raise AccessDeniedError
 
     return ResolvedAccess(
         org_id=virtual_key.org_id,
@@ -412,8 +398,11 @@ async def resolve_access(*, payload: ResolveAccessRequest, db: AsyncSession) -> 
         access_policy_id=route.access_policy_id,
         access_policy_route_id=route.id,
         model_offering_id=model_offering_id,
-        limit_policy_ids=list({rule.limit_policy_id for rule in limit_rules}),
-        limit_policies=[_to_resolved_limit_policy(rule) for rule in limit_rules],
+        limit_policy_ids=list({rule.limit_policy_id for rule, _ in limit_rules}),
+        limit_policies=[
+            _to_resolved_limit_policy(rule, assignment_id)
+            for rule, assignment_id in limit_rules
+        ],
         virtual_key_id=virtual_key.id,
         provider_id=provider_id,
         pool_id=pool_id,
@@ -454,22 +443,6 @@ async def list_accessible_models(*, raw_key: str, db: AsyncSession) -> list[Acce
             continue
         if not pool.is_active or not model.is_active or pool.provider_id != model.provider_id:
             continue
-        if (
-            virtual_key.allowed_models is not None
-            and model.provider_model_name not in virtual_key.allowed_models
-        ):
-            continue
-        limit_policies = await _matching_limit_policies(
-            org_id=virtual_key.org_id,
-            team_id=project.team_id,
-            project_id=project.id,
-            virtual_key_id=virtual_key.id,
-            route=route,
-            model_offering_id=model_offering_id,
-            db=db,
-        )
-        if not limit_policies:
-            continue
         if model.provider_model_name in seen:
             continue
         seen.add(model.provider_model_name)
@@ -478,6 +451,7 @@ async def list_accessible_models(*, raw_key: str, db: AsyncSession) -> list[Acce
                 id=model.provider_model_name,
                 owned_by=model.provider_id.hex,
                 provider_id=model.provider_id,
+                model_offering_id=model.id,
                 access_policy_id=route.access_policy_id,
                 access_policy_route_id=route.id,
                 pool_id=pool.id,
@@ -485,6 +459,55 @@ async def list_accessible_models(*, raw_key: str, db: AsyncSession) -> list[Acce
             )
         )
     return models
+
+
+async def list_project_accessible_models(
+    *, project_id: UUID, scope: Scope, db: AsyncSession
+) -> list[AccessibleModel]:
+    project = await repository.get_project(project_id=project_id, org_id=scope.org_id, db=db)
+    if project is None or not project.is_active:
+        raise ProjectNotFoundError
+    models: list[AccessibleModel] = []
+    seen: set[tuple[UUID, UUID]] = set()
+    for route, model_offering_id in await _effective_access_routes(
+        org_id=scope.org_id,
+        team_id=project.team_id,
+        project_id=project.id,
+        virtual_key_id=None,
+        db=db,
+    ):
+        try:
+            pool = await providers_facade.get_credential_pool(
+                pool_id=route.credential_pool_id,
+                scope=scope,
+                db=db,
+            )
+            model = await providers_facade.get_model_offering(
+                model_offering_id=model_offering_id,
+                scope=scope,
+                db=db,
+            )
+        except ProviderNotFoundError:
+            continue
+        if not pool.is_active or not model.is_active or pool.provider_id != model.provider_id:
+            continue
+        dedupe_key = (model.provider_id, model.id)
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        models.append(
+            AccessibleModel(
+                id=model.provider_model_name,
+                owned_by=model.provider_id.hex,
+                provider_id=model.provider_id,
+                model_offering_id=model.id,
+                access_policy_id=route.access_policy_id,
+                access_policy_route_id=route.id,
+                pool_id=pool.id,
+                alias=model.alias,
+            )
+        )
+    return sorted(models, key=lambda item: (item.id, str(item.provider_id)))
 
 
 async def _resolve_key_project(*, raw_key: str, db: AsyncSession) -> ResolvedKeyProject:
@@ -637,7 +660,7 @@ async def _effective_limit_policies(
     project_id: UUID,
     virtual_key_id: UUID | None,
     db: AsyncSession,
-) -> list[LimitPolicy]:
+) -> list[tuple[LimitPolicy, UUID]]:
     assignments = await policies_repository.list_active_policy_assignments_for_targets(
         org_id=org_id,
         team_id=team_id,
@@ -646,7 +669,7 @@ async def _effective_limit_policies(
         policy_type="limit",
         db=db,
     )
-    policies: list[LimitPolicy] = []
+    policies: list[tuple[LimitPolicy, UUID]] = []
     for assignment in assignments:
         if assignment.limit_policy_id is None:
             continue
@@ -656,7 +679,7 @@ async def _effective_limit_policies(
             db=db,
         )
         if policy is not None and policy.is_active:
-            policies.append(policy)
+            policies.append((policy, assignment.id))
     return policies
 
 
@@ -669,7 +692,7 @@ async def _matching_limit_policies(
     route: AccessPolicyRoute,
     model_offering_id: UUID,
     db: AsyncSession,
-) -> list[LimitPolicyRule]:
+) -> list[tuple[LimitPolicyRule, UUID]]:
     policies = await _effective_limit_policies(
         org_id=org_id,
         team_id=team_id,
@@ -677,15 +700,15 @@ async def _matching_limit_policies(
         virtual_key_id=virtual_key_id,
         db=db,
     )
-    rules: list[LimitPolicyRule] = []
-    for policy in policies:
+    rules: list[tuple[LimitPolicyRule, UUID]] = []
+    for policy, assignment_id in policies:
         policy_rules = await policies_repository.list_limit_policy_rules(
             org_id=org_id,
             limit_policy_id=policy.id,
             db=db,
         )
         rules.extend(
-            rule
+            (rule, assignment_id)
             for rule in policy_rules
             if rule.is_active
             and _limit_rule_matches_route(
@@ -740,8 +763,9 @@ def _to_project_response(project: Project) -> ProjectResponse:
     return ProjectResponse.model_validate(project)
 
 
-def _to_resolved_limit_policy(policy: LimitPolicyRule) -> ResolvedLimitPolicy:
+def _to_resolved_limit_policy(policy: LimitPolicyRule, assignment_id: UUID) -> ResolvedLimitPolicy:
     return ResolvedLimitPolicy(
+        limit_policy_assignment_id=assignment_id,
         limit_policy_id=policy.limit_policy_id,
         limit_policy_rule_id=policy.id,
         name=policy.name,
@@ -767,7 +791,6 @@ async def _to_virtual_key_response(
         project_id=virtual_key.project_id,
         name=virtual_key.name,
         key_prefix=virtual_key.key_prefix,
-        allowed_models=virtual_key.allowed_models,
         expires_at=virtual_key.expires_at,
         revoked_at=virtual_key.revoked_at,
         created_at=virtual_key.created_at,

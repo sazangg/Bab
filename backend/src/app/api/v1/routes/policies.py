@@ -10,6 +10,7 @@ from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.policies import facade
 from app.modules.policies.errors import PolicyNotFoundError, PolicyValidationError
 from app.modules.policies.schemas import (
+    AccessPolicyOptionsResponse,
     AccessPolicyResponse,
     AccessPolicyRouteResponse,
     CreateAccessPolicyRequest,
@@ -145,6 +146,33 @@ async def delete_access_policy_route(
         await facade.delete_access_policy_route(route_id=route_id, scope=scope, db=db)
     except PolicyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="access policy route not found") from exc
+
+
+@router.get("/access-options")
+async def get_access_policy_options(
+    _user: PolicyViewer,
+    scope: RequestScope,
+    db: DatabaseSession,
+    scope_type: str,
+    team_id: UUID | None = None,
+    project_id: UUID | None = None,
+    virtual_key_id: UUID | None = None,
+    exclude_policy_id: UUID | None = None,
+) -> AccessPolicyOptionsResponse:
+    if scope_type not in {"org", "team", "project", "virtual_key"}:
+        raise HTTPException(status_code=422, detail="invalid scope type")
+    try:
+        return await facade.get_access_policy_options(
+            scope_type=scope_type,
+            team_id=team_id,
+            project_id=project_id,
+            virtual_key_id=virtual_key_id,
+            exclude_policy_id=exclude_policy_id,
+            scope=scope,
+            db=db,
+        )
+    except PolicyNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="policy scope not found") from exc
 
 
 @router.get("/limits")

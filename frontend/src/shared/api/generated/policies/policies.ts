@@ -24,6 +24,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AccessPolicyOptionsResponse,
   AccessPolicyResponse,
   AccessPolicyRouteResponse,
   CreateAccessPolicyRequest,
@@ -31,6 +32,7 @@ import type {
   CreateLimitPolicyRequest,
   CreateLimitPolicyRuleRequest,
   CreatePolicyAssignmentRequest,
+  GetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetParams,
   HTTPValidationError,
   LimitPolicyResponse,
   LimitPolicyRuleResponse,
@@ -813,7 +815,133 @@ export const useDeleteAccessPolicyRouteApiV1PoliciesAccessRoutesRouteIdDelete = 
       > => {
       return useMutation(getDeleteAccessPolicyRouteApiV1PoliciesAccessRoutesRouteIdDeleteMutationOptions(options), queryClient);
     }
-    export type listLimitPoliciesApiV1PoliciesLimitsGetResponse200 = {
+    export type getAccessPolicyOptionsApiV1PoliciesAccessOptionsGetResponse200 = {
+  data: AccessPolicyOptionsResponse
+  status: 200
+}
+
+export type getAccessPolicyOptionsApiV1PoliciesAccessOptionsGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type getAccessPolicyOptionsApiV1PoliciesAccessOptionsGetResponseSuccess = (getAccessPolicyOptionsApiV1PoliciesAccessOptionsGetResponse200) & {
+  headers: Headers;
+};
+export type getAccessPolicyOptionsApiV1PoliciesAccessOptionsGetResponseError = (getAccessPolicyOptionsApiV1PoliciesAccessOptionsGetResponse422) & {
+  headers: Headers;
+};
+
+export type getAccessPolicyOptionsApiV1PoliciesAccessOptionsGetResponse = (getAccessPolicyOptionsApiV1PoliciesAccessOptionsGetResponseSuccess | getAccessPolicyOptionsApiV1PoliciesAccessOptionsGetResponseError)
+
+export const getGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetUrl = (params: GetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/policies/access-options?${stringifiedParams}` : `/api/v1/policies/access-options`
+}
+
+/**
+ * @summary Get Access Policy Options
+ */
+export const getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet = async (params: GetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetParams, options?: RequestInit): Promise<getAccessPolicyOptionsApiV1PoliciesAccessOptionsGetResponse> => {
+
+  return apiMutator<getAccessPolicyOptionsApiV1PoliciesAccessOptionsGetResponse>(getGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetQueryKey = (params?: GetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetParams,) => {
+    return [
+    `/api/v1/policies/access-options`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetQueryOptions = <TData = Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>, TError = HTTPValidationError>(params: GetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>> = ({ signal }) => getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet(params, { signal });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetQueryResult = NonNullable<Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>>
+export type GetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetQueryError = HTTPValidationError
+
+
+export function useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet<TData = Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>, TError = HTTPValidationError>(
+ params: GetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>,
+          TError,
+          Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet<TData = Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>, TError = HTTPValidationError>(
+ params: GetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>,
+          TError,
+          Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet<TData = Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>, TError = HTTPValidationError>(
+ params: GetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get Access Policy Options
+ */
+
+export function useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet<TData = Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>, TError = HTTPValidationError>(
+ params: GetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export type listLimitPoliciesApiV1PoliciesLimitsGetResponse200 = {
   data: LimitPolicyResponse[]
   status: 200
 }

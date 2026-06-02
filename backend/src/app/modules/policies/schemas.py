@@ -68,6 +68,28 @@ class AccessPolicyResponse(BaseModel):
     updated_at: datetime
 
 
+class AccessPolicyModelOption(BaseModel):
+    id: UUID
+    provider_model_name: str
+    alias: str | None = None
+
+
+class AccessPolicyPoolOption(BaseModel):
+    id: UUID
+    name: str
+    models: list[AccessPolicyModelOption] = Field(default_factory=list)
+
+
+class AccessPolicyProviderOption(BaseModel):
+    id: UUID
+    display_name: str
+    pools: list[AccessPolicyPoolOption] = Field(default_factory=list)
+
+
+class AccessPolicyOptionsResponse(BaseModel):
+    providers: list[AccessPolicyProviderOption] = Field(default_factory=list)
+
+
 class CreateLimitPolicyRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=1000)

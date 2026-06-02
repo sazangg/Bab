@@ -56,7 +56,6 @@ async def create_virtual_key(
     name: str,
     key_hash: str,
     key_prefix: str,
-    allowed_models: list[str] | None,
     expires_at,
     db: AsyncSession,
 ) -> VirtualKey:
@@ -66,7 +65,6 @@ async def create_virtual_key(
         name=name,
         key_hash=key_hash,
         key_prefix=key_prefix,
-        allowed_models=allowed_models,
         expires_at=expires_at,
     )
     db.add(virtual_key)
