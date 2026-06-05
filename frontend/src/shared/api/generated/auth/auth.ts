@@ -1540,3 +1540,9 @@ export function useVerifyAuditChainApiV1AuthAuditVerifyGet<TData = Awaited<Retur
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+
+
+
+
+

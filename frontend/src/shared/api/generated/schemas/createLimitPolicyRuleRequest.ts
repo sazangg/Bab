@@ -11,13 +11,14 @@ export interface CreateLimitPolicyRuleRequest {
      * @maxLength 255
      */
   name: string;
-  budget_cents?: number | null;
-  max_requests?: number | null;
-  max_input_tokens?: number | null;
-  max_output_tokens?: number | null;
-  max_tokens_per_request?: number | null;
-  /** @pattern ^(daily|weekly|monthly|lifetime)$ */
-  window?: string;
+  /** @pattern ^(budget_cents|requests|input_tokens|output_tokens|total_tokens|tokens_per_request)$ */
+  limit_type: string;
+  /** @minimum 1 */
+  limit_value: number;
+  /** @pattern ^(minute|hour|day|week|month|lifetime)$ */
+  interval_unit?: string;
+  /** @minimum 1 */
+  interval_count?: number;
   provider_id?: string | null;
   credential_pool_id?: string | null;
   model_offering_id?: string | null;

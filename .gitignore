@@ -1,5 +1,6 @@
 .local/
 .claude/
+_context/
 
 # Python
 __pycache__/

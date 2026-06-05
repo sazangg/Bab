@@ -237,6 +237,7 @@ export function ProjectDetailPage() {
             Keys ({keys.length})
           </TabsTrigger>
           <TabsTrigger value="access">Policies</TabsTrigger>
+          <TabsTrigger value="members">Members</TabsTrigger>
         </TabsList>
         <TabsContent value="keys" className="space-y-4">
           <ProjectKeysSection
@@ -254,6 +255,8 @@ export function ProjectDetailPage() {
             teamId={project.team_id}
             canManage={canManageProject}
           />
+        </TabsContent>
+        <TabsContent value="members" className="space-y-4">
           <ProjectAdminsCard
             orgMembers={orgMembers}
             projectMembers={projectMembers}

@@ -4,8 +4,10 @@ import { Outlet } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   canManageKeys,
+  canViewOrgAdminSurface,
   canViewDashboardHome,
   canViewWorkspace,
+  hasAnyDirectTeamMembership,
   hasAnyTeamAdminMembership,
   hasPermission,
 } from "@/features/auth/lib/permissions";
@@ -14,17 +16,21 @@ import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
 type ProtectedRouteProps = {
   permission?: string;
   allowWorkspaceScope?: boolean;
+  allowTeamScope?: boolean;
   requireTeamAdminScope?: boolean;
   requireKeyManager?: boolean;
   allowDashboardHome?: boolean;
+  requireOrgAdminSurface?: boolean;
 };
 
 export function ProtectedRoute({
   permission,
   allowWorkspaceScope = false,
+  allowTeamScope = false,
   requireTeamAdminScope = false,
   requireKeyManager = false,
   allowDashboardHome = false,
+  requireOrgAdminSurface = false,
 }: ProtectedRouteProps) {
   const currentUserQuery = useMeApiV1AuthMeGet();
   const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
@@ -36,14 +42,20 @@ export function ProtectedRoute({
   const allowed =
     (permission ? hasPermission(currentUser, permission) : false) ||
     (allowWorkspaceScope ? canViewWorkspace(currentUser) : false) ||
+    (allowTeamScope
+      ? hasPermission(currentUser, "teams.view") || hasAnyDirectTeamMembership(currentUser)
+      : false) ||
     (requireTeamAdminScope ? hasAnyTeamAdminMembership(currentUser) : false) ||
     (requireKeyManager ? canManageKeys(currentUser) : false) ||
     (allowDashboardHome ? canViewDashboardHome(currentUser) : false) ||
+    (requireOrgAdminSurface ? canViewOrgAdminSurface(currentUser) : false) ||
     (!permission &&
       !allowWorkspaceScope &&
+      !allowTeamScope &&
       !requireTeamAdminScope &&
       !requireKeyManager &&
-      !allowDashboardHome);
+      !allowDashboardHome &&
+      !requireOrgAdminSurface);
 
   if (!allowed) {
     if (!canViewDashboardHome(currentUser)) {

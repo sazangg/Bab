@@ -9,5 +9,9 @@ export interface TestProviderCredentialResponse {
   id: string;
   health_status: string;
   last_validation_error?: string | null;
+  last_validation_at?: string | null;
   last_successful_request_at?: string | null;
+  last_failure_at?: string | null;
+  failure_reason?: string | null;
+  failure_message?: string | null;
 }

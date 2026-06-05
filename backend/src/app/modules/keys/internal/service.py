@@ -400,8 +400,7 @@ async def resolve_access(*, payload: ResolveAccessRequest, db: AsyncSession) -> 
         model_offering_id=model_offering_id,
         limit_policy_ids=list({rule.limit_policy_id for rule, _ in limit_rules}),
         limit_policies=[
-            _to_resolved_limit_policy(rule, assignment_id)
-            for rule, assignment_id in limit_rules
+            _to_resolved_limit_policy(rule, assignment_id) for rule, assignment_id in limit_rules
         ],
         virtual_key_id=virtual_key.id,
         provider_id=provider_id,
@@ -769,12 +768,10 @@ def _to_resolved_limit_policy(policy: LimitPolicyRule, assignment_id: UUID) -> R
         limit_policy_id=policy.limit_policy_id,
         limit_policy_rule_id=policy.id,
         name=policy.name,
-        budget_cents=policy.budget_cents,
-        max_requests=policy.max_requests,
-        max_input_tokens=policy.max_input_tokens,
-        max_output_tokens=policy.max_output_tokens,
-        max_tokens_per_request=policy.max_tokens_per_request,
-        window=policy.window,
+        limit_type=policy.limit_type,
+        limit_value=policy.limit_value,
+        interval_unit=policy.interval_unit,
+        interval_count=policy.interval_count,
     )
 
 

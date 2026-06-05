@@ -6,6 +6,8 @@
  */
 
 export interface ProviderReadiness {
+  status?: string;
+  message?: string;
   has_active_provider?: boolean;
   has_active_credential?: boolean;
   has_active_pool?: boolean;

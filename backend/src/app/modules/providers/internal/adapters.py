@@ -5,12 +5,16 @@ import httpx
 
 from app.modules.providers.errors import ProviderAdapterNotFoundError, ProviderUpstreamError
 from app.modules.providers.schemas import (
+    ProviderAnthropicMessagesRequest,
+    ProviderAnthropicMessagesResponse,
     ProviderChatCompletionRequest,
     ProviderChatCompletionResponse,
     ProviderChatCompletionStream,
 )
 
 OPENAI_COMPAT_ADAPTER = "openai_compat"
+ANTHROPIC_VERSION = "2023-06-01"
+OPENAI_COMPAT_INTEGRATIONS = {"openai_compatible", "openai_compatible_default"}
 
 
 @dataclass(frozen=True)
@@ -117,6 +121,73 @@ class OpenAICompatibleAdapter:
         )
 
 
+class AnthropicMessagesAdapter:
+    async def list_models(
+        self,
+        *,
+        provider: AdapterProvider,
+        http_client: httpx.AsyncClient,
+    ) -> list[str]:
+        response = await http_client.get(
+            f"{provider.base_url.rstrip('/')}/models",
+            headers={"anthropic-version": ANTHROPIC_VERSION, "x-api-key": provider.api_key},
+        )
+        body = _response_body(response)
+        if response.is_error:
+            raise ProviderUpstreamError(status_code=response.status_code, body=body)
+        if not isinstance(body, dict) or not isinstance(body.get("data"), list):
+            raise ProviderUpstreamError(status_code=response.status_code, body=body)
+        return [
+            item["id"]
+            for item in body["data"]
+            if isinstance(item, dict) and isinstance(item.get("id"), str)
+        ]
+
+    async def create_message(
+        self,
+        *,
+        provider: AdapterProvider,
+        payload: ProviderAnthropicMessagesRequest,
+        anthropic_version: str,
+        http_client: httpx.AsyncClient,
+    ) -> ProviderAnthropicMessagesResponse:
+        response = await http_client.post(
+            f"{provider.base_url.rstrip('/')}/messages",
+            headers={
+                "anthropic-version": anthropic_version,
+                "x-api-key": provider.api_key,
+            },
+            json={
+                **payload.extra_body,
+                "model": payload.model,
+                "messages": payload.messages,
+            },
+        )
+        body = _response_body(response)
+        if response.is_error:
+            raise ProviderUpstreamError(status_code=response.status_code, body=body)
+        if not isinstance(body, dict):
+            raise ProviderUpstreamError(status_code=response.status_code, body=body)
+        return ProviderAnthropicMessagesResponse(status_code=response.status_code, body=body)
+
+
+anthropic_messages_adapter = AnthropicMessagesAdapter()
+
+
+class ProviderIntegrationAdapterRegistry:
+    def __init__(self) -> None:
+        self._adapters: dict[str, object] = {}
+
+    def register(self, integration: str, adapter: object) -> None:
+        self._adapters[integration] = adapter
+
+    def get(self, integration: str):
+        adapter = self._adapters.get(integration)
+        if adapter is None:
+            raise ProviderAdapterNotFoundError
+        return adapter
+
+
 class ProviderAdapterRegistry:
     def __init__(self) -> None:
         self._adapters: dict[str, ProviderAdapter] = {}
@@ -138,6 +209,18 @@ def create_default_adapter_registry() -> ProviderAdapterRegistry:
 
 
 default_adapter_registry = create_default_adapter_registry()
+
+
+def create_default_integration_adapter_registry() -> ProviderIntegrationAdapterRegistry:
+    registry = ProviderIntegrationAdapterRegistry()
+    openai = default_adapter_registry.get(OPENAI_COMPAT_ADAPTER)
+    for integration in OPENAI_COMPAT_INTEGRATIONS:
+        registry.register(integration, openai)
+    registry.register("anthropic_messages", anthropic_messages_adapter)
+    return registry
+
+
+default_integration_adapter_registry = create_default_integration_adapter_registry()
 
 
 def _to_openai_body(payload: ProviderChatCompletionRequest) -> dict:

@@ -5,4 +5,4 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type ProviderResponseFallbackPolicy = { [key: string]: unknown };
+export type ProviderResponseIntegrationCapabilities = {[key: string]: boolean};

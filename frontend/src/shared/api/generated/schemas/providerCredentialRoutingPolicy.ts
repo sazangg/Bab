@@ -14,5 +14,4 @@ export const ProviderCredentialRoutingPolicy = {
   least_recently_used: 'least_recently_used',
   health_based: 'health_based',
   weighted: 'weighted',
-  fallback: 'fallback',
 } as const;

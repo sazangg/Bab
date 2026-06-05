@@ -34,8 +34,14 @@ async def test_limit_policy_can_be_created_and_assigned_to_org(
             headers=headers,
             json={
                 "name": "Org monthly budget",
-                "budget_cents": 500_000,
-                "window": "monthly",
+                "rules": [
+                    {
+                        "name": "Monthly budget",
+                        "limit_type": "budget_cents",
+                        "limit_value": 500_000,
+                        "interval_unit": "month",
+                    }
+                ],
             },
         )
         assert policy_response.status_code == 201
@@ -93,7 +99,17 @@ async def test_viewer_can_read_but_not_create_policies(
         write_response = await client.post(
             "/api/v1/policies/limits",
             headers=viewer_headers,
-            json={"name": "Viewer budget", "window": "monthly"},
+            json={
+                "name": "Viewer budget",
+                "rules": [
+                    {
+                        "name": "Monthly budget",
+                        "limit_type": "budget_cents",
+                        "limit_value": 500_000,
+                        "interval_unit": "month",
+                    }
+                ],
+            },
         )
 
     assert read_response.status_code == 200

@@ -45,6 +45,7 @@ import {
   createProviderCredentialApiV1ProvidersProviderIdCredentialsPost,
   useCreateProviderApiV1ProvidersPost,
   useDeactivateProviderApiV1ProvidersProviderIdDelete,
+  useGetProviderImpactApiV1ProvidersProviderIdImpactGet,
   useListProvidersApiV1ProvidersGet,
   useUpdateProviderApiV1ProvidersProviderIdPatch,
 } from "@/shared/api/generated/providers/providers";
@@ -76,6 +77,11 @@ export function ProvidersPage() {
   const [disabledOpen, setDisabledOpen] = useState(false);
 
   const providersQuery = useListProvidersApiV1ProvidersGet();
+  const impactQuery = useGetProviderImpactApiV1ProvidersProviderIdImpactGet(
+    deactivateTarget?.id ?? "",
+    { query: { enabled: Boolean(deactivateTarget) } },
+  );
+  const deactivateImpact = impactQuery.data?.status === 200 ? impactQuery.data.data : null;
   const currentUserQuery = useMeApiV1AuthMeGet();
   const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
   const canManageProviders = hasPermission(currentUser, "providers.manage");
@@ -352,6 +358,22 @@ export function ProvidersPage() {
               remain intact.
             </DialogDescription>
           </DialogHeader>
+          {impactQuery.isPending ? (
+            <p className="text-sm text-muted-foreground">Checking impact...</p>
+          ) : deactivateImpact ? (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
+              <p className="font-medium">Resources affected</p>
+              <p className="mt-1 text-muted-foreground">
+                {deactivateImpact.access_policies?.length ?? 0} access routes,{" "}
+                {deactivateImpact.active_limit_rule_count ?? 0} limit rules,{" "}
+                {deactivateImpact.active_pool_count ?? 0} pools, and{" "}
+                {deactivateImpact.active_model_count ?? 0} models.
+              </p>
+              <p className="mt-1 text-muted-foreground">
+                Last 30 days: {(deactivateImpact.recent_request_count ?? 0).toLocaleString()} requests.
+              </p>
+            </div>
+          ) : null}
           <DialogFooter>
             <Button
               variant="destructive"
@@ -437,8 +459,7 @@ function ProviderCatalogRow({
 }) {
   const activeCredentialCount = provider.credential_summary?.active ?? 0;
   const activeModelCount = provider.readiness?.active_model_count ?? 0;
-  const needsAttention =
-    provider.is_active && activeCredentialCount > 0 && !provider.readiness?.is_ready;
+  const readiness = formatProviderReadiness(provider);
 
   return (
     <article
@@ -472,10 +493,7 @@ function ProviderCatalogRow({
                 {provider.catalog_type === "custom" ? (
                   <StatusBadge variant="muted">Custom</StatusBadge>
                 ) : null}
-                {!provider.is_active ? <StatusBadge variant="inactive">Disabled</StatusBadge> : null}
-                {needsAttention ? (
-                  <StatusBadge variant="expired">Setup incomplete</StatusBadge>
-                ) : null}
+                <StatusBadge variant={readiness.variant}>{readiness.label}</StatusBadge>
               </div>
               <p className="text-sm text-muted-foreground">
                 {provider.description ?? "Custom OpenAI-compatible upstream provider."}
@@ -540,6 +558,22 @@ function ProviderFact({ label, value }: { label: string; value: string }) {
       <div className="text-muted-foreground">{label}</div>
     </div>
   );
+}
+
+function formatProviderReadiness(provider: ProviderResponse) {
+  const status = provider.readiness?.status ?? (provider.is_active ? "needs_credential" : "disabled");
+  const states: Record<
+    string,
+    { label: string; variant: "active" | "inactive" | "error" | "expired" }
+  > = {
+    ready: { label: "Ready", variant: "active" },
+    degraded: { label: "Degraded", variant: "error" },
+    disabled: { label: "Disabled", variant: "inactive" },
+    needs_credential: { label: "Needs credential", variant: "expired" },
+    needs_pool: { label: "Needs pool", variant: "expired" },
+    needs_model_sync: { label: "Needs model sync", variant: "expired" },
+  };
+  return states[status] ?? { label: "Setup incomplete", variant: "expired" as const };
 }
 
 function compareProviders(a: ProviderResponse, b: ProviderResponse) {

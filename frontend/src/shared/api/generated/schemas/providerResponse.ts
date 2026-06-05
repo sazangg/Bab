@@ -9,7 +9,7 @@ import type { ProviderOperationalState } from './providerOperationalState';
 import type { ProviderReadiness } from './providerReadiness';
 import type { ProviderResponseCapabilities } from './providerResponseCapabilities';
 import type { ProviderResponseCircuitBreakerPolicy } from './providerResponseCircuitBreakerPolicy';
-import type { ProviderResponseFallbackPolicy } from './providerResponseFallbackPolicy';
+import type { ProviderResponseIntegrationCapabilities } from './providerResponseIntegrationCapabilities';
 import type { ProviderResponseRetryPolicy } from './providerResponseRetryPolicy';
 
 export interface ProviderResponse {
@@ -22,13 +22,13 @@ export interface ProviderResponse {
   display_name: string | null;
   description: string | null;
   capabilities: ProviderResponseCapabilities;
+  integration_capabilities?: ProviderResponseIntegrationCapabilities;
   supported_integration: string;
   catalog_type?: string;
   request_timeout_seconds: number | null;
   max_body_bytes: number | null;
   retry_policy: ProviderResponseRetryPolicy;
   model_sync_mode: string | null;
-  fallback_policy: ProviderResponseFallbackPolicy;
   circuit_breaker_policy: ProviderResponseCircuitBreakerPolicy;
   max_concurrent_requests: number | null;
   credential_summary?: ProviderCredentialSummary;

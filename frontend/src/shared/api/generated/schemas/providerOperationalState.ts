@@ -11,7 +11,4 @@ export interface ProviderOperationalState {
   circuit_open_until?: string | null;
   recent_circuit_failures?: number;
   recent_circuit_successes?: number;
-  fallback_enabled?: boolean;
-  fallback_provider_count?: number;
-  fallback_trigger_statuses?: number[];
 }

@@ -4,23 +4,21 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { UpdateProviderRequestCapabilities } from './updateProviderRequestCapabilities';
-import type { UpdateProviderRequestCircuitBreakerPolicy } from './updateProviderRequestCircuitBreakerPolicy';
-import type { UpdateProviderRequestFallbackPolicy } from './updateProviderRequestFallbackPolicy';
-import type { UpdateProviderRequestRetryPolicy } from './updateProviderRequestRetryPolicy';
+import type { ProviderCapabilities } from './providerCapabilities';
+import type { ProviderCircuitBreakerPolicy } from './providerCircuitBreakerPolicy';
+import type { ProviderRetryPolicy } from './providerRetryPolicy';
 
 export interface UpdateProviderRequest {
   name?: string | null;
   slug?: string | null;
   base_url?: string | null;
   description?: string | null;
-  capabilities?: UpdateProviderRequestCapabilities;
+  capabilities?: ProviderCapabilities | null;
   request_timeout_seconds?: number | null;
   max_body_bytes?: number | null;
-  retry_policy?: UpdateProviderRequestRetryPolicy;
+  retry_policy?: ProviderRetryPolicy | null;
   model_sync_mode?: string | null;
-  fallback_policy?: UpdateProviderRequestFallbackPolicy;
-  circuit_breaker_policy?: UpdateProviderRequestCircuitBreakerPolicy;
+  circuit_breaker_policy?: ProviderCircuitBreakerPolicy | null;
   max_concurrent_requests?: number | null;
   is_favorite?: boolean | null;
   is_active?: boolean | null;

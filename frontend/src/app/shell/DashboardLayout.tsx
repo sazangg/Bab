@@ -62,6 +62,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import {
   canManageKeys,
   canViewDashboardHome,
+  canViewOrgAdminSurface,
+  hasAnyDirectTeamMembership,
   hasAnyTeamMembership,
   hasPermission,
 } from "@/features/auth/lib/permissions";
@@ -81,7 +83,7 @@ const organizationNav = [
 ];
 
 const workspaceNav = [
-  { to: "/teams", label: "Teams", icon: Building2, permission: "teams.view", scoped: true },
+  { to: "/teams", label: "Teams", icon: Building2, permission: "teams.view", teamScoped: true },
   {
     to: "/projects",
     label: "Projects",
@@ -93,10 +95,9 @@ const workspaceNav = [
     to: "/policies",
     label: "Policies",
     icon: Route,
-    permission: "policies.view",
-    scoped: true,
+    orgAdmin: true,
   },
-  { to: "/virtual-keys", label: "Virtual keys", icon: KeyRound, keyManager: true },
+  { to: "/virtual-keys", label: "Virtual keys", icon: KeyRound, orgAdmin: true },
   { to: "/playground", label: "Playground", icon: TerminalSquare, keyManager: true },
   { to: "/guardrails", label: "Guardrails", icon: ShieldCheck, permission: "guardrails.view" },
 ];
@@ -166,7 +167,11 @@ export function DashboardLayout() {
   const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
   const canView = (permission?: string) => !permission || hasPermission(currentUser, permission);
   const canViewWorkspaceItem = (item: (typeof workspaceNav)[number]) => {
+    if (item.orgAdmin) return canViewOrgAdminSurface(currentUser);
     if (item.keyManager) return canManageKeys(currentUser);
+    if (item.teamScoped) {
+      return canView(item.permission) || hasAnyDirectTeamMembership(currentUser);
+    }
     if (item.scoped) return canView(item.permission) || hasAnyTeamMembership(currentUser);
     return canView(item.permission);
   };

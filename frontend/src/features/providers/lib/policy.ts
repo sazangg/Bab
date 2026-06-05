@@ -1,12 +1,10 @@
 import {
   defaultCircuitBreakerPolicy,
-  defaultFallbackPolicy,
   defaultRetryPolicy,
   STATUS_CODE_MAX,
   STATUS_CODE_MIN,
   type CircuitBreakerPolicyValues,
   type EditProviderValues,
-  type FallbackPolicyValues,
   type RetryPolicyValues,
 } from "./schemas";
 
@@ -36,21 +34,6 @@ export function mergeRetryPolicy(stored: unknown): RetryPolicyValues {
     initial_delay_ms: numberOrFallback(s.initial_delay_ms, defaultRetryPolicy.initial_delay_ms),
     max_delay_ms: numberOrFallback(s.max_delay_ms, defaultRetryPolicy.max_delay_ms),
     retry_on_status: coerceStatusCodes(s.retry_on_status, defaultRetryPolicy.retry_on_status),
-  };
-}
-
-export function mergeFallbackPolicy(stored: unknown): FallbackPolicyValues {
-  const s = (stored && typeof stored === "object" ? stored : {}) as Record<string, unknown>;
-  const ids = Array.isArray(s.fallback_provider_ids)
-    ? s.fallback_provider_ids.filter((item): item is string => typeof item === "string")
-    : [];
-  return {
-    enabled: typeof s.enabled === "boolean" ? s.enabled : defaultFallbackPolicy.enabled,
-    trigger_on_status: coerceStatusCodes(
-      s.trigger_on_status,
-      defaultFallbackPolicy.trigger_on_status,
-    ),
-    fallback_provider_ids: ids,
   };
 }
 
@@ -90,7 +73,6 @@ export function buildProviderUpdatePayload(values: EditProviderValues) {
       values.max_concurrent_requests !== undefined ? values.max_concurrent_requests : null,
     model_sync_mode: values.model_sync_mode === "inherit" ? null : values.model_sync_mode,
     retry_policy: values.retry_policy_mode === "override" ? values.retry_policy : null,
-    fallback_policy: values.fallback_policy,
     circuit_breaker_policy: values.circuit_breaker_policy,
   };
 }

@@ -80,7 +80,10 @@ import type {
   ProjectResponse,
   TeamResponse,
 } from "@/shared/api/generated/schemas";
-import { useListProjectsApiV1ProjectsGet } from "@/shared/api/generated/projects/projects";
+import {
+  useListProjectsApiV1ProjectsGet,
+  useListVirtualKeysApiV1ProjectsProjectIdKeysGet,
+} from "@/shared/api/generated/projects/projects";
 import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
@@ -96,13 +99,20 @@ type AssignmentSheetState =
 type DraftLimitRule = {
   id: string;
   name: string;
-  budgetDollars: string;
-  maxRequests: string;
-  maxInputTokens: string;
-  maxOutputTokens: string;
-  maxTokens: string;
-  window: string;
+  limitType: string;
+  limitValue: string;
+  intervalUnit: string;
+  intervalCount: string;
 };
+
+const limitTypeOptions = [
+  { value: "budget_cents", label: "Spend budget" },
+  { value: "requests", label: "Request count" },
+  { value: "input_tokens", label: "Input tokens" },
+  { value: "output_tokens", label: "Output tokens" },
+  { value: "total_tokens", label: "Total tokens" },
+  { value: "tokens_per_request", label: "Tokens per request" },
+];
 
 export function PoliciesPage() {
   const queryClient = useQueryClient();
@@ -573,8 +583,8 @@ function LimitRulesDetailTable({ rules }: { rules: LimitPolicyRuleResponse[] }) 
         <TableHeader>
           <TableRow>
             <TableHead>Rule</TableHead>
-            <TableHead>Window</TableHead>
-            <TableHead>Caps</TableHead>
+            <TableHead>Interval</TableHead>
+            <TableHead>Limit</TableHead>
             <TableHead>Filters</TableHead>
             <TableHead>Status</TableHead>
           </TableRow>
@@ -583,7 +593,7 @@ function LimitRulesDetailTable({ rules }: { rules: LimitPolicyRuleResponse[] }) 
           {rules.map((rule) => (
             <TableRow key={rule.id}>
               <TableCell className="font-medium">{rule.name}</TableCell>
-              <TableCell className="capitalize">{rule.window}</TableCell>
+              <TableCell>{formatInterval(rule.interval_unit, rule.interval_count)}</TableCell>
               <TableCell className="text-sm text-muted-foreground">
                 {formatRuleSummary(rule)}
               </TableCell>
@@ -876,77 +886,91 @@ function CreatePolicySheet({
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [budgetDollars, setBudgetDollars] = useState("");
-  const [maxRequests, setMaxRequests] = useState("");
-  const [maxInputTokens, setMaxInputTokens] = useState("");
-  const [maxOutputTokens, setMaxOutputTokens] = useState("");
-  const [maxTokens, setMaxTokens] = useState("");
-  const [window, setWindow] = useState("monthly");
+  const [limitType, setLimitType] = useState("requests");
+  const [limitValue, setLimitValue] = useState("");
+  const [intervalUnit, setIntervalUnit] = useState("day");
+  const [intervalCount, setIntervalCount] = useState("1");
   const [draftRules, setDraftRules] = useState<DraftLimitRule[]>([]);
-  const createAccess = useCreateAccessPolicyApiV1PoliciesAccessPost({
-    mutation: {
-      onSuccess: async () => {
-        toast.success("Access policy created.");
-        await onCreated();
-      },
-      onError: () => toast.error("Access policy could not be created."),
-    },
+  const [assignmentScope, setAssignmentScope] = useState("none");
+  const [assignmentTeamId, setAssignmentTeamId] = useState("");
+  const [assignmentProjectId, setAssignmentProjectId] = useState("");
+  const [assignmentVirtualKeyId, setAssignmentVirtualKeyId] = useState("");
+  const [providerId, setProviderId] = useState("");
+  const [poolId, setPoolId] = useState("");
+  const [selectedModels, setSelectedModels] = useState<string[]>([]);
+  const [modelSearch, setModelSearch] = useState("");
+  const teamsQuery = useListTeamsApiV1TeamsGet();
+  const projectsQuery = useListProjectsApiV1ProjectsGet();
+  const virtualKeysQuery = useListVirtualKeysApiV1ProjectsProjectIdKeysGet(
+    assignmentProjectId,
+    { query: { enabled: assignmentScope === "virtual_key" && Boolean(assignmentProjectId) } },
+  );
+  const teams = teamsQuery.data?.status === 200 ? teamsQuery.data.data : [];
+  const projects = projectsQuery.data?.status === 200 ? projectsQuery.data.data : [];
+  const virtualKeys = virtualKeysQuery.data?.status === 200 ? virtualKeysQuery.data.data : [];
+  const accessOptionsQuery = useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet(
+    createAccessOptionsParams(assignmentScope, assignmentTeamId, assignmentProjectId, assignmentVirtualKeyId),
+    { query: { enabled: kind === "access" && assignmentTargetReady(assignmentScope, assignmentTeamId, assignmentProjectId, assignmentVirtualKeyId) } },
+  );
+  const accessOptions =
+    accessOptionsQuery.data?.status === 200 ? accessOptionsQuery.data.data.providers ?? [] : [];
+  const pools = accessOptions.find((provider) => provider.id === providerId)?.pools ?? [];
+  const models = pools.find((pool) => pool.id === poolId)?.models ?? [];
+  const filteredModels = models.filter((model) => {
+    const term = modelSearch.trim().toLowerCase();
+    if (!term) return true;
+    return [model.provider_model_name, model.alias]
+      .filter(Boolean)
+      .some((value) => value?.toLowerCase().includes(term));
   });
-  const createLimit = useCreateLimitPolicyApiV1PoliciesLimitsPost({
-    mutation: {
-      onSuccess: async () => {
-        toast.success("Limit policy created.");
-        await onCreated();
-      },
-      onError: () => toast.error("Limit policy could not be created."),
-    },
-  });
+  const visibleModelIds = filteredModels.map((model) => model.id);
+  const allVisibleModelsSelected =
+    visibleModelIds.length > 0 &&
+    selectedModels.filter((id) => visibleModelIds.includes(id)).length === visibleModelIds.length;
+  const createAccess = useCreateAccessPolicyApiV1PoliciesAccessPost();
+  const createLimit = useCreateLimitPolicyApiV1PoliciesLimitsPost();
+  const createAssignment = useCreatePolicyAssignmentApiV1PoliciesAssignmentsPost();
   const isLimit = kind === "limit";
   const reset = () => {
     setName("");
     setDescription("");
-    setBudgetDollars("");
-    setMaxRequests("");
-    setMaxInputTokens("");
-    setMaxOutputTokens("");
-    setMaxTokens("");
-    setWindow("monthly");
+    setLimitType("requests");
+    setLimitValue("");
+    setIntervalUnit("day");
+    setIntervalCount("1");
     setDraftRules([]);
+    setAssignmentScope("none");
+    setAssignmentTeamId("");
+    setAssignmentProjectId("");
+    setAssignmentVirtualKeyId("");
+    setProviderId("");
+    setPoolId("");
+    setSelectedModels([]);
+    setModelSearch("");
   };
-  const currentRuleHasLimits =
-    budgetDollars.trim() ||
-    maxRequests.trim() ||
-    maxInputTokens.trim() ||
-    maxOutputTokens.trim() ||
-    maxTokens.trim();
+  const currentRuleHasLimits = Boolean(limitValue.trim());
   const currentDraftRule = (): DraftLimitRule => ({
     id: crypto.randomUUID(),
     name: draftRules.length === 0 ? "Default rule" : `Rule ${draftRules.length + 1}`,
-    budgetDollars,
-    maxRequests,
-    maxInputTokens,
-    maxOutputTokens,
-    maxTokens,
-    window,
+    limitType,
+    limitValue,
+    intervalUnit,
+    intervalCount,
   });
   const addDraftRule = () => {
     if (!currentRuleHasLimits) return;
     setDraftRules((current) => [...current, currentDraftRule()]);
-    setBudgetDollars("");
-    setMaxRequests("");
-    setMaxInputTokens("");
-    setMaxOutputTokens("");
-    setMaxTokens("");
-    setWindow("monthly");
+    setLimitValue("");
   };
   const ruleInput = (rule: DraftLimitRule) => ({
     name: rule.name,
-    budget_cents: toCents(rule.budgetDollars),
-    max_requests: toNumber(rule.maxRequests),
-    max_input_tokens: toNumber(rule.maxInputTokens),
-    max_output_tokens: toNumber(rule.maxOutputTokens),
-    max_tokens_per_request: toNumber(rule.maxTokens),
-    window: rule.window,
+    limit_type: rule.limitType,
+    limit_value:
+      rule.limitType === "budget_cents"
+        ? Math.round(Number(rule.limitValue) * 100)
+        : Number(rule.limitValue),
+    interval_unit: rule.intervalUnit,
+    interval_count: rule.intervalUnit === "lifetime" ? 1 : Number(rule.intervalCount || 1),
     is_active: true,
   });
   const rulesForSubmit = () => {
@@ -954,22 +978,69 @@ function CreatePolicySheet({
     if (currentRuleHasLimits) rules.push(currentDraftRule());
     return rules;
   };
-  const submit = () => {
-    if (!name.trim()) return;
-    if (isLimit) {
-      const rules = rulesForSubmit();
-      if (rules.length === 0) return;
-      createLimit.mutate({
-        data: {
-          name,
-          description: description || null,
-          rules: rules.map(ruleInput),
-        },
-      });
-      return;
-    }
-    createAccess.mutate({ data: { name, description: description || null, routes: [] } });
+  const assignmentPayload = (policyId: string) => {
+    if (assignmentScope === "none") return null;
+    return {
+      policy_type: isLimit ? "limit" : "access",
+      access_policy_id: isLimit ? null : policyId,
+      limit_policy_id: isLimit ? policyId : null,
+      scope_type: assignmentScope,
+      team_id: assignmentScope === "team" ? assignmentTeamId : null,
+      project_id: assignmentScope === "project" ? assignmentProjectId : null,
+      virtual_key_id: assignmentScope === "virtual_key" ? assignmentVirtualKeyId : null,
+      is_active: true,
+    };
   };
+  const submit = async () => {
+    if (!name.trim()) return;
+    try {
+      let policyId = "";
+      if (isLimit) {
+        const rules = rulesForSubmit();
+        if (rules.length === 0) return;
+        const response = await createLimit.mutateAsync({
+          data: {
+            name,
+            description: description || null,
+            rules: rules.map(ruleInput),
+          },
+        });
+        if (response.status !== 201) return;
+        policyId = response.data.id;
+      } else {
+        if (!providerId || !poolId || selectedModels.length === 0) return;
+        const response = await createAccess.mutateAsync({
+          data: {
+            name,
+            description: description || null,
+            routes: [
+              {
+                provider_id: providerId,
+                credential_pool_id: poolId,
+                model_offering_ids: selectedModels,
+              },
+            ],
+          },
+        });
+        if (response.status !== 201) return;
+        policyId = response.data.id;
+      }
+      const payload = assignmentPayload(policyId);
+      if (payload) {
+        await createAssignment.mutateAsync({ data: payload });
+      }
+      toast.success(payload ? "Policy created and assigned." : "Policy created.");
+      reset();
+      await onCreated();
+    } catch {
+      toast.error("Policy could not be created.");
+    }
+  };
+  const canSubmit =
+    Boolean(name.trim()) &&
+    assignmentTargetReady(assignmentScope, assignmentTeamId, assignmentProjectId, assignmentVirtualKeyId) &&
+    ((isLimit && (draftRules.length > 0 || currentRuleHasLimits)) ||
+      (!isLimit && providerId && poolId && selectedModels.length > 0));
   return (
     <Sheet
       open={Boolean(kind)}
@@ -983,8 +1054,8 @@ function CreatePolicySheet({
           <SheetTitle>{isLimit ? "New limit policy" : "New access policy"}</SheetTitle>
           <SheetDescription>
             {isLimit
-              ? "Create reusable caps that can be assigned to org, team, project, or key scopes."
-              : "Create the policy, then add one or more provider routes."}
+              ? "Create reusable caps and optionally assign them immediately."
+              : "Create an initial route and optionally assign the policy immediately."}
           </SheetDescription>
         </SheetHeader>
         <div className="grid gap-4 overflow-y-auto px-6 py-5">
@@ -997,6 +1068,189 @@ function CreatePolicySheet({
               onChange={(event) => setDescription(event.target.value)}
             />
           </Field>
+          <div className="grid gap-3 rounded-md border bg-muted/20 p-3">
+            <div>
+              <div className="text-sm font-medium">Initial assignment</div>
+              <p className="text-xs text-muted-foreground">
+                Leave unassigned for reusable policies managed only from policy details.
+              </p>
+            </div>
+            <SelectField
+              label="Scope"
+              value={assignmentScope}
+              onValueChange={(value) => {
+                setAssignmentScope(value);
+                setAssignmentTeamId("");
+                setAssignmentProjectId("");
+                setAssignmentVirtualKeyId("");
+                setProviderId("");
+                setPoolId("");
+                setSelectedModels([]);
+                setModelSearch("");
+              }}
+              options={["none", "org", "team", "project", "virtual_key"]}
+              labels={{
+                none: "Unassigned",
+                org: "Organization",
+                team: "Team",
+                project: "Project",
+                virtual_key: "Virtual key",
+              }}
+            />
+            {assignmentScope === "team" ? (
+              <SelectField
+                label="Team"
+                value={assignmentTeamId}
+                onValueChange={setAssignmentTeamId}
+                options={teams.map((team) => team.id)}
+                labels={teamLabels(teams)}
+              />
+            ) : null}
+            {assignmentScope === "project" || assignmentScope === "virtual_key" ? (
+              <SelectField
+                label="Project"
+                value={assignmentProjectId}
+                onValueChange={(value) => {
+                  setAssignmentProjectId(value);
+                  setAssignmentVirtualKeyId("");
+                  setProviderId("");
+                  setPoolId("");
+                  setSelectedModels([]);
+                  setModelSearch("");
+                }}
+                options={projects.map((project) => project.id)}
+                labels={projectLabels(projects)}
+              />
+            ) : null}
+            {assignmentScope === "virtual_key" ? (
+              <SelectField
+                label="Virtual key"
+                value={assignmentVirtualKeyId}
+                onValueChange={(value) => {
+                  setAssignmentVirtualKeyId(value);
+                  setProviderId("");
+                  setPoolId("");
+                  setSelectedModels([]);
+                  setModelSearch("");
+                }}
+                options={virtualKeys.map((key) => key.id)}
+                labels={Object.fromEntries(
+                  virtualKeys.map((key) => [key.id, `${key.name} (${key.key_prefix})`]),
+                )}
+              />
+            ) : null}
+          </div>
+          {!isLimit ? (
+            <div className="grid gap-3 rounded-md border bg-muted/20 p-3">
+              <div>
+                <div className="text-sm font-medium">Initial route</div>
+                <p className="text-xs text-muted-foreground">
+                  Choose the provider pool and models this policy can route to.
+                </p>
+              </div>
+              <SelectField
+                label="Provider"
+                value={providerId}
+                onValueChange={(value) => {
+                  const provider = accessOptions.find((option) => option.id === value);
+                  const pool = provider?.pools?.[0];
+                  setProviderId(value);
+                  setPoolId(pool?.id ?? "");
+                  setSelectedModels(pool?.models?.map((model) => model.id) ?? []);
+                  setModelSearch("");
+                }}
+                options={accessOptions.map((provider) => provider.id)}
+                labels={providerOptionLabels(accessOptions)}
+                placeholder={
+                  accessOptionsQuery.isLoading ? "Loading providers" : "Choose provider"
+                }
+              />
+              <SelectField
+                label="Credential pool"
+                value={poolId}
+                onValueChange={(value) => {
+                  const pool = pools.find((option) => option.id === value);
+                  setPoolId(value);
+                  setSelectedModels(pool?.models?.map((model) => model.id) ?? []);
+                  setModelSearch("");
+                }}
+                options={pools.map((pool) => pool.id)}
+                labels={Object.fromEntries(pools.map((pool) => [pool.id, pool.name]))}
+              />
+              <div className="grid gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Label>Model offerings</Label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">
+                      {selectedModels.length} selected
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={visibleModelIds.length === 0}
+                      onClick={() =>
+                        setSelectedModels((current) =>
+                          allVisibleModelsSelected
+                            ? current.filter((id) => !visibleModelIds.includes(id))
+                            : Array.from(new Set([...current, ...visibleModelIds])),
+                        )
+                      }
+                    >
+                      {allVisibleModelsSelected ? "Clear visible" : "Select visible"}
+                    </Button>
+                  </div>
+                </div>
+                <Input
+                  value={modelSearch}
+                  onChange={(event) => setModelSearch(event.target.value)}
+                  placeholder="Search model offerings"
+                  disabled={!poolId}
+                />
+                <div className="max-h-72 overflow-y-auto rounded-md border bg-background">
+                  {!poolId ? (
+                    <p className="p-3 text-sm text-muted-foreground">
+                      Choose a provider and pool to load model offerings.
+                    </p>
+                  ) : filteredModels.length === 0 ? (
+                    <p className="p-3 text-sm text-muted-foreground">
+                      {modelSearch.trim()
+                        ? "No model offerings match this search."
+                        : "No model offerings are available for this pool."}
+                    </p>
+                  ) : (
+                    filteredModels.map((model) => (
+                      <label
+                        key={model.id}
+                        className="flex cursor-pointer items-start gap-2 border-b px-3 py-2 text-sm last:border-b-0 hover:bg-muted/50"
+                      >
+                        <Checkbox
+                          checked={selectedModels.includes(model.id)}
+                          onCheckedChange={(checked) =>
+                            setSelectedModels((current) =>
+                              checked
+                                ? Array.from(new Set([...current, model.id]))
+                                : current.filter((id) => id !== model.id),
+                            )
+                          }
+                        />
+                        <span className="min-w-0">
+                          <span className="block break-all font-mono leading-5">
+                            {model.provider_model_name}
+                          </span>
+                          {model.alias ? (
+                            <span className="block break-all text-xs text-muted-foreground">
+                              {model.alias}
+                            </span>
+                          ) : null}
+                        </span>
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
           {isLimit ? (
             <div className="grid gap-3 rounded-md border bg-muted/20 p-3">
               <div>
@@ -1015,7 +1269,7 @@ function CreatePolicySheet({
                       <div>
                         <div className="font-medium">{rule.name}</div>
                         <div className="text-xs text-muted-foreground">
-                          {formatDraftRuleSummary(rule)} · {rule.window}
+                          {formatDraftRuleSummary(rule)}
                         </div>
                       </div>
                       <Button
@@ -1034,56 +1288,48 @@ function CreatePolicySheet({
                   ))}
                 </div>
               ) : null}
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8rem]">
+                <SelectField
+                  label="Interval unit"
+                  value={intervalUnit}
+                  onValueChange={setIntervalUnit}
+                  options={["minute", "hour", "day", "week", "month", "lifetime"]}
+                  labels={{
+                    minute: "Minute",
+                    hour: "Hour",
+                    day: "Day",
+                    week: "Week",
+                    month: "Month",
+                    lifetime: "Lifetime",
+                  }}
+                />
+                <Field label="Every">
+                  <Input
+                    type="number"
+                    min={1}
+                    value={intervalCount}
+                    disabled={intervalUnit === "lifetime"}
+                    onChange={(event) => setIntervalCount(event.target.value)}
+                  />
+                </Field>
+              </div>
               <SelectField
-                label="Window"
-                value={window}
-                onValueChange={setWindow}
-                options={["daily", "weekly", "monthly", "lifetime"]}
+                label="Limit type"
+                value={limitType}
+                onValueChange={setLimitType}
+                options={limitTypeOptions.map((option) => option.value)}
+                labels={Object.fromEntries(
+                  limitTypeOptions.map((option) => [option.value, option.label]),
+                )}
               />
-              <Field label="Budget ($)">
+              <Field label={limitType === "budget_cents" ? "Amount ($)" : "Value"}>
                 <Input
                   type="number"
-                  min={0}
-                  value={budgetDollars}
-                  onChange={(event) => setBudgetDollars(event.target.value)}
+                  min={1}
+                  value={limitValue}
+                  onChange={(event) => setLimitValue(event.target.value)}
                 />
               </Field>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="Max requests">
-                  <Input
-                    type="number"
-                    min={1}
-                    value={maxRequests}
-                    onChange={(event) => setMaxRequests(event.target.value)}
-                  />
-                </Field>
-                <Field label="Max tokens/request">
-                  <Input
-                    type="number"
-                    min={1}
-                    value={maxTokens}
-                    onChange={(event) => setMaxTokens(event.target.value)}
-                  />
-                </Field>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="Max input tokens">
-                  <Input
-                    type="number"
-                    min={1}
-                    value={maxInputTokens}
-                    onChange={(event) => setMaxInputTokens(event.target.value)}
-                  />
-                </Field>
-                <Field label="Max output tokens">
-                  <Input
-                    type="number"
-                    min={1}
-                    value={maxOutputTokens}
-                    onChange={(event) => setMaxOutputTokens(event.target.value)}
-                  />
-                </Field>
-              </div>
               <Button
                 type="button"
                 variant="outline"
@@ -1100,13 +1346,13 @@ function CreatePolicySheet({
           <Button
             onClick={submit}
             disabled={
-              !name.trim() ||
-              (isLimit && draftRules.length === 0 && !currentRuleHasLimits) ||
+              !canSubmit ||
               createAccess.isPending ||
-              createLimit.isPending
+              createLimit.isPending ||
+              createAssignment.isPending
             }
           >
-            Create policy
+            {assignmentScope === "none" ? "Create policy" : "Create and assign"}
           </Button>
           <SheetClose asChild>
             <Button variant="outline">Cancel</Button>
@@ -1458,12 +1704,10 @@ function LimitRulesSheet({
 }) {
   const [editingRule, setEditingRule] = useState<LimitPolicyRuleResponse | null>(null);
   const [name, setName] = useState("Rule");
-  const [window, setWindow] = useState("monthly");
-  const [budgetDollars, setBudgetDollars] = useState("");
-  const [maxRequests, setMaxRequests] = useState("");
-  const [maxInputTokens, setMaxInputTokens] = useState("");
-  const [maxOutputTokens, setMaxOutputTokens] = useState("");
-  const [maxTokens, setMaxTokens] = useState("");
+  const [limitType, setLimitType] = useState("requests");
+  const [limitValue, setLimitValue] = useState("");
+  const [intervalUnit, setIntervalUnit] = useState("day");
+  const [intervalCount, setIntervalCount] = useState("1");
   const createRule = useCreateLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPost({
     mutation: {
       onSuccess: async () => {
@@ -1496,39 +1740,31 @@ function LimitRulesSheet({
   const resetForm = () => {
     setEditingRule(null);
     setName("Rule");
-    setWindow("monthly");
-    setBudgetDollars("");
-    setMaxRequests("");
-    setMaxInputTokens("");
-    setMaxOutputTokens("");
-    setMaxTokens("");
+    setLimitType("requests");
+    setLimitValue("");
+    setIntervalUnit("day");
+    setIntervalCount("1");
   };
   const startEdit = (rule: LimitPolicyRuleResponse) => {
     setEditingRule(rule);
     setName(rule.name);
-    setWindow(rule.window);
-    setBudgetDollars(rule.budget_cents == null ? "" : String(rule.budget_cents / 100));
-    setMaxRequests(rule.max_requests == null ? "" : String(rule.max_requests));
-    setMaxInputTokens(rule.max_input_tokens == null ? "" : String(rule.max_input_tokens));
-    setMaxOutputTokens(rule.max_output_tokens == null ? "" : String(rule.max_output_tokens));
-    setMaxTokens(rule.max_tokens_per_request == null ? "" : String(rule.max_tokens_per_request));
+    setLimitType(rule.limit_type);
+    setLimitValue(
+      rule.limit_type === "budget_cents" ? String(rule.limit_value / 100) : String(rule.limit_value),
+    );
+    setIntervalUnit(rule.interval_unit);
+    setIntervalCount(String(rule.interval_count));
   };
   const rulePayload = {
     name,
-    budget_cents: toCents(budgetDollars),
-    max_requests: toNumber(maxRequests),
-    max_input_tokens: toNumber(maxInputTokens),
-    max_output_tokens: toNumber(maxOutputTokens),
-    max_tokens_per_request: toNumber(maxTokens),
-    window,
+    limit_type: limitType,
+    limit_value:
+      limitType === "budget_cents" ? Math.round(Number(limitValue) * 100) : Number(limitValue),
+    interval_unit: intervalUnit,
+    interval_count: intervalUnit === "lifetime" ? 1 : Number(intervalCount || 1),
     is_active: true,
   };
-  const hasAnyLimit =
-    budgetDollars.trim() ||
-    maxRequests.trim() ||
-    maxInputTokens.trim() ||
-    maxOutputTokens.trim() ||
-    maxTokens.trim();
+  const hasAnyLimit = Boolean(limitValue.trim());
   const submit = () => {
     if (!state || !name.trim() || !hasAnyLimit) return;
     if (editingRule) {
@@ -1560,8 +1796,8 @@ function LimitRulesSheet({
                   <TableHeader>
                     <TableRow>
                       <TableHead>Rule</TableHead>
-                      <TableHead>Window</TableHead>
-                      <TableHead>Caps</TableHead>
+                      <TableHead>Interval</TableHead>
+                      <TableHead>Limit</TableHead>
                       <TableHead className="w-20" />
                     </TableRow>
                   </TableHeader>
@@ -1569,7 +1805,7 @@ function LimitRulesSheet({
                     {(state.policy.rules ?? []).map((rule) => (
                       <TableRow key={rule.id}>
                         <TableCell className="font-medium">{rule.name}</TableCell>
-                        <TableCell className="capitalize">{rule.window}</TableCell>
+                        <TableCell>{formatInterval(rule.interval_unit, rule.interval_count)}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">
                           {formatRuleSummary(rule)}
                         </TableCell>
@@ -1602,56 +1838,48 @@ function LimitRulesSheet({
                 <Field label="Rule name">
                   <Input value={name} onChange={(event) => setName(event.target.value)} />
                 </Field>
+                <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8rem]">
+                  <SelectField
+                    label="Interval unit"
+                    value={intervalUnit}
+                    onValueChange={setIntervalUnit}
+                    options={["minute", "hour", "day", "week", "month", "lifetime"]}
+                    labels={{
+                      minute: "Minute",
+                      hour: "Hour",
+                      day: "Day",
+                      week: "Week",
+                      month: "Month",
+                      lifetime: "Lifetime",
+                    }}
+                  />
+                  <Field label="Every">
+                    <Input
+                      type="number"
+                      min={1}
+                      value={intervalCount}
+                      disabled={intervalUnit === "lifetime"}
+                      onChange={(event) => setIntervalCount(event.target.value)}
+                    />
+                  </Field>
+                </div>
                 <SelectField
-                  label="Window"
-                  value={window}
-                  onValueChange={setWindow}
-                  options={["daily", "weekly", "monthly", "lifetime"]}
+                  label="Limit type"
+                  value={limitType}
+                  onValueChange={setLimitType}
+                  options={limitTypeOptions.map((option) => option.value)}
+                  labels={Object.fromEntries(
+                    limitTypeOptions.map((option) => [option.value, option.label]),
+                  )}
                 />
-                <Field label="Budget ($)">
+                <Field label={limitType === "budget_cents" ? "Amount ($)" : "Value"}>
                   <Input
                     type="number"
-                    min={0}
-                    value={budgetDollars}
-                    onChange={(event) => setBudgetDollars(event.target.value)}
+                    min={1}
+                    value={limitValue}
+                    onChange={(event) => setLimitValue(event.target.value)}
                   />
                 </Field>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Max requests">
-                    <Input
-                      type="number"
-                      min={1}
-                      value={maxRequests}
-                      onChange={(event) => setMaxRequests(event.target.value)}
-                    />
-                  </Field>
-                  <Field label="Max tokens/request">
-                    <Input
-                      type="number"
-                      min={1}
-                      value={maxTokens}
-                      onChange={(event) => setMaxTokens(event.target.value)}
-                    />
-                  </Field>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Max input tokens">
-                    <Input
-                      type="number"
-                      min={1}
-                      value={maxInputTokens}
-                      onChange={(event) => setMaxInputTokens(event.target.value)}
-                    />
-                  </Field>
-                  <Field label="Max output tokens">
-                    <Input
-                      type="number"
-                      min={1}
-                      value={maxOutputTokens}
-                      onChange={(event) => setMaxOutputTokens(event.target.value)}
-                    />
-                  </Field>
-                </div>
               </div>
             </div>
           ) : null}
@@ -1836,42 +2064,23 @@ function SelectField({
 }
 
 function formatRuleSummary(rule: LimitPolicyRuleResponse) {
-  const caps = [
-    rule.budget_cents == null ? null : `$${(rule.budget_cents / 100).toLocaleString()}`,
-    rule.max_requests == null ? null : `${rule.max_requests.toLocaleString()} requests`,
-    rule.max_input_tokens == null
-      ? null
-      : `${rule.max_input_tokens.toLocaleString()} input tokens`,
-    rule.max_output_tokens == null
-      ? null
-      : `${rule.max_output_tokens.toLocaleString()} output tokens`,
-    rule.max_tokens_per_request == null
-      ? null
-      : `${rule.max_tokens_per_request.toLocaleString()} tokens/request`,
-  ].filter(Boolean);
-  return caps.length ? caps.join(" · ") : "No caps configured";
+  const typeLabel =
+    limitTypeOptions.find((option) => option.value === rule.limit_type)?.label ?? rule.limit_type;
+  const value =
+    rule.limit_type === "budget_cents"
+      ? `$${(rule.limit_value / 100).toLocaleString()}`
+      : rule.limit_value.toLocaleString();
+  return `${typeLabel}: ${value}`;
 }
 
 function formatDraftRuleSummary(rule: DraftLimitRule) {
-  return formatRuleSummary({
-    id: rule.id,
-    org_id: "",
-    limit_policy_id: "",
-    name: rule.name,
-    budget_cents: toCents(rule.budgetDollars),
-    max_requests: toNumber(rule.maxRequests),
-    max_input_tokens: toNumber(rule.maxInputTokens),
-    max_output_tokens: toNumber(rule.maxOutputTokens),
-    max_tokens_per_request: toNumber(rule.maxTokens),
-    window: rule.window,
-    provider_id: null,
-    credential_pool_id: null,
-    model_offering_id: null,
-    access_policy_id: null,
-    is_active: true,
-    created_at: "",
-    updated_at: "",
-  });
+  const typeLabel =
+    limitTypeOptions.find((option) => option.value === rule.limitType)?.label ?? rule.limitType;
+  const value =
+    rule.limitType === "budget_cents"
+      ? `$${Number(rule.limitValue).toLocaleString()}`
+      : Number(rule.limitValue).toLocaleString();
+  return `${typeLabel}: ${value} ${formatInterval(rule.intervalUnit, rule.intervalCount)}`;
 }
 
 function formatRuleFilters(rule: LimitPolicyRuleResponse) {
@@ -1900,10 +2109,38 @@ function providerOptionLabels(providers: AccessPolicyProviderOption[]) {
   return Object.fromEntries(providers.map((provider) => [provider.id, provider.display_name]));
 }
 
-function toNumber(value: string) {
-  return value ? Number(value) : null;
+function assignmentTargetReady(
+  scopeType: string,
+  teamId: string,
+  projectId: string,
+  virtualKeyId: string,
+) {
+  if (scopeType === "team") return Boolean(teamId);
+  if (scopeType === "project") return Boolean(projectId);
+  if (scopeType === "virtual_key") return Boolean(projectId && virtualKeyId);
+  return true;
 }
 
-function toCents(value: string) {
-  return value ? Math.round(Number(value) * 100) : null;
+function createAccessOptionsParams(
+  scopeType: string,
+  teamId: string,
+  projectId: string,
+  virtualKeyId: string,
+) {
+  if (scopeType === "team") return { scope_type: "team", team_id: teamId };
+  if (scopeType === "project") return { scope_type: "project", project_id: projectId };
+  if (scopeType === "virtual_key") {
+    return {
+      scope_type: "virtual_key",
+      project_id: projectId,
+      virtual_key_id: virtualKeyId,
+    };
+  }
+  return { scope_type: "org" };
+}
+
+function formatInterval(intervalUnit: string, intervalCount: string | number) {
+  if (intervalUnit === "lifetime") return "over lifetime";
+  const count = Number(intervalCount) || 1;
+  return `every ${count} ${intervalUnit}${count === 1 ? "" : "s"}`;
 }

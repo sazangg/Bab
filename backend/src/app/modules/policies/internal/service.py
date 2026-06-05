@@ -202,25 +202,10 @@ async def create_limit_policy(
     async with transaction(db):
         policy = await repository.create_limit_policy(
             org_id=scope.org_id,
-            values=payload.model_dump(
-                exclude={
-                    "rules",
-                    "budget_cents",
-                    "max_requests",
-                    "max_input_tokens",
-                    "max_output_tokens",
-                    "max_tokens_per_request",
-                    "window",
-                    "provider_id",
-                    "credential_pool_id",
-                    "model_offering_id",
-                    "access_policy_id",
-                }
-            ),
+            values=payload.model_dump(exclude={"rules"}),
             db=db,
         )
-        rules = payload.rules or [_rule_from_legacy_limit_payload(payload)]
-        for rule in rules:
+        for rule in payload.rules:
             await _validate_limit_rule_filters(payload=rule, scope=scope, db=db)
             await repository.create_limit_policy_rule(
                 org_id=scope.org_id,
@@ -278,14 +263,10 @@ async def update_limit_policy_rule(
         rule = await _get_limit_policy_rule_or_raise(rule_id=rule_id, scope=scope, db=db)
         candidate = LimitPolicyRuleInput(
             name=values.get("name", rule.name),
-            budget_cents=values.get("budget_cents", rule.budget_cents),
-            max_requests=values.get("max_requests", rule.max_requests),
-            max_input_tokens=values.get("max_input_tokens", rule.max_input_tokens),
-            max_output_tokens=values.get("max_output_tokens", rule.max_output_tokens),
-            max_tokens_per_request=values.get(
-                "max_tokens_per_request", rule.max_tokens_per_request
-            ),
-            window=values.get("window", rule.window),
+            limit_type=values.get("limit_type", rule.limit_type),
+            limit_value=values.get("limit_value", rule.limit_value),
+            interval_unit=values.get("interval_unit", rule.interval_unit),
+            interval_count=values.get("interval_count", rule.interval_count),
             provider_id=values.get("provider_id", rule.provider_id),
             credential_pool_id=values.get("credential_pool_id", rule.credential_pool_id),
             model_offering_id=values.get("model_offering_id", rule.model_offering_id),
@@ -712,9 +693,7 @@ async def _validate_limit_rule_filters(
 ) -> None:
     try:
         if payload.provider_id is not None:
-            await providers_facade.get_provider(
-                provider_id=payload.provider_id, scope=scope, db=db
-            )
+            await providers_facade.get_provider(provider_id=payload.provider_id, scope=scope, db=db)
         if payload.credential_pool_id is not None:
             await providers_facade.get_credential_pool(
                 pool_id=payload.credential_pool_id, scope=scope, db=db
@@ -729,23 +708,6 @@ async def _validate_limit_rule_filters(
             )
     except (ProviderNotFoundError, PolicyNotFoundError) as exc:
         raise PolicyValidationError from exc
-
-
-def _rule_from_legacy_limit_payload(payload: CreateLimitPolicyRequest) -> LimitPolicyRuleInput:
-    return LimitPolicyRuleInput(
-        name="Default rule",
-        budget_cents=payload.budget_cents,
-        max_requests=payload.max_requests,
-        max_input_tokens=payload.max_input_tokens,
-        max_output_tokens=payload.max_output_tokens,
-        max_tokens_per_request=payload.max_tokens_per_request,
-        window=payload.window,
-        provider_id=payload.provider_id,
-        credential_pool_id=payload.credential_pool_id,
-        model_offering_id=payload.model_offering_id,
-        access_policy_id=payload.access_policy_id,
-        is_active=payload.is_active,
-    )
 
 
 async def _validate_assignment_policy(

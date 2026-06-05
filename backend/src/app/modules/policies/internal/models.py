@@ -75,32 +75,6 @@ class LimitPolicy(Base):
     )
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
-    budget_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    max_requests: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    max_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    max_output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    max_tokens_per_request: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    window: Mapped[str] = mapped_column(String(50), default="monthly")
-    provider_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("providers.id", ondelete="RESTRICT"),
-        nullable=True,
-        index=True,
-    )
-    credential_pool_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("credential_pools.id", ondelete="RESTRICT"),
-        nullable=True,
-        index=True,
-    )
-    model_offering_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("model_offerings.id", ondelete="RESTRICT"),
-        nullable=True,
-        index=True,
-    )
-    access_policy_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("access_policies.id", ondelete="RESTRICT"),
-        nullable=True,
-        index=True,
-    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -126,12 +100,10 @@ class LimitPolicyRule(Base):
         index=True,
     )
     name: Mapped[str] = mapped_column(String(255))
-    budget_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    max_requests: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    max_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    max_output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    max_tokens_per_request: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    window: Mapped[str] = mapped_column(String(50), default="monthly")
+    limit_type: Mapped[str] = mapped_column(String(50))
+    limit_value: Mapped[int] = mapped_column(Integer)
+    interval_unit: Mapped[str] = mapped_column(String(50), default="month")
+    interval_count: Mapped[int] = mapped_column(Integer, default=1)
     provider_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("providers.id", ondelete="RESTRICT"),
         nullable=True,

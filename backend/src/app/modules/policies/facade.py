@@ -161,7 +161,5 @@ async def update_policy_assignment(
     )
 
 
-async def delete_policy_assignment(
-    *, assignment_id: UUID, scope: Scope, db: AsyncSession
-) -> None:
+async def delete_policy_assignment(*, assignment_id: UUID, scope: Scope, db: AsyncSession) -> None:
     await service.delete_policy_assignment(assignment_id=assignment_id, scope=scope, db=db)

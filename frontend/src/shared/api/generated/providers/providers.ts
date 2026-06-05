@@ -36,8 +36,11 @@ import type {
   ModelOfferingPageResponse,
   ModelOfferingResponse,
   ProviderCredentialResponse,
+  ProviderImpactResponse,
+  ProviderResourceImpactResponse,
   ProviderResponse,
   SyncModelOfferingsRequest,
+  SyncModelOfferingsResponse,
   TestModelOfferingRequest,
   TestModelOfferingResponse,
   TestProviderCredentialResponse,
@@ -551,7 +554,507 @@ export const useDeactivateProviderApiV1ProvidersProviderIdDelete = <TError = HTT
       > => {
       return useMutation(getDeactivateProviderApiV1ProvidersProviderIdDeleteMutationOptions(options), queryClient);
     }
-    export type listCredentialPoolsApiV1ProvidersProviderIdPoolsGetResponse200 = {
+    export type getProviderImpactApiV1ProvidersProviderIdImpactGetResponse200 = {
+  data: ProviderImpactResponse
+  status: 200
+}
+
+export type getProviderImpactApiV1ProvidersProviderIdImpactGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type getProviderImpactApiV1ProvidersProviderIdImpactGetResponseSuccess = (getProviderImpactApiV1ProvidersProviderIdImpactGetResponse200) & {
+  headers: Headers;
+};
+export type getProviderImpactApiV1ProvidersProviderIdImpactGetResponseError = (getProviderImpactApiV1ProvidersProviderIdImpactGetResponse422) & {
+  headers: Headers;
+};
+
+export type getProviderImpactApiV1ProvidersProviderIdImpactGetResponse = (getProviderImpactApiV1ProvidersProviderIdImpactGetResponseSuccess | getProviderImpactApiV1ProvidersProviderIdImpactGetResponseError)
+
+export const getGetProviderImpactApiV1ProvidersProviderIdImpactGetUrl = (providerId: string,) => {
+
+
+
+
+  return `/api/v1/providers/${providerId}/impact`
+}
+
+/**
+ * @summary Get Provider Impact
+ */
+export const getProviderImpactApiV1ProvidersProviderIdImpactGet = async (providerId: string, options?: RequestInit): Promise<getProviderImpactApiV1ProvidersProviderIdImpactGetResponse> => {
+
+  return apiMutator<getProviderImpactApiV1ProvidersProviderIdImpactGetResponse>(getGetProviderImpactApiV1ProvidersProviderIdImpactGetUrl(providerId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetProviderImpactApiV1ProvidersProviderIdImpactGetQueryKey = (providerId: string,) => {
+    return [
+    `/api/v1/providers/${providerId}/impact`
+    ] as const;
+    }
+
+
+export const getGetProviderImpactApiV1ProvidersProviderIdImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>, TError = HTTPValidationError>(providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetProviderImpactApiV1ProvidersProviderIdImpactGetQueryKey(providerId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>> = ({ signal }) => getProviderImpactApiV1ProvidersProviderIdImpactGet(providerId, { signal });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(providerId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetProviderImpactApiV1ProvidersProviderIdImpactGetQueryResult = NonNullable<Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>>
+export type GetProviderImpactApiV1ProvidersProviderIdImpactGetQueryError = HTTPValidationError
+
+
+export function useGetProviderImpactApiV1ProvidersProviderIdImpactGet<TData = Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>, TError = HTTPValidationError>(
+ providerId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProviderImpactApiV1ProvidersProviderIdImpactGet<TData = Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>, TError = HTTPValidationError>(
+ providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProviderImpactApiV1ProvidersProviderIdImpactGet<TData = Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>, TError = HTTPValidationError>(
+ providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get Provider Impact
+ */
+
+export function useGetProviderImpactApiV1ProvidersProviderIdImpactGet<TData = Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>, TError = HTTPValidationError>(
+ providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetProviderImpactApiV1ProvidersProviderIdImpactGetQueryOptions(providerId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export type getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetResponse200 = {
+  data: ProviderResourceImpactResponse
+  status: 200
+}
+
+export type getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetResponseSuccess = (getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetResponse200) & {
+  headers: Headers;
+};
+export type getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetResponseError = (getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetResponse422) & {
+  headers: Headers;
+};
+
+export type getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetResponse = (getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetResponseSuccess | getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetResponseError)
+
+export const getGetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetUrl = (providerId: string,
+    providerCredentialId: string,) => {
+
+
+
+
+  return `/api/v1/providers/${providerId}/credentials/${providerCredentialId}/impact`
+}
+
+/**
+ * @summary Get Provider Credential Impact
+ */
+export const getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet = async (providerId: string,
+    providerCredentialId: string, options?: RequestInit): Promise<getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetResponse> => {
+
+  return apiMutator<getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetResponse>(getGetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetUrl(providerId,providerCredentialId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetQueryKey = (providerId: string,
+    providerCredentialId: string,) => {
+    return [
+    `/api/v1/providers/${providerId}/credentials/${providerCredentialId}/impact`
+    ] as const;
+    }
+
+
+export const getGetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>, TError = HTTPValidationError>(providerId: string,
+    providerCredentialId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetQueryKey(providerId,providerCredentialId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>> = ({ signal }) => getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet(providerId,providerCredentialId, { signal });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(providerId && providerCredentialId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetQueryResult = NonNullable<Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>>
+export type GetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetQueryError = HTTPValidationError
+
+
+export function useGetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet<TData = Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>, TError = HTTPValidationError>(
+ providerId: string,
+    providerCredentialId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet<TData = Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>, TError = HTTPValidationError>(
+ providerId: string,
+    providerCredentialId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet<TData = Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>, TError = HTTPValidationError>(
+ providerId: string,
+    providerCredentialId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get Provider Credential Impact
+ */
+
+export function useGetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet<TData = Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>, TError = HTTPValidationError>(
+ providerId: string,
+    providerCredentialId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetQueryOptions(providerId,providerCredentialId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export type getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetResponse200 = {
+  data: ProviderResourceImpactResponse
+  status: 200
+}
+
+export type getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetResponseSuccess = (getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetResponse200) & {
+  headers: Headers;
+};
+export type getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetResponseError = (getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetResponse422) & {
+  headers: Headers;
+};
+
+export type getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetResponse = (getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetResponseSuccess | getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetResponseError)
+
+export const getGetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetUrl = (providerId: string,
+    poolId: string,) => {
+
+
+
+
+  return `/api/v1/providers/${providerId}/pools/${poolId}/impact`
+}
+
+/**
+ * @summary Get Credential Pool Impact
+ */
+export const getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet = async (providerId: string,
+    poolId: string, options?: RequestInit): Promise<getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetResponse> => {
+
+  return apiMutator<getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetResponse>(getGetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetUrl(providerId,poolId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetQueryKey = (providerId: string,
+    poolId: string,) => {
+    return [
+    `/api/v1/providers/${providerId}/pools/${poolId}/impact`
+    ] as const;
+    }
+
+
+export const getGetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>, TError = HTTPValidationError>(providerId: string,
+    poolId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetQueryKey(providerId,poolId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>> = ({ signal }) => getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet(providerId,poolId, { signal });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(providerId && poolId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetQueryResult = NonNullable<Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>>
+export type GetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetQueryError = HTTPValidationError
+
+
+export function useGetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet<TData = Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>, TError = HTTPValidationError>(
+ providerId: string,
+    poolId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet<TData = Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>, TError = HTTPValidationError>(
+ providerId: string,
+    poolId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet<TData = Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>, TError = HTTPValidationError>(
+ providerId: string,
+    poolId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get Credential Pool Impact
+ */
+
+export function useGetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet<TData = Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>, TError = HTTPValidationError>(
+ providerId: string,
+    poolId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetQueryOptions(providerId,poolId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export type getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGetResponse200 = {
+  data: ProviderResourceImpactResponse
+  status: 200
+}
+
+export type getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGetResponseSuccess = (getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGetResponse200) & {
+  headers: Headers;
+};
+export type getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGetResponseError = (getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGetResponse422) & {
+  headers: Headers;
+};
+
+export type getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGetResponse = (getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGetResponseSuccess | getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGetResponseError)
+
+export const getGetModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGetUrl = (providerId: string,
+    modelOfferingId: string,) => {
+
+
+
+
+  return `/api/v1/providers/${providerId}/offerings/${modelOfferingId}/impact`
+}
+
+/**
+ * @summary Get Model Offering Impact
+ */
+export const getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGet = async (providerId: string,
+    modelOfferingId: string, options?: RequestInit): Promise<getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGetResponse> => {
+
+  return apiMutator<getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGetResponse>(getGetModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGetUrl(providerId,modelOfferingId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGetQueryKey = (providerId: string,
+    modelOfferingId: string,) => {
+    return [
+    `/api/v1/providers/${providerId}/offerings/${modelOfferingId}/impact`
+    ] as const;
+    }
+
+
+export const getGetModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGet>>, TError = HTTPValidationError>(providerId: string,
+    modelOfferingId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGetQueryKey(providerId,modelOfferingId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGet>>> = ({ signal }) => getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGet(providerId,modelOfferingId, { signal });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(providerId && modelOfferingId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGetQueryResult = NonNullable<Awaited<ReturnType<typeof getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGet>>>
+export type GetModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGetQueryError = HTTPValidationError
+
+
+export function useGetModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGet<TData = Awaited<ReturnType<typeof getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGet>>, TError = HTTPValidationError>(
+ providerId: string,
+    modelOfferingId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGet<TData = Awaited<ReturnType<typeof getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGet>>, TError = HTTPValidationError>(
+ providerId: string,
+    modelOfferingId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGet<TData = Awaited<ReturnType<typeof getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGet>>, TError = HTTPValidationError>(
+ providerId: string,
+    modelOfferingId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get Model Offering Impact
+ */
+
+export function useGetModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGet<TData = Awaited<ReturnType<typeof getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGet>>, TError = HTTPValidationError>(
+ providerId: string,
+    modelOfferingId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGetQueryOptions(providerId,modelOfferingId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export type listCredentialPoolsApiV1ProvidersProviderIdPoolsGetResponse200 = {
   data: CredentialPoolResponse[]
   status: 200
 }
@@ -2237,7 +2740,7 @@ export const useTestModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingI
       return useMutation(getTestModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPostMutationOptions(options), queryClient);
     }
     export type syncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPostResponse200 = {
-  data: ModelOfferingResponse[]
+  data: SyncModelOfferingsResponse
   status: 200
 }
 

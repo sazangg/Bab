@@ -69,8 +69,10 @@ async def test_spend_insights_returns_limit_policy_budget_burn(db_session: Async
             org_id=org_id,
             limit_policy_id=limit_policy_id,
             name="Monthly budget",
-            budget_cents=1000,
-            window="monthly",
+            limit_type="budget_cents",
+            limit_value=1000,
+            interval_unit="month",
+            interval_count=1,
         )
     )
     db_session.add(

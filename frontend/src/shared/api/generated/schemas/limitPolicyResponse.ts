@@ -11,16 +11,6 @@ export interface LimitPolicyResponse {
   org_id: string;
   name: string;
   description: string | null;
-  budget_cents: number | null;
-  max_requests: number | null;
-  max_input_tokens: number | null;
-  max_output_tokens: number | null;
-  max_tokens_per_request: number | null;
-  window: string;
-  provider_id: string | null;
-  credential_pool_id: string | null;
-  model_offering_id: string | null;
-  access_policy_id: string | null;
   rules?: LimitPolicyRuleResponse[];
   is_active: boolean;
   created_at: string;

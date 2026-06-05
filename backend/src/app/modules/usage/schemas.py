@@ -86,7 +86,7 @@ class LimitPolicyBudgetBurnRow(BaseModel):
     limit_policy_rule_id: UUID
     limit_policy_name: str
     rule_name: str
-    window: str
+    interval: str
     budget_cents: int
     spent_cents: int
     remaining_cents: int

@@ -18,6 +18,10 @@ class ProviderAdapterNotFoundError(ProviderError):
     pass
 
 
+class ProviderSlugConflictError(ProviderError):
+    pass
+
+
 class ProviderUpstreamError(ProviderError):
     def __init__(self, *, status_code: int, body: dict | list | str | None) -> None:
         self.status_code = status_code

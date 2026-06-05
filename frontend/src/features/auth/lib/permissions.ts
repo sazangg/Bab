@@ -21,6 +21,14 @@ export function hasAnyTeamMembership(user: AuthenticatedUser | null | undefined)
   return (user?.team_memberships ?? []).length > 0 || (user?.project_memberships ?? []).length > 0;
 }
 
+export function hasAnyDirectTeamMembership(user: AuthenticatedUser | null | undefined) {
+  return (user?.team_memberships ?? []).length > 0;
+}
+
+export function hasAnyProjectMembership(user: AuthenticatedUser | null | undefined) {
+  return (user?.project_memberships ?? []).length > 0;
+}
+
 export function hasAnyTeamAdminMembership(user: AuthenticatedUser | null | undefined) {
   return (user?.team_memberships ?? []).some((membership) => membership.role === "team_admin");
 }
@@ -42,6 +50,9 @@ export function canManageKeys(user: AuthenticatedUser | null | undefined) {
 }
 
 export function canViewDashboardHome(user: AuthenticatedUser | null | undefined) {
-  const permissions = user?.permissions ?? [];
-  return permissions.length > 0 || hasAnyTeamMembership(user);
+  return user?.role === "org_owner" || user?.role === "org_admin" || user?.role === "org_viewer";
+}
+
+export function canViewOrgAdminSurface(user: AuthenticatedUser | null | undefined) {
+  return user?.role === "org_owner" || user?.role === "org_admin";
 }

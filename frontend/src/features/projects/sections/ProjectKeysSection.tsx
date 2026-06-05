@@ -269,11 +269,10 @@ export function ProjectKeysSection({
                           className="text-right"
                           onClick={(event) => event.stopPropagation()}
                         >
-                          {canManage ? (
+                          {canManage && !key.revoked_at ? (
                             <Button
                               variant="ghost"
                               size="sm"
-                              disabled={Boolean(key.revoked_at)}
                               onClick={() => setRevokeId(key.id)}
                             >
                               Revoke

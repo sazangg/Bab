@@ -12,6 +12,7 @@ from app.modules.providers import facade
 from app.modules.providers.errors import (
     ProviderCredentialRequiredError,
     ProviderNotFoundError,
+    ProviderSlugConflictError,
     ProviderUpstreamError,
 )
 from app.modules.providers.schemas import (
@@ -25,8 +26,11 @@ from app.modules.providers.schemas import (
     ModelOfferingPageResponse,
     ModelOfferingResponse,
     ProviderCredentialResponse,
+    ProviderImpactResponse,
+    ProviderResourceImpactResponse,
     ProviderResponse,
     SyncModelOfferingsRequest,
+    SyncModelOfferingsResponse,
     TestModelOfferingRequest,
     TestModelOfferingResponse,
     TestProviderCredentialResponse,
@@ -61,7 +65,10 @@ async def create_provider(
     scope: RequestScope,
     db: DatabaseSession,
 ) -> ProviderResponse:
-    return await facade.create_provider(payload=payload, actor=actor, scope=scope, db=db)
+    try:
+        return await facade.create_provider(payload=payload, actor=actor, scope=scope, db=db)
+    except ProviderSlugConflictError as exc:
+        raise HTTPException(status_code=409, detail="provider slug already exists") from exc
 
 
 @router.get("/{provider_id}")
@@ -75,6 +82,73 @@ async def get_provider(
         return await facade.get_provider(provider_id=provider_id, scope=scope, db=db)
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc
+
+
+@router.get("/{provider_id}/impact")
+async def get_provider_impact(
+    provider_id: UUID,
+    scope: RequestScope,
+    db: DatabaseSession,
+    _: ProviderViewer,
+) -> ProviderImpactResponse:
+    try:
+        return await facade.get_provider_impact(provider_id=provider_id, scope=scope, db=db)
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="provider not found") from exc
+
+
+@router.get("/{provider_id}/credentials/{provider_credential_id}/impact")
+async def get_provider_credential_impact(
+    provider_id: UUID,
+    provider_credential_id: UUID,
+    scope: RequestScope,
+    db: DatabaseSession,
+    _: ProviderViewer,
+) -> ProviderResourceImpactResponse:
+    try:
+        return await facade.get_provider_credential_impact(
+            provider_id=provider_id,
+            provider_credential_id=provider_credential_id,
+            scope=scope,
+            db=db,
+        )
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="provider credential not found") from exc
+
+
+@router.get("/{provider_id}/pools/{pool_id}/impact")
+async def get_credential_pool_impact(
+    provider_id: UUID,
+    pool_id: UUID,
+    scope: RequestScope,
+    db: DatabaseSession,
+    _: ProviderViewer,
+) -> ProviderResourceImpactResponse:
+    try:
+        return await facade.get_credential_pool_impact(
+            provider_id=provider_id, pool_id=pool_id, scope=scope, db=db
+        )
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="credential pool not found") from exc
+
+
+@router.get("/{provider_id}/offerings/{model_offering_id}/impact")
+async def get_model_offering_impact(
+    provider_id: UUID,
+    model_offering_id: UUID,
+    scope: RequestScope,
+    db: DatabaseSession,
+    _: ProviderViewer,
+) -> ProviderResourceImpactResponse:
+    try:
+        return await facade.get_model_offering_impact(
+            provider_id=provider_id,
+            model_offering_id=model_offering_id,
+            scope=scope,
+            db=db,
+        )
+    except ProviderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="model offering not found") from exc
 
 
 @router.get("/{provider_id}/pools")
@@ -457,7 +531,7 @@ async def sync_model_offerings(
     scope: RequestScope,
     db: DatabaseSession,
     payload: SyncModelOfferingsRequest | None = None,
-) -> list[ModelOfferingResponse]:
+) -> SyncModelOfferingsResponse:
     try:
         org_settings = await settings_facade.get_organization_settings(scope=scope, db=db)
         provider = await facade.get_provider(provider_id=provider_id, scope=scope, db=db)
@@ -506,6 +580,8 @@ async def update_provider(
         )
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc
+    except ProviderSlugConflictError as exc:
+        raise HTTPException(status_code=409, detail="provider slug already exists") from exc
 
 
 @router.delete("/{provider_id}", status_code=status.HTTP_204_NO_CONTENT)

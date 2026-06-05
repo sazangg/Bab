@@ -7,12 +7,10 @@
 
 export interface UpdateLimitPolicyRuleRequest {
   name?: string | null;
-  budget_cents?: number | null;
-  max_requests?: number | null;
-  max_input_tokens?: number | null;
-  max_output_tokens?: number | null;
-  max_tokens_per_request?: number | null;
-  window?: string | null;
+  limit_type?: string | null;
+  limit_value?: number | null;
+  interval_unit?: string | null;
+  interval_count?: number | null;
   provider_id?: string | null;
   credential_pool_id?: string | null;
   model_offering_id?: string | null;

@@ -1,12 +1,15 @@
+import json
 from collections.abc import AsyncGenerator
 from uuid import UUID
 
 import httpx
 import pytest
+from alembic.config import Config
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from alembic import command
 from app.api.v1.routes.proxy import get_proxy_http_client
 from app.core.bootstrap import sync_default_workspace
 from app.core.config import settings
@@ -36,15 +39,16 @@ async def _provision_gateway_path(
     model: str = "gpt-test",
     key_payload: dict | None = None,
     limit_payload: dict | None = None,
+    provider_slug: str = "openai",
 ) -> tuple[str, str, str]:
     providers = (await client.get("/api/v1/providers", headers=headers)).json()
-    provider = next(provider for provider in providers if provider["slug"] == "openai")
+    provider = next(provider for provider in providers if provider["slug"] == provider_slug)
     provider_id = provider["id"]
 
     credential_response = await client.post(
         f"/api/v1/providers/{provider_id}/credentials",
         headers=headers,
-        json={"name": "Integration OpenAI key", "api_key": upstream_api_key},
+        json={"name": "Integration provider key", "api_key": upstream_api_key},
     )
     assert credential_response.status_code == 201
     credential_id = credential_response.json()["id"]
@@ -118,9 +122,20 @@ async def _provision_gateway_path(
         headers=headers,
         json={
             "name": "Integration limits",
-            "budget_cents": 1000,
-            "max_requests": 10,
-            "window": "monthly",
+            "rules": [
+                {
+                    "name": "Budget",
+                    "limit_type": "budget_cents",
+                    "limit_value": 1000,
+                    "interval_unit": "month",
+                },
+                {
+                    "name": "Requests",
+                    "limit_type": "requests",
+                    "limit_value": 10,
+                    "interval_unit": "month",
+                },
+            ],
             **(limit_payload or {}),
         },
     )
@@ -160,6 +175,119 @@ async def _provision_gateway_path(
 
 
 @pytest.mark.asyncio
+async def test_provider_runtime_config_validation_accepts_typed_policy(app_client, db_session):
+    await sync_default_workspace(db_session)
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://test",
+    ) as client:
+        admin_headers = await _login(client)
+        response = await client.post(
+            "/api/v1/providers",
+            headers=admin_headers,
+            json={
+                "name": "Typed runtime provider",
+                "slug": "typed-runtime-provider",
+                "base_url": "https://typed.example/v1",
+                "capabilities": {"chat": True, "streaming": False},
+                "request_timeout_seconds": 45,
+                "max_body_bytes": 1048576,
+                "max_concurrent_requests": 5,
+                "retry_policy": {
+                    "enabled": True,
+                    "max_attempts": 2,
+                    "backoff": "constant",
+                    "initial_delay_ms": 0,
+                    "max_delay_ms": 100,
+                    "retry_on_status": [500, 503],
+                },
+                "circuit_breaker_policy": {
+                    "enabled": True,
+                    "failure_threshold_pct": 50,
+                    "min_request_count": 2,
+                    "window_seconds": 60,
+                    "cooldown_seconds": 30,
+                },
+            },
+        )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["retry_policy"]["max_attempts"] == 2
+    assert "fallback_policy" not in body
+
+
+@pytest.mark.asyncio
+async def test_provider_runtime_config_validation_rejects_unknown_and_invalid_fields(
+    app_client,
+    db_session,
+):
+    await sync_default_workspace(db_session)
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://test",
+    ) as client:
+        admin_headers = await _login(client)
+        response = await client.post(
+            "/api/v1/providers",
+            headers=admin_headers,
+            json={
+                "name": "Invalid runtime provider",
+                "base_url": "https://invalid.example/v1",
+                "capabilities": {"chat": "yes"},
+                "fallback_policy": {"enabled": True},
+                "retry_policy": {"enabled": "true", "max_attempts": 0},
+            },
+        )
+
+    assert response.status_code == 422
+    details = response.json()["errors"]
+    locations = {tuple(item["loc"]) for item in details}
+    assert ("body", "capabilities", "chat") in locations
+    assert ("body", "fallback_policy") in locations
+    assert ("body", "retry_policy", "enabled") in locations
+    assert ("body", "retry_policy", "max_attempts") in locations
+
+
+@pytest.mark.asyncio
+async def test_provider_credential_response_exposes_secret_metadata_not_secret(
+    app_client,
+    db_session,
+):
+    await sync_default_workspace(db_session)
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://test",
+    ) as client:
+        admin_headers = await _login(client)
+        provider_response = await client.post(
+            "/api/v1/providers",
+            headers=admin_headers,
+            json={
+                "name": "Secret metadata provider",
+                "slug": "secret-metadata-provider",
+                "base_url": "https://secret.example/v1",
+            },
+        )
+        assert provider_response.status_code == 201
+        provider_id = provider_response.json()["id"]
+        credential_response = await client.post(
+            f"/api/v1/providers/{provider_id}/credentials",
+            headers=admin_headers,
+            json={"name": "Secret metadata credential", "api_key": "sk-secret-metadata"},
+        )
+
+    assert credential_response.status_code == 201
+    body = credential_response.json()
+    assert body["secret_backend"] == "local"
+    assert body["secret_reference"] == f"provider_credentials/{body['id']}/api_key"
+    assert body["key_prefix"] == "sk-s..."
+    assert "api_key" not in body
+    assert "api_key_encrypted" not in body
+    assert "sk-secret-metadata" not in str(body)
+
+
+@pytest.mark.asyncio
 async def test_migrations_create_current_schema(tmp_path) -> None:
     database_path = tmp_path / "migration-test.db"
     engine = create_async_engine(f"sqlite+aiosqlite:///{database_path}")
@@ -170,6 +298,17 @@ async def test_migrations_create_current_schema(tmp_path) -> None:
         table_names = await connection.run_sync(
             lambda sync_connection: inspect(sync_connection).get_table_names()
         )
+        provider_columns = await connection.run_sync(
+            lambda sync_connection: {
+                item["name"] for item in inspect(sync_connection).get_columns("providers")
+            }
+        )
+        credential_columns = await connection.run_sync(
+            lambda sync_connection: {
+                item["name"]
+                for item in inspect(sync_connection).get_columns("provider_credentials")
+            }
+        )
 
     await engine.dispose()
 
@@ -177,6 +316,105 @@ async def test_migrations_create_current_schema(tmp_path) -> None:
     assert "provider_credentials" in table_names
     assert "credential_pool_credentials" in table_names
     assert "usage_records" in table_names
+    assert "fallback_policy" not in provider_columns
+    assert {"secret_backend", "secret_reference"} <= credential_columns
+
+
+@pytest.mark.asyncio
+async def test_anthropic_migration_backfill_requires_canonical_base_url(tmp_path) -> None:
+    database_path = tmp_path / "migration-backfill.db"
+    engine = create_async_engine(f"sqlite+aiosqlite:///{database_path}")
+
+    def upgrade_to(connection, revision: str) -> None:
+        config = Config("alembic.ini")
+        config.attributes["connection"] = connection
+        command.upgrade(config, revision)
+
+    async with engine.begin() as connection:
+        await connection.run_sync(upgrade_to, "20260605_0017")
+        now = "2026-06-05 00:00:00"
+        await connection.execute(
+            text(
+                "INSERT INTO organizations "
+                "(id, name, slug, is_active, created_at) "
+                "VALUES ('org1', 'Org', 'org', 1, :now)"
+            ),
+            {"now": now},
+        )
+        provider_sql = text(
+            "INSERT INTO providers ("
+            "id, org_id, name, slug, base_url, api_key_encrypted, adapter_type, "
+            "display_name, description, capabilities, supported_integration, "
+            "request_timeout_seconds, max_body_bytes, retry_policy, model_sync_mode, "
+            "circuit_breaker_policy, max_concurrent_requests, is_favorite, is_active, "
+            "created_at, updated_at) VALUES ("
+            ":id, 'org1', :name, :slug, :base_url, NULL, 'openai_compat', "
+            "NULL, NULL, '{}', 'openai_compatible_default', NULL, NULL, NULL, NULL, "
+            "'{}', NULL, 0, 1, :now, :now)"
+        )
+        rows = [
+            {
+                "id": "catalog",
+                "name": "Anthropic",
+                "slug": "anthropic",
+                "base_url": "https://api.anthropic.com/v1/",
+                "now": now,
+            },
+            {
+                "id": "custom-slug",
+                "name": "Custom",
+                "slug": "anthropic-custom",
+                "base_url": "https://custom.example/v1",
+                "now": now,
+            },
+            {
+                "id": "custom-name",
+                "name": "Anthropic Compatible",
+                "slug": "anthropic-like",
+                "base_url": "https://another.example/v1",
+                "now": now,
+            },
+        ]
+        for row in rows:
+            await connection.execute(provider_sql, row)
+        await connection.run_sync(upgrade_to, "head")
+        integrations = dict(
+            (
+                await connection.execute(
+                    text("SELECT id, supported_integration FROM providers")
+                )
+            ).all()
+        )
+
+    await engine.dispose()
+    assert integrations == {
+        "catalog": "anthropic_messages",
+        "custom-slug": "openai_compatible_default",
+        "custom-name": "openai_compatible_default",
+    }
+
+
+@pytest.mark.asyncio
+async def test_provider_slugs_are_unique_within_an_organization(app_client, db_session) -> None:
+    await sync_default_workspace(db_session)
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client), base_url="http://test"
+    ) as client:
+        admin_headers = await _login(client)
+        first = await client.post(
+            "/api/v1/providers",
+            headers=admin_headers,
+            json={"name": "First", "slug": " Same Slug ", "base_url": "https://one.example/v1"},
+        )
+        duplicate = await client.post(
+            "/api/v1/providers",
+            headers=admin_headers,
+            json={"name": "Second", "slug": "same-slug", "base_url": "https://two.example/v1"},
+        )
+
+    assert first.status_code == 201
+    assert duplicate.status_code == 409
+    assert duplicate.json()["detail"] == "provider slug already exists"
 
 
 @pytest.mark.asyncio
@@ -241,7 +479,7 @@ async def test_gateway_path_records_usage_with_mocked_upstream(app_client, db_se
         assert records[0]["requested_model"] == "gpt-test"
         assert records[0]["provider_model"] == "gpt-test"
         assert records[0]["provider_credential_id"] == credential_id
-        assert records[0]["provider_credential_name"] == "Integration OpenAI key"
+        assert records[0]["provider_credential_name"] == "Integration provider key"
         assert records[0]["request_id"] == proxy_response.headers["x-request-id"]
         assert records[0]["http_status"] == 200
         assert records[0]["total_tokens"] == 17
@@ -255,6 +493,142 @@ async def test_gateway_path_records_usage_with_mocked_upstream(app_client, db_se
         assert export_response.headers["content-type"].startswith("text/csv")
         assert "gpt-test" in export_response.text
         assert proxy_response.headers["x-request-id"] in export_response.text
+
+
+@pytest.mark.asyncio
+async def test_native_anthropic_messages_preserves_shape_and_records_usage(
+    app_client,
+    db_session,
+) -> None:
+    await sync_default_workspace(db_session)
+
+    async def upstream_handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1/messages"
+        assert request.headers["x-api-key"] == "sk-ant-test"
+        assert request.headers["anthropic-version"] == "2023-06-01"
+        assert json.loads(request.content) == {
+            "model": "claude-test",
+            "messages": [{"role": "user", "content": "Say hello."}],
+            "max_tokens": 32,
+            "system": "Be concise.",
+        }
+        return httpx.Response(
+            200,
+            json={
+                "id": "msg_test",
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "text", "text": "Hello."}],
+                "model": "claude-test",
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 8, "output_tokens": 3},
+            },
+        )
+
+    async def override_proxy_http_client() -> AsyncGenerator[httpx.AsyncClient]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(upstream_handler)) as client:
+            yield client
+
+    app_client.dependency_overrides[get_proxy_http_client] = override_proxy_http_client
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client), base_url="http://test"
+    ) as client:
+        admin_headers = await _login(client)
+        virtual_key, credential_id, _ = await _provision_gateway_path(
+            client,
+            admin_headers,
+            upstream_api_key="sk-ant-test",
+            model="claude-test",
+            provider_slug="anthropic",
+        )
+        response = await client.post(
+            "/v1/messages",
+            headers={"x-api-key": virtual_key},
+            json={
+                "model": "claude-test",
+                "messages": [{"role": "user", "content": "Say hello."}],
+                "max_tokens": 32,
+                "system": "Be concise.",
+            },
+        )
+        usage_response = await client.get("/api/v1/usage/records", headers=admin_headers)
+
+    assert response.status_code == 200
+    assert response.json()["type"] == "message"
+    records = usage_response.json()
+    assert len(records) == 1
+    assert records[0]["provider_credential_id"] == credential_id
+    assert records[0]["prompt_tokens"] == 8
+    assert records[0]["completion_tokens"] == 3
+    assert records[0]["total_tokens"] == 11
+
+
+@pytest.mark.asyncio
+async def test_native_anthropic_messages_rejects_missing_and_conflicting_virtual_keys(
+    app_client,
+    db_session,
+) -> None:
+    await sync_default_workspace(db_session)
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client), base_url="http://test"
+    ) as client:
+        missing = await client.post(
+            "/v1/messages",
+            json={"model": "claude-test", "messages": [{"role": "user", "content": "Hi"}]},
+        )
+        conflicting = await client.post(
+            "/v1/messages",
+            headers={"Authorization": "Bearer bab-one", "x-api-key": "bab-two"},
+            json={"model": "claude-test", "messages": [{"role": "user", "content": "Hi"}]},
+        )
+
+    assert missing.status_code == 401
+    assert missing.json()["detail"] == "missing virtual key"
+    assert conflicting.status_code == 400
+    assert conflicting.json()["detail"] == "conflicting virtual key headers"
+
+
+@pytest.mark.asyncio
+async def test_native_anthropic_messages_records_upstream_failure(app_client, db_session) -> None:
+    await sync_default_workspace(db_session)
+
+    async def upstream_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            401, json={"type": "error", "error": {"type": "authentication_error"}}
+        )
+
+    async def override_proxy_http_client() -> AsyncGenerator[httpx.AsyncClient]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(upstream_handler)) as client:
+            yield client
+
+    app_client.dependency_overrides[get_proxy_http_client] = override_proxy_http_client
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client), base_url="http://test"
+    ) as client:
+        admin_headers = await _login(client)
+        virtual_key, _, _ = await _provision_gateway_path(
+            client,
+            admin_headers,
+            model="claude-failure",
+            provider_slug="anthropic",
+        )
+        response = await client.post(
+            "/v1/messages",
+            headers={"Authorization": f"Bearer {virtual_key}"},
+            json={
+                "model": "claude-failure",
+                "messages": [{"role": "user", "content": "Hello"}],
+                "max_tokens": 16,
+            },
+        )
+        usage_response = await client.get("/api/v1/usage/records", headers=admin_headers)
+
+    assert response.status_code == 401
+    assert response.json()["type"] == "error"
+    records = usage_response.json()
+    assert len(records) == 1
+    assert records[0]["http_status"] == 401
+    assert records[0]["error_code"] == "provider_upstream_error"
 
 
 @pytest.mark.asyncio
@@ -392,7 +766,16 @@ async def test_gateway_enforces_virtual_key_request_rate_limit(app_client, db_se
         virtual_key, _credential_id, _provider_id = await _provision_gateway_path(
             client,
             admin_headers,
-            limit_payload={"max_requests": 2, "window": "daily"},
+            limit_payload={
+                "rules": [
+                    {
+                        "name": "Two requests",
+                        "limit_type": "requests",
+                        "limit_value": 2,
+                        "interval_unit": "day",
+                    }
+                ]
+            },
         )
 
         payload = {
@@ -489,7 +872,7 @@ async def test_gateway_proxy_does_not_cross_provider_fallback(app_client, db_ses
                 }
             },
         )
-        assert update_provider.status_code == 200
+        assert update_provider.status_code == 422
 
         proxy_response = await client.post(
             "/v1/chat/completions",

@@ -1,5 +1,6 @@
 import { ListRestart, Send, TerminalSquare } from "lucide-react";
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -30,9 +31,10 @@ type PlaygroundResult = {
 type GatewayModel = { id: string };
 
 export function PlaygroundPage() {
+  const [searchParams] = useSearchParams();
   const [mode, setMode] = useState<PlaygroundMode>("chat");
   const [virtualKey, setVirtualKey] = useState("");
-  const [model, setModel] = useState("");
+  const [model, setModel] = useState(searchParams.get("model") ?? "");
   const [prompt, setPrompt] = useState("Reply with pong.");
   const [temperature, setTemperature] = useState("0.2");
   const [maxTokens, setMaxTokens] = useState("64");
@@ -113,7 +115,9 @@ export function PlaygroundPage() {
         <Card>
           <CardHeader>
             <CardTitle>Request</CardTitle>
-            <CardDescription>Paste the secret value shown when the key was created.</CardDescription>
+            <CardDescription>
+              Paste the secret value shown when the key was created.
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <Tabs value={mode} onValueChange={(value) => setMode(value as PlaygroundMode)}>
@@ -275,7 +279,9 @@ function SharedRequestControls({
         <div>
           <Label htmlFor="playground-stream">Stream response</Label>
           <p className="text-sm text-muted-foreground">
-            {supportsStream ? "Render chat deltas as SSE arrives." : "Only chat supports streaming."}
+            {supportsStream
+              ? "Render chat deltas as SSE arrives."
+              : "Only chat supports streaming."}
           </p>
         </div>
         <Switch
@@ -372,7 +378,10 @@ function LatestUsageCard({
             <UsageItem label="Model" value={latestUsage.requested_model} />
             <UsageItem label="Request" value={latestUsage.request_id?.slice(0, 8) ?? "-"} />
             <UsageItem label="Tokens" value={String(latestUsage.total_tokens ?? 0)} />
-            <UsageItem label="Cost" value={`$${((latestUsage.cost_cents ?? 0) / 100).toFixed(4)}`} />
+            <UsageItem
+              label="Cost"
+              value={`$${((latestUsage.cost_cents ?? 0) / 100).toFixed(4)}`}
+            />
             <UsageItem label="Recorded" value={new Date(latestUsage.created_at).toLocaleString()} />
           </dl>
         ) : (

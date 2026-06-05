@@ -661,3 +661,9 @@ export function useGetSpendInsightsApiV1UsageSpendInsightsGet<TData = Awaited<Re
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+
+
+
+
+

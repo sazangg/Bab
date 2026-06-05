@@ -10,6 +10,7 @@ from app.core.database import Base
 
 class Provider(Base):
     __tablename__ = "providers"
+    __table_args__ = (UniqueConstraint("org_id", "slug", name="uq_providers_org_slug"),)
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     org_id: Mapped[UUID] = mapped_column(
@@ -29,7 +30,6 @@ class Provider(Base):
     max_body_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     retry_policy: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     model_sync_mode: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    fallback_policy: Mapped[dict] = mapped_column(JSON, default=dict)
     circuit_breaker_policy: Mapped[dict] = mapped_column(JSON, default=dict)
     max_concurrent_requests: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_favorite: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -60,13 +60,22 @@ class ProviderCredential(Base):
     created_by: Mapped[UUID | None] = mapped_column(nullable=True)
     name: Mapped[str] = mapped_column(String(255))
     key_prefix: Mapped[str] = mapped_column(String(20))
-    api_key_encrypted: Mapped[str] = mapped_column(String(1000))
+    api_key_encrypted: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    secret_backend: Mapped[str] = mapped_column(String(100), default="local")
+    secret_reference: Mapped[str] = mapped_column(String(500))
     health_status: Mapped[str] = mapped_column(String(50), default="unchecked")
     last_validation_error: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    last_validation_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     last_successful_request_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
+    last_failure_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    failure_message: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

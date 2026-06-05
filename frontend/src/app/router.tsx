@@ -67,18 +67,24 @@ export function AppRoutes() {
           <Route element={<ProtectedRoute allowDashboardHome />}>
             <Route path="/" element={<DashboardHomePage />} />
           </Route>
-          <Route element={<ProtectedRoute allowWorkspaceScope />}>
+          <Route element={<ProtectedRoute allowTeamScope />}>
             <Route path="/teams" element={<TeamsPage />} />
             <Route path="/teams/:teamId" element={<TeamDetailPage />} />
+          </Route>
+          <Route element={<ProtectedRoute allowWorkspaceScope />}>
             <Route path="/projects" element={<ProjectsPage />} />
             <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
             <Route path="/projects/:projectId/keys/:keyId" element={<KeyDetailPage />} />
+          </Route>
+          <Route element={<ProtectedRoute requireOrgAdminSurface />}>
             <Route path="/policies" element={<PoliciesPage />} />
             <Route path="/policies/access/:policyId" element={<AccessPolicyDetailPage />} />
             <Route path="/policies/limits/:policyId" element={<LimitPolicyDetailPage />} />
           </Route>
-          <Route element={<ProtectedRoute requireKeyManager />}>
+          <Route element={<ProtectedRoute requireOrgAdminSurface />}>
             <Route path="/virtual-keys" element={<VirtualKeysPage />} />
+          </Route>
+          <Route element={<ProtectedRoute requireKeyManager />}>
             <Route path="/playground" element={<PlaygroundPage />} />
           </Route>
           <Route element={<ProtectedRoute permission="providers.view" />}>

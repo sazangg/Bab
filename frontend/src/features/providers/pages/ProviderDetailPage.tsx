@@ -36,6 +36,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   useDeactivateProviderApiV1ProvidersProviderIdDelete,
   useGetProviderApiV1ProvidersProviderIdGet,
+  useGetProviderImpactApiV1ProvidersProviderIdImpactGet,
   useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet,
   useListProvidersApiV1ProvidersGet,
   useTestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost,
@@ -79,6 +80,10 @@ export function ProviderDetailPage() {
     { window: "30d", provider_id: providerId },
     { query: { enabled: Boolean(providerId) } },
   );
+  const impactQuery = useGetProviderImpactApiV1ProvidersProviderIdImpactGet(providerId ?? "", {
+    query: { enabled: Boolean(providerId) },
+  });
+  const impact = impactQuery.data?.status === 200 ? impactQuery.data.data : null;
   const credentials = credentialsQuery.data?.status === 200 ? credentialsQuery.data.data : [];
   const topActiveCredential = [...credentials]
     .filter((credential) => credential.is_active)
@@ -321,6 +326,53 @@ export function ProviderDetailPage() {
               </div>
             )}
           </div>
+          <div className="flex flex-col gap-1 md:col-span-4">
+            <p className="text-xs text-muted-foreground">Provider capabilities</p>
+            <div className="flex flex-wrap gap-1.5">
+              {providerCapabilityLabels(provider.integration_capabilities).length > 0 ? (
+                providerCapabilityLabels(provider.integration_capabilities).map((capability) => (
+                  <StatusBadge key={capability} variant="muted">
+                    {capability}
+                  </StatusBadge>
+                ))
+              ) : (
+                <span className="text-sm text-muted-foreground">
+                  No runtime capabilities enabled yet.
+                </span>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Policy dependencies</CardTitle>
+          <CardDescription>
+            Active governance resources that reference this provider.
+          </CardDescription>
+          <CardAction>
+            <StatusBadge variant={impact?.access_policies?.length ? "active" : "muted"}>
+              {impact?.access_policies?.length ?? 0} routes
+            </StatusBadge>
+          </CardAction>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {impactQuery.isPending ? (
+            <p className="text-sm text-muted-foreground">Loading dependencies...</p>
+          ) : impact?.access_policies?.length ? (
+            <div className="flex flex-wrap gap-2">
+              {impact.access_policies.map((policy) => (
+                <Button key={policy.route_id} asChild size="sm" variant="outline">
+                  <Link to={`/policies?policy=${policy.id}`}>{policy.name}</Link>
+                </Button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No active access policy routes reference this provider.
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -331,29 +383,35 @@ export function ProviderDetailPage() {
             A provider is routable only when every step below is ready.
           </CardDescription>
           <CardAction>
-            <StatusBadge variant={provider.readiness?.is_ready ? "active" : "expired"}>
-              {provider.readiness?.is_ready ? "Ready" : "Incomplete"}
+            <StatusBadge variant={readinessBadge(provider.readiness?.status).variant}>
+              {readinessBadge(provider.readiness?.status).label}
             </StatusBadge>
           </CardAction>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-5">
-          <ReadinessStep
-            label="Provider enabled"
-            ready={Boolean(provider.readiness?.has_active_provider)}
-          />
-          <ReadinessStep
-            label="Active credential"
-            ready={Boolean(provider.readiness?.has_active_credential)}
-          />
-          <ReadinessStep label="Active pool" ready={Boolean(provider.readiness?.has_active_pool)} />
-          <ReadinessStep
-            label="Credential in pool"
-            ready={Boolean(provider.readiness?.has_active_pool_credential)}
-          />
-          <ReadinessStep
-            label="Active models"
-            ready={Boolean(provider.readiness?.has_active_model)}
-          />
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">{provider.readiness?.message}</p>
+          <div className="grid gap-3 md:grid-cols-5">
+            <ReadinessStep
+              label="Provider enabled"
+              ready={Boolean(provider.readiness?.has_active_provider)}
+            />
+            <ReadinessStep
+              label="Active credential"
+              ready={Boolean(provider.readiness?.has_active_credential)}
+            />
+            <ReadinessStep
+              label="Active pool"
+              ready={Boolean(provider.readiness?.has_active_pool)}
+            />
+            <ReadinessStep
+              label="Credential in pool"
+              ready={Boolean(provider.readiness?.has_active_pool_credential)}
+            />
+            <ReadinessStep
+              label="Active models"
+              ready={Boolean(provider.readiness?.has_active_model)}
+            />
+          </div>
         </CardContent>
       </Card>
 
@@ -389,22 +447,6 @@ export function ProviderDetailPage() {
             value={
               provider.operational_state?.circuit_open_until
                 ? formatRelativeFromNow(new Date(provider.operational_state.circuit_open_until))
-                : "-"
-            }
-          />
-          <Fact
-            label="Fallback policy"
-            value={provider.operational_state?.fallback_enabled ? "Enabled" : "Disabled"}
-          />
-          <Fact
-            label="Fallback providers"
-            value={`${provider.operational_state?.fallback_provider_count ?? 0}`}
-          />
-          <Fact
-            label="Fallback statuses"
-            value={
-              provider.operational_state?.fallback_trigger_statuses?.length
-                ? provider.operational_state.fallback_trigger_statuses.join(", ")
                 : "-"
             }
           />
@@ -463,6 +505,7 @@ export function ProviderDetailPage() {
               rules stay intact, and you can re-enable from this same toggle later.
             </DialogDescription>
           </DialogHeader>
+          <ProviderImpactWarning impact={impact} isLoading={impactQuery.isPending} />
           <DialogFooter>
             <Button
               variant="destructive"
@@ -488,6 +531,36 @@ function Fact({ label, value, muted }: { label: string; value: string; muted?: b
       <p className={cn("truncate text-sm font-medium", muted && "text-muted-foreground/70")}>
         {value}
       </p>
+    </div>
+  );
+}
+
+function ProviderImpactWarning({
+  impact,
+  isLoading,
+}: {
+  impact: import("@/shared/api/generated/schemas").ProviderImpactResponse | null;
+  isLoading: boolean;
+}) {
+  if (isLoading) return <p className="text-sm text-muted-foreground">Checking impact...</p>;
+  if (!impact) return null;
+  return (
+    <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
+      <p className="font-medium">Resources affected</p>
+      <p className="mt-1 text-muted-foreground">
+        {impact.access_policies?.length ?? 0} access routes, {impact.active_limit_rule_count ?? 0}{" "}
+        limit rules, {impact.active_pool_count ?? 0} pools, and {impact.active_model_count ?? 0}{" "}
+        models reference this provider.
+      </p>
+      <p className="mt-1 text-muted-foreground">
+        Last 30 days: {(impact.recent_request_count ?? 0).toLocaleString()} requests and{" "}
+        {formatCents(impact.recent_cost_cents ?? 0)} estimated spend.
+      </p>
+      {impact.access_policies?.length ? (
+        <p className="mt-2">
+          Policies: {impact.access_policies.map((item) => item.name).join(", ")}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -523,6 +596,36 @@ const healthLabels: Record<string, { label: string; variant: HealthVariant }> = 
   invalid: { label: "Invalid", variant: "error" },
   degraded: { label: "Degraded", variant: "error" },
 };
+
+function readinessBadge(status: string | undefined) {
+  const states: Record<
+    string,
+    { label: string; variant: "active" | "inactive" | "error" | "expired" }
+  > = {
+    ready: { label: "Ready", variant: "active" },
+    degraded: { label: "Degraded", variant: "error" },
+    disabled: { label: "Disabled", variant: "inactive" },
+    needs_credential: { label: "Needs credential", variant: "expired" },
+    needs_pool: { label: "Needs pool", variant: "expired" },
+    needs_model_sync: { label: "Needs model sync", variant: "expired" },
+  };
+  return states[status ?? ""] ?? { label: "Incomplete", variant: "expired" as const };
+}
+
+function providerCapabilityLabels(capabilities: Record<string, boolean> | undefined) {
+  const labels: Record<string, string> = {
+    openai_compatible_chat: "OpenAI-compatible chat",
+    openai_compatible_models_list: "OpenAI-compatible models list",
+    openai_compatible_responses: "Responses compatibility",
+    openai_compatible_completions: "Completions compatibility",
+    streaming: "Streaming",
+    native_anthropic_messages: "Native Anthropic Messages",
+    embeddings: "Embeddings",
+  };
+  return Object.entries(capabilities ?? {})
+    .filter(([, enabled]) => enabled)
+    .map(([key]) => labels[key] ?? key);
+}
 
 function countByHealth(credentials: { health_status: string }[]) {
   const counts: Record<string, number> = {

@@ -61,7 +61,11 @@ def _extract_provider_usage(response_body: dict[str, Any] | None) -> UsageAccoun
         return None
 
     prompt_tokens = _int_or_none(usage.get("prompt_tokens"))
+    if prompt_tokens is None:
+        prompt_tokens = _int_or_none(usage.get("input_tokens"))
     completion_tokens = _int_or_none(usage.get("completion_tokens"))
+    if completion_tokens is None:
+        completion_tokens = _int_or_none(usage.get("output_tokens"))
     total_tokens = _int_or_none(usage.get("total_tokens"))
     if prompt_tokens is None and completion_tokens is None and total_tokens is None:
         return None

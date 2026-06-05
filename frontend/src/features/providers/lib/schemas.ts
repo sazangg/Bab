@@ -4,7 +4,7 @@ export const STATUS_CODE_MIN = 100;
 export const STATUS_CODE_MAX = 599;
 
 export const modelModalities = ["text", "vision", "embedding", "image", "audio"];
-export const modelCapabilityOptions = ["chat", "embeddings", "tools", "json_mode", "streaming"];
+export const modelCapabilityOptions = ["chat", "tools", "json_mode", "streaming"];
 
 export const routingPolicyOptions = [
   {
@@ -32,12 +32,6 @@ export const routingPolicyOptions = [
     label: "Weighted",
     description: "Randomly select a credential, with lower priority numbers receiving more weight.",
   },
-  {
-    value: "fallback",
-    label: "Fallback",
-    description:
-      "Try credentials by priority and move to the next one on retryable upstream errors.",
-  },
 ] as const;
 
 export const createProviderSchema = z.object({
@@ -55,12 +49,6 @@ export const retryPolicySchema = z.object({
   initial_delay_ms: z.coerce.number().int().min(0),
   max_delay_ms: z.coerce.number().int().min(0),
   retry_on_status: z.array(z.number().int().min(STATUS_CODE_MIN).max(STATUS_CODE_MAX)),
-});
-
-export const fallbackPolicySchema = z.object({
-  enabled: z.boolean(),
-  trigger_on_status: z.array(z.number().int().min(STATUS_CODE_MIN).max(STATUS_CODE_MAX)),
-  fallback_provider_ids: z.array(z.string()),
 });
 
 export const circuitBreakerPolicySchema = z.object({
@@ -90,7 +78,6 @@ export const editProviderSchema = z
     model_sync_mode: z.enum(["inherit", "merge", "replace", "disabled"]),
     retry_policy_mode: z.enum(["inherit", "override"]),
     retry_policy: retryPolicySchema,
-    fallback_policy: fallbackPolicySchema,
     circuit_breaker_policy: circuitBreakerPolicySchema,
   })
   .superRefine((values, context) => {
@@ -124,7 +111,6 @@ export const credentialPoolSchema = z.object({
     "least_recently_used",
     "health_based",
     "weighted",
-    "fallback",
   ]),
 });
 
@@ -133,7 +119,6 @@ export type EditProviderInput = z.input<typeof editProviderSchema>;
 export type ProviderCredentialValues = z.infer<typeof providerCredentialSchema>;
 export type CredentialPoolValues = z.infer<typeof credentialPoolSchema>;
 export type RetryPolicyValues = z.infer<typeof retryPolicySchema>;
-export type FallbackPolicyValues = z.infer<typeof fallbackPolicySchema>;
 export type CircuitBreakerPolicyValues = z.infer<typeof circuitBreakerPolicySchema>;
 
 export const defaultRetryPolicy: RetryPolicyValues = {
@@ -143,12 +128,6 @@ export const defaultRetryPolicy: RetryPolicyValues = {
   initial_delay_ms: 500,
   max_delay_ms: 10000,
   retry_on_status: [408, 429, 500, 502, 503, 504],
-};
-
-export const defaultFallbackPolicy: FallbackPolicyValues = {
-  enabled: false,
-  trigger_on_status: [502, 503, 504],
-  fallback_provider_ids: [],
 };
 
 export const defaultCircuitBreakerPolicy: CircuitBreakerPolicyValues = {

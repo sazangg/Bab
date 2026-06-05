@@ -10,12 +10,10 @@ export interface LimitPolicyRuleResponse {
   org_id: string;
   limit_policy_id: string;
   name: string;
-  budget_cents: number | null;
-  max_requests: number | null;
-  max_input_tokens: number | null;
-  max_output_tokens: number | null;
-  max_tokens_per_request: number | null;
-  window: string;
+  limit_type: string;
+  limit_value: number;
+  interval_unit: string;
+  interval_count: number;
   provider_id: string | null;
   credential_pool_id: string | null;
   model_offering_id: string | null;

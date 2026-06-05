@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import Scope
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.providers.internal import service
+from app.modules.providers.internal.secret_backends import ProviderSecretBackendRegistry
 from app.modules.providers.schemas import (
     AddCredentialPoolCredentialRequest,
     CreateCredentialPoolRequest,
@@ -17,11 +18,16 @@ from app.modules.providers.schemas import (
     ModelMetadataSyncMode,
     ModelOfferingPageResponse,
     ModelOfferingResponse,
+    ProviderAnthropicMessagesRequest,
+    ProviderAnthropicMessagesResponse,
     ProviderChatCompletionRequest,
     ProviderChatCompletionResponse,
     ProviderChatCompletionStream,
     ProviderCredentialResponse,
+    ProviderImpactResponse,
+    ProviderResourceImpactResponse,
     ProviderResponse,
+    SyncModelOfferingsResponse,
     TestModelOfferingRequest,
     TestModelOfferingResponse,
     TestProviderCredentialResponse,
@@ -49,6 +55,39 @@ async def list_providers(*, scope: Scope, db: AsyncSession) -> list[ProviderResp
 
 async def get_provider(*, provider_id: UUID, scope: Scope, db: AsyncSession) -> ProviderResponse:
     return await service.get_provider(provider_id=provider_id, scope=scope, db=db)
+
+
+async def get_provider_impact(
+    *,
+    provider_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProviderImpactResponse:
+    return await service.get_provider_impact(provider_id=provider_id, scope=scope, db=db)
+
+
+async def get_provider_credential_impact(
+    *, provider_id: UUID, provider_credential_id: UUID, scope: Scope, db: AsyncSession
+) -> ProviderResourceImpactResponse:
+    return await service.get_provider_credential_impact(
+        provider_id=provider_id, provider_credential_id=provider_credential_id, scope=scope, db=db
+    )
+
+
+async def get_credential_pool_impact(
+    *, provider_id: UUID, pool_id: UUID, scope: Scope, db: AsyncSession
+) -> ProviderResourceImpactResponse:
+    return await service.get_credential_pool_impact(
+        provider_id=provider_id, pool_id=pool_id, scope=scope, db=db
+    )
+
+
+async def get_model_offering_impact(
+    *, provider_id: UUID, model_offering_id: UUID, scope: Scope, db: AsyncSession
+) -> ProviderResourceImpactResponse:
+    return await service.get_model_offering_impact(
+        provider_id=provider_id, model_offering_id=model_offering_id, scope=scope, db=db
+    )
 
 
 async def create_credential_pool(
@@ -186,6 +225,7 @@ async def create_provider_credential(
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
+    secret_registry: ProviderSecretBackendRegistry | None = None,
 ) -> ProviderCredentialResponse:
     return await service.create_provider_credential(
         provider_id=provider_id,
@@ -193,6 +233,7 @@ async def create_provider_credential(
         actor=actor,
         scope=scope,
         db=db,
+        secret_registry=secret_registry,
     )
 
 
@@ -226,6 +267,7 @@ async def update_provider_credential(
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
+    secret_registry: ProviderSecretBackendRegistry | None = None,
 ) -> ProviderCredentialResponse:
     return await service.update_provider_credential(
         provider_id=provider_id,
@@ -234,6 +276,7 @@ async def update_provider_credential(
         actor=actor,
         scope=scope,
         db=db,
+        secret_registry=secret_registry,
     )
 
 
@@ -245,6 +288,7 @@ async def test_provider_credential(
     scope: Scope,
     db: AsyncSession,
     http_client: httpx.AsyncClient,
+    secret_registry: ProviderSecretBackendRegistry | None = None,
 ) -> TestProviderCredentialResponse:
     return await service.test_provider_credential(
         provider_id=provider_id,
@@ -253,6 +297,7 @@ async def test_provider_credential(
         scope=scope,
         db=db,
         http_client=http_client,
+        secret_registry=secret_registry,
     )
 
 
@@ -299,7 +344,8 @@ async def sync_model_offerings(
     http_client: httpx.AsyncClient,
     metadata_mode: ModelMetadataSyncMode,
     sync_mode: str = "merge",
-) -> list[ModelOfferingResponse]:
+    secret_registry: ProviderSecretBackendRegistry | None = None,
+) -> SyncModelOfferingsResponse:
     return await service.sync_model_offerings(
         provider_id=provider_id,
         actor=actor,
@@ -308,6 +354,7 @@ async def sync_model_offerings(
         http_client=http_client,
         metadata_mode=metadata_mode,
         sync_mode=sync_mode,
+        secret_registry=secret_registry,
     )
 
 
@@ -356,6 +403,7 @@ async def test_model_offering(
     scope: Scope,
     db: AsyncSession,
     http_client: httpx.AsyncClient,
+    secret_registry: ProviderSecretBackendRegistry | None = None,
 ) -> TestModelOfferingResponse:
     return await service.test_model_offering(
         provider_id=provider_id,
@@ -365,6 +413,7 @@ async def test_model_offering(
         scope=scope,
         db=db,
         http_client=http_client,
+        secret_registry=secret_registry,
     )
 
 
@@ -440,7 +489,7 @@ async def create_chat_completion(
     scope: Scope,
     db: AsyncSession,
     http_client: httpx.AsyncClient,
-    allowed_fallback_provider_ids: set[UUID] | None = None,
+    secret_registry: ProviderSecretBackendRegistry | None = None,
 ) -> ProviderChatCompletionResponse:
     return await service.create_chat_completion(
         provider_id=provider_id,
@@ -450,7 +499,32 @@ async def create_chat_completion(
         scope=scope,
         db=db,
         http_client=http_client,
-        allowed_fallback_provider_ids=allowed_fallback_provider_ids,
+        secret_registry=secret_registry,
+    )
+
+
+async def create_anthropic_message(
+    *,
+    provider_id: UUID,
+    pool_id: UUID | None,
+    provider_credential_id: UUID | None,
+    payload: ProviderAnthropicMessagesRequest,
+    anthropic_version: str,
+    scope: Scope,
+    db: AsyncSession,
+    http_client: httpx.AsyncClient,
+    secret_registry: ProviderSecretBackendRegistry | None = None,
+) -> ProviderAnthropicMessagesResponse:
+    return await service.create_anthropic_message(
+        provider_id=provider_id,
+        pool_id=pool_id,
+        provider_credential_id=provider_credential_id,
+        payload=payload,
+        anthropic_version=anthropic_version,
+        scope=scope,
+        db=db,
+        http_client=http_client,
+        secret_registry=secret_registry,
     )
 
 
@@ -463,6 +537,7 @@ async def stream_chat_completion(
     scope: Scope,
     db: AsyncSession,
     http_client: httpx.AsyncClient,
+    secret_registry: ProviderSecretBackendRegistry | None = None,
 ) -> ProviderChatCompletionStream:
     return await service.stream_chat_completion(
         provider_id=provider_id,
@@ -472,4 +547,5 @@ async def stream_chat_completion(
         scope=scope,
         db=db,
         http_client=http_client,
+        secret_registry=secret_registry,
     )

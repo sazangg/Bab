@@ -8,15 +8,5 @@
 export interface UpdateLimitPolicyRequest {
   name?: string | null;
   description?: string | null;
-  budget_cents?: number | null;
-  max_requests?: number | null;
-  max_input_tokens?: number | null;
-  max_output_tokens?: number | null;
-  max_tokens_per_request?: number | null;
-  window?: string | null;
-  provider_id?: string | null;
-  credential_pool_id?: string | null;
-  model_offering_id?: string | null;
-  access_policy_id?: string | null;
   is_active?: boolean | null;
 }

@@ -34,7 +34,10 @@ from app.modules.providers.errors import (
     ProviderNotFoundError,
     ProviderUpstreamError,
 )
-from app.modules.providers.schemas import ProviderChatCompletionRequest
+from app.modules.providers.schemas import (
+    ProviderAnthropicMessagesRequest,
+    ProviderChatCompletionRequest,
+)
 from app.modules.settings import facade as settings_facade
 from app.modules.usage import facade as usage_facade
 from app.modules.usage.accounting import (
@@ -52,6 +55,7 @@ router = APIRouter(prefix="/v1", tags=["proxy"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 VirtualKeyAuthorization = Annotated[str | None, Header(alias="Authorization")]
 ProviderIdHeader = Annotated[UUID | None, Header(alias="X-Bab-Provider-Id")]
+AnthropicApiKey = Annotated[str | None, Header(alias="x-api-key")]
 
 
 async def get_proxy_http_client() -> AsyncGenerator[httpx.AsyncClient]:
@@ -240,7 +244,6 @@ async def create_chat_completion(
             scope=Scope(org_id=resolved.org_id),
             db=db,
             http_client=http_client,
-            allowed_fallback_provider_ids={resolved.provider_id},
         )
     except InvalidVirtualKeyError as exc:
         raise HTTPException(
@@ -392,6 +395,143 @@ async def create_chat_completion(
     return JSONResponse(status_code=upstream.status_code, content=upstream.body)
 
 
+@router.post("/messages", response_model=None)
+async def create_anthropic_message(
+    request: Request,
+    db: DatabaseSession,
+    http_client: ProxyHttpClient,
+    authorization: VirtualKeyAuthorization = None,
+    anthropic_api_key: AnthropicApiKey = None,
+    provider_id: ProviderIdHeader = None,
+    anthropic_version: Annotated[str, Header(alias="anthropic-version")] = "2023-06-01",
+) -> Response:
+    started_at = perf_counter()
+    _enforce_content_length(request, settings.proxy_max_body_bytes)
+    raw_body = await request.body()
+    _enforce_body_size(raw_body, settings.proxy_max_body_bytes)
+    body = _decode_json_body(raw_body)
+    if body.get("stream") is True:
+        raise HTTPException(status_code=400, detail="native Anthropic streaming is not supported")
+
+    provider_payload = _to_anthropic_payload(body)
+    raw_key = _extract_anthropic_virtual_key(
+        authorization=authorization,
+        api_key=anthropic_api_key,
+    )
+    resolved = None
+    reservation_ids: list[UUID] = []
+    try:
+        resolved = await keys_facade.resolve_access(
+            payload=ResolveAccessRequest(raw_key=raw_key, requested_model=provider_payload.model),
+            db=db,
+        )
+        org_settings = await settings_facade.get_organization_settings(
+            scope=Scope(org_id=resolved.org_id),
+            db=db,
+        )
+        _enforce_body_size(raw_body, org_settings.default_max_body_bytes)
+        if provider_id is not None and provider_id != resolved.provider_id:
+            raise AccessDeniedError
+        resolved_provider = await providers_facade.get_provider(
+            provider_id=resolved.provider_id,
+            scope=Scope(org_id=resolved.org_id),
+            db=db,
+        )
+        if not resolved_provider.integration_capabilities.get("native_anthropic_messages"):
+            raise AccessDeniedError
+        _enforce_provider_body_size(raw_body, resolved_provider.max_body_bytes)
+        estimated_tokens = estimate_request_tokens(provider_payload.messages)
+        reservation_ids = await _enforce_limit_policies(
+            resolved=resolved,
+            estimated_input_tokens=estimated_tokens,
+            requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
+            db=db,
+        )
+        guardrail_payload = ProviderChatCompletionRequest(
+            model=provider_payload.model,
+            messages=provider_payload.messages,
+            extra_body=provider_payload.extra_body,
+        )
+        await guardrails_facade.evaluate_request(
+            context=_guardrail_context(resolved=resolved, provider_payload=guardrail_payload),
+            db=db,
+        )
+        upstream = await providers_facade.create_anthropic_message(
+            provider_id=resolved.provider_id,
+            pool_id=resolved.pool_id,
+            provider_credential_id=resolved.provider_key_id,
+            payload=ProviderAnthropicMessagesRequest(
+                model=resolved.provider_model,
+                messages=provider_payload.messages,
+                extra_body=provider_payload.extra_body,
+            ),
+            anthropic_version=anthropic_version,
+            scope=Scope(org_id=resolved.org_id),
+            db=db,
+            http_client=http_client,
+        )
+    except InvalidVirtualKeyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid virtual key",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+    except (AccessDeniedError, GuardrailDeniedError) as exc:
+        await _release_reservations(reservation_ids=reservation_ids, db=db)
+        if resolved is not None:
+            await _record_proxy_request(
+                resolved=resolved,
+                http_status=status.HTTP_403_FORBIDDEN,
+                latency_ms=_elapsed_ms(started_at),
+                usage=unknown_usage(),
+                error_code="access_denied",
+                db=db,
+            )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="model or provider is not allowed for this key",
+        ) from exc
+    except (ProviderInactiveError, ProviderAdapterNotFoundError, ProviderNotFoundError) as exc:
+        await _release_reservations(reservation_ids=reservation_ids, db=db)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="provider is not available",
+        ) from exc
+    except ProviderUpstreamError as exc:
+        if resolved is not None:
+            await _record_proxy_request(
+                resolved=resolved,
+                http_status=exc.status_code,
+                latency_ms=_elapsed_ms(started_at),
+                usage=unknown_usage(),
+                error_code="provider_upstream_error",
+                db=db,
+            )
+        await _release_reservations(reservation_ids=reservation_ids, db=db)
+        return JSONResponse(status_code=exc.status_code, content=exc.body)
+
+    usage = usage_from_provider_response(
+        request_messages=provider_payload.messages,
+        response_body=upstream.body,
+    )
+    actual_cost_cents = await _record_proxy_request(
+        resolved=resolved,
+        http_status=upstream.status_code,
+        latency_ms=_elapsed_ms(started_at),
+        usage=usage,
+        error_code=None,
+        provider_credential_id=upstream.provider_credential_id,
+        db=db,
+    )
+    await _commit_reservations(
+        reservation_ids=reservation_ids,
+        usage=usage,
+        cost_cents=actual_cost_cents,
+        db=db,
+    )
+    return JSONResponse(status_code=upstream.status_code, content=upstream.body)
+
+
 @router.post("/embeddings", response_model=None)
 async def create_embeddings() -> JSONResponse:
     return JSONResponse(
@@ -469,7 +609,6 @@ async def _execute_chat_proxy(
             scope=Scope(org_id=resolved.org_id),
             db=db,
             http_client=http_client,
-            allowed_fallback_provider_ids={resolved.provider_id},
         )
     except InvalidVirtualKeyError as exc:
         raise HTTPException(
@@ -692,6 +831,20 @@ def _to_provider_payload(body: dict[str, Any]) -> ProviderChatCompletionRequest:
         raise RequestValidationError(exc.errors()) from exc
 
 
+def _to_anthropic_payload(body: dict[str, Any]) -> ProviderAnthropicMessagesRequest:
+    extra_body = dict(body)
+    model = extra_body.pop("model", None)
+    messages = extra_body.pop("messages", None)
+    try:
+        return ProviderAnthropicMessagesRequest(
+            model=model,
+            messages=messages,
+            extra_body=extra_body,
+        )
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors()) from exc
+
+
 def _messages_text(messages: list[dict[str, Any]]) -> str:
     parts: list[str] = []
     for message in messages:
@@ -891,6 +1044,20 @@ def _extract_bearer_token(authorization: str | None) -> str:
     return token
 
 
+def _extract_anthropic_virtual_key(*, authorization: str | None, api_key: str | None) -> str:
+    bearer_key = _extract_bearer_token(authorization) if authorization is not None else None
+    header_key = api_key.strip() if api_key else None
+    if bearer_key and header_key and bearer_key != header_key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="conflicting virtual key headers",
+        )
+    key = header_key or bearer_key
+    if not key:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing virtual key")
+    return key
+
+
 async def _record_proxy_request(
     *,
     resolved,
@@ -956,7 +1123,7 @@ async def _enforce_limit_policies(
     )
     expires_at = datetime.now(UTC) + timedelta(minutes=5)
     for limit in resolved.limit_policies:
-        if limit.max_input_tokens is not None and estimated_input_tokens > limit.max_input_tokens:
+        if limit.limit_type == "input_tokens" and estimated_input_tokens > limit.limit_value:
             await _raise_proxy_denial(
                 resolved=resolved,
                 detail="limit policy input token limit exceeded",
@@ -964,9 +1131,9 @@ async def _enforce_limit_policies(
                 db=db,
             )
         if (
-            limit.max_output_tokens is not None
+            limit.limit_type == "output_tokens"
             and requested_output_tokens is not None
-            and requested_output_tokens > limit.max_output_tokens
+            and requested_output_tokens > limit.limit_value
         ):
             await _raise_proxy_denial(
                 resolved=resolved,
@@ -974,10 +1141,7 @@ async def _enforce_limit_policies(
                 reason="output_token_limit",
                 db=db,
             )
-        if (
-            limit.max_tokens_per_request is not None
-            and requested_total_tokens > limit.max_tokens_per_request
-        ):
+        if limit.limit_type == "tokens_per_request" and requested_total_tokens > limit.limit_value:
             await _raise_proxy_denial(
                 resolved=resolved,
                 detail="limit policy request token limit exceeded",
@@ -985,7 +1149,7 @@ async def _enforce_limit_policies(
                 db=db,
             )
 
-        since = _limit_policy_window_start(limit.window)
+        since = _limit_policy_window_start(limit.interval_unit, limit.interval_count)
         (
             request_count,
             prompt_tokens,
@@ -1006,7 +1170,7 @@ async def _enforce_limit_policies(
             now=datetime.now(UTC),
             db=db,
         )
-        if limit.max_requests is not None and request_count + 1 > limit.max_requests:
+        if limit.limit_type == "requests" and request_count + 1 > limit.limit_value:
             await _raise_proxy_denial(
                 resolved=resolved,
                 detail="limit policy request limit exceeded",
@@ -1014,8 +1178,8 @@ async def _enforce_limit_policies(
                 db=db,
             )
         if (
-            limit.max_requests is not None
-            and request_count + reservations.requests + 1 > limit.max_requests
+            limit.limit_type == "requests"
+            and request_count + reservations.requests + 1 > limit.limit_value
         ):
             await _raise_proxy_denial(
                 resolved=resolved,
@@ -1024,9 +1188,9 @@ async def _enforce_limit_policies(
                 db=db,
             )
         if (
-            limit.max_input_tokens is not None
+            limit.limit_type == "input_tokens"
             and prompt_tokens + reservations.prompt_tokens + estimated_input_tokens
-            > limit.max_input_tokens
+            > limit.limit_value
         ):
             await _raise_proxy_denial(
                 resolved=resolved,
@@ -1035,10 +1199,10 @@ async def _enforce_limit_policies(
                 db=db,
             )
         if (
-            limit.max_output_tokens is not None
+            limit.limit_type == "output_tokens"
             and requested_output_tokens is not None
             and completion_tokens + reservations.completion_tokens + requested_output_tokens
-            > limit.max_output_tokens
+            > limit.limit_value
         ):
             await _raise_proxy_denial(
                 resolved=resolved,
@@ -1047,14 +1211,29 @@ async def _enforce_limit_policies(
                 db=db,
             )
         if (
-            limit.budget_cents is not None
+            limit.limit_type == "budget_cents"
             and estimated_cost_cents is not None
-            and cost_cents + reservations.cost_cents + estimated_cost_cents > limit.budget_cents
+            and cost_cents + reservations.cost_cents + estimated_cost_cents > limit.limit_value
         ):
             await _raise_proxy_denial(
                 resolved=resolved,
                 detail="limit policy budget exceeded",
                 reason="budget_limit",
+                db=db,
+            )
+        if (
+            limit.limit_type == "total_tokens"
+            and prompt_tokens
+            + completion_tokens
+            + reservations.prompt_tokens
+            + reservations.completion_tokens
+            + requested_total_tokens
+            > limit.limit_value
+        ):
+            await _raise_proxy_denial(
+                resolved=resolved,
+                detail="limit policy total token limit exceeded",
+                reason="total_token_limit",
                 db=db,
             )
     reservation_ids: list[UUID] = []
@@ -1159,14 +1338,18 @@ def _requested_output_tokens(extra_body: dict[str, Any]) -> int | None:
     return None
 
 
-def _limit_policy_window_start(window: str) -> datetime | None:
+def _limit_policy_window_start(interval_unit: str, interval_count: int) -> datetime | None:
     now = datetime.now(UTC)
-    if window == "daily":
-        return now - timedelta(days=1)
-    if window == "weekly":
-        return now - timedelta(weeks=1)
-    if window == "monthly":
-        return now - timedelta(days=30)
+    if interval_unit == "minute":
+        return now - timedelta(minutes=interval_count)
+    if interval_unit == "hour":
+        return now - timedelta(hours=interval_count)
+    if interval_unit == "day":
+        return now - timedelta(days=interval_count)
+    if interval_unit == "week":
+        return now - timedelta(weeks=interval_count)
+    if interval_unit == "month":
+        return now - timedelta(days=30 * interval_count)
     return None
 
 

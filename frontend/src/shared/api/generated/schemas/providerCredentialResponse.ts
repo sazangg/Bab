@@ -12,9 +12,15 @@ export interface ProviderCredentialResponse {
   created_by: string | null;
   name: string;
   key_prefix: string;
+  secret_backend?: string;
+  secret_reference: string;
   health_status: string;
   last_validation_error: string | null;
+  last_validation_at: string | null;
   last_successful_request_at: string | null;
+  last_failure_at: string | null;
+  failure_reason: string | null;
+  failure_message: string | null;
   is_active: boolean;
   last_used_at: string | null;
   created_at: string;

@@ -177,23 +177,24 @@ export function KeyDetailPage() {
                 <Pencil />
                 Edit key
               </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="icon" aria-label="Key actions">
-                    <MoreHorizontal />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    onSelect={() => setRevokeOpen(true)}
-                    disabled={Boolean(key.revoked_at)}
-                    variant="destructive"
-                  >
-                    <Trash2 className="mr-2 size-4" />
-                    Revoke key
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              {!key.revoked_at ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="icon" aria-label="Key actions">
+                      <MoreHorizontal />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onSelect={() => setRevokeOpen(true)}
+                      variant="destructive"
+                    >
+                      <Trash2 className="mr-2 size-4" />
+                      Revoke key
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
             </div>
           ) : null
         }

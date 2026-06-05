@@ -5,6 +5,7 @@ from app.modules.providers.internal.model_metadata import (
     default_model_metadata_registry,
 )
 from app.modules.providers.internal.models import Provider
+from app.modules.providers.internal.service import _provider_integration_capabilities
 
 
 def test_openai_model_metadata_adapter_enriches_known_models() -> None:
@@ -90,3 +91,20 @@ def test_provider_specific_metadata_uses_provider_pricing() -> None:
     assert groq_metadata is not None
     assert groq_metadata.pricing.input_price_per_million_tokens == 59
     assert groq_metadata.pricing.output_price_per_million_tokens == 79
+
+
+def test_provider_integration_capabilities_are_honest() -> None:
+    openai = Provider(supported_integration="openai_compatible_default")
+    anthropic = Provider(supported_integration="anthropic_messages")
+
+    openai_capabilities = _provider_integration_capabilities(openai)
+    anthropic_capabilities = _provider_integration_capabilities(anthropic)
+
+    assert openai_capabilities["openai_compatible_chat"] is True
+    assert openai_capabilities["openai_compatible_responses"] is True
+    assert openai_capabilities["embeddings"] is False
+    assert anthropic_capabilities["openai_compatible_chat"] is False
+    assert anthropic_capabilities["native_anthropic_messages"] is True
+
+    renamed_custom = Provider(slug="anthropic", supported_integration="openai_compatible")
+    assert _provider_integration_capabilities(renamed_custom)["native_anthropic_messages"] is False

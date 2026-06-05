@@ -7,4 +7,5 @@
 
 export interface TestModelOfferingRequest {
   provider_credential_id?: string | null;
+  credential_pool_id?: string | null;
 }

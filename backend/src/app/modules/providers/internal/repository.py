@@ -27,7 +27,6 @@ async def create_provider(
     max_body_bytes: int | None,
     retry_policy: dict | None,
     model_sync_mode: str | None,
-    fallback_policy: dict,
     circuit_breaker_policy: dict,
     max_concurrent_requests: int | None,
     db: AsyncSession,
@@ -46,7 +45,6 @@ async def create_provider(
         max_body_bytes=max_body_bytes,
         retry_policy=retry_policy,
         model_sync_mode=model_sync_mode,
-        fallback_policy=fallback_policy,
         circuit_breaker_policy=circuit_breaker_policy,
         max_concurrent_requests=max_concurrent_requests,
     )
@@ -139,23 +137,36 @@ async def get_provider(*, provider_id: UUID, org_id: UUID, db: AsyncSession) -> 
     )
 
 
+async def get_provider_by_slug(*, slug: str, org_id: UUID, db: AsyncSession) -> Provider | None:
+    return await db.scalar(select(Provider).where(Provider.slug == slug, Provider.org_id == org_id))
+
+
 async def create_provider_credential(
     *,
+    provider_credential_id: UUID | None = None,
     org_id: UUID,
     provider_id: UUID,
     created_by: UUID,
     name: str,
     key_prefix: str,
-    api_key_encrypted: str,
+    api_key_encrypted: str | None,
+    secret_backend: str,
+    secret_reference: str,
     db: AsyncSession,
 ) -> ProviderCredential:
+    values = {}
+    if provider_credential_id is not None:
+        values["id"] = provider_credential_id
     provider_credential = ProviderCredential(
+        **values,
         org_id=org_id,
         provider_id=provider_id,
         created_by=created_by,
         name=name,
         key_prefix=key_prefix,
         api_key_encrypted=api_key_encrypted,
+        secret_backend=secret_backend,
+        secret_reference=secret_reference,
     )
     db.add(provider_credential)
     await db.flush()
@@ -348,6 +359,8 @@ async def mark_provider_credential_used(
     provider_credential.last_successful_request_at = datetime_now()
     provider_credential.health_status = "valid"
     provider_credential.last_validation_error = None
+    provider_credential.failure_reason = None
+    provider_credential.failure_message = None
     await db.flush()
 
 

@@ -1,10 +1,12 @@
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, StrictBool
+
+StatusCode = Annotated[int, Field(ge=100, le=599, strict=True)]
 
 
 class ProviderCredentialRoutingPolicy(StrEnum):
@@ -13,37 +15,74 @@ class ProviderCredentialRoutingPolicy(StrEnum):
     least_recently_used = "least_recently_used"
     health_based = "health_based"
     weighted = "weighted"
-    fallback = "fallback"
+
+
+class ProviderCapabilities(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    chat: StrictBool = True
+    embeddings: StrictBool = False
+    vision: StrictBool = False
+    tools: StrictBool = False
+    json_mode: StrictBool = False
+    streaming: StrictBool = True
+
+
+class ProviderRetryPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: StrictBool = True
+    max_attempts: int = Field(default=3, ge=1, le=10, strict=True)
+    backoff: str = Field(default="exponential", pattern="^(constant|linear|exponential)$")
+    initial_delay_ms: int = Field(default=500, ge=0, le=60000, strict=True)
+    max_delay_ms: int = Field(default=10000, ge=0, le=60000, strict=True)
+    retry_on_status: list[StatusCode] = Field(
+        default_factory=lambda: [408, 429, 500, 502, 503, 504],
+    )
+
+
+class ProviderCircuitBreakerPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: StrictBool = False
+    failure_threshold_pct: int = Field(default=50, ge=0, le=100, strict=True)
+    min_request_count: int = Field(default=20, ge=1, le=10000, strict=True)
+    window_seconds: int = Field(default=60, ge=1, le=3600, strict=True)
+    cooldown_seconds: int = Field(default=30, ge=1, le=3600, strict=True)
 
 
 class CreateProviderRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(min_length=1, max_length=255)
     slug: str | None = Field(default=None, min_length=1, max_length=100)
     base_url: HttpUrl
     description: str | None = Field(default=None, max_length=1000)
-    capabilities: dict[str, bool] = Field(default_factory=dict)
-    request_timeout_seconds: int | None = Field(default=None, ge=1, le=300)
-    max_body_bytes: int | None = Field(default=None, ge=1)
-    retry_policy: dict[str, Any] | None = None
+    capabilities: ProviderCapabilities = Field(default_factory=ProviderCapabilities)
+    request_timeout_seconds: int | None = Field(default=None, ge=1, le=300, strict=True)
+    max_body_bytes: int | None = Field(default=None, ge=1, strict=True)
+    retry_policy: ProviderRetryPolicy | None = None
     model_sync_mode: str | None = Field(default=None, pattern="^(merge|replace|disabled)$")
-    fallback_policy: dict[str, Any] = Field(default_factory=dict)
-    circuit_breaker_policy: dict[str, Any] = Field(default_factory=dict)
-    max_concurrent_requests: int | None = Field(default=None, ge=1)
+    circuit_breaker_policy: ProviderCircuitBreakerPolicy = Field(
+        default_factory=ProviderCircuitBreakerPolicy,
+    )
+    max_concurrent_requests: int | None = Field(default=None, ge=1, strict=True)
 
 
 class UpdateProviderRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str | None = Field(default=None, min_length=1, max_length=255)
     slug: str | None = Field(default=None, min_length=1, max_length=100)
     base_url: HttpUrl | None = None
     description: str | None = Field(default=None, max_length=1000)
-    capabilities: dict[str, bool] | None = None
-    request_timeout_seconds: int | None = Field(default=None, ge=1, le=300)
-    max_body_bytes: int | None = Field(default=None, ge=1)
-    retry_policy: dict[str, Any] | None = None
+    capabilities: ProviderCapabilities | None = None
+    request_timeout_seconds: int | None = Field(default=None, ge=1, le=300, strict=True)
+    max_body_bytes: int | None = Field(default=None, ge=1, strict=True)
+    retry_policy: ProviderRetryPolicy | None = None
     model_sync_mode: str | None = Field(default=None, pattern="^(merge|replace|disabled)$")
-    fallback_policy: dict[str, Any] | None = None
-    circuit_breaker_policy: dict[str, Any] | None = None
-    max_concurrent_requests: int | None = Field(default=None, ge=1)
+    circuit_breaker_policy: ProviderCircuitBreakerPolicy | None = None
+    max_concurrent_requests: int | None = Field(default=None, ge=1, strict=True)
     is_favorite: bool | None = None
     is_active: bool | None = None
 
@@ -81,9 +120,15 @@ class ProviderCredentialResponse(BaseModel):
     created_by: UUID | None
     name: str
     key_prefix: str
+    secret_backend: str = "local"
+    secret_reference: str
     health_status: str
     last_validation_error: str | None
+    last_validation_at: datetime | None
     last_successful_request_at: datetime | None
+    last_failure_at: datetime | None
+    failure_reason: str | None
+    failure_message: str | None
     is_active: bool
     last_used_at: datetime | None
     created_at: datetime
@@ -142,6 +187,8 @@ class ProviderCredentialSummary(BaseModel):
 
 
 class ProviderReadiness(BaseModel):
+    status: str = "needs_credential"
+    message: str = "Add an active credential."
     has_active_provider: bool = False
     has_active_credential: bool = False
     has_active_pool: bool = False
@@ -157,20 +204,22 @@ class ProviderOperationalState(BaseModel):
     circuit_open_until: datetime | None = None
     recent_circuit_failures: int = 0
     recent_circuit_successes: int = 0
-    fallback_enabled: bool = False
-    fallback_provider_count: int = 0
-    fallback_trigger_statuses: list[int] = Field(default_factory=list)
 
 
 class TestProviderCredentialResponse(BaseModel):
     id: UUID
     health_status: str
     last_validation_error: str | None = None
+    last_validation_at: datetime | None = None
     last_successful_request_at: datetime | None = None
+    last_failure_at: datetime | None = None
+    failure_reason: str | None = None
+    failure_message: str | None = None
 
 
 class TestModelOfferingRequest(BaseModel):
     provider_credential_id: UUID | None = None
+    credential_pool_id: UUID | None = None
 
 
 class TestModelOfferingResponse(BaseModel):
@@ -221,6 +270,15 @@ class SyncModelOfferingsRequest(BaseModel):
     metadata_mode: ModelMetadataSyncMode = ModelMetadataSyncMode.fill_missing
 
 
+class ModelSyncSummary(BaseModel):
+    added: int = 0
+    updated: int = 0
+    reactivated: int = 0
+    disabled: int = 0
+    unchanged: int = 0
+    failed: int = 0
+
+
 class ModelOfferingResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -262,6 +320,14 @@ class ModelOfferingPageResponse(BaseModel):
     offset: int
 
 
+class SyncModelOfferingsResponse(BaseModel):
+    synced_at: datetime
+    status: str
+    error_message: str | None = None
+    summary: ModelSyncSummary = Field(default_factory=ModelSyncSummary)
+    models: list[ModelOfferingResponse] = Field(default_factory=list)
+
+
 class ProviderResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -274,13 +340,13 @@ class ProviderResponse(BaseModel):
     display_name: str | None
     description: str | None
     capabilities: dict[str, Any]
+    integration_capabilities: dict[str, bool] = Field(default_factory=dict)
     supported_integration: str
     catalog_type: str = "custom"
     request_timeout_seconds: int | None
     max_body_bytes: int | None
     retry_policy: dict[str, Any] | None
     model_sync_mode: str | None
-    fallback_policy: dict[str, Any]
     circuit_breaker_policy: dict[str, Any]
     max_concurrent_requests: int | None
     credential_summary: ProviderCredentialSummary = Field(default_factory=ProviderCredentialSummary)
@@ -292,6 +358,32 @@ class ProviderResponse(BaseModel):
     updated_at: datetime
 
 
+class ProviderImpactPolicy(BaseModel):
+    id: UUID
+    name: str
+    route_id: UUID
+
+
+class ProviderImpactResponse(BaseModel):
+    access_policies: list[ProviderImpactPolicy] = Field(default_factory=list)
+    active_limit_rule_count: int = 0
+    active_pool_count: int = 0
+    active_model_count: int = 0
+    recent_usage_window_days: int = 30
+    recent_request_count: int = 0
+    recent_cost_cents: int = 0
+
+
+class ProviderResourceImpactResponse(BaseModel):
+    active_pool_membership_count: int = 0
+    access_policies: list[ProviderImpactPolicy] = Field(default_factory=list)
+    active_limit_rule_count: int = 0
+    recent_usage_window_days: int = 30
+    recent_request_count: int = 0
+    recent_cost_cents: int = 0
+    leaves_provider_unroutable: bool = False
+
+
 class ProviderChatCompletionRequest(BaseModel):
     model: str = Field(min_length=1, max_length=255)
     messages: list[dict[str, Any]] = Field(min_length=1)
@@ -299,6 +391,18 @@ class ProviderChatCompletionRequest(BaseModel):
 
 
 class ProviderChatCompletionResponse(BaseModel):
+    status_code: int
+    body: dict[str, Any]
+    provider_credential_id: UUID | None = None
+
+
+class ProviderAnthropicMessagesRequest(BaseModel):
+    model: str = Field(min_length=1, max_length=255)
+    messages: list[dict[str, Any]] = Field(min_length=1)
+    extra_body: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProviderAnthropicMessagesResponse(BaseModel):
     status_code: int
     body: dict[str, Any]
     provider_credential_id: UUID | None = None

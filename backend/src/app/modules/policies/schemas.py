@@ -94,27 +94,17 @@ class CreateLimitPolicyRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=1000)
     rules: list["LimitPolicyRuleInput"] = Field(default_factory=list)
-    budget_cents: int | None = Field(default=None, ge=0)
-    max_requests: int | None = Field(default=None, ge=1)
-    max_input_tokens: int | None = Field(default=None, ge=1)
-    max_output_tokens: int | None = Field(default=None, ge=1)
-    max_tokens_per_request: int | None = Field(default=None, ge=1)
-    window: str = Field(default="monthly", pattern="^(daily|weekly|monthly|lifetime)$")
-    provider_id: UUID | None = None
-    credential_pool_id: UUID | None = None
-    model_offering_id: UUID | None = None
-    access_policy_id: UUID | None = None
     is_active: bool = True
 
 
 class LimitPolicyRuleInput(BaseModel):
     name: str = Field(min_length=1, max_length=255)
-    budget_cents: int | None = Field(default=None, ge=0)
-    max_requests: int | None = Field(default=None, ge=1)
-    max_input_tokens: int | None = Field(default=None, ge=1)
-    max_output_tokens: int | None = Field(default=None, ge=1)
-    max_tokens_per_request: int | None = Field(default=None, ge=1)
-    window: str = Field(default="monthly", pattern="^(daily|weekly|monthly|lifetime)$")
+    limit_type: str = Field(
+        pattern="^(budget_cents|requests|input_tokens|output_tokens|total_tokens|tokens_per_request)$"
+    )
+    limit_value: int = Field(ge=1)
+    interval_unit: str = Field(default="month", pattern="^(minute|hour|day|week|month|lifetime)$")
+    interval_count: int = Field(default=1, ge=1)
     provider_id: UUID | None = None
     credential_pool_id: UUID | None = None
     model_offering_id: UUID | None = None
@@ -125,16 +115,6 @@ class LimitPolicyRuleInput(BaseModel):
 class UpdateLimitPolicyRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=1000)
-    budget_cents: int | None = Field(default=None, ge=0)
-    max_requests: int | None = Field(default=None, ge=1)
-    max_input_tokens: int | None = Field(default=None, ge=1)
-    max_output_tokens: int | None = Field(default=None, ge=1)
-    max_tokens_per_request: int | None = Field(default=None, ge=1)
-    window: str | None = Field(default=None, pattern="^(daily|weekly|monthly|lifetime)$")
-    provider_id: UUID | None = None
-    credential_pool_id: UUID | None = None
-    model_offering_id: UUID | None = None
-    access_policy_id: UUID | None = None
     is_active: bool | None = None
 
 
@@ -144,12 +124,15 @@ class CreateLimitPolicyRuleRequest(LimitPolicyRuleInput):
 
 class UpdateLimitPolicyRuleRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
-    budget_cents: int | None = Field(default=None, ge=0)
-    max_requests: int | None = Field(default=None, ge=1)
-    max_input_tokens: int | None = Field(default=None, ge=1)
-    max_output_tokens: int | None = Field(default=None, ge=1)
-    max_tokens_per_request: int | None = Field(default=None, ge=1)
-    window: str | None = Field(default=None, pattern="^(daily|weekly|monthly|lifetime)$")
+    limit_type: str | None = Field(
+        default=None,
+        pattern="^(budget_cents|requests|input_tokens|output_tokens|total_tokens|tokens_per_request)$",
+    )
+    limit_value: int | None = Field(default=None, ge=1)
+    interval_unit: str | None = Field(
+        default=None, pattern="^(minute|hour|day|week|month|lifetime)$"
+    )
+    interval_count: int | None = Field(default=None, ge=1)
     provider_id: UUID | None = None
     credential_pool_id: UUID | None = None
     model_offering_id: UUID | None = None
@@ -164,12 +147,10 @@ class LimitPolicyRuleResponse(BaseModel):
     org_id: UUID
     limit_policy_id: UUID
     name: str
-    budget_cents: int | None
-    max_requests: int | None
-    max_input_tokens: int | None
-    max_output_tokens: int | None
-    max_tokens_per_request: int | None
-    window: str
+    limit_type: str
+    limit_value: int
+    interval_unit: str
+    interval_count: int
     provider_id: UUID | None
     credential_pool_id: UUID | None
     model_offering_id: UUID | None
@@ -186,16 +167,6 @@ class LimitPolicyResponse(BaseModel):
     org_id: UUID
     name: str
     description: str | None
-    budget_cents: int | None
-    max_requests: int | None
-    max_input_tokens: int | None
-    max_output_tokens: int | None
-    max_tokens_per_request: int | None
-    window: str
-    provider_id: UUID | None
-    credential_pool_id: UUID | None
-    model_offering_id: UUID | None
-    access_policy_id: UUID | None
     rules: list[LimitPolicyRuleResponse] = Field(default_factory=list)
     is_active: bool
     created_at: datetime

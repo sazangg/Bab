@@ -5,4 +5,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type UpdateProviderRequestFallbackPolicy = { [key: string]: unknown } | null;
+export interface ProviderImpactPolicy {
+  id: string;
+  name: string;
+  route_id: string;
+}

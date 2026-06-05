@@ -516,7 +516,7 @@ async def _limit_policy_budget_burn(
             .join(LimitPolicy, LimitPolicy.id == LimitPolicyRule.limit_policy_id)
             .where(
                 LimitPolicyRule.org_id == org_id,
-                LimitPolicyRule.budget_cents.is_not(None),
+                LimitPolicyRule.limit_type == "budget_cents",
                 LimitPolicyRule.is_active.is_(True),
                 LimitPolicy.is_active.is_(True),
             )
@@ -555,14 +555,23 @@ async def _limit_policy_budget_burn(
                 limit_policy_rule_id=rule.id,
                 limit_policy_name=policy.name,
                 rule_name=rule.name,
-                window=rule.window,
-                budget_cents=int(rule.budget_cents or 0),
+                interval=format_limit_rule_interval(
+                    interval_unit=rule.interval_unit,
+                    interval_count=rule.interval_count,
+                ),
+                budget_cents=int(rule.limit_value),
                 spent_cents=int(spent),
-                remaining_cents=max(0, int(rule.budget_cents or 0) - int(spent)),
-                burn_rate_pct=round((int(spent) / int(rule.budget_cents or 1)) * 100, 1),
+                remaining_cents=max(0, int(rule.limit_value) - int(spent)),
+                burn_rate_pct=round((int(spent) / int(rule.limit_value or 1)) * 100, 1),
             )
         )
     return sorted(rows, key=lambda row: row.spent_cents, reverse=True)[:20]
+
+
+def format_limit_rule_interval(*, interval_unit: str, interval_count: int) -> str:
+    if interval_unit == "lifetime":
+        return "lifetime"
+    return f"{interval_count} {interval_unit}{'' if interval_count == 1 else 's'}"
 
 
 async def _totals(*filters, db: AsyncSession) -> UsageSummaryTotals:

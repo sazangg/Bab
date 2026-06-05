@@ -145,7 +145,7 @@ async def sync_default_workspace(db) -> None:
                         adapter_type="openai_compat",
                         description=entry["description"],
                         capabilities=entry["capabilities"],
-                        supported_integration="openai_compatible_default",
+                        supported_integration=entry["integration"],
                     )
                 )
             else:
@@ -155,7 +155,7 @@ async def sync_default_workspace(db) -> None:
                 provider.adapter_type = "openai_compat"
                 provider.description = entry["description"]
                 provider.capabilities = entry["capabilities"]
-                provider.supported_integration = "openai_compatible_default"
+                provider.supported_integration = entry["integration"]
 
 
 def _slugify(value: str) -> str:
@@ -164,97 +164,29 @@ def _slugify(value: str) -> str:
 
 
 def _provider_catalog_entries() -> list[dict]:
-    default_capabilities = {
-        "chat": True,
-        "embeddings": False,
-        "vision": False,
-        "tools": False,
-        "json_mode": False,
-        "streaming": True,
-    }
     return [
         {
             "name": "OpenAI",
             "slug": "openai",
             "base_url": "https://api.openai.com/v1",
             "description": "Official OpenAI API for GPT models.",
-            "capabilities": default_capabilities,
+            "capabilities": {"chat": True, "streaming": True},
+            "integration": "openai_compatible_default",
         },
         {
             "name": "OpenRouter",
             "slug": "openrouter",
             "base_url": "https://openrouter.ai/api/v1",
             "description": "Multi-provider OpenAI-compatible model router.",
-            "capabilities": default_capabilities,
+            "capabilities": {"chat": True, "streaming": True},
+            "integration": "openai_compatible_default",
         },
         {
-            "name": "Google AI",
-            "slug": "google-ai",
-            "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
-            "description": "Gemini models via Google AI Studio.",
-            "capabilities": default_capabilities,
-        },
-        {
-            "name": "Mistral AI",
-            "slug": "mistral",
-            "base_url": "https://api.mistral.ai/v1",
-            "description": "Mistral hosted models through their v1 API.",
-            "capabilities": default_capabilities,
-        },
-        {
-            "name": "Groq",
-            "slug": "groq",
-            "base_url": "https://api.groq.com/openai/v1",
-            "description": "Groq OpenAI-compatible inference endpoint.",
-            "capabilities": default_capabilities,
-        },
-        {
-            "name": "DeepSeek",
-            "slug": "deepseek",
-            "base_url": "https://api.deepseek.com/v1",
-            "description": "DeepSeek chat and reasoning models.",
-            "capabilities": default_capabilities,
-        },
-        {
-            "name": "Perplexity",
-            "slug": "perplexity",
-            "base_url": "https://api.perplexity.ai",
-            "description": "Perplexity sonar models with built-in search.",
-            "capabilities": default_capabilities,
-        },
-        {
-            "name": "Together AI",
-            "slug": "together",
-            "base_url": "https://api.together.xyz/v1",
-            "description": "Open-source models hosted by Together.",
-            "capabilities": default_capabilities,
-        },
-        {
-            "name": "Fireworks",
-            "slug": "fireworks",
-            "base_url": "https://api.fireworks.ai/inference/v1",
-            "description": "Fast open-source inference hosted by Fireworks.",
-            "capabilities": default_capabilities,
-        },
-        {
-            "name": "Cerebras",
-            "slug": "cerebras",
-            "base_url": "https://api.cerebras.ai/v1",
-            "description": "Cerebras wafer-scale inference.",
-            "capabilities": default_capabilities,
-        },
-        {
-            "name": "Hugging Face",
-            "slug": "huggingface",
-            "base_url": "https://api-inference.huggingface.co/v1",
-            "description": "Inference Endpoints on the Hugging Face Hub.",
-            "capabilities": default_capabilities,
-        },
-        {
-            "name": "Ollama",
-            "slug": "ollama",
-            "base_url": "http://localhost:11434/v1",
-            "description": "Local Ollama runtime exposed on this machine.",
-            "capabilities": default_capabilities,
+            "name": "Anthropic",
+            "slug": "anthropic",
+            "base_url": "https://api.anthropic.com/v1",
+            "description": "Anthropic API with native Messages passthrough.",
+            "capabilities": {},
+            "integration": "anthropic_messages",
         },
     ]

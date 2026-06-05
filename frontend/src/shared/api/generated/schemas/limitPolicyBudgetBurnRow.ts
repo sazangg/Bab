@@ -10,7 +10,7 @@ export interface LimitPolicyBudgetBurnRow {
   limit_policy_rule_id: string;
   limit_policy_name: string;
   rule_name: string;
-  window: string;
+  interval: string;
   budget_cents: number;
   spent_cents: number;
   remaining_cents: number;

@@ -55,7 +55,9 @@ async def test_manual_model_metadata_survives_catalog_sync(db_session: AsyncSess
             http_client=http_client,
             metadata_mode=ModelMetadataSyncMode.fill_missing,
         )
-        model = synced[0]
+        assert synced.status == "success"
+        assert synced.summary.added == 1
+        model = synced.models[0]
         assert model.metadata_source == "catalog"
         assert model.metadata_last_synced_at is not None
 
@@ -86,7 +88,8 @@ async def test_manual_model_metadata_survives_catalog_sync(db_session: AsyncSess
             metadata_mode=ModelMetadataSyncMode.fill_missing,
         )
 
-    model_again = synced_again[0]
+    assert synced_again.summary.updated == 1
+    model_again = synced_again.models[0]
     assert model_again.context_window == 12345
     assert model_again.input_price_per_million_tokens == 123
     assert model_again.output_price_per_million_tokens == 456
@@ -140,7 +143,7 @@ async def test_overwrite_catalog_sync_replaces_manual_model_metadata(
             http_client=http_client,
             metadata_mode=ModelMetadataSyncMode.fill_missing,
         )
-        model = synced[0]
+        model = synced.models[0]
         await providers_facade.update_model_offering(
             provider_id=provider.id,
             model_offering_id=model.id,
@@ -164,7 +167,7 @@ async def test_overwrite_catalog_sync_replaces_manual_model_metadata(
             metadata_mode=ModelMetadataSyncMode.overwrite_catalog,
         )
 
-    model_again = overwritten[0]
+    model_again = overwritten.models[0]
     assert model_again.context_window == 1_000_000
     assert model_again.input_modalities == ["text", "vision"]
     assert model_again.output_modalities == ["text"]
@@ -215,12 +218,78 @@ async def test_fill_missing_sync_keeps_unknown_provider_only_models_safe(
             metadata_mode=ModelMetadataSyncMode.overwrite_catalog,
         )
 
-    model = synced[0]
+    model = synced.models[0]
     assert model.provider_model_name == "custom-chat-model"
     assert model.metadata_source == "provider"
     assert model.input_modalities == ["text"]
     assert model.output_modalities == ["text"]
     assert model.capabilities == {"chat": True}
+
+
+async def test_replace_sync_reports_disabled_and_reactivated_models(
+    db_session: AsyncSession,
+) -> None:
+    org = Organization(name="Sync Summary Org", slug="sync-summary")
+    db_session.add(org)
+    await db_session.commit()
+    actor = AuthenticatedUser(
+        id=uuid4(),
+        org_id=org.id,
+        email="admin@example.com",
+        role="super_admin",
+    )
+    scope = Scope(org_id=org.id)
+    provider = await providers_facade.create_provider(
+        payload=CreateProviderRequest(name="OpenAI", base_url="https://api.openai.com/v1"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    await providers_facade.create_provider_credential(
+        provider_id=provider.id,
+        payload=CreateProviderCredentialRequest(name="Production", api_key="provider-secret"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    model_ids = [["model-a", "model-b"], ["model-a"], ["model-a", "model-b"]]
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [{"id": item} for item in model_ids.pop(0)]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        first = await providers_facade.sync_model_offerings(
+            provider_id=provider.id,
+            actor=actor,
+            scope=scope,
+            db=db_session,
+            http_client=http_client,
+            metadata_mode=ModelMetadataSyncMode.fill_missing,
+            sync_mode="replace",
+        )
+        second = await providers_facade.sync_model_offerings(
+            provider_id=provider.id,
+            actor=actor,
+            scope=scope,
+            db=db_session,
+            http_client=http_client,
+            metadata_mode=ModelMetadataSyncMode.fill_missing,
+            sync_mode="replace",
+        )
+        third = await providers_facade.sync_model_offerings(
+            provider_id=provider.id,
+            actor=actor,
+            scope=scope,
+            db=db_session,
+            http_client=http_client,
+            metadata_mode=ModelMetadataSyncMode.fill_missing,
+            sync_mode="replace",
+        )
+
+    assert first.summary.added == 2
+    assert second.summary.disabled == 1
+    assert second.summary.unchanged == 1
+    assert third.summary.reactivated == 1
 
 
 async def test_catalog_pricing_tracks_effective_price_and_manual_overrides(
@@ -266,7 +335,7 @@ async def test_catalog_pricing_tracks_effective_price_and_manual_overrides(
             metadata_mode=ModelMetadataSyncMode.fill_missing,
         )
 
-    model = synced[0]
+    model = synced.models[0]
     assert model.catalog_input_price_per_million_tokens == 15
     assert model.catalog_output_price_per_million_tokens == 60
     assert model.effective_input_price_per_million_tokens == 15

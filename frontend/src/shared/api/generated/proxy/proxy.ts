@@ -416,6 +416,94 @@ export const useCreateChatCompletionV1ChatCompletionsPost = <TError = HTTPValida
       > => {
       return useMutation(getCreateChatCompletionV1ChatCompletionsPostMutationOptions(options), queryClient);
     }
+    export type createAnthropicMessageV1MessagesPostResponse200 = {
+  data: unknown
+  status: 200
+}
+
+export type createAnthropicMessageV1MessagesPostResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type createAnthropicMessageV1MessagesPostResponseSuccess = (createAnthropicMessageV1MessagesPostResponse200) & {
+  headers: Headers;
+};
+export type createAnthropicMessageV1MessagesPostResponseError = (createAnthropicMessageV1MessagesPostResponse422) & {
+  headers: Headers;
+};
+
+export type createAnthropicMessageV1MessagesPostResponse = (createAnthropicMessageV1MessagesPostResponseSuccess | createAnthropicMessageV1MessagesPostResponseError)
+
+export const getCreateAnthropicMessageV1MessagesPostUrl = () => {
+
+
+
+
+  return `/v1/messages`
+}
+
+/**
+ * @summary Create Anthropic Message
+ */
+export const createAnthropicMessageV1MessagesPost = async ( options?: RequestInit): Promise<createAnthropicMessageV1MessagesPostResponse> => {
+
+  return apiMutator<createAnthropicMessageV1MessagesPostResponse>(getCreateAnthropicMessageV1MessagesPostUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getCreateAnthropicMessageV1MessagesPostMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAnthropicMessageV1MessagesPost>>, TError,void, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof createAnthropicMessageV1MessagesPost>>, TError,void, TContext> => {
+
+const mutationKey = ['createAnthropicMessageV1MessagesPost'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createAnthropicMessageV1MessagesPost>>, void> = () => {
+
+
+          return  createAnthropicMessageV1MessagesPost()
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateAnthropicMessageV1MessagesPostMutationResult = NonNullable<Awaited<ReturnType<typeof createAnthropicMessageV1MessagesPost>>>
+
+    export type CreateAnthropicMessageV1MessagesPostMutationError = HTTPValidationError
+
+    /**
+ * @summary Create Anthropic Message
+ */
+export const useCreateAnthropicMessageV1MessagesPost = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAnthropicMessageV1MessagesPost>>, TError,void, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createAnthropicMessageV1MessagesPost>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getCreateAnthropicMessageV1MessagesPostMutationOptions(options), queryClient);
+    }
     export type createEmbeddingsV1EmbeddingsPostResponse200 = {
   data: unknown
   status: 200

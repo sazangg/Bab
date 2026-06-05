@@ -641,7 +641,7 @@ function BudgetBurnCard({ rows }: { rows: LimitPolicyBudgetBurnRow[] }) {
                     <div className="min-w-0">
                       <div className="truncate text-sm font-medium">{row.limit_policy_name}</div>
                       <div className="mt-1 text-xs text-muted-foreground">
-                        {row.window}
+                        {row.interval}
                       </div>
                     </div>
                     <Badge variant={row.burn_rate_pct >= 90 ? "destructive" : "outline"}>

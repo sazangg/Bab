@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ChevronDown, ChevronUp, Plus, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 
@@ -26,20 +26,16 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { useListProvidersApiV1ProvidersGet } from "@/shared/api/generated/providers/providers";
 import { useGetSettingsApiV1SettingsGet } from "@/shared/api/generated/settings/settings";
 import type { ProviderResponse, UpdateProviderRequest } from "@/shared/api/generated/schemas";
-import { StatusBadge } from "@/shared/components/StatusBadge";
 
 import {
   buildProviderUpdatePayload,
   mergeCircuitBreakerPolicy,
-  mergeFallbackPolicy,
   mergeRetryPolicy,
 } from "../lib/policy";
 import {
   defaultCircuitBreakerPolicy,
-  defaultFallbackPolicy,
   defaultRetryPolicy,
   editProviderSchema,
   STATUS_CODE_MAX,
@@ -75,7 +71,6 @@ export function EditProviderSheet({
       model_sync_mode: "inherit",
       retry_policy_mode: "inherit",
       retry_policy: defaultRetryPolicy,
-      fallback_policy: defaultFallbackPolicy,
       circuit_breaker_policy: defaultCircuitBreakerPolicy,
     },
   });
@@ -83,20 +78,14 @@ export function EditProviderSheet({
   const retryPolicyMode = useWatch({ control: form.control, name: "retry_policy_mode" });
   const requestTimeoutMode = useWatch({ control: form.control, name: "request_timeout_mode" });
   const maxBodyMode = useWatch({ control: form.control, name: "max_body_mode" });
-  const fallbackPolicy = useWatch({ control: form.control, name: "fallback_policy" });
   const modelSyncMode = useWatch({ control: form.control, name: "model_sync_mode" });
   const circuitBreakerPolicy = useWatch({
     control: form.control,
     name: "circuit_breaker_policy",
   });
 
-  const providersQuery = useListProvidersApiV1ProvidersGet();
   const settingsQuery = useGetSettingsApiV1SettingsGet();
   const settings = settingsQuery.data?.status === 200 ? settingsQuery.data.data : null;
-  const otherProviders =
-    providersQuery.data?.status === 200
-      ? providersQuery.data.data.filter((item) => item.id !== provider?.id && item.is_active)
-      : [];
 
   useEffect(() => {
     if (!provider) return;
@@ -116,7 +105,6 @@ export function EditProviderSheet({
       model_sync_mode: parseModelSyncMode(provider.model_sync_mode),
       retry_policy_mode: provider.retry_policy == null ? "inherit" : "override",
       retry_policy: mergeRetryPolicy(provider.retry_policy),
-      fallback_policy: mergeFallbackPolicy(provider.fallback_policy),
       circuit_breaker_policy: mergeCircuitBreakerPolicy(provider.circuit_breaker_policy),
     });
   }, [provider, form]);
@@ -318,35 +306,6 @@ export function EditProviderSheet({
                 />
               </FormField>
             </PolicySection>
-
-            <Separator />
-
-            <PolicySection
-              title="Fallback policy"
-              description="Route to other configured providers in order when this provider keeps failing."
-              enabled={fallbackPolicy?.enabled ?? false}
-              onEnabledChange={(checked) => form.setValue("fallback_policy.enabled", checked)}
-            >
-              <FormField
-                label="Trigger on status codes"
-                hint="Fallback fires when any of these statuses come back."
-              >
-                <StatusCodeChipInput
-                  values={fallbackPolicy?.trigger_on_status ?? []}
-                  onChange={(next) => form.setValue("fallback_policy.trigger_on_status", next)}
-                  defaults={defaultFallbackPolicy.trigger_on_status}
-                />
-              </FormField>
-              <FormField label="Fallback providers" hint="Tried in order. Reorder with the arrows.">
-                <FallbackProviderPicker
-                  selected={fallbackPolicy?.fallback_provider_ids ?? []}
-                  available={otherProviders}
-                  onChange={(next) => form.setValue("fallback_policy.fallback_provider_ids", next)}
-                />
-              </FormField>
-            </PolicySection>
-
-            <Separator />
 
             <PolicySection
               title="Circuit breaker"
@@ -648,103 +607,6 @@ function StatusCodeChipInput({
           </Button>
         ) : null}
       </div>
-    </div>
-  );
-}
-
-function FallbackProviderPicker({
-  selected,
-  available,
-  onChange,
-}: {
-  selected: string[];
-  available: ProviderResponse[];
-  onChange: (next: string[]) => void;
-}) {
-  if (available.length === 0) {
-    return (
-      <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
-        Add another active provider to enable fallback routing.
-      </p>
-    );
-  }
-  const move = (index: number, direction: -1 | 1) => {
-    const next = [...selected];
-    const target = index + direction;
-    if (target < 0 || target >= next.length) return;
-    [next[index], next[target]] = [next[target], next[index]];
-    onChange(next);
-  };
-  const remaining = available.filter((provider) => !selected.includes(provider.id));
-  return (
-    <div className="space-y-2">
-      {selected.length > 0 ? (
-        <ol className="space-y-1.5 rounded-md border p-2">
-          {selected.map((id, index) => {
-            const provider = available.find((item) => item.id === id);
-            const label = provider?.name ?? "Unknown provider";
-            return (
-              <li
-                key={id}
-                className="flex items-center justify-between rounded-md bg-muted/40 px-2 py-1.5"
-              >
-                <div className="flex min-w-0 items-center gap-2">
-                  <span className="w-5 font-mono text-xs text-muted-foreground">{index + 1}</span>
-                  <span className="truncate text-sm">{label}</span>
-                  {!provider ? <StatusBadge variant="error">Missing</StatusBadge> : null}
-                </div>
-                <div className="flex items-center gap-0.5">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Move up"
-                    disabled={index === 0}
-                    onClick={() => move(index, -1)}
-                  >
-                    <ChevronUp />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Move down"
-                    disabled={index === selected.length - 1}
-                    onClick={() => move(index, 1)}
-                  >
-                    <ChevronDown />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Remove"
-                    onClick={() => onChange(selected.filter((value) => value !== id))}
-                  >
-                    <X />
-                  </Button>
-                </div>
-              </li>
-            );
-          })}
-        </ol>
-      ) : null}
-      {remaining.length > 0 ? (
-        <div className="flex flex-wrap gap-1.5">
-          {remaining.map((provider) => (
-            <Button
-              type="button"
-              key={provider.id}
-              variant="outline"
-              size="sm"
-              onClick={() => onChange([...selected, provider.id])}
-            >
-              <Plus />
-              {provider.name}
-            </Button>
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 }

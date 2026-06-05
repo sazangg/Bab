@@ -21,6 +21,7 @@ from app.modules.policies.schemas import (
     CreateAccessPolicyRequest,
     CreateLimitPolicyRequest,
     CreatePolicyAssignmentRequest,
+    LimitPolicyRuleInput,
 )
 from app.modules.providers import facade as providers_facade
 from app.modules.providers.schemas import (
@@ -119,8 +120,28 @@ async def _assign_access_and_limit(
     limit = await policies_facade.create_limit_policy(
         payload=CreateLimitPolicyRequest(
             name=f"{scope_type} limits",
-            max_requests=max_requests,
-            max_tokens_per_request=max_tokens_per_request,
+            rules=[
+                rule
+                for rule in (
+                    LimitPolicyRuleInput(
+                        name="Request cap",
+                        limit_type="requests",
+                        limit_value=max_requests,
+                        interval_unit="day",
+                    )
+                    if max_requests is not None
+                    else None,
+                    LimitPolicyRuleInput(
+                        name="Tokens per request",
+                        limit_type="tokens_per_request",
+                        limit_value=max_tokens_per_request,
+                        interval_unit="lifetime",
+                    )
+                    if max_tokens_per_request is not None
+                    else None,
+                )
+                if rule is not None
+            ],
         ),
         scope=scope,
         db=db_session,
@@ -310,7 +331,17 @@ async def test_reused_limit_policy_counts_per_assignment(db_session: AsyncSessio
         db=db_session,
     )
     limit = await policies_facade.create_limit_policy(
-        payload=CreateLimitPolicyRequest(name="Reusable one request", max_requests=1),
+        payload=CreateLimitPolicyRequest(
+            name="Reusable one request",
+            rules=[
+                LimitPolicyRuleInput(
+                    name="One request",
+                    limit_type="requests",
+                    limit_value=1,
+                    interval_unit="day",
+                )
+            ],
+        ),
         scope=scope,
         db=db_session,
     )

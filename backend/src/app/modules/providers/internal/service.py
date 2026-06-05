@@ -4,27 +4,34 @@ import secrets
 from collections import defaultdict, deque
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from typing import Any
+from uuid import UUID, uuid4
 
 import httpx
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope, transaction
-from app.core.security import decrypt, encrypt
 from app.modules.activity import facade as activity_facade
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.providers.errors import (
+    ProviderAdapterNotFoundError,
     ProviderCredentialRequiredError,
     ProviderInactiveError,
     ProviderNotFoundError,
+    ProviderSlugConflictError,
     ProviderUpstreamError,
 )
+from app.modules.providers.internal import impact as impact_repository
 from app.modules.providers.internal import repository
 from app.modules.providers.internal.adapters import (
+    ANTHROPIC_VERSION,
     OPENAI_COMPAT_ADAPTER,
+    OPENAI_COMPAT_INTEGRATIONS,
     AdapterProvider,
+    anthropic_messages_adapter,
     default_adapter_registry,
+    default_integration_adapter_registry,
 )
 from app.modules.providers.internal.model_metadata import (
     ModelMetadata,
@@ -37,6 +44,12 @@ from app.modules.providers.internal.models import (
     Provider,
     ProviderCredential,
 )
+from app.modules.providers.internal.secret_backends import (
+    LOCAL_SECRET_BACKEND,
+    ProviderSecretBackendRegistry,
+    get_default_secret_backend_registry,
+    resolve_legacy_provider_secret,
+)
 from app.modules.providers.schemas import (
     AddCredentialPoolCredentialRequest,
     CreateCredentialPoolRequest,
@@ -48,15 +61,21 @@ from app.modules.providers.schemas import (
     ModelMetadataSyncMode,
     ModelOfferingPageResponse,
     ModelOfferingResponse,
+    ModelSyncSummary,
+    ProviderAnthropicMessagesRequest,
+    ProviderAnthropicMessagesResponse,
     ProviderChatCompletionRequest,
     ProviderChatCompletionResponse,
     ProviderChatCompletionStream,
     ProviderCredentialResponse,
     ProviderCredentialRoutingPolicy,
     ProviderCredentialSummary,
+    ProviderImpactResponse,
     ProviderOperationalState,
     ProviderReadiness,
+    ProviderResourceImpactResponse,
     ProviderResponse,
+    SyncModelOfferingsResponse,
     TestModelOfferingRequest,
     TestModelOfferingResponse,
     TestProviderCredentialResponse,
@@ -73,8 +92,6 @@ logger = structlog.get_logger(__name__)
 _provider_semaphores: dict[UUID, tuple[int, asyncio.Semaphore]] = {}
 _provider_circuit_events: dict[UUID, deque[tuple[datetime, bool]]] = defaultdict(deque)
 _provider_circuit_open_until: dict[UUID, datetime] = {}
-
-
 async def create_provider(
     *,
     payload: CreateProviderRequest,
@@ -82,22 +99,24 @@ async def create_provider(
     scope: Scope,
     db: AsyncSession,
 ) -> ProviderResponse:
+    slug = _slugify(payload.slug or payload.name)
+    if await repository.get_provider_by_slug(slug=slug, org_id=scope.org_id, db=db):
+        raise ProviderSlugConflictError
     async with transaction(db):
         provider = await repository.create_provider(
             org_id=scope.org_id,
             name=payload.name,
-            slug=_slugify(payload.slug or payload.name),
+            slug=slug,
             base_url=str(payload.base_url).rstrip("/"),
             api_key_encrypted=None,
             adapter_type=OPENAI_COMPAT_ADAPTER,
             description=payload.description,
-            capabilities=payload.capabilities or _default_capabilities(),
+            capabilities=payload.capabilities.model_dump(),
             request_timeout_seconds=payload.request_timeout_seconds,
             max_body_bytes=payload.max_body_bytes,
-            retry_policy=payload.retry_policy,
+            retry_policy=payload.retry_policy.model_dump() if payload.retry_policy else None,
             model_sync_mode=payload.model_sync_mode,
-            fallback_policy=payload.fallback_policy,
-            circuit_breaker_policy=payload.circuit_breaker_policy,
+            circuit_breaker_policy=payload.circuit_breaker_policy.model_dump(),
             max_concurrent_requests=payload.max_concurrent_requests,
             db=db,
         )
@@ -118,6 +137,7 @@ async def list_providers(*, scope: Scope, db: AsyncSession) -> list[ProviderResp
     providers = await repository.list_providers(org_id=scope.org_id, db=db)
     credentials = await repository.list_all_provider_credentials(org_id=scope.org_id, db=db)
     summaries = _credential_summaries(credentials)
+    _attach_active_credential_health(providers=providers, credentials=credentials)
     await _attach_provider_readiness_data(providers=providers, org_id=scope.org_id, db=db)
     return [_to_response(provider, summaries.get(provider.id)) for provider in providers]
 
@@ -129,8 +149,52 @@ async def get_provider(*, provider_id: UUID, scope: Scope, db: AsyncSession) -> 
         provider_id=provider_id,
         db=db,
     )
+    _attach_active_credential_health(providers=[provider], credentials=credentials)
     await _attach_provider_readiness_data(providers=[provider], org_id=scope.org_id, db=db)
     return _to_response(provider, _credential_summary(credentials))
+
+
+async def get_provider_impact(
+    *,
+    provider_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProviderImpactResponse:
+    await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
+    return await impact_repository.get_provider_impact(
+        org_id=scope.org_id,
+        provider_id=provider_id,
+        db=db,
+    )
+
+
+async def get_provider_credential_impact(
+    *, provider_id: UUID, provider_credential_id: UUID, scope: Scope, db: AsyncSession
+) -> ProviderResourceImpactResponse:
+    credential = await _get_provider_credential_or_raise(
+        provider_id=provider_id, provider_credential_id=provider_credential_id, scope=scope, db=db
+    )
+    return await impact_repository.get_credential_impact(
+        org_id=scope.org_id, credential=credential, db=db
+    )
+
+
+async def get_credential_pool_impact(
+    *, provider_id: UUID, pool_id: UUID, scope: Scope, db: AsyncSession
+) -> ProviderResourceImpactResponse:
+    pool = await _get_credential_pool_or_raise(
+        provider_id=provider_id, pool_id=pool_id, scope=scope, db=db
+    )
+    return await impact_repository.get_pool_impact(org_id=scope.org_id, pool=pool, db=db)
+
+
+async def get_model_offering_impact(
+    *, provider_id: UUID, model_offering_id: UUID, scope: Scope, db: AsyncSession
+) -> ProviderResourceImpactResponse:
+    model = await _get_model_offering_or_raise(
+        provider_id=provider_id, model_offering_id=model_offering_id, scope=scope, db=db
+    )
+    return await impact_repository.get_model_impact(org_id=scope.org_id, model=model, db=db)
 
 
 async def create_credential_pool(
@@ -442,17 +506,28 @@ async def create_provider_credential(
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
+    secret_registry: ProviderSecretBackendRegistry | None = None,
 ) -> ProviderCredentialResponse:
     async with transaction(db):
         await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
         api_key = _normalize_api_key(payload.api_key)
+        provider_credential_id = uuid4()
+        registry = secret_registry or get_default_secret_backend_registry()
+        backend = registry.get(LOCAL_SECRET_BACKEND)
+        stored_secret = await backend.store(
+            credential_id=provider_credential_id,
+            plaintext=api_key,
+        )
         provider_credential = await repository.create_provider_credential(
+            provider_credential_id=provider_credential_id,
             org_id=scope.org_id,
             provider_id=provider_id,
             created_by=actor.id,
             name=payload.name,
             key_prefix=_key_prefix(api_key),
-            api_key_encrypted=encrypt(api_key),
+            api_key_encrypted=stored_secret.storage_value,
+            secret_backend=stored_secret.backend,
+            secret_reference=stored_secret.reference,
             db=db,
         )
         await activity_facade.record_admin_event(
@@ -509,6 +584,7 @@ async def update_provider_credential(
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
+    secret_registry: ProviderSecretBackendRegistry | None = None,
 ) -> ProviderCredentialResponse:
     async with transaction(db):
         await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
@@ -522,10 +598,22 @@ async def update_provider_credential(
             provider_credential.name = payload.name
         if payload.api_key is not None:
             api_key = _normalize_api_key(payload.api_key)
+            registry = secret_registry or get_default_secret_backend_registry()
+            backend = registry.get(provider_credential.secret_backend)
+            stored_secret = await backend.update(
+                credential=provider_credential,
+                plaintext=api_key,
+            )
             provider_credential.key_prefix = _key_prefix(api_key)
-            provider_credential.api_key_encrypted = encrypt(api_key)
+            provider_credential.api_key_encrypted = stored_secret.storage_value
+            provider_credential.secret_backend = stored_secret.backend
+            provider_credential.secret_reference = stored_secret.reference
             provider_credential.health_status = "unchecked"
             provider_credential.last_validation_error = None
+            provider_credential.last_validation_at = None
+            provider_credential.last_failure_at = None
+            provider_credential.failure_reason = None
+            provider_credential.failure_message = None
         if payload.is_active is not None:
             provider_credential.is_active = payload.is_active
 
@@ -551,6 +639,7 @@ async def test_provider_credential(
     scope: Scope,
     db: AsyncSession,
     http_client: httpx.AsyncClient,
+    secret_registry: ProviderSecretBackendRegistry | None = None,
 ) -> TestProviderCredentialResponse:
     async with transaction(db):
         provider = await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
@@ -561,25 +650,37 @@ async def test_provider_credential(
             db=db,
         )
         try:
-            adapter = default_adapter_registry.get(provider.adapter_type)
+            adapter = default_integration_adapter_registry.get(provider.supported_integration)
             await adapter.list_models(
                 provider=AdapterProvider(
                     base_url=provider.base_url,
-                    api_key=decrypt(provider_credential.api_key_encrypted),
+                    api_key=await (
+                        secret_registry or get_default_secret_backend_registry()
+                    ).resolve(credential=provider_credential),
                 ),
                 http_client=http_client,
             )
+            validated_at = repository.datetime_now()
             provider_credential.health_status = "valid"
             provider_credential.last_validation_error = None
-            provider_credential.last_successful_request_at = repository.datetime_now()
+            provider_credential.last_validation_at = validated_at
+            provider_credential.last_successful_request_at = validated_at
+            provider_credential.failure_reason = None
+            provider_credential.failure_message = None
             health_status = "valid"
             error = None
             last_successful_request_at = provider_credential.last_successful_request_at
         except Exception as exc:  # noqa: BLE001 - persisted as upstream credential health.
+            validated_at = repository.datetime_now()
+            failure_reason, failure_message = _credential_failure_details(exc)
             provider_credential.health_status = "invalid"
-            provider_credential.last_validation_error = str(exc)
+            provider_credential.last_validation_error = failure_message
+            provider_credential.last_validation_at = validated_at
+            provider_credential.last_failure_at = validated_at
+            provider_credential.failure_reason = failure_reason
+            provider_credential.failure_message = failure_message
             health_status = "invalid"
-            error = str(exc)
+            error = failure_message
             last_successful_request_at = provider_credential.last_successful_request_at
         await db.flush()
 
@@ -587,7 +688,11 @@ async def test_provider_credential(
         id=provider_credential.id,
         health_status=health_status,
         last_validation_error=error,
+        last_validation_at=provider_credential.last_validation_at,
         last_successful_request_at=last_successful_request_at,
+        last_failure_at=provider_credential.last_failure_at,
+        failure_reason=provider_credential.failure_reason,
+        failure_message=provider_credential.failure_message,
     )
 
 
@@ -669,7 +774,8 @@ async def sync_model_offerings(
     http_client: httpx.AsyncClient,
     metadata_mode: ModelMetadataSyncMode,
     sync_mode: str,
-) -> list[ModelOfferingResponse]:
+    secret_registry: ProviderSecretBackendRegistry | None = None,
+) -> SyncModelOfferingsResponse:
     if sync_mode == "disabled":
         raise ProviderUpstreamError(status_code=409, body={"error": "model sync is disabled"})
     async with transaction(db):
@@ -690,15 +796,18 @@ async def sync_model_offerings(
             db=db,
         )
 
-        adapter = default_adapter_registry.get(provider.adapter_type)
+        adapter = default_integration_adapter_registry.get(provider.supported_integration)
         model_names = await adapter.list_models(
             provider=AdapterProvider(
                 base_url=provider.base_url,
-                api_key=decrypt(active_credential.api_key_encrypted),
+                api_key=await (secret_registry or get_default_secret_backend_registry()).resolve(
+                    credential=active_credential
+                ),
             ),
             http_client=http_client,
         )
         synced_names = set(model_names)
+        summary = ModelSyncSummary()
         if sync_mode == "replace":
             existing_models, _ = await repository.list_model_offerings(
                 org_id=scope.org_id,
@@ -712,7 +821,9 @@ async def sync_model_offerings(
             )
             for existing_model in existing_models:
                 if existing_model.provider_model_name not in synced_names:
-                    existing_model.is_active = False
+                    if existing_model.is_active:
+                        existing_model.is_active = False
+                        summary.disabled += 1
         synced_models = []
         synced_at = datetime.now(UTC)
         for model_name in sorted(set(model_names)):
@@ -763,7 +874,10 @@ async def sync_model_offerings(
                     db=db,
                 )
                 model_offering.metadata_last_synced_at = synced_at
+                summary.added += 1
             else:
+                was_active = model_offering.is_active
+                before = _model_sync_snapshot(model_offering)
                 model_offering.is_active = True
                 model_offering.metadata_last_synced_at = synced_at
                 if metadata is not None:
@@ -780,6 +894,12 @@ async def sync_model_offerings(
                             refreshed_at=synced_at,
                         )
                 await db.flush()
+                if not was_active:
+                    summary.reactivated += 1
+                elif _model_sync_snapshot(model_offering) != before:
+                    summary.updated += 1
+                else:
+                    summary.unchanged += 1
             synced_models.append(model_offering)
         await activity_facade.record_admin_event(
             actor=actor,
@@ -787,7 +907,7 @@ async def sync_model_offerings(
             action="model_offerings.synced",
             message=f"Synced {len(synced_models)} model offerings.",
             provider_id=provider_id,
-            metadata={"model_count": len(synced_models)},
+            metadata={"model_count": len(synced_models), **summary.model_dump()},
             db=db,
         )
 
@@ -797,9 +917,12 @@ async def sync_model_offerings(
         model_count=len(synced_models),
         org_id=str(scope.org_id),
     )
-    return [
-        _model_offering_response(model_offering) for model_offering in synced_models
-    ]
+    return SyncModelOfferingsResponse(
+        synced_at=synced_at,
+        status="success",
+        summary=summary,
+        models=[_model_offering_response(model_offering) for model_offering in synced_models],
+    )
 
 
 async def list_model_offerings(
@@ -825,10 +948,7 @@ async def list_model_offerings(
         db=db,
     )
     return ModelOfferingPageResponse(
-        items=[
-            _model_offering_response(model_offering)
-            for model_offering in model_offerings
-        ],
+        items=[_model_offering_response(model_offering) for model_offering in model_offerings],
         total=total,
         limit=limit,
         offset=offset,
@@ -860,6 +980,7 @@ async def test_model_offering(
     scope: Scope,
     db: AsyncSession,
     http_client: httpx.AsyncClient,
+    secret_registry: ProviderSecretBackendRegistry | None = None,
 ) -> TestModelOfferingResponse:
     async with transaction(db):
         provider = await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
@@ -872,9 +993,21 @@ async def test_model_offering(
         if not provider.is_active or not model_offering.is_active:
             raise ProviderNotFoundError
 
-        adapter = default_adapter_registry.get(provider.adapter_type)
+        if provider.supported_integration not in {
+            *OPENAI_COMPAT_INTEGRATIONS,
+            "anthropic_messages",
+        }:
+            return TestModelOfferingResponse(
+                id=model_offering.id,
+                health_status="unsupported",
+                last_validation_error=(
+                    f"Model testing is not supported for integration "
+                    f"'{provider.supported_integration}'."
+                ),
+            )
         routed_credentials = await _resolve_provider_credential_route(
             provider=provider,
+            pool_id=payload.credential_pool_id,
             provider_credential_id=payload.provider_credential_id,
             scope=scope,
             db=db,
@@ -888,25 +1021,37 @@ async def test_model_offering(
         for credential in routed_credentials:
             tested_credential_id = credential.id if credential is not None else None
             try:
-                response = await adapter.create_chat_completion(
-                    provider=AdapterProvider(
-                        base_url=provider.base_url,
-                        api_key=_api_key_for_routed_credential(
-                            provider=provider,
-                            credential=credential,
-                        ),
+                adapter_provider = AdapterProvider(
+                    base_url=provider.base_url,
+                    api_key=await _api_key_for_routed_credential(
+                        provider=provider,
+                        credential=credential,
+                        secret_registry=secret_registry,
                     ),
-                    payload=ProviderChatCompletionRequest(
-                        model=model_offering.provider_model_name,
-                        messages=[
-                            {
-                                "role": "user",
-                                "content": "Reply with ok.",
-                            }
-                        ],
-                    ),
-                    http_client=http_client,
                 )
+                if provider.supported_integration == "anthropic_messages":
+                    response = await anthropic_messages_adapter.create_message(
+                        provider=adapter_provider,
+                        payload=ProviderAnthropicMessagesRequest(
+                            model=model_offering.provider_model_name,
+                            messages=[{"role": "user", "content": "Reply with ok."}],
+                            extra_body={"max_tokens": 8},
+                        ),
+                        anthropic_version=ANTHROPIC_VERSION,
+                        http_client=http_client,
+                    )
+                else:
+                    adapter = default_integration_adapter_registry.get(
+                        provider.supported_integration
+                    )
+                    response = await adapter.create_chat_completion(
+                        provider=adapter_provider,
+                        payload=ProviderChatCompletionRequest(
+                            model=model_offering.provider_model_name,
+                            messages=[{"role": "user", "content": "Reply with ok."}],
+                        ),
+                        http_client=http_client,
+                    )
                 upstream_status_code = response.status_code
                 health_status = "valid"
                 error = None
@@ -1054,25 +1199,33 @@ async def update_provider(
         if payload.name is not None:
             provider.name = payload.name
         if payload.slug is not None:
-            provider.slug = _slugify(payload.slug)
+            slug = _slugify(payload.slug)
+            existing = await repository.get_provider_by_slug(
+                slug=slug,
+                org_id=scope.org_id,
+                db=db,
+            )
+            if existing is not None and existing.id != provider.id:
+                raise ProviderSlugConflictError
+            provider.slug = slug
         if payload.base_url is not None:
             provider.base_url = str(payload.base_url).rstrip("/")
         if "description" in payload.model_fields_set:
             provider.description = payload.description
         if payload.capabilities is not None:
-            provider.capabilities = payload.capabilities
+            provider.capabilities = payload.capabilities.model_dump()
         if "request_timeout_seconds" in payload.model_fields_set:
             provider.request_timeout_seconds = payload.request_timeout_seconds
         if "max_body_bytes" in payload.model_fields_set:
             provider.max_body_bytes = payload.max_body_bytes
         if "retry_policy" in payload.model_fields_set:
-            provider.retry_policy = payload.retry_policy
+            provider.retry_policy = (
+                payload.retry_policy.model_dump() if payload.retry_policy else None
+            )
         if "model_sync_mode" in payload.model_fields_set:
             provider.model_sync_mode = payload.model_sync_mode
-        if payload.fallback_policy is not None:
-            provider.fallback_policy = payload.fallback_policy
         if payload.circuit_breaker_policy is not None:
-            provider.circuit_breaker_policy = payload.circuit_breaker_policy
+            provider.circuit_breaker_policy = payload.circuit_breaker_policy.model_dump()
         if "max_concurrent_requests" in payload.model_fields_set:
             provider.max_concurrent_requests = payload.max_concurrent_requests
         if payload.is_favorite is not None:
@@ -1125,32 +1278,7 @@ async def create_chat_completion(
     scope: Scope,
     db: AsyncSession,
     http_client: httpx.AsyncClient,
-    allowed_fallback_provider_ids: set[UUID] | None = None,
-) -> ProviderChatCompletionResponse:
-    return await _create_chat_completion_with_policy(
-        provider_id=provider_id,
-        pool_id=pool_id,
-        provider_credential_id=provider_credential_id,
-        payload=payload,
-        scope=scope,
-        db=db,
-        http_client=http_client,
-        allow_provider_fallback=True,
-        allowed_fallback_provider_ids=allowed_fallback_provider_ids,
-    )
-
-
-async def _create_chat_completion_with_policy(
-    *,
-    provider_id: UUID,
-    pool_id: UUID | None,
-    provider_credential_id: UUID | None,
-    payload: ProviderChatCompletionRequest,
-    scope: Scope,
-    db: AsyncSession,
-    http_client: httpx.AsyncClient,
-    allow_provider_fallback: bool,
-    allowed_fallback_provider_ids: set[UUID] | None,
+    secret_registry: ProviderSecretBackendRegistry | None = None,
 ) -> ProviderChatCompletionResponse:
     provider = await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
     if not provider.is_active:
@@ -1183,9 +1311,10 @@ async def _create_chat_completion_with_policy(
                 return await adapter.create_chat_completion(
                     provider=AdapterProvider(
                         base_url=provider.base_url,
-                        api_key=_api_key_for_routed_credential(
+                        api_key=await _api_key_for_routed_credential(
                             provider=provider,
                             credential=routed_credential,
+                            secret_registry=secret_registry,
                         ),
                     ),
                     payload=payload,
@@ -1218,75 +1347,100 @@ async def _create_chat_completion_with_policy(
                 if provider_credential_id is not None or not _should_try_next_credential(exc):
                     break
 
-    if allow_provider_fallback and provider_credential_id is None and last_error is not None:
-        fallback_result = await _try_provider_fallbacks(
-            provider=provider,
-            payload=payload,
-            scope=scope,
-            db=db,
-            http_client=http_client,
-            allowed_fallback_provider_ids=allowed_fallback_provider_ids,
-        )
-        if isinstance(fallback_result, ProviderChatCompletionResponse):
-            return fallback_result
-        if isinstance(fallback_result, ProviderUpstreamError):
-            last_error = fallback_result
+    if last_error is not None:
+        raise last_error
+    raise ProviderCredentialRequiredError
+
+
+async def create_anthropic_message(
+    *,
+    provider_id: UUID,
+    pool_id: UUID | None,
+    provider_credential_id: UUID | None,
+    payload: ProviderAnthropicMessagesRequest,
+    anthropic_version: str,
+    scope: Scope,
+    db: AsyncSession,
+    http_client: httpx.AsyncClient,
+    secret_registry: ProviderSecretBackendRegistry | None = None,
+) -> ProviderAnthropicMessagesResponse:
+    provider = await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
+    if not provider.is_active:
+        raise ProviderInactiveError
+    if provider.supported_integration != "anthropic_messages":
+        raise ProviderAdapterNotFoundError
+
+    org_settings = await settings_facade.get_organization_settings(scope=scope, db=db)
+    request_timeout_seconds = (
+        provider.request_timeout_seconds or org_settings.default_request_timeout_seconds
+    )
+    retry_policy = _retry_policy(provider, default_retry_count=org_settings.default_retry_count)
+    _raise_if_circuit_open(provider)
+    routed_credentials = await _resolve_provider_credential_route(
+        provider=provider,
+        pool_id=pool_id,
+        provider_credential_id=provider_credential_id,
+        scope=scope,
+        db=db,
+    )
+    last_error: ProviderUpstreamError | None = None
+    async with _provider_concurrency_slot(provider):
+        for credential in routed_credentials:
+
+            async def call_upstream(
+                routed_credential: ProviderCredential | None = credential,
+            ) -> ProviderAnthropicMessagesResponse:
+                return await anthropic_messages_adapter.create_message(
+                    provider=AdapterProvider(
+                        base_url=provider.base_url,
+                        api_key=await _api_key_for_routed_credential(
+                            provider=provider,
+                            credential=routed_credential,
+                            secret_registry=secret_registry,
+                        ),
+                    ),
+                    payload=payload,
+                    anthropic_version=anthropic_version,
+                    http_client=http_client,
+                )
+
+            try:
+                response = await _call_with_retries(
+                    call=call_upstream,
+                    request_timeout_seconds=request_timeout_seconds,
+                    retry_policy=retry_policy,
+                )
+                _record_circuit_success(provider)
+                if credential is not None:
+                    await repository.mark_provider_credential_used(
+                        provider_credential=credential,
+                        db=db,
+                    )
+                    response.provider_credential_id = credential.id
+                return response
+            except ProviderUpstreamError as exc:
+                last_error = exc
+                _record_circuit_failure(provider)
+                if credential is not None:
+                    await _mark_provider_credential_failed(
+                        provider_credential=credential,
+                        error=exc,
+                        db=db,
+                    )
+                if provider_credential_id is not None or not _should_try_next_credential(exc):
+                    break
 
     if last_error is not None:
         raise last_error
     raise ProviderCredentialRequiredError
 
 
-async def _try_provider_fallbacks(
-    *,
-    provider: Provider,
-    payload: ProviderChatCompletionRequest,
-    scope: Scope,
-    db: AsyncSession,
-    http_client: httpx.AsyncClient,
-    allowed_fallback_provider_ids: set[UUID] | None,
-) -> ProviderChatCompletionResponse | ProviderUpstreamError | None:
-    fallback_policy = _fallback_policy(provider)
-    if not fallback_policy["enabled"]:
-        return None
-    fallback_ids = fallback_policy["fallback_provider_ids"]
-    if not fallback_ids:
-        return None
-
-    last_error: ProviderUpstreamError | None = None
-    for fallback_provider_id in fallback_ids:
-        if (
-            allowed_fallback_provider_ids is not None
-            and fallback_provider_id not in allowed_fallback_provider_ids
-        ):
-            continue
-        try:
-            return await _create_chat_completion_with_policy(
-                provider_id=fallback_provider_id,
-                pool_id=None,
-                provider_credential_id=None,
-                payload=payload,
-                scope=scope,
-                db=db,
-                http_client=http_client,
-                allow_provider_fallback=False,
-                allowed_fallback_provider_ids=allowed_fallback_provider_ids,
-            )
-        except ProviderUpstreamError as exc:
-            last_error = exc
-            if exc.status_code not in fallback_policy["trigger_on_status"]:
-                return exc
-        except (ProviderInactiveError, ProviderCredentialRequiredError):
-            continue
-    return last_error
-
-
 async def _call_with_retries(
     *,
-    call: Callable[[], Awaitable[ProviderChatCompletionResponse]],
+    call: Callable[[], Awaitable[Any]],
     request_timeout_seconds: int,
     retry_policy: dict,
-) -> ProviderChatCompletionResponse:
+) -> Any:
     max_attempts = retry_policy["max_attempts"] if retry_policy["enabled"] else 1
     last_error: ProviderUpstreamError | None = None
     for attempt in range(1, max_attempts + 1):
@@ -1354,25 +1508,6 @@ def _retry_policy(provider: Provider, *, default_retry_count: int = 0) -> dict:
             stored.get("retry_on_status"),
             fallback={408, 429, 500, 502, 503, 504},
         ),
-    }
-
-
-def _fallback_policy(provider: Provider) -> dict:
-    stored = provider.fallback_policy if isinstance(provider.fallback_policy, dict) else {}
-    fallback_ids = []
-    if isinstance(stored.get("fallback_provider_ids"), list):
-        for item in stored["fallback_provider_ids"]:
-            try:
-                fallback_ids.append(UUID(str(item)))
-            except ValueError:
-                continue
-    return {
-        "enabled": bool(stored.get("enabled", False)),
-        "trigger_on_status": _status_policy_values(
-            stored.get("trigger_on_status"),
-            fallback={502, 503, 504},
-        ),
-        "fallback_provider_ids": fallback_ids,
     }
 
 
@@ -1507,6 +1642,7 @@ async def stream_chat_completion(
     scope: Scope,
     db: AsyncSession,
     http_client: httpx.AsyncClient,
+    secret_registry: ProviderSecretBackendRegistry | None = None,
 ) -> ProviderChatCompletionStream:
     provider = await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
     if not provider.is_active:
@@ -1533,9 +1669,10 @@ async def stream_chat_completion(
                     stream = await adapter.stream_chat_completion(
                         provider=AdapterProvider(
                             base_url=provider.base_url,
-                            api_key=_api_key_for_routed_credential(
+                            api_key=await _api_key_for_routed_credential(
                                 provider=provider,
                                 credential=credential,
+                                secret_registry=secret_registry,
                             ),
                         ),
                         payload=payload,
@@ -1659,9 +1796,26 @@ def _to_response(
     response.credential_summary = credential_summary or ProviderCredentialSummary()
     response.catalog_type = _provider_catalog_type(provider)
     response.capabilities = _aggregate_provider_capabilities(provider)
+    response.integration_capabilities = _provider_integration_capabilities(provider)
     response.readiness = _provider_readiness(provider, response.credential_summary)
     response.operational_state = _provider_operational_state(provider)
     return response
+
+
+def _provider_integration_capabilities(provider: Provider) -> dict[str, bool]:
+    openai_compatible = provider.supported_integration in {
+        "openai_compatible",
+        "openai_compatible_default",
+    }
+    return {
+        "openai_compatible_chat": openai_compatible,
+        "openai_compatible_models_list": openai_compatible,
+        "openai_compatible_responses": openai_compatible,
+        "openai_compatible_completions": openai_compatible,
+        "streaming": openai_compatible,
+        "embeddings": False,
+        "native_anthropic_messages": provider.supported_integration == "anthropic_messages",
+    }
 
 
 async def _attach_provider_readiness_data(
@@ -1716,7 +1870,16 @@ def _provider_readiness(
     active_pool_count = int(pool_summary.get("active_pool_count", 0))
     active_pool_credential_count = int(pool_summary.get("active_pool_credential_count", 0))
     active_model_count = int(getattr(provider, "_active_model_count", 0) or 0)
+    status, message = _provider_readiness_status(
+        provider=provider,
+        credential_summary=credential_summary,
+        active_pool_count=active_pool_count,
+        active_pool_credential_count=active_pool_credential_count,
+        active_model_count=active_model_count,
+    )
     return ProviderReadiness(
+        status=status,
+        message=message,
         has_active_provider=provider.is_active,
         has_active_credential=credential_summary.active > 0,
         has_active_pool=active_pool_count > 0,
@@ -1735,9 +1898,45 @@ def _provider_readiness(
     )
 
 
+def _provider_readiness_status(
+    *,
+    provider: Provider,
+    credential_summary: ProviderCredentialSummary,
+    active_pool_count: int,
+    active_pool_credential_count: int,
+    active_model_count: int,
+) -> tuple[str, str]:
+    if not provider.is_active:
+        return "disabled", "Provider is disabled."
+    if credential_summary.active == 0:
+        return "needs_credential", "Add an active credential."
+    active_health = getattr(provider, "_active_credential_health", [])
+    if active_health and not any(status == "valid" for status in active_health):
+        return "degraded", "Validate an active credential before routing traffic."
+    if any(status in {"invalid", "degraded"} for status in active_health):
+        return "degraded", "One or more active credentials need attention."
+    if active_pool_count == 0 or active_pool_credential_count == 0:
+        return "needs_pool", "Create an active pool and attach a credential."
+    if active_model_count == 0:
+        return "needs_model_sync", "Sync or add at least one active model."
+    return "ready", "Provider is ready to serve requests."
+
+
+def _attach_active_credential_health(
+    *,
+    providers: list[Provider],
+    credentials: list[ProviderCredential],
+) -> None:
+    grouped: dict[UUID, list[str]] = defaultdict(list)
+    for credential in credentials:
+        if credential.is_active:
+            grouped[credential.provider_id].append(credential.health_status or "unchecked")
+    for provider in providers:
+        provider._active_credential_health = grouped.get(provider.id, [])
+
+
 def _provider_operational_state(provider: Provider) -> ProviderOperationalState:
     circuit_policy = _circuit_breaker_policy(provider)
-    fallback_policy = _fallback_policy(provider)
     events = list(_provider_circuit_events.get(provider.id, []))
     open_until = _provider_circuit_open_until.get(provider.id)
     if open_until is not None and open_until <= datetime.now(UTC):
@@ -1748,9 +1947,6 @@ def _provider_operational_state(provider: Provider) -> ProviderOperationalState:
         circuit_open_until=open_until,
         recent_circuit_failures=sum(1 for _created_at, succeeded in events if not succeeded),
         recent_circuit_successes=sum(1 for _created_at, succeeded in events if succeeded),
-        fallback_enabled=fallback_policy["enabled"],
-        fallback_provider_count=len(fallback_policy["fallback_provider_ids"]),
-        fallback_trigger_statuses=sorted(fallback_policy["trigger_on_status"]),
     )
 
 
@@ -1845,7 +2041,7 @@ async def _resolve_provider_credential_route(
                 pool_id=pool_id,
                 db=db,
             )
-            routing_policy = ProviderCredentialRoutingPolicy(pool.selection_policy)
+            routing_policy = _credential_routing_policy(pool.selection_policy)
             active_pool_credentials = [
                 (membership, credential)
                 for membership, credential in pool_credentials
@@ -1903,9 +2099,14 @@ def _route_pool_credentials(
         return [sorted(pool_credentials, key=_pool_credential_health_key)[0][1]]
     if routing_policy == ProviderCredentialRoutingPolicy.weighted:
         return [_weighted_pool_credential_route(pool_credentials)[0]]
-    if routing_policy == ProviderCredentialRoutingPolicy.fallback:
-        return [credential for _, credential in ordered]
     return [credential for _, credential in ordered]
+
+
+def _credential_routing_policy(value: str) -> ProviderCredentialRoutingPolicy:
+    try:
+        return ProviderCredentialRoutingPolicy(value)
+    except ValueError:
+        return ProviderCredentialRoutingPolicy.priority
 
 
 def _pool_credential_priority_key(
@@ -1955,16 +2156,17 @@ def _weighted_pool_credential_route(
     return [selected, *rest]
 
 
-def _api_key_for_routed_credential(
+async def _api_key_for_routed_credential(
     *,
     provider: Provider,
     credential: ProviderCredential | None,
+    secret_registry: ProviderSecretBackendRegistry | None = None,
 ) -> str:
     if credential is None:
-        if provider.api_key_encrypted is None:
-            raise ProviderCredentialRequiredError
-        return decrypt(provider.api_key_encrypted)
-    return decrypt(credential.api_key_encrypted)
+        return await resolve_legacy_provider_secret(provider=provider)
+    return await (secret_registry or get_default_secret_backend_registry()).resolve(
+        credential=credential
+    )
 
 
 async def _mark_provider_credential_failed(
@@ -1973,9 +2175,45 @@ async def _mark_provider_credential_failed(
     error: ProviderUpstreamError,
     db: AsyncSession,
 ) -> None:
+    failed_at = repository.datetime_now()
+    failure_reason, failure_message = _credential_failure_details(error)
     provider_credential.health_status = "invalid" if error.status_code in {401, 403} else "degraded"
-    provider_credential.last_validation_error = str(error.body)
+    provider_credential.last_validation_error = failure_message
+    provider_credential.last_failure_at = failed_at
+    provider_credential.failure_reason = failure_reason
+    provider_credential.failure_message = failure_message
     await db.flush()
+
+
+def _credential_failure_details(error: Exception) -> tuple[str, str]:
+    if isinstance(error, ProviderUpstreamError):
+        if error.status_code in {401, 403}:
+            reason = "authentication_failed"
+        elif error.status_code == 429:
+            reason = "rate_limited"
+        elif error.status_code == 504:
+            reason = "timeout"
+        elif error.status_code >= 500:
+            reason = "upstream_unavailable"
+        else:
+            reason = "upstream_error"
+        return reason, _upstream_error_message(error)
+    if isinstance(error, TimeoutError):
+        return "timeout", "Provider validation timed out."
+    if isinstance(error, httpx.HTTPError):
+        return "connection_failed", "Could not connect to the provider."
+    return "validation_failed", str(error) or "Provider credential validation failed."
+
+
+def _upstream_error_message(error: ProviderUpstreamError) -> str:
+    body = error.body
+    if isinstance(body, dict):
+        detail = body.get("error")
+        if isinstance(detail, dict) and isinstance(detail.get("message"), str):
+            return detail["message"]
+        if isinstance(detail, str):
+            return detail
+    return f"Provider returned HTTP {error.status_code}."
 
 
 def _should_try_next_credential(error: ProviderUpstreamError) -> bool:
@@ -2176,3 +2414,15 @@ def _combined_modality(input_modalities: list[str], output_modalities: list[str]
         if normalized and normalized not in ordered:
             ordered.append(normalized)
     return "+".join(ordered) or "text"
+
+
+def _model_sync_snapshot(model: ModelOffering) -> tuple:
+    return (
+        model.version,
+        model.modality,
+        tuple(model.input_modalities),
+        tuple(model.output_modalities),
+        tuple(sorted((model.capabilities or {}).items())),
+        model.context_window,
+        model.metadata_source,
+    )

@@ -66,12 +66,10 @@ class ResolvedLimitPolicy(BaseModel):
     limit_policy_id: UUID
     limit_policy_rule_id: UUID
     name: str
-    budget_cents: int | None
-    max_requests: int | None
-    max_input_tokens: int | None
-    max_output_tokens: int | None
-    max_tokens_per_request: int | None
-    window: str
+    limit_type: str
+    limit_value: int
+    interval_unit: str
+    interval_count: int
 
 
 class ResolvedAccess(BaseModel):
