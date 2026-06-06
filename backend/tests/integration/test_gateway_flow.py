@@ -309,6 +309,34 @@ async def test_migrations_create_current_schema(tmp_path) -> None:
                 for item in inspect(sync_connection).get_columns("provider_credentials")
             }
         )
+        virtual_key_columns = await connection.run_sync(
+            lambda sync_connection: {
+                item["name"]
+                for item in inspect(sync_connection).get_columns("virtual_keys")
+            }
+        )
+        virtual_key_indexes = await connection.run_sync(
+            lambda sync_connection: {
+                item["name"]
+                for item in inspect(sync_connection).get_indexes("virtual_keys")
+            }
+        )
+        project_columns = await connection.run_sync(
+            lambda sync_connection: {
+                item["name"] for item in inspect(sync_connection).get_columns("projects")
+            }
+        )
+        project_indexes = await connection.run_sync(
+            lambda sync_connection: {
+                item["name"] for item in inspect(sync_connection).get_indexes("projects")
+            }
+        )
+        project_unique_constraints = await connection.run_sync(
+            lambda sync_connection: {
+                item["name"]
+                for item in inspect(sync_connection).get_unique_constraints("projects")
+            }
+        )
 
     await engine.dispose()
 
@@ -318,6 +346,20 @@ async def test_migrations_create_current_schema(tmp_path) -> None:
     assert "usage_records" in table_names
     assert "fallback_policy" not in provider_columns
     assert {"secret_backend", "secret_reference"} <= credential_columns
+    assert {
+        "created_by",
+        "last_used_at",
+        "revoked_by",
+        "revoked_reason",
+    } <= virtual_key_columns
+    assert {
+        "ix_virtual_keys_created_by",
+        "ix_virtual_keys_last_used_at",
+        "ix_virtual_keys_project_revoked",
+    } <= virtual_key_indexes
+    assert "slug" in project_columns
+    assert "ix_projects_slug" in project_indexes
+    assert "uq_projects_org_team_slug" in project_unique_constraints
 
 
 @pytest.mark.asyncio
@@ -654,6 +696,18 @@ async def test_project_key_creation_without_limit_policy_succeeds(
         )
         assert pool_response.status_code == 201
         pool_id = pool_response.json()["id"]
+        credential_response = await client.post(
+            f"/api/v1/providers/{provider_id}/credentials",
+            headers=admin_headers,
+            json={"name": "Access-only credential", "api_key": "access-only-secret"},
+        )
+        assert credential_response.status_code == 201
+        pool_credential_response = await client.post(
+            f"/api/v1/providers/{provider_id}/pools/{pool_id}/credentials",
+            headers=admin_headers,
+            json={"provider_credential_id": credential_response.json()["id"]},
+        )
+        assert pool_credential_response.status_code == 201
 
         offering_response = await client.post(
             f"/api/v1/providers/{provider_id}/offerings",

@@ -1,20 +1,20 @@
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useQueries, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, MoreHorizontal, Pencil, Search } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useQueryClient } from "@tanstack/react-query";
+import { KeyRound, Search, Trash2 } from "lucide-react";
+import { useDeferredValue, useState } from "react";
+import type { ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { toast } from "sonner";
-import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -32,405 +32,388 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import { cn } from "@/lib/utils";
-import {
-  listVirtualKeysApiV1ProjectsProjectIdKeysGet,
+  useGetVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet,
   useListProjectsApiV1ProjectsGet,
-  useUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch,
+  useRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete,
 } from "@/shared/api/generated/projects/projects";
 import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
-import type {
-  ProjectResponse,
-  TeamResponse,
-  VirtualKeyResponse,
-} from "@/shared/api/generated/schemas";
+import { useListVirtualKeyInventoryApiV1VirtualKeysGet } from "@/shared/api/generated/virtual-keys/virtual-keys";
+import type { VirtualKeyInventoryItem } from "@/shared/api/generated/schemas";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
-
 import { formatDateTime, formatRelativeFromNow } from "@/features/providers/lib/format";
 
-type KeySegment = "all" | "active" | "expired" | "revoked";
-
-type KeyRow = {
-  key: VirtualKeyResponse;
-  project: ProjectResponse;
-  team: TeamResponse | undefined;
-};
-
-const editKeySchema = z.object({
-  name: z.string().min(1, "Name is required").max(255),
-});
-
-type EditKeyValues = z.infer<typeof editKeySchema>;
+const PAGE_SIZE = 25;
+const STALE_KEY_DAYS = 30;
+type InventoryStatus =
+  | "all"
+  | "active"
+  | "unused"
+  | "expiring_soon"
+  | "expired"
+  | "revoked"
+  | "project_archived"
+  | "team_archived"
+  | "no_effective_access";
+type InventoryUsage = "all" | "used" | "never";
 
 export function VirtualKeysPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
-  const [segment, setSegment] = useState<KeySegment>("active");
-  const [projectFilter, setProjectFilter] = useState("all");
-  const [editingRow, setEditingRow] = useState<KeyRow | null>(null);
+  const deferredSearch = useDeferredValue(search.trim());
+  const [status, setStatus] = useState<InventoryStatus>("all");
+  const [teamId, setTeamId] = useState("all");
+  const [projectId, setProjectId] = useState("all");
+  const [usage, setUsage] = useState<InventoryUsage>("all");
+  const [offset, setOffset] = useState(0);
+  const [revokeKey, setRevokeKey] = useState<VirtualKeyInventoryItem | null>(null);
+  const [revokeReason, setRevokeReason] = useState("");
+
+  const inventoryQuery = useListVirtualKeyInventoryApiV1VirtualKeysGet({
+    search: deferredSearch || undefined,
+    status: status === "all" ? undefined : status,
+    team_id: teamId === "all" ? undefined : teamId,
+    project_id: projectId === "all" ? undefined : projectId,
+    usage: usage === "all" ? undefined : usage,
+    limit: PAGE_SIZE,
+    offset,
+  });
   const projectsQuery = useListProjectsApiV1ProjectsGet();
   const teamsQuery = useListTeamsApiV1TeamsGet();
-  const projectsData = projectsQuery.data?.status === 200 ? projectsQuery.data.data : undefined;
-  const teamsData = teamsQuery.data?.status === 200 ? teamsQuery.data.data : undefined;
-  const projects = useMemo(() => projectsData ?? [], [projectsData]);
-  const teams = useMemo(() => teamsData ?? [], [teamsData]);
-  const teamById = useEntityMap(teams);
-  const keyQueries = useQueries({
-    queries: projects.map((project) => ({
-      queryKey: ["workspace-virtual-keys", project.id],
-      queryFn: () => listVirtualKeysApiV1ProjectsProjectIdKeysGet(project.id),
-      enabled: Boolean(project.id),
-    })),
+  const page = inventoryQuery.data?.status === 200 ? inventoryQuery.data.data : undefined;
+  const projects = projectsQuery.data?.status === 200 ? projectsQuery.data.data : [];
+  const teams = teamsQuery.data?.status === 200 ? teamsQuery.data.data : [];
+  const revokeImpactQuery =
+    useGetVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet(
+      revokeKey?.project_id ?? "",
+      revokeKey?.id ?? "",
+      { query: { enabled: Boolean(revokeKey) } },
+    );
+  const revokeImpact =
+    revokeImpactQuery.data?.status === 200 ? revokeImpactQuery.data.data : null;
+
+  const revokeMutation = useRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete({
+    mutation: {
+      onSuccess: async () => {
+        setRevokeKey(null);
+        setRevokeReason("");
+        await queryClient.invalidateQueries();
+      },
+    },
   });
-  const rows = useMemo<KeyRow[]>(() => {
-    return projects.flatMap((project, index) => {
-      const response = keyQueries[index]?.data;
-      const keys = response?.status === 200 ? response.data : [];
-      return keys.map((key) => ({
-        key,
-        project,
-        team: teamById[project.team_id],
-      }));
-    });
-  }, [keyQueries, projects, teamById]);
-  const counts = {
-    all: rows.length,
-    active: rows.filter((row) => getKeyStatus(row.key) === "active").length,
-    expired: rows.filter((row) => getKeyStatus(row.key) === "expired").length,
-    revoked: rows.filter((row) => getKeyStatus(row.key) === "revoked").length,
+
+  const resetOffset = (update: () => void) => {
+    update();
+    setOffset(0);
   };
-  const filtered = rows
-    .filter((row) => segment === "all" || getKeyStatus(row.key) === segment)
-    .filter((row) => projectFilter === "all" || row.project.id === projectFilter)
-    .filter((row) => {
-      const term = search.toLowerCase().trim();
-      if (!term) return true;
-      return `${row.key.name} ${row.key.key_prefix} ${row.project.name} ${row.team?.name ?? ""}`
-        .toLowerCase()
-        .includes(term);
-    });
-  const isLoading =
-    projectsQuery.isPending || teamsQuery.isPending || keyQueries.some((q) => q.isPending);
+  const hasPrevious = offset > 0;
+  const hasNext = Boolean(page && offset + page.items.length < page.total);
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Virtual Keys"
-        description="Workspace inventory of client-facing keys across all projects."
+        description="Organization inventory of application credentials across accessible projects."
       />
-      {isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading virtual keys...</p>
-      ) : rows.length === 0 ? (
-        <EmptyState
-          icon={KeyRound}
-          title="No virtual keys yet"
-          description="Create keys from a project detail page once it has effective access and limit policies."
-        />
-      ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>All virtual keys</CardTitle>
-            <CardDescription>
-              {rows.length} total · {counts.active} active · {counts.expired} expired ·{" "}
-              {counts.revoked} revoked
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="relative max-w-md flex-1">
-                <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  className="pl-9"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search keys..."
+      <Card>
+        <CardHeader>
+          <CardTitle>Virtual key inventory</CardTitle>
+          <CardDescription>
+            {page ? `${page.total} matching keys` : "Loading inventory..."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <div className="relative xl:col-span-2">
+              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                value={search}
+                onChange={(event) => resetOffset(() => setSearch(event.target.value))}
+                placeholder="Search name or safe prefix..."
+              />
+            </div>
+            <InventorySelect
+              value={teamId}
+              onChange={(value) => resetOffset(() => setTeamId(value))}
+              label="Team"
+            >
+              <SelectItem value="all">All teams</SelectItem>
+              {teams.map((team) => (
+                <SelectItem key={team.id} value={team.id}>
+                  {team.name}
+                </SelectItem>
+              ))}
+            </InventorySelect>
+            <InventorySelect
+              value={projectId}
+              onChange={(value) => resetOffset(() => setProjectId(value))}
+              label="Project"
+            >
+              <SelectItem value="all">All projects</SelectItem>
+              {projects.map((project) => (
+                <SelectItem key={project.id} value={project.id}>
+                  {project.name}
+                </SelectItem>
+              ))}
+            </InventorySelect>
+            <InventorySelect
+              value={status}
+              onChange={(value) => resetOffset(() => setStatus(value as InventoryStatus))}
+              label="Status"
+            >
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="unused">Unused</SelectItem>
+              <SelectItem value="expiring_soon">Expiring soon</SelectItem>
+              <SelectItem value="expired">Expired</SelectItem>
+              <SelectItem value="revoked">Revoked</SelectItem>
+              <SelectItem value="project_archived">Project archived</SelectItem>
+              <SelectItem value="team_archived">Team archived</SelectItem>
+              <SelectItem value="no_effective_access">No effective access</SelectItem>
+            </InventorySelect>
+            <InventorySelect
+              value={usage}
+              onChange={(value) => resetOffset(() => setUsage(value as InventoryUsage))}
+              label="Usage"
+            >
+              <SelectItem value="all">Any usage</SelectItem>
+              <SelectItem value="used">Used</SelectItem>
+              <SelectItem value="never">Never used</SelectItem>
+            </InventorySelect>
+          </div>
+
+          {inventoryQuery.isPending ? (
+            <p className="text-sm text-muted-foreground">Loading virtual keys...</p>
+          ) : !page?.items.length ? (
+            <EmptyState icon={KeyRound} title="No keys match" description="Try another filter." />
+          ) : (
+            <div className="overflow-hidden rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Project</TableHead>
+                    <TableHead>Team</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Creator</TableHead>
+                    <TableHead>Last used</TableHead>
+                    <TableHead className="w-12">
+                      <span className="sr-only">Actions</span>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {page.items.map((key) => (
+                    <TableRow
+                      key={key.id}
+                      className="cursor-pointer"
+                      onClick={() => navigate(`/projects/${key.project_id}/keys/${key.id}`)}
+                    >
+                      <TableCell>
+                        <div className="font-medium">{key.name}</div>
+                        <div className="font-mono text-xs text-muted-foreground">
+                          {key.key_prefix}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Link
+                          to={`/projects/${key.project_id}`}
+                          onClick={(event) => event.stopPropagation()}
+                          className="hover:underline"
+                        >
+                          {key.project_name}
+                        </Link>
+                      </TableCell>
+                      <TableCell>
+                        <Link
+                          to={`/teams/${key.team_id}`}
+                          onClick={(event) => event.stopPropagation()}
+                          className="hover:underline"
+                        >
+                          {key.team_name}
+                        </Link>
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge variant={keyStatusVariant(key.status)}>
+                          {key.status.replaceAll("_", " ")}
+                        </StatusBadge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {key.creator_name ?? key.creator_email ?? "Legacy"}
+                      </TableCell>
+                      <TableCell
+                        className="text-muted-foreground"
+                        title={key.last_used_at ? formatDateTime(key.last_used_at) : undefined}
+                      >
+                        {keyUsageLabel(key.last_used_at)}
+                      </TableCell>
+                      <TableCell onClick={(event) => event.stopPropagation()}>
+                        {key.can_manage && !key.revoked_at ? (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Revoke ${key.name}`}
+                            onClick={() => setRevokeKey(key)}
+                          >
+                            <Trash2 />
+                          </Button>
+                        ) : null}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">
+              {page ? `${offset + 1}-${offset + page.items.length} of ${page.total}` : ""}
+            </span>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                disabled={!hasPrevious}
+                onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                disabled={!hasNext}
+                onClick={() => setOffset(offset + PAGE_SIZE)}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Dialog open={Boolean(revokeKey)} onOpenChange={(open) => !open && setRevokeKey(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Revoke {revokeKey?.name}?</DialogTitle>
+            <DialogDescription>
+              This immediately and permanently disables the key.
+            </DialogDescription>
+          </DialogHeader>
+          {revokeImpactQuery.isPending ? (
+            <p className="text-sm text-muted-foreground">Checking impact...</p>
+          ) : revokeImpact ? (
+            <div className="space-y-3">
+              <div className="grid gap-3 rounded-md border bg-muted/30 p-3 text-sm md:grid-cols-3">
+                <ImpactFact
+                  label="Last used"
+                  value={
+                    revokeImpact.last_used_at
+                      ? new Date(revokeImpact.last_used_at).toLocaleString()
+                      : "Never"
+                  }
+                />
+                <ImpactFact
+                  label={`${revokeImpact.recent_usage_window_days}d requests`}
+                  value={(revokeImpact.recent_request_count ?? 0).toLocaleString()}
+                />
+                <ImpactFact
+                  label="Estimated spend"
+                  value={formatCents(revokeImpact.recent_cost_cents)}
                 />
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Select value={projectFilter} onValueChange={setProjectFilter}>
-                  <SelectTrigger className="h-9 w-48" aria-label="Filter by project">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All projects</SelectItem>
-                    {projects.map((project) => (
-                      <SelectItem key={project.id} value={project.id}>
-                        {project.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <SegmentControl value={segment} onChange={setSegment} counts={counts} />
-              </div>
+              {revokeImpact.already_unusable_reason ? (
+                <p className="text-sm text-muted-foreground">
+                  This key is already unusable: {revokeImpact.already_unusable_reason}
+                </p>
+              ) : null}
             </div>
-            {filtered.length === 0 ? (
-              <EmptyState title="No keys match" description="Try another search or filter." />
-            ) : (
-              <div className="overflow-hidden rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Prefix</TableHead>
-                      <TableHead>Project</TableHead>
-                      <TableHead>Team</TableHead>
-                      <TableHead>Policy source</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Updated</TableHead>
-                      <TableHead className="w-12">
-                        <span className="sr-only">Actions</span>
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filtered.map((row) => (
-                      <VirtualKeyRow
-                        key={row.key.id}
-                        row={row}
-                        onOpen={() => navigate(`/projects/${row.project.id}/keys/${row.key.id}`)}
-                        onEdit={() => setEditingRow(row)}
-                      />
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-      <EditVirtualKeySheet
-        row={editingRow}
-        onClose={() => setEditingRow(null)}
-        onUpdated={async () => {
-          setEditingRow(null);
-          await queryClient.invalidateQueries();
-        }}
-      />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Impact could not be loaded. You can retry by reopening this dialog.
+            </p>
+          )}
+          <div className="space-y-1.5">
+            <Label htmlFor="inventory-revoke-reason">Reason</Label>
+            <Textarea
+              id="inventory-revoke-reason"
+              value={revokeReason}
+              maxLength={500}
+              onChange={(event) => setRevokeReason(event.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="destructive"
+              disabled={!revokeReason.trim() || revokeMutation.isPending}
+              onClick={() =>
+                revokeKey &&
+                revokeMutation.mutate({
+                  projectId: revokeKey.project_id,
+                  keyId: revokeKey.id,
+                  data: { reason: revokeReason.trim() },
+                })
+              }
+            >
+              {revokeMutation.isPending ? "Revoking..." : "Revoke key"}
+            </Button>
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function VirtualKeyRow({
-  row,
-  onOpen,
-  onEdit,
-}: {
-  row: KeyRow;
-  onOpen: () => void;
-  onEdit: () => void;
-}) {
-  const status = getKeyStatus(row.key);
-  return (
-    <TableRow
-      className={cn("cursor-pointer", status !== "active" && "opacity-70")}
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onOpen();
-        }
-      }}
-    >
-      <TableCell className="font-medium">{row.key.name}</TableCell>
-      <TableCell className="font-mono text-xs text-muted-foreground">
-        {row.key.key_prefix}
-      </TableCell>
-      <TableCell>
-        <Link
-          to={`/projects/${row.project.id}`}
-          onClick={(event) => event.stopPropagation()}
-          className="hover:underline"
-        >
-          {row.project.name}
-        </Link>
-      </TableCell>
-      <TableCell>
-        {row.team ? (
-          <Link
-            to={`/teams/${row.team.id}`}
-            onClick={(event) => event.stopPropagation()}
-            className="text-muted-foreground hover:text-foreground hover:underline"
-          >
-            {row.team.name}
-          </Link>
-        ) : (
-          <span className="text-muted-foreground">Unknown team</span>
-        )}
-      </TableCell>
-      <TableCell>
-        <StatusBadge variant="muted">Resolved at request time</StatusBadge>
-      </TableCell>
-      <TableCell>
-        <StatusBadge variant={status === "active" ? "active" : status}>
-          {labelStatus(status)}
-        </StatusBadge>
-      </TableCell>
-      <TableCell className="text-muted-foreground" title={formatDateTime(row.key.updated_at)}>
-        {formatRelativeFromNow(row.key.updated_at)}
-      </TableCell>
-      <TableCell>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={`Actions for ${row.key.name}`}
-              onClick={(event) => event.stopPropagation()}
-            >
-              <MoreHorizontal />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="end"
-            onClick={(event) => event.stopPropagation()}
-            onCloseAutoFocus={(event) => event.preventDefault()}
-          >
-            <DropdownMenuItem onSelect={onEdit}>
-              <Pencil className="mr-2 size-4" />
-              Edit key
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </TableCell>
-    </TableRow>
-  );
+function keyStatusVariant(status: string) {
+  if (status === "active" || status === "unused") return "active";
+  if (status === "revoked") return "revoked";
+  if (status === "expired" || status === "expiring_soon") return "expired";
+  return "inactive";
 }
 
-function EditVirtualKeySheet({
-  row,
-  onClose,
-  onUpdated,
-}: {
-  row: KeyRow | null;
-  onClose: () => void;
-  onUpdated: () => Promise<void>;
-}) {
-  const form = useForm<EditKeyValues>({
-    resolver: zodResolver(editKeySchema),
-    defaultValues: {
-      name: "",
-    },
-  });
-  const updateKey = useUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch({
-    mutation: {
-      onSuccess: async () => {
-        toast.success("Virtual key updated.");
-        await onUpdated();
-      },
-      onError: () => toast.error("Virtual key could not be updated."),
-    },
-  });
-
-  useEffect(() => {
-    if (row) {
-      form.reset({
-        name: row.key.name,
-      });
-    }
-  }, [row, form]);
-
-  const submit = form.handleSubmit((values) => {
-    if (!row) return;
-    updateKey.mutate({
-      projectId: row.project.id,
-      keyId: row.key.id,
-      data: {
-        name: values.name,
-      },
-    });
-  });
-
-  return (
-    <Sheet open={Boolean(row)} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent>
-        <SheetHeader>
-          <SheetTitle>Edit virtual key</SheetTitle>
-          <SheetDescription>Rename the key and set optional direct rate controls.</SheetDescription>
-        </SheetHeader>
-        <form
-          id="edit-virtual-key-form"
-          className="grid gap-4 overflow-y-auto px-6 py-5"
-          onSubmit={submit}
-        >
-          <div className="space-y-1.5">
-            <Label htmlFor="edit-virtual-key-name">Name</Label>
-            <Input id="edit-virtual-key-name" autoFocus {...form.register("name")} />
-            {form.formState.errors.name ? (
-              <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
-            ) : null}
-          </div>
-        </form>
-        <SheetFooter>
-          <Button type="submit" form="edit-virtual-key-form" disabled={updateKey.isPending}>
-            {updateKey.isPending ? "Saving..." : "Save changes"}
-          </Button>
-          <SheetClose asChild>
-            <Button variant="outline">Cancel</Button>
-          </SheetClose>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
-  );
-}
-
-function SegmentControl({
+function InventorySelect({
   value,
   onChange,
-  counts,
+  label,
+  children,
 }: {
-  value: KeySegment;
-  onChange: (value: KeySegment) => void;
-  counts: Record<KeySegment, number>;
+  value: string;
+  onChange: (value: string) => void;
+  label: string;
+  children: ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-1 rounded-md border bg-muted/30 p-0.5">
-      {(["all", "active", "expired", "revoked"] as const).map((item) => (
-        <button
-          key={item}
-          type="button"
-          onClick={() => onChange(item)}
-          className={cn(
-            "rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors",
-            value === item
-              ? "bg-background text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground",
-          )}
-        >
-          {item}
-          <span className="ml-1.5 text-muted-foreground">{counts[item]}</span>
-        </button>
-      ))}
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger aria-label={label}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>{children}</SelectContent>
+    </Select>
+  );
+}
+
+function ImpactFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="truncate text-sm font-medium">{value}</p>
     </div>
   );
 }
 
-function useEntityMap<T extends { id: string }>(items: T[]) {
-  return useMemo(() => {
-    const map: Record<string, T> = {};
-    for (const item of items) map[item.id] = item;
-    return map;
-  }, [items]);
+function formatCents(value: number | null | undefined) {
+  return `$${((value ?? 0) / 100).toFixed(2)}`;
 }
 
-function getKeyStatus(key: VirtualKeyResponse): Exclude<KeySegment, "all"> {
-  if (key.revoked_at) return "revoked";
-  if (key.expires_at && new Date(key.expires_at) < new Date()) return "expired";
-  return "active";
-}
-
-function labelStatus(status: Exclude<KeySegment, "all">) {
-  return status[0].toUpperCase() + status.slice(1);
+function keyUsageLabel(lastUsedAt: string | null | undefined) {
+  if (!lastUsedAt) return "Never used";
+  const ageMs = Date.now() - new Date(lastUsedAt).getTime();
+  const ageDays = Math.floor(ageMs / 86_400_000);
+  if (ageDays >= STALE_KEY_DAYS) return `Unused for ${ageDays}d`;
+  return formatRelativeFromNow(lastUsedAt);
 }

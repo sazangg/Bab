@@ -1,7 +1,11 @@
 import { Activity, Boxes, BrainCircuit, Clock, KeyRound, WalletCards } from "lucide-react";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import type { OrganizationUsageSummary, UsageBreakdownRow } from "@/shared/api/generated/schemas";
+import type {
+  OrganizationUsageSummary,
+  UsageBreakdownRow,
+  UsageRecentError,
+} from "@/shared/api/generated/schemas";
 
 export function EntityUsageCard({
   title = "Usage",
@@ -48,10 +52,13 @@ export function EntityUsageCard({
               <UsageFact icon={Boxes} label="Errors" value={errorRate} />
               <UsageFact
                 icon={Clock}
-                label="Latency"
-                value={totals?.average_latency_ms == null ? "-" : `${totals.average_latency_ms}ms`}
+                label="Last request"
+                value={
+                  totals?.last_request_at ? new Date(totals.last_request_at).toLocaleString() : "-"
+                }
               />
             </div>
+            <RecentErrors rows={usage?.recent_errors ?? []} />
             <div className="grid gap-3 lg:grid-cols-2">
               <Breakdown title="Virtual keys" rows={usage?.by_virtual_key ?? []} icon={KeyRound} />
               <Breakdown title="Models" rows={usage?.by_model ?? []} icon={BrainCircuit} />
@@ -62,6 +69,30 @@ export function EntityUsageCard({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function RecentErrors({ rows }: { rows: UsageRecentError[] }) {
+  return (
+    <div className="rounded-md border bg-muted/20 p-3">
+      <div className="mb-3 text-sm font-medium">Recent errors</div>
+      {rows.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No recent errors in this scope.</p>
+      ) : (
+        <div className="space-y-2">
+          {rows.map((row) => (
+            <div key={row.id} className="flex items-center justify-between gap-3 text-xs">
+              <span className="min-w-0 truncate">
+                {row.error_code ?? `HTTP ${row.http_status}`} · {row.requested_model}
+              </span>
+              <span className="shrink-0 text-muted-foreground">
+                {new Date(row.created_at).toLocaleString()}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

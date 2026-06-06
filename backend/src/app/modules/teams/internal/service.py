@@ -2,12 +2,17 @@ import re
 from uuid import UUID
 
 import structlog
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope, transaction
 from app.modules.activity import facade as activity_facade
 from app.modules.auth.schemas import AuthenticatedUser
-from app.modules.teams.errors import TeamNotFoundError, TeamSlugAlreadyExistsError
+from app.modules.teams.errors import (
+    TeamInactiveError,
+    TeamNotFoundError,
+    TeamSlugAlreadyExistsError,
+)
 from app.modules.teams.internal import repository
 from app.modules.teams.schemas import CreateTeamRequest, TeamResponse, UpdateTeamRequest
 
@@ -24,19 +29,23 @@ async def create_team(
     slug = _slugify(payload.slug or payload.name)
     async with transaction(db):
         await _ensure_slug_available(slug=slug, scope=scope, db=db)
-        team = await repository.create_team(
-            org_id=scope.org_id,
-            name=payload.name,
-            slug=slug,
-            description=payload.description,
-            db=db,
-        )
+        try:
+            team = await repository.create_team(
+                org_id=scope.org_id,
+                name=payload.name,
+                slug=slug,
+                description=payload.description,
+                db=db,
+            )
+        except IntegrityError as exc:
+            raise TeamSlugAlreadyExistsError from exc
         await activity_facade.record_admin_event(
             actor=actor,
             category="workspace",
             action="team.created",
             message=f"Created team {team.name}.",
             team_id=team.id,
+            metadata={"team_id": str(team.id)},
             db=db,
         )
 
@@ -59,6 +68,13 @@ async def get_team(*, team_id: UUID, scope: Scope, db: AsyncSession) -> TeamResp
     return TeamResponse.model_validate(team)
 
 
+async def ensure_team_active(*, team_id: UUID, scope: Scope, db: AsyncSession) -> TeamResponse:
+    team = await _get_team_or_raise(team_id=team_id, scope=scope, db=db)
+    if not team.is_active:
+        raise TeamInactiveError
+    return TeamResponse.model_validate(team)
+
+
 async def update_team(
     *,
     team_id: UUID,
@@ -69,24 +85,46 @@ async def update_team(
 ) -> TeamResponse:
     async with transaction(db):
         team = await _get_team_or_raise(team_id=team_id, scope=scope, db=db)
+        changed_fields: dict[str, dict[str, object]] = {}
         if payload.slug is not None:
             slug = _slugify(payload.slug)
             if slug != team.slug:
                 await _ensure_slug_available(slug=slug, scope=scope, db=db)
+                changed_fields["slug"] = {"from": team.slug, "to": slug}
                 team.slug = slug
         if payload.name is not None:
+            if payload.name != team.name:
+                changed_fields["name"] = {"from": team.name, "to": payload.name}
             team.name = payload.name
         if "description" in payload.model_fields_set:
+            if payload.description != team.description:
+                changed_fields["description"] = {
+                    "from": team.description,
+                    "to": payload.description,
+                }
             team.description = payload.description
         if payload.is_active is not None:
+            if payload.is_active != team.is_active:
+                changed_fields["is_active"] = {"from": team.is_active, "to": payload.is_active}
             team.is_active = payload.is_active
-        await db.flush()
+        try:
+            await db.flush()
+        except IntegrityError as exc:
+            raise TeamSlugAlreadyExistsError from exc
+        action = (
+            "team.reactivated"
+            if changed_fields.get("is_active", {}).get("to") is True
+            else "team.deactivated"
+            if changed_fields.get("is_active", {}).get("to") is False
+            else "team.updated"
+        )
         await activity_facade.record_admin_event(
             actor=actor,
             category="workspace",
-            action="team.updated",
+            action=action,
             message=f"Updated team {team.name}.",
             team_id=team.id,
+            metadata={"team_id": str(team.id), "changed_fields": changed_fields},
             db=db,
         )
 
@@ -116,6 +154,7 @@ async def deactivate_team(
             action="team.deactivated",
             message=f"Deactivated team {team.name}.",
             team_id=team.id,
+            metadata={"team_id": str(team.id)},
             db=db,
         )
 

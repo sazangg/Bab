@@ -10,12 +10,17 @@ from app.modules.keys.schemas import (
     CreatedVirtualKeyResponse,
     CreateProjectRequest,
     CreateVirtualKeyRequest,
+    EffectiveAccessSummary,
+    ProjectArchiveImpactResponse,
     ProjectResponse,
     ResolveAccessRequest,
     ResolvedAccess,
+    TeamArchiveImpactResponse,
     UpdateProjectRequest,
     UpdateVirtualKeyRequest,
+    VirtualKeyInventoryPage,
     VirtualKeyResponse,
+    VirtualKeyRevokeImpactResponse,
 )
 
 
@@ -51,6 +56,15 @@ async def list_team_projects(
     db: AsyncSession,
 ) -> list[ProjectResponse]:
     return await service.list_team_projects(team_id=team_id, scope=scope, db=db)
+
+
+async def get_team_archive_impact(
+    *,
+    team_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> TeamArchiveImpactResponse:
+    return await service.get_team_archive_impact(team_id=team_id, scope=scope, db=db)
 
 
 async def update_project(
@@ -106,6 +120,41 @@ async def list_virtual_keys(
     return await service.list_virtual_keys(project_id=project_id, scope=scope, db=db)
 
 
+async def list_virtual_key_inventory(
+    *,
+    scope: Scope,
+    visible_team_ids: set[UUID] | None,
+    visible_project_ids: set[UUID] | None,
+    manageable_team_ids: set[UUID],
+    manageable_project_ids: set[UUID],
+    can_manage_all: bool,
+    team_id: UUID | None,
+    project_id: UUID | None,
+    status: str | None,
+    search: str | None,
+    usage: str | None,
+    limit: int,
+    offset: int,
+    db: AsyncSession,
+) -> VirtualKeyInventoryPage:
+    return await service.list_virtual_key_inventory(
+        scope=scope,
+        visible_team_ids=visible_team_ids,
+        visible_project_ids=visible_project_ids,
+        manageable_team_ids=manageable_team_ids,
+        manageable_project_ids=manageable_project_ids,
+        can_manage_all=can_manage_all,
+        team_id=team_id,
+        project_id=project_id,
+        status=status,
+        search=search,
+        usage=usage,
+        limit=limit,
+        offset=offset,
+        db=db,
+    )
+
+
 async def get_virtual_key(
     *,
     project_id: UUID,
@@ -114,6 +163,30 @@ async def get_virtual_key(
     db: AsyncSession,
 ) -> VirtualKeyResponse:
     return await service.get_virtual_key(project_id=project_id, key_id=key_id, scope=scope, db=db)
+
+
+async def get_project_archive_impact(
+    *,
+    project_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProjectArchiveImpactResponse:
+    return await service.get_project_archive_impact(project_id=project_id, scope=scope, db=db)
+
+
+async def get_virtual_key_revoke_impact(
+    *,
+    project_id: UUID,
+    key_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> VirtualKeyRevokeImpactResponse:
+    return await service.get_virtual_key_revoke_impact(
+        project_id=project_id,
+        key_id=key_id,
+        scope=scope,
+        db=db,
+    )
 
 
 async def update_virtual_key(
@@ -139,6 +212,7 @@ async def revoke_virtual_key(
     *,
     project_id: UUID,
     key_id: UUID,
+    reason: str,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
@@ -146,6 +220,7 @@ async def revoke_virtual_key(
     await service.revoke_virtual_key(
         project_id=project_id,
         key_id=key_id,
+        reason=reason,
         actor=actor,
         scope=scope,
         db=db,
@@ -164,3 +239,17 @@ async def list_project_accessible_models(
     *, project_id: UUID, scope: Scope, db: AsyncSession
 ) -> list[AccessibleModel]:
     return await service.list_project_accessible_models(project_id=project_id, scope=scope, db=db)
+
+
+async def get_project_effective_access(
+    *, project_id: UUID, scope: Scope, db: AsyncSession
+) -> EffectiveAccessSummary:
+    return await service.get_project_effective_access(project_id=project_id, scope=scope, db=db)
+
+
+async def get_virtual_key_effective_access(
+    *, project_id: UUID, key_id: UUID, scope: Scope, db: AsyncSession
+) -> EffectiveAccessSummary:
+    return await service.get_virtual_key_effective_access(
+        project_id=project_id, key_id=key_id, scope=scope, db=db
+    )

@@ -7,6 +7,7 @@
 
 export interface UpdateProjectRequest {
   name?: string | null;
+  slug?: string | null;
   description?: string | null;
   is_active?: boolean | null;
 }

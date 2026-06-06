@@ -5,20 +5,26 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface VirtualKeyResponse {
+export interface VirtualKeyInventoryItem {
   id: string;
-  org_id: string;
-  project_id: string;
   name: string;
   key_prefix: string;
+  project_id: string;
+  project_name: string;
+  project_is_active: boolean;
+  team_id: string;
+  team_name: string;
+  team_is_active: boolean;
   status: string;
   is_usable: boolean;
+  can_manage: boolean;
   created_by: string | null;
-  last_used_at: string | null;
+  creator_name: string | null;
+  creator_email: string | null;
+  created_at: string;
   expires_at: string | null;
+  last_used_at: string | null;
   revoked_at: string | null;
   revoked_by: string | null;
   revoked_reason: string | null;
-  created_at: string;
-  updated_at: string;
 }

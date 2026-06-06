@@ -1,16 +1,18 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class CreateProjectRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
+    slug: str | None = Field(default=None, min_length=1, max_length=100)
     description: str | None = Field(default=None, max_length=1000)
 
 
 class UpdateProjectRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
+    slug: str | None = Field(default=None, min_length=1, max_length=100)
     description: str | None = Field(default=None, max_length=1000)
     is_active: bool | None = None
 
@@ -22,6 +24,7 @@ class ProjectResponse(BaseModel):
     org_id: UUID
     team_id: UUID
     name: str
+    slug: str
     description: str | None
     is_active: bool
     created_at: datetime
@@ -38,6 +41,18 @@ class UpdateVirtualKeyRequest(BaseModel):
     expires_at: datetime | None = None
 
 
+class RevokeVirtualKeyRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason(cls, value: str) -> str:
+        reason = value.strip()
+        if not reason:
+            raise ValueError("revocation reason must not be empty")
+        return reason
+
+
 class VirtualKeyResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -46,14 +61,115 @@ class VirtualKeyResponse(BaseModel):
     project_id: UUID
     name: str
     key_prefix: str
+    status: str
+    is_usable: bool
+    created_by: UUID | None
+    last_used_at: datetime | None
     expires_at: datetime | None
     revoked_at: datetime | None
+    revoked_by: UUID | None
+    revoked_reason: str | None
     created_at: datetime
     updated_at: datetime
 
 
 class CreatedVirtualKeyResponse(VirtualKeyResponse):
     key: str | None
+
+
+class VirtualKeyInventoryItem(BaseModel):
+    id: UUID
+    name: str
+    key_prefix: str
+    project_id: UUID
+    project_name: str
+    project_is_active: bool
+    team_id: UUID
+    team_name: str
+    team_is_active: bool
+    status: str
+    is_usable: bool
+    can_manage: bool
+    created_by: UUID | None
+    creator_name: str | None
+    creator_email: str | None
+    created_at: datetime
+    expires_at: datetime | None
+    last_used_at: datetime | None
+    revoked_at: datetime | None
+    revoked_by: UUID | None
+    revoked_reason: str | None
+
+
+class VirtualKeyInventoryPage(BaseModel):
+    items: list[VirtualKeyInventoryItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class OwnershipChainState(BaseModel):
+    organization_active: bool
+    team_active: bool
+    project_active: bool
+    key_active: bool | None = None
+
+
+class EffectivePolicyReference(BaseModel):
+    id: UUID
+    name: str
+    source_scope: str
+
+
+class EffectiveRouteSummary(BaseModel):
+    provider_id: UUID
+    credential_pool_id: UUID
+    model_offering_id: UUID
+    provider_model: str
+    alias: str | None = None
+
+
+class EffectiveLimitReference(BaseModel):
+    id: UUID
+    name: str
+    source_scope: str
+
+
+class EffectiveAccessSummary(BaseModel):
+    is_usable: bool
+    blocking_code: str | None
+    blocking_reason: str | None
+    ownership: OwnershipChainState
+    access_policy: EffectivePolicyReference | None
+    routes: list[EffectiveRouteSummary]
+    limit_policies: list[EffectiveLimitReference]
+
+
+class TeamArchiveImpactResponse(BaseModel):
+    active_project_count: int = 0
+    active_virtual_key_count: int = 0
+    team_admin_count: int = 0
+    team_member_count: int = 0
+    recent_usage_window_days: int = 30
+    recent_request_count: int = 0
+    recent_cost_cents: int = 0
+
+
+class ProjectArchiveImpactResponse(BaseModel):
+    active_virtual_key_count: int = 0
+    recent_usage_window_days: int = 30
+    recent_request_count: int = 0
+    recent_cost_cents: int = 0
+    effective_access: EffectiveAccessSummary
+
+
+class VirtualKeyRevokeImpactResponse(BaseModel):
+    last_used_at: datetime | None = None
+    recent_usage_window_days: int = 30
+    recent_request_count: int = 0
+    recent_cost_cents: int = 0
+    effective_access: EffectiveAccessSummary
+    already_unusable_reason: str | None = None
 
 
 class ResolveAccessRequest(BaseModel):

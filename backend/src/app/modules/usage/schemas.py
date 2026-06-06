@@ -70,6 +70,7 @@ class UsageSummaryTotals(BaseModel):
     total_tokens: int = 0
     cost_cents: int = 0
     average_latency_ms: int | None = None
+    last_request_at: datetime | None = None
 
 
 class UsageTimeSeriesPoint(UsageSummaryTotals):
@@ -79,6 +80,19 @@ class UsageTimeSeriesPoint(UsageSummaryTotals):
 class UsageBreakdownRow(UsageSummaryTotals):
     id: str
     label: str
+
+
+class UsageRecentError(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    created_at: datetime
+    request_id: str | None = None
+    http_status: int
+    error_code: str | None = None
+    requested_model: str
+    provider_model: str
+    virtual_key_id: UUID
 
 
 class LimitPolicyBudgetBurnRow(BaseModel):
@@ -106,6 +120,7 @@ class VirtualKeyUsageSummary(BaseModel):
     by_model: list[UsageBreakdownRow]
     by_pool: list[UsageBreakdownRow]
     by_access_policy: list[UsageBreakdownRow]
+    recent_errors: list[UsageRecentError] = []
 
 
 class OrganizationUsageSummary(BaseModel):
@@ -118,3 +133,4 @@ class OrganizationUsageSummary(BaseModel):
     by_project: list[UsageBreakdownRow]
     by_access_policy: list[UsageBreakdownRow]
     by_virtual_key: list[UsageBreakdownRow]
+    recent_errors: list[UsageRecentError] = []

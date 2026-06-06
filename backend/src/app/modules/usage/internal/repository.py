@@ -19,6 +19,7 @@ from app.modules.usage.schemas import (
     RecordUsage,
     SpendInsights,
     UsageBreakdownRow,
+    UsageRecentError,
     UsageRecordResponse,
     UsageSummaryTotals,
     UsageTimeSeriesPoint,
@@ -353,6 +354,7 @@ async def get_organization_usage_summary(
             join_on=VirtualKey.id == UsageRecord.virtual_key_id,
             db=db,
         ),
+        recent_errors=await _recent_errors(*filters, db=db),
     )
 
 
@@ -495,6 +497,7 @@ async def get_virtual_key_usage_summary(
             join_on=AccessPolicy.id == UsageRecord.access_policy_id,
             db=db,
         ),
+        recent_errors=await _recent_errors(*base_filters, db=db),
     )
 
 
@@ -592,6 +595,7 @@ async def _totals(*filters, db: AsyncSession) -> UsageSummaryTotals:
                 func.coalesce(func.sum(UsageRecord.total_tokens), 0),
                 func.coalesce(func.sum(UsageRecord.cost_cents), 0),
                 func.avg(UsageRecord.latency_ms),
+                func.max(UsageRecord.created_at),
             ).where(*filters)
         )
     ).one()
@@ -635,6 +639,7 @@ def _row_to_totals(row) -> UsageSummaryTotals:
         total_tokens=int(row[5]),
         cost_cents=int(row[6]),
         average_latency_ms=None if row[7] is None else round(row[7]),
+        last_request_at=row[8],
     )
 
 
@@ -650,7 +655,20 @@ def _row_to_breakdown(row) -> UsageBreakdownRow:
         total_tokens=int(row[7]),
         cost_cents=int(row[8]),
         average_latency_ms=None if row[9] is None else round(row[9]),
+        last_request_at=None,
     )
+
+
+async def _recent_errors(*filters, db: AsyncSession) -> list[UsageRecentError]:
+    rows = (
+        await db.scalars(
+            select(UsageRecord)
+            .where(*filters, UsageRecord.http_status >= 400)
+            .order_by(UsageRecord.created_at.desc())
+            .limit(5)
+        )
+    ).all()
+    return [UsageRecentError.model_validate(record) for record in rows]
 
 
 def _bucket_datetime(value: datetime, grain: str) -> datetime:

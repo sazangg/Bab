@@ -6,6 +6,7 @@
  */
 import type { ActivityEventResponse } from './activityEventResponse';
 import type { UsageBreakdownRow } from './usageBreakdownRow';
+import type { UsageRecentError } from './usageRecentError';
 import type { UsageSummaryTotals } from './usageSummaryTotals';
 
 export interface OrganizationUsagePage {
@@ -18,5 +19,6 @@ export interface OrganizationUsagePage {
   by_project: UsageBreakdownRow[];
   by_access_policy: UsageBreakdownRow[];
   by_virtual_key: UsageBreakdownRow[];
+  recent_errors?: UsageRecentError[];
   recent_denials: ActivityEventResponse[];
 }

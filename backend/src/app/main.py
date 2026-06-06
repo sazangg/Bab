@@ -16,6 +16,7 @@ from app.api.v1.routes.proxy import router as proxy_router
 from app.api.v1.routes.settings import router as settings_router
 from app.api.v1.routes.teams import router as teams_router
 from app.api.v1.routes.usage import router as usage_router
+from app.api.v1.routes.virtual_keys import router as virtual_keys_router
 from app.core.bootstrap import create_development_database, ensure_default_workspace
 from app.core.config import settings, validate_runtime_settings
 from app.core.database import engine
@@ -51,6 +52,7 @@ def create_app() -> FastAPI:
     app.include_router(settings_router, prefix="/api/v1")
     app.include_router(teams_router, prefix="/api/v1")
     app.include_router(usage_router, prefix="/api/v1")
+    app.include_router(virtual_keys_router, prefix="/api/v1")
     app.include_router(health_router)
     app.include_router(proxy_router)
     app.mount("/assets", StaticFiles(directory=settings.assets_dir), name="assets")

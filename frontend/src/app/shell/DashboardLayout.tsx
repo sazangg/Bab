@@ -97,7 +97,13 @@ const workspaceNav = [
     icon: Route,
     orgAdmin: true,
   },
-  { to: "/virtual-keys", label: "Virtual keys", icon: KeyRound, orgAdmin: true },
+  {
+    to: "/virtual-keys",
+    label: "Virtual keys",
+    icon: KeyRound,
+    permission: "projects.view",
+    scoped: true,
+  },
   { to: "/playground", label: "Playground", icon: TerminalSquare, keyManager: true },
   { to: "/guardrails", label: "Guardrails", icon: ShieldCheck, permission: "guardrails.view" },
 ];
@@ -195,7 +201,10 @@ export function DashboardLayout() {
   });
   const breadcrumbs = useBreadcrumbs();
   const isDark = resolvedTheme === "dark";
-  const gatewayStatus = resolveGatewayStatus(readinessQuery.data?.status, readinessQuery.data?.data);
+  const gatewayStatus = resolveGatewayStatus(
+    readinessQuery.data?.status,
+    readinessQuery.data?.data,
+  );
 
   const isActive = (path: string, end?: boolean) =>
     end || path === "/" ? location.pathname === path : location.pathname.startsWith(path);

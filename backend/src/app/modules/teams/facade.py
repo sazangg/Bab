@@ -26,6 +26,10 @@ async def get_team(*, team_id: UUID, scope: Scope, db: AsyncSession) -> TeamResp
     return await service.get_team(team_id=team_id, scope=scope, db=db)
 
 
+async def ensure_team_active(*, team_id: UUID, scope: Scope, db: AsyncSession) -> TeamResponse:
+    return await service.ensure_team_active(team_id=team_id, scope=scope, db=db)
+
+
 async def update_team(
     *,
     team_id: UUID,

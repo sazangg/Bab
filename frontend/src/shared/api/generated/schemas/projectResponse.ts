@@ -10,6 +10,7 @@ export interface ProjectResponse {
   org_id: string;
   team_id: string;
   name: string;
+  slug: string;
   description: string | null;
   is_active: boolean;
   created_at: string;

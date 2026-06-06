@@ -15,6 +15,8 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
   useDeactivateProjectApiV1ProjectsProjectIdDelete,
+  useGetProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGet,
+  useGetProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGet,
   useGetProjectApiV1ProjectsProjectIdGet,
   useGetProjectUsageApiV1ProjectsProjectIdUsageGet,
   useAddProjectMemberApiV1ProjectsProjectIdMembersPost,
@@ -94,6 +96,14 @@ export function ProjectDetailPage() {
   const usageQuery = useGetProjectUsageApiV1ProjectsProjectIdUsageGet(projectId, {
     query: { enabled: Boolean(projectId) },
   });
+  const archiveImpactQuery = useGetProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGet(
+    projectId,
+    { query: { enabled: archiveOpen && Boolean(projectId) } },
+  );
+  const effectiveAccessQuery = useGetProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGet(
+    projectId,
+    { query: { enabled: Boolean(projectId) } },
+  );
 
   const project = projectQuery.data?.status === 200 ? projectQuery.data.data : undefined;
   const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
@@ -104,6 +114,10 @@ export function ProjectDetailPage() {
   const team = project ? teams.find((item) => item.id === project.team_id) : undefined;
   const keys = keysQuery.data?.status === 200 ? keysQuery.data.data : [];
   const usage = usageQuery.data?.status === 200 ? usageQuery.data.data : null;
+  const archiveImpact =
+    archiveImpactQuery.data?.status === 200 ? archiveImpactQuery.data.data : null;
+  const effectiveAccess =
+    effectiveAccessQuery.data?.status === 200 ? effectiveAccessQuery.data.data : undefined;
   const canManageProject = project
     ? hasPermission(currentUser, "projects.manage") ||
       isTeamAdmin(currentUser, project.team_id) ||
@@ -227,6 +241,26 @@ export function ProjectDetailPage() {
         isLoading={usageQuery.isPending}
         description="Aggregate project usage across all virtual keys, including inherited team policies."
       />
+      <Card>
+        <CardHeader>
+          <CardTitle>Ownership</CardTitle>
+          <CardDescription>Application owner context for this project.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-4">
+          <Fact label="Owning team" value={team?.name ?? "Unknown"} />
+          <Fact label="Project admins" value={`${projectMembers.length}`} />
+          <Fact label="Active keys" value={`${keys.filter((key) => key.is_usable).length}`} />
+          <Fact label="Status" value={project.is_active ? "Active" : "Archived"} />
+        </CardContent>
+      </Card>
+      <ProjectSetupChecklist
+        ownershipActive={Boolean(project.is_active && (team?.is_active ?? true))}
+        effectiveAccessPolicy={Boolean(effectiveAccess?.access_policy)}
+        routableRoute={Boolean(effectiveAccess?.routes.length)}
+        keyCreated={keys.length > 0}
+        firstRequestObserved={(usage?.totals.requests ?? 0) > 0}
+        isLoading={effectiveAccessQuery.isPending || usageQuery.isPending}
+      />
       <UsageRecordsDrilldown title="Project usage records" filters={{ project_id: project.id }} />
       <RecentGuardrailEventsCard filters={{ project_id: project.id }} />
 
@@ -243,6 +277,7 @@ export function ProjectDetailPage() {
           <ProjectKeysSection
             projectId={projectId}
             project={project}
+            teamName={team?.name}
             keys={keys}
             isLoading={keysQuery.isPending}
             onView={(keyId) => navigate(`/projects/${projectId}/keys/${keyId}`)}
@@ -298,6 +333,32 @@ export function ProjectDetailPage() {
               cannot be used.
             </DialogDescription>
           </DialogHeader>
+          {archiveImpactQuery.isPending ? (
+            <p className="text-sm text-muted-foreground">Checking impact...</p>
+          ) : archiveImpact ? (
+            <div className="space-y-3">
+              <div className="grid gap-3 rounded-md border bg-muted/30 p-3 text-sm md:grid-cols-3">
+                <Fact label="Active keys" value={`${archiveImpact.active_virtual_key_count}`} />
+                <Fact
+                  label={`${archiveImpact.recent_usage_window_days}d requests`}
+                  value={(archiveImpact.recent_request_count ?? 0).toLocaleString()}
+                />
+                <Fact
+                  label="Estimated spend"
+                  value={formatCents(archiveImpact.recent_cost_cents)}
+                />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Effective access:{" "}
+                {archiveImpact.effective_access.access_policy?.name ?? "No active access policy"} ·{" "}
+                {archiveImpact.effective_access.routes.length} routable routes.
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Impact could not be loaded. You can retry by reopening this dialog.
+            </p>
+          )}
           <DialogFooter>
             <Button
               variant="destructive"
@@ -451,4 +512,67 @@ function formatOrgRole(value: string) {
   if (value === "org_viewer") return "Viewer";
   if (value === "org_member") return "Member";
   return value;
+}
+
+function ProjectSetupChecklist({
+  ownershipActive,
+  effectiveAccessPolicy,
+  routableRoute,
+  keyCreated,
+  firstRequestObserved,
+  isLoading,
+}: {
+  ownershipActive: boolean;
+  effectiveAccessPolicy: boolean;
+  routableRoute: boolean;
+  keyCreated: boolean;
+  firstRequestObserved: boolean;
+  isLoading: boolean;
+}) {
+  const items = [
+    ["Ownership active", ownershipActive],
+    ["Effective access policy", effectiveAccessPolicy],
+    ["Routable provider/model", routableRoute],
+    ["Key created", keyCreated],
+    ["First request observed", firstRequestObserved],
+  ] as const;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Project setup</CardTitle>
+        <CardDescription>
+          Minimum checks before this application can send gateway traffic.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Checking setup...</p>
+        ) : (
+          <div className="grid gap-2 md:grid-cols-5">
+            {items.map(([label, complete]) => (
+              <div key={label} className="rounded-md border bg-muted/20 p-3">
+                <StatusBadge variant={complete ? "active" : "muted"}>
+                  {complete ? "Ready" : "Missing"}
+                </StatusBadge>
+                <p className="mt-2 text-sm font-medium">{label}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function Fact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="truncate text-sm font-medium">{value}</p>
+    </div>
+  );
+}
+
+function formatCents(value: number | null | undefined) {
+  return `$${((value ?? 0) / 100).toFixed(2)}`;
 }

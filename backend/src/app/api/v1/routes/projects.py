@@ -24,19 +24,29 @@ from app.modules.auth.schemas import (
 from app.modules.keys import facade
 from app.modules.keys.errors import (
     AccessDeniedError,
+    OrganizationInactiveError,
     PolicyNotConfiguredError,
+    ProjectAccessUnavailableError,
+    ProjectInactiveError,
     ProjectNotFoundError,
+    ProjectSlugAlreadyExistsError,
+    VirtualKeyAlreadyRevokedError,
     VirtualKeyNotFoundError,
 )
 from app.modules.keys.schemas import (
     AccessibleModel,
     CreatedVirtualKeyResponse,
     CreateVirtualKeyRequest,
+    EffectiveAccessSummary,
+    ProjectArchiveImpactResponse,
     ProjectResponse,
+    RevokeVirtualKeyRequest,
     UpdateProjectRequest,
     UpdateVirtualKeyRequest,
     VirtualKeyResponse,
+    VirtualKeyRevokeImpactResponse,
 )
+from app.modules.teams.errors import TeamInactiveError
 from app.modules.usage import facade as usage_facade
 from app.modules.usage.schemas import OrganizationUsageSummary, VirtualKeyUsageSummary
 
@@ -90,6 +100,8 @@ async def update_project(
         )
     except ProjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail="project not found") from exc
+    except ProjectSlugAlreadyExistsError as exc:
+        raise HTTPException(status_code=409, detail="project slug already exists") from exc
 
 
 @router.get("/{project_id}/usage")
@@ -115,6 +127,23 @@ async def get_project_usage(
         window="30d",
         db=db,
     )
+
+
+@router.get("/{project_id}/archive-impact")
+async def get_project_archive_impact(
+    project_id: UUID,
+    actor: ProjectAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> ProjectArchiveImpactResponse:
+    try:
+        return await facade.get_project_archive_impact(
+            project_id=project_id,
+            scope=scope,
+            db=db,
+        )
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
 
 
 @router.get("/{project_id}")
@@ -172,12 +201,40 @@ async def create_virtual_key(
             scope=scope,
             db=db,
         )
-    except ProjectNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="project not found") from exc
-    except PolicyNotConfiguredError as exc:
+    except ProjectAccessUnavailableError as exc:
         raise HTTPException(
             status_code=409,
-            detail="project needs an effective access policy before keys can be created",
+            detail={
+                "code": exc.summary.blocking_code,
+                "message": exc.summary.blocking_reason,
+                "effective_access": exc.summary.model_dump(mode="json"),
+            },
+        ) from exc
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+    except ProjectInactiveError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "project_archived",
+                "message": "Virtual key cannot be created because the project is archived.",
+            },
+        ) from exc
+    except TeamInactiveError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "team_archived",
+                "message": "Virtual key cannot be created because the owning team is archived.",
+            },
+        ) from exc
+    except OrganizationInactiveError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "organization_inactive",
+                "message": "Virtual key cannot be created because the organization is inactive.",
+            },
         ) from exc
 
 
@@ -284,6 +341,24 @@ async def list_project_accessible_models(
         ) from exc
 
 
+@router.get("/{project_id}/effective-access")
+async def get_project_effective_access(
+    project_id: UUID,
+    scope: RequestScope,
+    db: DatabaseSession,
+    user: CurrentUser,
+) -> EffectiveAccessSummary:
+    await require_project_view_or_permission(
+        project_id=str(project_id), permission="projects.view", user=user, db=db
+    )
+    try:
+        return await facade.get_project_effective_access(
+            project_id=project_id, scope=scope, db=db
+        )
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+
+
 @router.get("/{project_id}/keys/{key_id}")
 async def get_virtual_key(
     project_id: UUID,
@@ -374,10 +449,32 @@ async def update_virtual_key(
         ) from exc
 
 
+@router.get("/{project_id}/keys/{key_id}/revoke-impact")
+async def get_virtual_key_revoke_impact(
+    project_id: UUID,
+    key_id: UUID,
+    actor: VirtualKeyAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> VirtualKeyRevokeImpactResponse:
+    try:
+        return await facade.get_virtual_key_revoke_impact(
+            project_id=project_id,
+            key_id=key_id,
+            scope=scope,
+            db=db,
+        )
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+    except VirtualKeyNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="virtual key not found") from exc
+
+
 @router.delete("/{project_id}/keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def revoke_virtual_key(
     project_id: UUID,
     key_id: UUID,
+    payload: RevokeVirtualKeyRequest,
     actor: VirtualKeyAdmin,
     scope: RequestScope,
     db: DatabaseSession,
@@ -386,9 +483,35 @@ async def revoke_virtual_key(
         await facade.revoke_virtual_key(
             project_id=project_id,
             key_id=key_id,
+            reason=payload.reason.strip(),
             actor=actor,
             scope=scope,
             db=db,
+        )
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+    except VirtualKeyNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="virtual key not found") from exc
+    except VirtualKeyAlreadyRevokedError as exc:
+        raise HTTPException(status_code=409, detail="virtual key is already revoked") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/{project_id}/keys/{key_id}/effective-access")
+async def get_virtual_key_effective_access(
+    project_id: UUID,
+    key_id: UUID,
+    scope: RequestScope,
+    db: DatabaseSession,
+    user: CurrentUser,
+) -> EffectiveAccessSummary:
+    await require_project_view_or_permission(
+        project_id=str(project_id), permission="projects.view", user=user, db=db
+    )
+    try:
+        return await facade.get_virtual_key_effective_access(
+            project_id=project_id, key_id=key_id, scope=scope, db=db
         )
     except ProjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail="project not found") from exc

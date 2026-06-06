@@ -2,11 +2,33 @@ class ProjectNotFoundError(Exception):
     pass
 
 
-class PolicyNotConfiguredError(Exception):
+class ProjectSlugAlreadyExistsError(Exception):
+    pass
+
+
+class OrganizationInactiveError(Exception):
+    pass
+
+
+class ProjectInactiveError(Exception):
+    pass
+
+
+class ProjectAccessUnavailableError(Exception):
+    def __init__(self, summary):
+        self.summary = summary
+        super().__init__(summary.blocking_code or "project access is unavailable")
+
+
+class PolicyNotConfiguredError(ProjectAccessUnavailableError):
     pass
 
 
 class VirtualKeyNotFoundError(Exception):
+    pass
+
+
+class VirtualKeyAlreadyRevokedError(Exception):
     pass
 
 

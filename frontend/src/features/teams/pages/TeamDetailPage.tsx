@@ -71,6 +71,7 @@ import {
   useAddTeamMemberApiV1TeamsTeamIdMembersPost,
   useCreateTeamProjectApiV1TeamsTeamIdProjectsPost,
   useDeactivateTeamApiV1TeamsTeamIdDelete,
+  useGetTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGet,
   useGetTeamApiV1TeamsTeamIdGet,
   useGetTeamUsageApiV1TeamsTeamIdUsageGet,
   useListTeamMembersApiV1TeamsTeamIdMembersGet,
@@ -138,11 +139,16 @@ export function TeamDetailPage() {
   const usageQuery = useGetTeamUsageApiV1TeamsTeamIdUsageGet(teamId, {
     query: { enabled: Boolean(teamId) },
   });
+  const archiveImpactQuery = useGetTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGet(teamId, {
+    query: { enabled: archiveOpen && Boolean(teamId) },
+  });
   const team = teamQuery.data?.status === 200 ? teamQuery.data.data : undefined;
   const projects = projectsQuery.data?.status === 200 ? projectsQuery.data.data : [];
   const orgMembers = orgMembersQuery.data?.status === 200 ? orgMembersQuery.data.data : [];
   const teamMembers = teamMembersQuery.data?.status === 200 ? teamMembersQuery.data.data : [];
   const usage = usageQuery.data?.status === 200 ? usageQuery.data.data : null;
+  const archiveImpact =
+    archiveImpactQuery.data?.status === 200 ? archiveImpactQuery.data.data : null;
   const activeProjectCount = projects.filter((p) => p.is_active).length;
   const canManageTeam =
     team !== undefined &&
@@ -562,10 +568,29 @@ export function TeamDetailPage() {
           <DialogHeader>
             <DialogTitle>Archive {team.name}?</DialogTitle>
             <DialogDescription>
-              Archived teams stay visible but cannot have new projects created in them. Existing
-              projects are unaffected.
+              Descendant projects and virtual keys will stop serving gateway traffic immediately.
+              Records and analytics stay visible.
             </DialogDescription>
           </DialogHeader>
+          {archiveImpactQuery.isPending ? (
+            <p className="text-sm text-muted-foreground">Checking impact...</p>
+          ) : archiveImpact ? (
+            <div className="grid gap-3 rounded-md border bg-muted/30 p-3 text-sm md:grid-cols-2">
+              <Fact label="Active projects" value={`${archiveImpact.active_project_count}`} />
+              <Fact label="Active keys" value={`${archiveImpact.active_virtual_key_count}`} />
+              <Fact
+                label={`${archiveImpact.recent_usage_window_days}d requests`}
+                value={(archiveImpact.recent_request_count ?? 0).toLocaleString()}
+              />
+              <Fact label="Estimated spend" value={formatCents(archiveImpact.recent_cost_cents)} />
+              <Fact label="Team admins" value={`${archiveImpact.team_admin_count}`} />
+              <Fact label="Team members" value={`${archiveImpact.team_member_count}`} />
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Impact could not be loaded. You can retry by reopening this dialog.
+            </p>
+          )}
           <DialogFooter>
             <Button
               variant="destructive"
@@ -820,4 +845,8 @@ function Fact({ label, value }: { label: string; value: string }) {
       <p className="truncate text-sm font-medium">{value}</p>
     </div>
   );
+}
+
+function formatCents(value: number | null | undefined) {
+  return `$${((value ?? 0) / 100).toFixed(2)}`;
 }

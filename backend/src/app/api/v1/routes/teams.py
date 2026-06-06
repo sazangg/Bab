@@ -22,9 +22,18 @@ from app.modules.auth.schemas import (
     UpsertTeamMemberRequest,
 )
 from app.modules.keys import facade as projects_facade
-from app.modules.keys.schemas import CreateProjectRequest, ProjectResponse
+from app.modules.keys.errors import ProjectSlugAlreadyExistsError
+from app.modules.keys.schemas import (
+    CreateProjectRequest,
+    ProjectResponse,
+    TeamArchiveImpactResponse,
+)
 from app.modules.teams import facade
-from app.modules.teams.errors import TeamNotFoundError, TeamSlugAlreadyExistsError
+from app.modules.teams.errors import (
+    TeamInactiveError,
+    TeamNotFoundError,
+    TeamSlugAlreadyExistsError,
+)
 from app.modules.teams.schemas import CreateTeamRequest, TeamResponse, UpdateTeamRequest
 from app.modules.usage import facade as usage_facade
 from app.modules.usage.schemas import OrganizationUsageSummary
@@ -111,6 +120,23 @@ async def update_team(
         raise HTTPException(status_code=404, detail="team not found") from exc
     except TeamSlugAlreadyExistsError as exc:
         raise HTTPException(status_code=409, detail="team slug already exists") from exc
+
+
+@router.get("/{team_id}/archive-impact")
+async def get_team_archive_impact(
+    team_id: UUID,
+    actor: ScopedTeamAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> TeamArchiveImpactResponse:
+    try:
+        return await projects_facade.get_team_archive_impact(
+            team_id=team_id,
+            scope=scope,
+            db=db,
+        )
+    except TeamNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="team not found") from exc
 
 
 @router.delete("/{team_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -269,3 +295,10 @@ async def create_team_project(
         )
     except TeamNotFoundError as exc:
         raise HTTPException(status_code=404, detail="team not found") from exc
+    except TeamInactiveError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="project cannot be created because the owning team is archived",
+        ) from exc
+    except ProjectSlugAlreadyExistsError as exc:
+        raise HTTPException(status_code=409, detail="project slug already exists") from exc

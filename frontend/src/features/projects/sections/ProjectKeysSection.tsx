@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQueries, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { Check, Copy, KeyRound, Plus } from "lucide-react";
 import { useState } from "react";
@@ -9,9 +9,11 @@ import { z } from "zod";
 
 import {
   useCreateVirtualKeyApiV1ProjectsProjectIdKeysPost,
-  getVirtualKeyUsageApiV1ProjectsProjectIdKeysKeyIdUsageGet,
+  useGetProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGet,
+  useGetVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet,
   useRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete,
 } from "@/shared/api/generated/projects/projects";
+import { useGetSettingsApiV1SettingsGet } from "@/shared/api/generated/settings/settings";
 import type {
   CreatedVirtualKeyResponse,
   ProjectResponse,
@@ -37,6 +39,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Sheet,
   SheetClose,
@@ -57,6 +60,9 @@ import {
 } from "@/components/ui/table";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { StatusBadge } from "@/shared/components/StatusBadge";
+import { EffectiveAccessSummaryCard } from "@/features/projects/components/EffectiveAccessSummaryCard";
+
+const STALE_KEY_DAYS = 30;
 
 const keySchema = z.object({
   name: z.string().min(1).max(255),
@@ -68,6 +74,7 @@ type KeyValues = z.infer<typeof keySchema>;
 export function ProjectKeysSection({
   projectId,
   project,
+  teamName,
   keys,
   isLoading,
   onView,
@@ -75,6 +82,7 @@ export function ProjectKeysSection({
 }: {
   projectId: string;
   project: ProjectResponse;
+  teamName?: string;
   keys: VirtualKeyResponse[];
   isLoading: boolean;
   onView: (keyId: string) => void;
@@ -84,6 +92,7 @@ export function ProjectKeysSection({
   const [createOpen, setCreateOpen] = useState(false);
   const [createdKey, setCreatedKey] = useState<CreatedVirtualKeyResponse | null>(null);
   const [revokeId, setRevokeId] = useState<string | null>(null);
+  const [revokeReason, setRevokeReason] = useState("");
   const [copied, setCopied] = useState(false);
 
   const form = useForm<KeyValues>({
@@ -93,13 +102,22 @@ export function ProjectKeysSection({
       expires_at: "",
     },
   });
-  const keyUsageQueries = useQueries({
-    queries: keys.map((key) => ({
-      queryKey: ["project-key-usage", projectId, key.id],
-      queryFn: () => getVirtualKeyUsageApiV1ProjectsProjectIdKeysKeyIdUsageGet(projectId, key.id),
-      enabled: Boolean(projectId && key.id),
-    })),
-  });
+  const preflightQuery = useGetProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGet(
+    projectId,
+    { query: { enabled: canManage && Boolean(projectId) } },
+  );
+  const preflight = preflightQuery.data?.status === 200 ? preflightQuery.data.data : undefined;
+  const settingsQuery = useGetSettingsApiV1SettingsGet();
+  const settings = settingsQuery.data?.status === 200 ? settingsQuery.data.data : undefined;
+  const gatewayBaseUrl = resolveGatewayBaseUrl(settings?.public_base_url);
+  const canCreateKey = Boolean(project.is_active && preflight?.is_usable);
+  const revokeImpactQuery = useGetVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet(
+    projectId,
+    revokeId ?? "",
+    { query: { enabled: Boolean(revokeId) } },
+  );
+  const revokeImpact =
+    revokeImpactQuery.data?.status === 200 ? revokeImpactQuery.data.data : null;
 
   const createMutation = useCreateVirtualKeyApiV1ProjectsProjectIdKeysPost({
     mutation: {
@@ -123,6 +141,7 @@ export function ProjectKeysSection({
     mutation: {
       onSuccess: async () => {
         setRevokeId(null);
+        setRevokeReason("");
         await queryClient.invalidateQueries();
       },
     },
@@ -148,10 +167,7 @@ export function ProjectKeysSection({
           </CardDescription>
           {canManage ? (
             <CardAction>
-              <Sheet
-                open={createOpen}
-                onOpenChange={setCreateOpen}
-              >
+              <Sheet open={createOpen} onOpenChange={setCreateOpen}>
                 <SheetTrigger asChild>
                   <Button size="sm" disabled={!project.is_active}>
                     <Plus />
@@ -165,6 +181,18 @@ export function ProjectKeysSection({
                       Keys inherit the active access and limit policies assigned upstream.
                     </SheetDescription>
                   </SheetHeader>
+                  <div className="px-6 pt-5">
+                    <EffectiveAccessSummaryCard
+                      summary={preflight}
+                      isLoading={preflightQuery.isPending}
+                    />
+                    {preflight && !preflight.is_usable ? (
+                      <p className="mt-3 text-sm text-muted-foreground">
+                        Configure an active access policy and routable provider/model before
+                        creating a key.
+                      </p>
+                    ) : null}
+                  </div>
                   <form
                     className="grid gap-4 overflow-y-auto px-6 py-5"
                     onSubmit={form.handleSubmit(submit)}
@@ -193,7 +221,7 @@ export function ProjectKeysSection({
                   <SheetFooter>
                     <Button
                       type="submit"
-                      disabled={createMutation.isPending}
+                      disabled={createMutation.isPending || !canCreateKey}
                       onClick={form.handleSubmit(submit)}
                     >
                       {createMutation.isPending ? "Creating..." : "Create key"}
@@ -231,57 +259,41 @@ export function ProjectKeysSection({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {keys.map((key, index) => {
-                    const usageResponse = keyUsageQueries[index]?.data;
-                    const usage = usageResponse?.status === 200 ? usageResponse.data : undefined;
-                    return (
-                      <TableRow
-                        key={key.id}
-                        className="cursor-pointer"
-                        onClick={() => onView(key.id)}
+                  {keys.map((key) => (
+                    <TableRow
+                      key={key.id}
+                      className="cursor-pointer"
+                      onClick={() => onView(key.id)}
+                    >
+                      <TableCell className="font-medium">{key.name}</TableCell>
+                      <TableCell className="font-mono text-xs">{key.key_prefix}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        <div className="flex flex-col gap-1">
+                          <span>Policy governed</span>
+                          <span className="text-xs">Access and limits resolve at request time</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        <KeyUsageInline lastUsedAt={key.last_used_at} />
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {key.expires_at ? new Date(key.expires_at).toLocaleDateString() : "Never"}
+                      </TableCell>
+                      <TableCell>
+                        <KeyStatusBadge virtualKey={key} />
+                      </TableCell>
+                      <TableCell
+                        className="text-right"
+                        onClick={(event) => event.stopPropagation()}
                       >
-                        <TableCell className="font-medium">{key.name}</TableCell>
-                        <TableCell className="font-mono text-xs">{key.key_prefix}</TableCell>
-                        <TableCell className="text-muted-foreground">
-                          <div className="flex flex-col gap-1">
-                            <span>
-                              Policy governed
-                            </span>
-                            <span className="text-xs">
-                              Access and limits resolve at request time
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          <KeyUsageInline
-                            requests={usage?.totals.requests ?? 0}
-                            tokens={usage?.totals.total_tokens ?? 0}
-                            errors={usage?.totals.failed_requests ?? 0}
-                          />
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {key.expires_at ? new Date(key.expires_at).toLocaleDateString() : "Never"}
-                        </TableCell>
-                        <TableCell>
-                          <KeyStatusBadge virtualKey={key} />
-                        </TableCell>
-                        <TableCell
-                          className="text-right"
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          {canManage && !key.revoked_at ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setRevokeId(key.id)}
-                            >
-                              Revoke
-                            </Button>
-                          ) : null}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
+                        {canManage && !key.revoked_at ? (
+                          <Button variant="ghost" size="sm" onClick={() => setRevokeId(key.id)}>
+                            Revoke
+                          </Button>
+                        ) : null}
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </div>
@@ -303,10 +315,32 @@ export function ProjectKeysSection({
             <DialogTitle>Key created</DialogTitle>
             <DialogDescription>
               {createdKey?.key
-                ? "Copy the key now. It cannot be displayed again."
+                ? "Copy the key now. It cannot be displayed again after this dialog closes."
                 : "Secret copy is disabled in settings, so the plaintext key was not returned."}
             </DialogDescription>
           </DialogHeader>
+          <div className="grid gap-3 rounded-md border bg-muted/30 p-3 text-sm md:grid-cols-2">
+            <Fact label="Project" value={project.name} />
+            <Fact label="Team" value={teamName ?? "Organization owned"} />
+            <Fact label="Gateway base URL" value={gatewayBaseUrl} />
+            <Fact
+              label="Effective routes"
+              value={
+                preflight?.routes.length
+                  ? preflight.routes
+                      .slice(0, 2)
+                      .map((route) => route.alias ?? route.provider_model)
+                      .join(", ")
+                  : "No route summary"
+              }
+            />
+            <Fact
+              label="Expires"
+              value={
+                createdKey?.expires_at ? new Date(createdKey.expires_at).toLocaleString() : "Never"
+              }
+            />
+          </div>
           {createdKey?.key ? (
             <div className="flex items-center gap-2 rounded-md border bg-muted/40 p-2">
               <code className="min-w-0 flex-1 overflow-auto text-xs">{createdKey.key}</code>
@@ -328,6 +362,24 @@ export function ProjectKeysSection({
               <span className="font-mono text-foreground">{createdKey?.key_prefix}</span>
             </div>
           )}
+          <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
+            Store this secret in your application secret manager. Bab keeps only a hash and will not
+            show the plaintext key again.
+          </div>
+          {createdKey?.key ? (
+            <pre className="overflow-auto rounded-md border bg-background p-3 text-xs">
+              <code>
+                {sampleCurl({
+                  baseUrl: gatewayBaseUrl,
+                  key: createdKey.key,
+                  model:
+                    preflight?.routes[0]?.alias ??
+                    preflight?.routes[0]?.provider_model ??
+                    "model-name",
+                })}
+              </code>
+            </pre>
+          ) : null}
           <DialogFooter>
             <DialogClose asChild>
               <Button>Done</Button>
@@ -336,7 +388,15 @@ export function ProjectKeysSection({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(revokeId)} onOpenChange={(open) => !open && setRevokeId(null)}>
+      <Dialog
+        open={Boolean(revokeId)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRevokeId(null);
+            setRevokeReason("");
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Revoke this key?</DialogTitle>
@@ -344,11 +404,58 @@ export function ProjectKeysSection({
               The key will stop authenticating immediately. This cannot be undone.
             </DialogDescription>
           </DialogHeader>
+          {revokeImpactQuery.isPending ? (
+            <p className="text-sm text-muted-foreground">Checking impact...</p>
+          ) : revokeImpact ? (
+            <div className="space-y-3">
+              <div className="grid gap-3 rounded-md border bg-muted/30 p-3 text-sm md:grid-cols-3">
+                <Fact
+                  label="Last used"
+                  value={
+                    revokeImpact.last_used_at
+                      ? new Date(revokeImpact.last_used_at).toLocaleString()
+                      : "Never"
+                  }
+                />
+                <Fact
+                  label={`${revokeImpact.recent_usage_window_days}d requests`}
+                  value={(revokeImpact.recent_request_count ?? 0).toLocaleString()}
+                />
+                <Fact label="Estimated spend" value={formatCents(revokeImpact.recent_cost_cents)} />
+              </div>
+              {revokeImpact.already_unusable_reason ? (
+                <p className="text-sm text-muted-foreground">
+                  This key is already unusable: {revokeImpact.already_unusable_reason}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Impact could not be loaded. You can retry by reopening this dialog.
+            </p>
+          )}
+          <div className="space-y-1.5">
+            <Label htmlFor="project-key-revoke-reason">Reason</Label>
+            <Textarea
+              id="project-key-revoke-reason"
+              value={revokeReason}
+              maxLength={500}
+              onChange={(event) => setRevokeReason(event.target.value)}
+              placeholder="Why is this key being revoked?"
+            />
+          </div>
           <DialogFooter>
             <Button
               variant="destructive"
-              disabled={revokeMutation.isPending}
-              onClick={() => revokeId && revokeMutation.mutate({ projectId, keyId: revokeId })}
+              disabled={revokeMutation.isPending || !revokeReason.trim()}
+              onClick={() =>
+                revokeId &&
+                revokeMutation.mutate({
+                  projectId,
+                  keyId: revokeId,
+                  data: { reason: revokeReason.trim() },
+                })
+              }
             >
               {revokeMutation.isPending ? "Revoking..." : "Revoke key"}
             </Button>
@@ -363,36 +470,69 @@ export function ProjectKeysSection({
 }
 
 function KeyStatusBadge({ virtualKey }: { virtualKey: VirtualKeyResponse }) {
-  if (virtualKey.revoked_at) {
-    return <StatusBadge variant="revoked">Revoked</StatusBadge>;
-  }
-  if (virtualKey.expires_at && new Date(virtualKey.expires_at) < new Date()) {
-    return <StatusBadge variant="expired">Expired</StatusBadge>;
-  }
-  return <StatusBadge variant="active">Active</StatusBadge>;
+  return (
+    <StatusBadge variant={keyStatusVariant(virtualKey.status)}>
+      {virtualKey.status.replaceAll("_", " ")}
+    </StatusBadge>
+  );
+}
+
+function keyStatusVariant(status: string) {
+  if (status === "active" || status === "unused") return "active";
+  if (status === "revoked") return "revoked";
+  if (status === "expired" || status === "expiring_soon") return "expired";
+  return "inactive";
 }
 
 function KeyUsageInline({
-  requests,
-  tokens,
-  errors,
+  lastUsedAt,
 }: {
-  requests: number;
-  tokens: number;
-  errors: number;
+  lastUsedAt: string | null | undefined;
 }) {
-  const hasUsage = requests > 0;
   return (
     <div className="flex flex-col gap-1 text-xs">
-      <span className="font-medium text-foreground">
-        {hasUsage ? `${requests.toLocaleString()} req` : "No usage"}
-      </span>
-      <span>
-        {tokens.toLocaleString()} tok
-        {errors > 0 ? ` · ${errors.toLocaleString()} err` : ""}
-      </span>
+      <span className="font-medium text-foreground">{lastUsedAt ? "Observed" : "No usage"}</span>
+      <span className="text-muted-foreground">{keyUsageLabel(lastUsedAt)}</span>
     </div>
   );
+}
+
+function Fact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="truncate text-sm font-medium">{value}</p>
+    </div>
+  );
+}
+
+function formatCents(value: number | null | undefined) {
+  return `$${((value ?? 0) / 100).toFixed(2)}`;
+}
+
+function keyUsageLabel(lastUsedAt: string | null | undefined) {
+  if (!lastUsedAt) return "Never used";
+  const ageMs = Date.now() - new Date(lastUsedAt).getTime();
+  const ageDays = Math.floor(ageMs / 86_400_000);
+  if (ageDays >= STALE_KEY_DAYS) return `Unused for ${ageDays}d`;
+  return `Last used ${ageDays === 0 ? "today" : `${ageDays}d ago`}`;
+}
+
+function resolveGatewayBaseUrl(publicBaseUrl?: string | null) {
+  if (publicBaseUrl?.trim()) return publicBaseUrl.replace(/\/$/, "");
+  const envBaseUrl = import.meta.env.VITE_BAB_API_URL as string | undefined;
+  return envBaseUrl?.replace(/\/$/, "") ?? "http://localhost:8000";
+}
+
+function sampleCurl({ baseUrl, key, model }: { baseUrl: string; key: string; model: string }) {
+  return `curl ${baseUrl}/v1/chat/completions \\
+  -H "Authorization: Bearer ${key}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "${model}",
+    "messages": [{"role": "user", "content": "Reply with pong"}],
+    "max_completion_tokens": 32
+  }'`;
 }
 
 function getMutationDetail(error: unknown, fallback: string) {

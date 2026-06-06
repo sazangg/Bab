@@ -14,5 +14,6 @@ export interface UsageTimeSeriesPoint {
   total_tokens?: number;
   cost_cents?: number;
   average_latency_ms?: number | null;
+  last_request_at?: string | null;
   bucket: string;
 }

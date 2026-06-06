@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -10,6 +10,9 @@ from app.core.database import Base
 
 class Project(Base):
     __tablename__ = "projects"
+    __table_args__ = (
+        UniqueConstraint("org_id", "team_id", "slug", name="uq_projects_org_team_slug"),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     org_id: Mapped[UUID] = mapped_column(
@@ -22,6 +25,7 @@ class Project(Base):
     )
     created_by: Mapped[UUID] = mapped_column()
     name: Mapped[str] = mapped_column(String(255))
+    slug: Mapped[str] = mapped_column(String(100), index=True)
     description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -50,8 +54,14 @@ class VirtualKey(Base):
     name: Mapped[str] = mapped_column(String(255))
     key_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     key_prefix: Mapped[str] = mapped_column(String(32), index=True)
+    created_by: Mapped[UUID | None] = mapped_column(nullable=True, index=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_by: Mapped[UUID | None] = mapped_column(nullable=True)
+    revoked_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),

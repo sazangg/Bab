@@ -29,6 +29,7 @@ import type {
   HTTPValidationError,
   OrganizationUsageSummary,
   ProjectResponse,
+  TeamArchiveImpactResponse,
   TeamMemberResponse,
   TeamResponse,
   UpdateTeamMemberRequest,
@@ -539,7 +540,126 @@ export const useDeactivateTeamApiV1TeamsTeamIdDelete = <TError = HTTPValidationE
       > => {
       return useMutation(getDeactivateTeamApiV1TeamsTeamIdDeleteMutationOptions(options), queryClient);
     }
-    export type listTeamProjectsApiV1TeamsTeamIdProjectsGetResponse200 = {
+    export type getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGetResponse200 = {
+  data: TeamArchiveImpactResponse
+  status: 200
+}
+
+export type getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGetResponseSuccess = (getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGetResponse200) & {
+  headers: Headers;
+};
+export type getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGetResponseError = (getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGetResponse422) & {
+  headers: Headers;
+};
+
+export type getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGetResponse = (getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGetResponseSuccess | getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGetResponseError)
+
+export const getGetTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGetUrl = (teamId: string,) => {
+
+
+
+
+  return `/api/v1/teams/${teamId}/archive-impact`
+}
+
+/**
+ * @summary Get Team Archive Impact
+ */
+export const getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGet = async (teamId: string, options?: RequestInit): Promise<getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGetResponse> => {
+
+  return apiMutator<getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGetResponse>(getGetTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGetUrl(teamId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGetQueryKey = (teamId: string,) => {
+    return [
+    `/api/v1/teams/${teamId}/archive-impact`
+    ] as const;
+    }
+
+
+export const getGetTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGet>>, TError = HTTPValidationError>(teamId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGetQueryKey(teamId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGet>>> = ({ signal }) => getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGet(teamId, { signal });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(teamId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGetQueryResult = NonNullable<Awaited<ReturnType<typeof getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGet>>>
+export type GetTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGetQueryError = HTTPValidationError
+
+
+export function useGetTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGet<TData = Awaited<ReturnType<typeof getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGet>>, TError = HTTPValidationError>(
+ teamId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGet<TData = Awaited<ReturnType<typeof getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGet>>, TError = HTTPValidationError>(
+ teamId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGet<TData = Awaited<ReturnType<typeof getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGet>>, TError = HTTPValidationError>(
+ teamId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get Team Archive Impact
+ */
+
+export function useGetTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGet<TData = Awaited<ReturnType<typeof getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGet>>, TError = HTTPValidationError>(
+ teamId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetTeamArchiveImpactApiV1TeamsTeamIdArchiveImpactGetQueryOptions(teamId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export type listTeamProjectsApiV1TeamsTeamIdProjectsGetResponse200 = {
   data: ProjectResponse[]
   status: 200
 }

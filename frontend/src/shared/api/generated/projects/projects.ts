@@ -27,15 +27,19 @@ import type {
   AccessibleModel,
   CreateVirtualKeyRequest,
   CreatedVirtualKeyResponse,
+  EffectiveAccessSummary,
   HTTPValidationError,
   OrganizationUsageSummary,
+  ProjectArchiveImpactResponse,
   ProjectMemberResponse,
   ProjectResponse,
+  RevokeVirtualKeyRequest,
   UpdateProjectMemberRequest,
   UpdateProjectRequest,
   UpdateVirtualKeyRequest,
   UpsertProjectMemberRequest,
   VirtualKeyResponse,
+  VirtualKeyRevokeImpactResponse,
   VirtualKeyUsageSummary
 } from '../schemas';
 
@@ -561,6 +565,125 @@ export function useGetProjectUsageApiV1ProjectsProjectIdUsageGet<TData = Awaited
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetProjectUsageApiV1ProjectsProjectIdUsageGetQueryOptions(projectId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export type getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGetResponse200 = {
+  data: ProjectArchiveImpactResponse
+  status: 200
+}
+
+export type getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGetResponseSuccess = (getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGetResponse200) & {
+  headers: Headers;
+};
+export type getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGetResponseError = (getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGetResponse422) & {
+  headers: Headers;
+};
+
+export type getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGetResponse = (getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGetResponseSuccess | getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGetResponseError)
+
+export const getGetProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGetUrl = (projectId: string,) => {
+
+
+
+
+  return `/api/v1/projects/${projectId}/archive-impact`
+}
+
+/**
+ * @summary Get Project Archive Impact
+ */
+export const getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGet = async (projectId: string, options?: RequestInit): Promise<getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGetResponse> => {
+
+  return apiMutator<getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGetResponse>(getGetProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGetUrl(projectId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGetQueryKey = (projectId: string,) => {
+    return [
+    `/api/v1/projects/${projectId}/archive-impact`
+    ] as const;
+    }
+
+
+export const getGetProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGet>>, TError = HTTPValidationError>(projectId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGetQueryKey(projectId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGet>>> = ({ signal }) => getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGet(projectId, { signal });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(projectId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGetQueryResult = NonNullable<Awaited<ReturnType<typeof getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGet>>>
+export type GetProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGetQueryError = HTTPValidationError
+
+
+export function useGetProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGet<TData = Awaited<ReturnType<typeof getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGet>>, TError = HTTPValidationError>(
+ projectId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGet<TData = Awaited<ReturnType<typeof getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGet>>, TError = HTTPValidationError>(
+ projectId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGet<TData = Awaited<ReturnType<typeof getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGet>>, TError = HTTPValidationError>(
+ projectId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get Project Archive Impact
+ */
+
+export function useGetProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGet<TData = Awaited<ReturnType<typeof getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGet>>, TError = HTTPValidationError>(
+ projectId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetProjectArchiveImpactApiV1ProjectsProjectIdArchiveImpactGetQueryOptions(projectId,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -1291,6 +1414,125 @@ export function useListProjectAccessibleModelsApiV1ProjectsProjectIdAccessibleMo
 
 
 
+export type getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGetResponse200 = {
+  data: EffectiveAccessSummary
+  status: 200
+}
+
+export type getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGetResponseSuccess = (getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGetResponse200) & {
+  headers: Headers;
+};
+export type getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGetResponseError = (getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGetResponse422) & {
+  headers: Headers;
+};
+
+export type getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGetResponse = (getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGetResponseSuccess | getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGetResponseError)
+
+export const getGetProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGetUrl = (projectId: string,) => {
+
+
+
+
+  return `/api/v1/projects/${projectId}/effective-access`
+}
+
+/**
+ * @summary Get Project Effective Access
+ */
+export const getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGet = async (projectId: string, options?: RequestInit): Promise<getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGetResponse> => {
+
+  return apiMutator<getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGetResponse>(getGetProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGetUrl(projectId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGetQueryKey = (projectId: string,) => {
+    return [
+    `/api/v1/projects/${projectId}/effective-access`
+    ] as const;
+    }
+
+
+export const getGetProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGetQueryOptions = <TData = Awaited<ReturnType<typeof getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGet>>, TError = HTTPValidationError>(projectId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGetQueryKey(projectId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGet>>> = ({ signal }) => getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGet(projectId, { signal });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(projectId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGetQueryResult = NonNullable<Awaited<ReturnType<typeof getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGet>>>
+export type GetProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGetQueryError = HTTPValidationError
+
+
+export function useGetProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGet<TData = Awaited<ReturnType<typeof getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGet>>, TError = HTTPValidationError>(
+ projectId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGet>>,
+          TError,
+          Awaited<ReturnType<typeof getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGet<TData = Awaited<ReturnType<typeof getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGet>>, TError = HTTPValidationError>(
+ projectId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGet>>,
+          TError,
+          Awaited<ReturnType<typeof getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGet<TData = Awaited<ReturnType<typeof getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGet>>, TError = HTTPValidationError>(
+ projectId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get Project Effective Access
+ */
+
+export function useGetProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGet<TData = Awaited<ReturnType<typeof getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGet>>, TError = HTTPValidationError>(
+ projectId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetProjectEffectiveAccessApiV1ProjectsProjectIdEffectiveAccessGetQueryOptions(projectId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 export type getVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGetResponse200 = {
   data: VirtualKeyResponse
   status: 200
@@ -1542,14 +1784,16 @@ export const getRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteUrl = (proj
  * @summary Revoke Virtual Key
  */
 export const revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete = async (projectId: string,
-    keyId: string, options?: RequestInit): Promise<revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteResponse> => {
+    keyId: string,
+    revokeVirtualKeyRequest: RevokeVirtualKeyRequest, options?: RequestInit): Promise<revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteResponse> => {
 
   return apiMutator<revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteResponse>(getRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteUrl(projectId,keyId),
   {
     ...options,
-    method: 'DELETE'
-
-
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      revokeVirtualKeyRequest,)
   }
 );}
 
@@ -1557,8 +1801,8 @@ export const revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete = async (proj
 
 
 export const getRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete>>, TError,{projectId: string;keyId: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete>>, TError,{projectId: string;keyId: string}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete>>, TError,{projectId: string;keyId: string;data: RevokeVirtualKeyRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete>>, TError,{projectId: string;keyId: string;data: RevokeVirtualKeyRequest}, TContext> => {
 
 const mutationKey = ['revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete'];
 const {mutation: mutationOptions} = options ?
@@ -1570,10 +1814,10 @@ const {mutation: mutationOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete>>, {projectId: string;keyId: string}> = (props) => {
-          const {projectId,keyId} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete>>, {projectId: string;keyId: string;data: RevokeVirtualKeyRequest}> = (props) => {
+          const {projectId,keyId,data} = props ?? {};
 
-          return  revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete(projectId,keyId,)
+          return  revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete(projectId,keyId,data,)
         }
 
 
@@ -1584,18 +1828,18 @@ const {mutation: mutationOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type RevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete>>>
-
+    export type RevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteMutationBody = RevokeVirtualKeyRequest
     export type RevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteMutationError = HTTPValidationError
 
     /**
  * @summary Revoke Virtual Key
  */
 export const useRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete>>, TError,{projectId: string;keyId: string}, TContext>, }
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete>>, TError,{projectId: string;keyId: string;data: RevokeVirtualKeyRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof revokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete>>,
         TError,
-        {projectId: string;keyId: string},
+        {projectId: string;keyId: string;data: RevokeVirtualKeyRequest},
         TContext
       > => {
       return useMutation(getRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDeleteMutationOptions(options), queryClient);
@@ -1716,6 +1960,260 @@ export function useGetVirtualKeyUsageApiV1ProjectsProjectIdKeysKeyIdUsageGet<TDa
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetVirtualKeyUsageApiV1ProjectsProjectIdKeysKeyIdUsageGetQueryOptions(projectId,keyId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export type getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGetResponse200 = {
+  data: VirtualKeyRevokeImpactResponse
+  status: 200
+}
+
+export type getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGetResponseSuccess = (getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGetResponse200) & {
+  headers: Headers;
+};
+export type getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGetResponseError = (getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGetResponse422) & {
+  headers: Headers;
+};
+
+export type getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGetResponse = (getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGetResponseSuccess | getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGetResponseError)
+
+export const getGetVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGetUrl = (projectId: string,
+    keyId: string,) => {
+
+
+
+
+  return `/api/v1/projects/${projectId}/keys/${keyId}/revoke-impact`
+}
+
+/**
+ * @summary Get Virtual Key Revoke Impact
+ */
+export const getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet = async (projectId: string,
+    keyId: string, options?: RequestInit): Promise<getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGetResponse> => {
+
+  return apiMutator<getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGetResponse>(getGetVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGetUrl(projectId,keyId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGetQueryKey = (projectId: string,
+    keyId: string,) => {
+    return [
+    `/api/v1/projects/${projectId}/keys/${keyId}/revoke-impact`
+    ] as const;
+    }
+
+
+export const getGetVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet>>, TError = HTTPValidationError>(projectId: string,
+    keyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGetQueryKey(projectId,keyId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet>>> = ({ signal }) => getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet(projectId,keyId, { signal });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(projectId && keyId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGetQueryResult = NonNullable<Awaited<ReturnType<typeof getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet>>>
+export type GetVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGetQueryError = HTTPValidationError
+
+
+export function useGetVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet<TData = Awaited<ReturnType<typeof getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet>>, TError = HTTPValidationError>(
+ projectId: string,
+    keyId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet<TData = Awaited<ReturnType<typeof getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet>>, TError = HTTPValidationError>(
+ projectId: string,
+    keyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet<TData = Awaited<ReturnType<typeof getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet>>, TError = HTTPValidationError>(
+ projectId: string,
+    keyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get Virtual Key Revoke Impact
+ */
+
+export function useGetVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet<TData = Awaited<ReturnType<typeof getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet>>, TError = HTTPValidationError>(
+ projectId: string,
+    keyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGetQueryOptions(projectId,keyId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export type getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGetResponse200 = {
+  data: EffectiveAccessSummary
+  status: 200
+}
+
+export type getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGetResponseSuccess = (getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGetResponse200) & {
+  headers: Headers;
+};
+export type getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGetResponseError = (getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGetResponse422) & {
+  headers: Headers;
+};
+
+export type getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGetResponse = (getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGetResponseSuccess | getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGetResponseError)
+
+export const getGetVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGetUrl = (projectId: string,
+    keyId: string,) => {
+
+
+
+
+  return `/api/v1/projects/${projectId}/keys/${keyId}/effective-access`
+}
+
+/**
+ * @summary Get Virtual Key Effective Access
+ */
+export const getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGet = async (projectId: string,
+    keyId: string, options?: RequestInit): Promise<getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGetResponse> => {
+
+  return apiMutator<getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGetResponse>(getGetVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGetUrl(projectId,keyId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGetQueryKey = (projectId: string,
+    keyId: string,) => {
+    return [
+    `/api/v1/projects/${projectId}/keys/${keyId}/effective-access`
+    ] as const;
+    }
+
+
+export const getGetVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGetQueryOptions = <TData = Awaited<ReturnType<typeof getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGet>>, TError = HTTPValidationError>(projectId: string,
+    keyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGetQueryKey(projectId,keyId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGet>>> = ({ signal }) => getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGet(projectId,keyId, { signal });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(projectId && keyId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGetQueryResult = NonNullable<Awaited<ReturnType<typeof getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGet>>>
+export type GetVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGetQueryError = HTTPValidationError
+
+
+export function useGetVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGet<TData = Awaited<ReturnType<typeof getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGet>>, TError = HTTPValidationError>(
+ projectId: string,
+    keyId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGet>>,
+          TError,
+          Awaited<ReturnType<typeof getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGet<TData = Awaited<ReturnType<typeof getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGet>>, TError = HTTPValidationError>(
+ projectId: string,
+    keyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGet>>,
+          TError,
+          Awaited<ReturnType<typeof getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGet<TData = Awaited<ReturnType<typeof getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGet>>, TError = HTTPValidationError>(
+ projectId: string,
+    keyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get Virtual Key Effective Access
+ */
+
+export function useGetVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGet<TData = Awaited<ReturnType<typeof getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGet>>, TError = HTTPValidationError>(
+ projectId: string,
+    keyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetVirtualKeyEffectiveAccessApiV1ProjectsProjectIdKeysKeyIdEffectiveAccessGetQueryOptions(projectId,keyId,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

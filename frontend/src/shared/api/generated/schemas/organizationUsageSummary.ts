@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { UsageBreakdownRow } from './usageBreakdownRow';
+import type { UsageRecentError } from './usageRecentError';
 import type { UsageSummaryTotals } from './usageSummaryTotals';
 
 export interface OrganizationUsageSummary {
@@ -17,4 +18,5 @@ export interface OrganizationUsageSummary {
   by_project: UsageBreakdownRow[];
   by_access_policy: UsageBreakdownRow[];
   by_virtual_key: UsageBreakdownRow[];
+  recent_errors?: UsageRecentError[];
 }

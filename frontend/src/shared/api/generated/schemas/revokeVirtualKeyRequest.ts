@@ -5,12 +5,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface CreateProjectRequest {
+export interface RevokeVirtualKeyRequest {
   /**
      * @minLength 1
-     * @maxLength 255
+     * @maxLength 500
      */
-  name: string;
-  slug?: string | null;
-  description?: string | null;
+  reason: string;
 }

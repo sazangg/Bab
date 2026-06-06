@@ -11,8 +11,14 @@ export interface CreatedVirtualKeyResponse {
   project_id: string;
   name: string;
   key_prefix: string;
+  status: string;
+  is_usable: boolean;
+  created_by: string | null;
+  last_used_at: string | null;
   expires_at: string | null;
   revoked_at: string | null;
+  revoked_by: string | null;
+  revoked_reason: string | null;
   created_at: string;
   updated_at: string;
   key: string | null;

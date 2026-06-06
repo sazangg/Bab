@@ -50,9 +50,9 @@ async def record_admin_event(
                 model_offering_id=model_offering_id,
             ),
             entity_id=(
-                team_id
+                virtual_key_id
                 or project_id
-                or virtual_key_id
+                or team_id
                 or provider_id
                 or pool_id
                 or model_offering_id
@@ -90,12 +90,12 @@ def _audit_entity_type(
     pool_id: UUID | None,
     model_offering_id: UUID | None,
 ) -> str:
-    if team_id:
-        return "team"
-    if project_id:
-        return "project"
     if virtual_key_id:
         return "virtual_key"
+    if project_id:
+        return "project"
+    if team_id:
+        return "team"
     if provider_id:
         return "provider"
     if pool_id:
