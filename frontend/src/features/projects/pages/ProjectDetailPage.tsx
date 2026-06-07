@@ -71,7 +71,11 @@ import { UsageRecordsDrilldown } from "@/features/usage/components/UsageRecordsD
 import { hasPermission, isProjectAdmin, isTeamAdmin } from "@/features/auth/lib/permissions";
 import { ForbiddenPage } from "@/features/auth/components/ProtectedRoute";
 import { RecentGuardrailEventsCard } from "@/features/guardrails/components/RecentGuardrailEventsCard";
-import type { MemberResponse, ProjectMemberResponse } from "@/shared/api/generated/schemas";
+import type {
+  EffectiveAccessSummary,
+  MemberResponse,
+  ProjectMemberResponse,
+} from "@/shared/api/generated/schemas";
 
 export function ProjectDetailPage() {
   const { projectId = "" } = useParams<{ projectId: string }>();
@@ -350,7 +354,7 @@ export function ProjectDetailPage() {
               </div>
               <p className="text-sm text-muted-foreground">
                 Effective access:{" "}
-                {archiveImpact.effective_access.access_policy?.name ?? "No active access policy"} ·{" "}
+                {effectiveAccessPolicyNames(archiveImpact.effective_access)} ·{" "}
                 {archiveImpact.effective_access.routes.length} routable routes.
               </p>
             </div>
@@ -575,4 +579,12 @@ function Fact({ label, value }: { label: string; value: string }) {
 
 function formatCents(value: number | null | undefined) {
   return `$${((value ?? 0) / 100).toFixed(2)}`;
+}
+
+function effectiveAccessPolicyNames(summary: EffectiveAccessSummary) {
+  const policies =
+    (summary as EffectiveAccessSummary & {
+      access_policies?: NonNullable<EffectiveAccessSummary["access_policy"]>[];
+    }).access_policies ?? (summary.access_policy ? [summary.access_policy] : []);
+  return policies.length ? policies.map((policy) => policy.name).join(", ") : "No active access policy";
 }

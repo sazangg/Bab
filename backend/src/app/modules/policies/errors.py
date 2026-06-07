@@ -8,3 +8,7 @@ class PolicyNotFoundError(PolicyError):
 
 class PolicyValidationError(PolicyError):
     pass
+
+
+class PolicyAssignmentConflictError(PolicyError):
+    pass

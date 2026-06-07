@@ -4,6 +4,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import type { EffectiveAccessSummary } from "@/shared/api/generated/schemas";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 
+type EffectiveAccessPolicy = NonNullable<EffectiveAccessSummary["access_policy"]>;
+
 export function EffectiveAccessSummaryCard({
   summary,
   isLoading,
@@ -15,6 +17,10 @@ export function EffectiveAccessSummaryCard({
     return <p className="text-sm text-muted-foreground">Checking effective access...</p>;
   }
   if (!summary) return null;
+  const accessPolicies =
+    (summary as EffectiveAccessSummary & { access_policies?: EffectiveAccessPolicy[] })
+      .access_policies ??
+    (summary.access_policy ? [summary.access_policy] : []);
 
   return (
     <Card>
@@ -39,10 +45,12 @@ export function EffectiveAccessSummaryCard({
               ? ""
               : `, key ${state(summary.ownership.key_active)}`}
           </p>
-          {summary.access_policy ? (
+          {accessPolicies.length ? (
             <p className="text-sm">
-              Policy: <span className="font-medium">{summary.access_policy.name}</span> from{" "}
-              {summary.access_policy.source_scope} scope
+              Policies:{" "}
+              <span className="font-medium">
+                {accessPolicies.map((policy) => policy.name).join(", ")}
+              </span>
             </p>
           ) : null}
         </div>
@@ -53,6 +61,9 @@ export function EffectiveAccessSummaryCard({
               <Link className="hover:underline" to={`/providers/${route.provider_id}`}>
                 {route.alias ?? route.provider_model}
               </Link>
+              {"access_policy_name" in route && route.access_policy_name ? (
+                <span className="text-muted-foreground"> · {route.access_policy_name}</span>
+              ) : null}
             </div>
           ))}
           <p className="text-muted-foreground">

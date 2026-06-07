@@ -28,6 +28,7 @@ import type {
   CreateGuardrailPolicyRequest,
   GuardrailAssignmentResponse,
   GuardrailEventResponse,
+  GuardrailImpactResponse,
   GuardrailPolicyResponse,
   GuardrailSimulationRequest,
   GuardrailSimulationResponse,
@@ -421,7 +422,126 @@ export const useDeletePolicyApiV1GuardrailsPoliciesPolicyIdDelete = <TError = HT
       > => {
       return useMutation(getDeletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteMutationOptions(options), queryClient);
     }
-    export type listAssignmentsApiV1GuardrailsAssignmentsGetResponse200 = {
+    export type getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetResponse200 = {
+  data: GuardrailImpactResponse
+  status: 200
+}
+
+export type getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetResponseSuccess = (getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetResponse200) & {
+  headers: Headers;
+};
+export type getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetResponseError = (getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetResponse422) & {
+  headers: Headers;
+};
+
+export type getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetResponse = (getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetResponseSuccess | getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetResponseError)
+
+export const getGetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetUrl = (policyId: string,) => {
+
+
+
+
+  return `/api/v1/guardrails/policies/${policyId}/impact`
+}
+
+/**
+ * @summary Get Policy Impact
+ */
+export const getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet = async (policyId: string, options?: RequestInit): Promise<getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetResponse> => {
+
+  return apiMutator<getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetResponse>(getGetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetUrl(policyId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetQueryKey = (policyId: string,) => {
+    return [
+    `/api/v1/guardrails/policies/${policyId}/impact`
+    ] as const;
+    }
+
+
+export const getGetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>, TError = HTTPValidationError>(policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetQueryKey(policyId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>> = ({ signal }) => getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet(policyId, { signal });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(policyId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetQueryResult = NonNullable<Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>>
+export type GetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetQueryError = HTTPValidationError
+
+
+export function useGetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>, TError = HTTPValidationError>(
+ policyId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>, TError = HTTPValidationError>(
+ policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>, TError = HTTPValidationError>(
+ policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get Policy Impact
+ */
+
+export function useGetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>, TError = HTTPValidationError>(
+ policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetQueryOptions(policyId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export type listAssignmentsApiV1GuardrailsAssignmentsGetResponse200 = {
   data: GuardrailAssignmentResponse[]
   status: 200
 }
@@ -800,7 +920,126 @@ export const useDeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete = <
       > => {
       return useMutation(getDeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteMutationOptions(options), queryClient);
     }
-    export type listEventsApiV1GuardrailsEventsGetResponse200 = {
+    export type getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetResponse200 = {
+  data: GuardrailImpactResponse
+  status: 200
+}
+
+export type getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetResponseSuccess = (getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetResponse200) & {
+  headers: Headers;
+};
+export type getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetResponseError = (getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetResponse422) & {
+  headers: Headers;
+};
+
+export type getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetResponse = (getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetResponseSuccess | getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetResponseError)
+
+export const getGetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetUrl = (assignmentId: string,) => {
+
+
+
+
+  return `/api/v1/guardrails/assignments/${assignmentId}/impact`
+}
+
+/**
+ * @summary Get Assignment Impact
+ */
+export const getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet = async (assignmentId: string, options?: RequestInit): Promise<getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetResponse> => {
+
+  return apiMutator<getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetResponse>(getGetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetUrl(assignmentId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetQueryKey = (assignmentId: string,) => {
+    return [
+    `/api/v1/guardrails/assignments/${assignmentId}/impact`
+    ] as const;
+    }
+
+
+export const getGetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>, TError = HTTPValidationError>(assignmentId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetQueryKey(assignmentId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>> = ({ signal }) => getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet(assignmentId, { signal });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(assignmentId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetQueryResult = NonNullable<Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>>
+export type GetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetQueryError = HTTPValidationError
+
+
+export function useGetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet<TData = Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>, TError = HTTPValidationError>(
+ assignmentId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet<TData = Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>, TError = HTTPValidationError>(
+ assignmentId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet<TData = Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>, TError = HTTPValidationError>(
+ assignmentId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get Assignment Impact
+ */
+
+export function useGetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet<TData = Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>, TError = HTTPValidationError>(
+ assignmentId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetQueryOptions(assignmentId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export type listEventsApiV1GuardrailsEventsGetResponse200 = {
   data: GuardrailEventResponse[]
   status: 200
 }

@@ -15,6 +15,7 @@ export interface EffectiveAccessSummary {
   blocking_reason: string | null;
   ownership: OwnershipChainState;
   access_policy: EffectivePolicyReference | null;
+  access_policies?: EffectivePolicyReference[];
   routes: EffectiveRouteSummary[];
   limit_policies: EffectiveLimitReference[];
 }

@@ -46,6 +46,10 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet,
+  getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet,
+  getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet,
+  getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet,
   useCreateAccessPolicyApiV1PoliciesAccessPost,
   useCreateAccessPolicyRouteApiV1PoliciesAccessPolicyIdRoutesPost,
   useCreateLimitPolicyApiV1PoliciesLimitsPost,
@@ -65,6 +69,8 @@ import {
   useUpdateAccessPolicyRouteApiV1PoliciesAccessRoutesRouteIdPatch,
   useUpdateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatch,
 } from "@/shared/api/generated/policies/policies";
+import { hasAnyProjectAdminMembership, hasAnyTeamAdminMembership, hasPermission } from "@/features/auth/lib/permissions";
+import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
 import {
   useListCredentialPoolsApiV1ProvidersProviderIdPoolsGet,
   useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet,
@@ -77,6 +83,7 @@ import type {
   LimitPolicyResponse,
   LimitPolicyRuleResponse,
   PolicyAssignmentResponse,
+  PolicyImpactResponse,
   ProjectResponse,
   TeamResponse,
 } from "@/shared/api/generated/schemas";
@@ -114,6 +121,69 @@ const limitTypeOptions = [
   { value: "tokens_per_request", label: "Tokens per request" },
 ];
 
+async function confirmPolicyImpact(
+  title: string,
+  fetchImpact: () => Promise<{ status: number; data: unknown }>,
+) {
+  const response = await fetchImpact();
+  if (response.status !== 200) {
+    toast.error("Impact preview could not be loaded.");
+    return false;
+  }
+  return window.confirm(formatPolicyImpactPreview(title, response.data as PolicyImpactResponse));
+}
+
+function formatPolicyImpactPreview(title: string, impact: PolicyImpactResponse) {
+  const lines = [
+    title,
+    "",
+    `Affected teams: ${impact.affected_team_count ?? 0}`,
+    `Affected projects: ${impact.affected_project_count ?? 0}`,
+    `Affected virtual keys: ${impact.affected_virtual_key_count ?? 0}`,
+  ];
+  const unusableKeys = impact.virtual_keys_would_become_unusable ?? [];
+  if ((impact.virtual_keys_would_become_unusable_count ?? 0) > 0) {
+    lines.push(
+      `Virtual keys that would become unusable: ${impact.virtual_keys_would_become_unusable_count ?? 0}`,
+      ...unusableKeys.slice(0, 5).map((key) => `- ${key.name}`),
+    );
+  }
+  return lines.join("\n");
+}
+
+function accessPolicyStatus(policy: AccessPolicyResponse, assignments: number) {
+  if (!policy.is_active) return { label: "Inactive", variant: "inactive" as const };
+  if (assignments === 0) return { label: "Unassigned", variant: "muted" as const };
+  if ((policy.routes ?? []).length === 0) {
+    return { label: "No routable routes", variant: "expired" as const };
+  }
+  return { label: "Active", variant: "active" as const };
+}
+
+function limitPolicyStatus(policy: LimitPolicyResponse, assignments: number) {
+  if (!policy.is_active) return { label: "Inactive", variant: "inactive" as const };
+  if (assignments === 0) return { label: "Unassigned", variant: "muted" as const };
+  if ((policy.rules ?? []).filter((rule) => rule.is_active).length === 0) {
+    return { label: "No active rules", variant: "expired" as const };
+  }
+  return { label: "Blocking traffic", variant: "active" as const };
+}
+
+function formatAssignmentTarget(
+  assignment: PolicyAssignmentResponse,
+  teamNames: Map<string, string>,
+  projectNames: Map<string, string>,
+) {
+  if (assignment.scope_type === "org") return "Organization";
+  if (assignment.scope_type === "team" && assignment.team_id) {
+    return teamNames.get(assignment.team_id) ?? assignment.team_id;
+  }
+  if (assignment.scope_type === "project" && assignment.project_id) {
+    return projectNames.get(assignment.project_id) ?? assignment.project_id;
+  }
+  return assignment.virtual_key_id ?? "Unknown target";
+}
+
 export function PoliciesPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -127,6 +197,13 @@ export function PoliciesPage() {
   const accessQuery = useListAccessPoliciesApiV1PoliciesAccessGet();
   const limitsQuery = useListLimitPoliciesApiV1PoliciesLimitsGet();
   const assignmentsQuery = useListPolicyAssignmentsApiV1PoliciesAssignmentsGet();
+  const currentUserQuery = useMeApiV1AuthMeGet();
+  const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
+  const canManagePolicies = hasPermission(currentUser, "policies.manage");
+  const canAssignPolicies =
+    canManagePolicies ||
+    hasAnyTeamAdminMembership(currentUser) ||
+    hasAnyProjectAdminMembership(currentUser);
   const accessPolicies = accessQuery.data?.status === 200 ? accessQuery.data.data : [];
   const limitPolicies = limitsQuery.data?.status === 200 ? limitsQuery.data.data : [];
   const assignments = assignmentsQuery.data?.status === 200 ? assignmentsQuery.data.data : [];
@@ -163,10 +240,12 @@ export function PoliciesPage() {
         description="Access policies define where traffic can route. Limit policies define budgets and caps that compose across org, team, project, and key scopes."
         actions={
           <div className="flex items-center gap-2">
-            <Button onClick={() => setSheetKind(currentTabIsLimit ? "limit" : "access")}>
-              <Plus />
-              {currentTabIsLimit ? "New limit policy" : "New access policy"}
-            </Button>
+            {canManagePolicies ? (
+              <Button onClick={() => setSheetKind(currentTabIsLimit ? "limit" : "access")}>
+                <Plus />
+                {currentTabIsLimit ? "New limit policy" : "New access policy"}
+              </Button>
+            ) : null}
           </div>
         }
       />
@@ -229,6 +308,8 @@ export function PoliciesPage() {
               onAssign={(policy) =>
                 setAssignmentSheet({ policyType: "limit", policyId: policy.id })
               }
+              canManageDefinitions={canManagePolicies}
+              canAssign={canAssignPolicies}
             />
           ) : (
             <AccessPoliciesTable
@@ -239,6 +320,8 @@ export function PoliciesPage() {
               onAssign={(policy) =>
                 setAssignmentSheet({ policyType: "access", policyId: policy.id })
               }
+              canManageDefinitions={canManagePolicies}
+              canAssign={canAssignPolicies}
             />
           )}
         </PolicyCard>
@@ -266,6 +349,7 @@ export function PoliciesPage() {
         state={assignmentSheet}
         onOpenChange={(open) => !open && setAssignmentSheet(null)}
         onChanged={invalidatePolicies}
+        canAssignOrg={canManagePolicies}
       />
     </div>
   );
@@ -280,6 +364,13 @@ export function AccessPolicyDetailPage() {
     query: { enabled: Boolean(policyId) },
   });
   const assignmentsQuery = useListPolicyAssignmentsApiV1PoliciesAssignmentsGet();
+  const currentUserQuery = useMeApiV1AuthMeGet();
+  const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
+  const canManagePolicies = hasPermission(currentUser, "policies.manage");
+  const canAssignPolicies =
+    canManagePolicies ||
+    hasAnyTeamAdminMembership(currentUser) ||
+    hasAnyProjectAdminMembership(currentUser);
   const policy = policyQuery.data?.status === 200 ? policyQuery.data.data : null;
   const assignments =
     assignmentsQuery.data?.status === 200
@@ -312,14 +403,18 @@ export function AccessPolicyDetailPage() {
                 Policies
               </Link>
             </Button>
-            <Button variant="outline" onClick={() => setAssignmentSheet({ policyType: "access", policyId })}>
-              <Plus />
-              Assign
-            </Button>
-            <Button onClick={() => setRouteSheet({ policy })}>
-              <Route />
-              Configure routes
-            </Button>
+            {canAssignPolicies ? (
+              <Button variant="outline" onClick={() => setAssignmentSheet({ policyType: "access", policyId })}>
+                <Plus />
+                Assign
+              </Button>
+            ) : null}
+            {canManagePolicies ? (
+              <Button onClick={() => setRouteSheet({ policy })}>
+                <Route />
+                Configure routes
+              </Button>
+            ) : null}
           </div>
         }
       />
@@ -338,6 +433,7 @@ export function AccessPolicyDetailPage() {
       <PolicyAssignmentsSection
         assignments={assignments}
         onChanged={invalidatePolicies}
+        canManageAssignments={canAssignPolicies}
       />
 
       <RouteSheet
@@ -349,6 +445,7 @@ export function AccessPolicyDetailPage() {
         state={assignmentSheet}
         onOpenChange={(open) => !open && setAssignmentSheet(null)}
         onChanged={invalidatePolicies}
+        canAssignOrg={canManagePolicies}
       />
     </div>
   );
@@ -363,6 +460,13 @@ export function LimitPolicyDetailPage() {
     query: { enabled: Boolean(policyId) },
   });
   const assignmentsQuery = useListPolicyAssignmentsApiV1PoliciesAssignmentsGet();
+  const currentUserQuery = useMeApiV1AuthMeGet();
+  const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
+  const canManagePolicies = hasPermission(currentUser, "policies.manage");
+  const canAssignPolicies =
+    canManagePolicies ||
+    hasAnyTeamAdminMembership(currentUser) ||
+    hasAnyProjectAdminMembership(currentUser);
   const policy = policyQuery.data?.status === 200 ? policyQuery.data.data : null;
   const assignments =
     assignmentsQuery.data?.status === 200
@@ -394,14 +498,18 @@ export function LimitPolicyDetailPage() {
                 Policies
               </Link>
             </Button>
-            <Button variant="outline" onClick={() => setAssignmentSheet({ policyType: "limit", policyId })}>
-              <Plus />
-              Assign
-            </Button>
-            <Button onClick={() => setLimitRulesSheet({ policy })}>
-              <SlidersHorizontal />
-              Manage rules
-            </Button>
+            {canAssignPolicies ? (
+              <Button variant="outline" onClick={() => setAssignmentSheet({ policyType: "limit", policyId })}>
+                <Plus />
+                Assign
+              </Button>
+            ) : null}
+            {canManagePolicies ? (
+              <Button onClick={() => setLimitRulesSheet({ policy })}>
+                <SlidersHorizontal />
+                Manage rules
+              </Button>
+            ) : null}
           </div>
         }
       />
@@ -420,6 +528,7 @@ export function LimitPolicyDetailPage() {
       <PolicyAssignmentsSection
         assignments={assignments}
         onChanged={invalidatePolicies}
+        canManageAssignments={canAssignPolicies}
       />
 
       <LimitRulesSheet
@@ -431,6 +540,7 @@ export function LimitPolicyDetailPage() {
         state={assignmentSheet}
         onOpenChange={(open) => !open && setAssignmentSheet(null)}
         onChanged={invalidatePolicies}
+        canAssignOrg={canManagePolicies}
       />
     </div>
   );
@@ -616,11 +726,19 @@ function LimitRulesDetailTable({ rules }: { rules: LimitPolicyRuleResponse[] }) 
 function PolicyAssignmentsSection({
   assignments,
   onChanged,
+  canManageAssignments,
 }: {
   assignments: PolicyAssignmentResponse[];
   onChanged: () => Promise<void>;
+  canManageAssignments: boolean;
 }) {
   const [scopeFilter, setScopeFilter] = useState("all");
+  const teamsQuery = useListTeamsApiV1TeamsGet();
+  const projectsQuery = useListProjectsApiV1ProjectsGet();
+  const teams = teamsQuery.data?.status === 200 ? teamsQuery.data.data : [];
+  const projects = projectsQuery.data?.status === 200 ? projectsQuery.data.data : [];
+  const teamNames = new Map(teams.map((team) => [team.id, team.name]));
+  const projectNames = new Map(projects.map((project) => [project.id, project.name]));
   const deleteAssignment = useDeletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDelete({
     mutation: {
       onSuccess: async () => {
@@ -634,6 +752,10 @@ function PolicyAssignmentsSection({
     scopeFilter === "all"
       ? assignments
       : assignments.filter((assignment) => assignment.scope_type === scopeFilter);
+  const handleDeleteAssignment = async (assignment: PolicyAssignmentResponse) => {
+    if (!window.confirm("Remove this policy assignment?")) return;
+    deleteAssignment.mutate({ assignmentId: assignment.id });
+  };
   return (
     <PolicyCard
       title="Assignments"
@@ -663,7 +785,7 @@ function PolicyAssignmentsSection({
               <TableRow>
                 <TableHead>Scope</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="w-12" />
+                {canManageAssignments ? <TableHead className="w-12" /> : null}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -672,10 +794,7 @@ function PolicyAssignmentsSection({
                   <TableCell>
                     <div className="capitalize">{assignment.scope_type.replace("_", " ")}</div>
                     <div className="text-xs text-muted-foreground">
-                      {assignment.team_id ??
-                        assignment.project_id ??
-                        assignment.virtual_key_id ??
-                        "Organization"}
+                      {formatAssignmentTarget(assignment, teamNames, projectNames)}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -683,16 +802,18 @@ function PolicyAssignmentsSection({
                       {assignment.is_active ? "Active" : "Inactive"}
                     </StatusBadge>
                   </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Remove assignment"
-                      onClick={() => deleteAssignment.mutate({ assignmentId: assignment.id })}
-                    >
-                      <Trash2 />
-                    </Button>
-                  </TableCell>
+                  {canManageAssignments ? (
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Remove assignment"
+                        onClick={() => void handleDeleteAssignment(assignment)}
+                      >
+                        <Trash2 />
+                      </Button>
+                    </TableCell>
+                  ) : null}
                 </TableRow>
               ))}
             </TableBody>
@@ -709,12 +830,16 @@ function AccessPoliciesTable({
   isLoading,
   onConfigureRoutes,
   onAssign,
+  canManageDefinitions,
+  canAssign,
 }: {
   policies: AccessPolicyResponse[];
   assignmentCount: (policyId: string, type: "access") => number;
   isLoading: boolean;
   onConfigureRoutes: (policy: AccessPolicyResponse) => void;
   onAssign: (policy: AccessPolicyResponse) => void;
+  canManageDefinitions: boolean;
+  canAssign: boolean;
 }) {
   const queryClient = useQueryClient();
   const deletePolicy = useDeleteAccessPolicyApiV1PoliciesAccessPolicyIdDelete({
@@ -726,6 +851,12 @@ function AccessPoliciesTable({
       onError: () => toast.error("Access policy could not be deleted."),
     },
   });
+  const handleDeletePolicy = async (policy: AccessPolicyResponse) => {
+    const confirmed = await confirmPolicyImpact(`Delete access policy "${policy.name}"?`, () =>
+      getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet(policy.id),
+    );
+    if (confirmed) deletePolicy.mutate({ policyId: policy.id });
+  };
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading policies...</p>;
   if (policies.length === 0) {
     return <EmptyState title="No access policies" description="Create a route policy first." />;
@@ -743,7 +874,9 @@ function AccessPoliciesTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {policies.map((policy) => (
+          {policies.map((policy) => {
+            const status = accessPolicyStatus(policy, assignmentCount(policy.id, "access"));
+            return (
             <TableRow key={policy.id}>
               <TableCell>
                 <Link to={`/policies/access/${policy.id}`} className="font-medium hover:underline">
@@ -759,30 +892,34 @@ function AccessPoliciesTable({
               </TableCell>
               <TableCell>{assignmentCount(policy.id, "access")}</TableCell>
               <TableCell>
-                <StatusBadge variant={policy.is_active ? "active" : "inactive"}>
-                  {policy.is_active ? "Active" : "Inactive"}
-                </StatusBadge>
+                <StatusBadge variant={status.variant}>{status.label}</StatusBadge>
               </TableCell>
               <TableCell>
                 <div className="flex justify-end gap-1">
-                  <Button variant="ghost" size="icon" onClick={() => onConfigureRoutes(policy)}>
-                    <Route />
-                  </Button>
-                  <Button variant="ghost" size="icon" onClick={() => onAssign(policy)}>
-                    <Plus />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`Delete ${policy.name}`}
-                    onClick={() => deletePolicy.mutate({ policyId: policy.id })}
-                  >
-                    <Trash2 />
-                  </Button>
+                  {canManageDefinitions ? (
+                    <Button variant="ghost" size="icon" onClick={() => onConfigureRoutes(policy)}>
+                      <Route />
+                    </Button>
+                  ) : null}
+                  {canAssign ? (
+                    <Button variant="ghost" size="icon" onClick={() => onAssign(policy)}>
+                      <Plus />
+                    </Button>
+                  ) : null}
+                  {canManageDefinitions ? (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Delete ${policy.name}`}
+                      onClick={() => void handleDeletePolicy(policy)}
+                    >
+                      <Trash2 />
+                    </Button>
+                  ) : null}
                 </div>
               </TableCell>
             </TableRow>
-          ))}
+          )})}
         </TableBody>
       </Table>
     </div>
@@ -795,12 +932,16 @@ function LimitPoliciesTable({
   isLoading,
   onConfigureRules,
   onAssign,
+  canManageDefinitions,
+  canAssign,
 }: {
   policies: LimitPolicyResponse[];
   assignmentCount: (policyId: string, type: "limit") => number;
   isLoading: boolean;
   onConfigureRules: (policy: LimitPolicyResponse) => void;
   onAssign: (policy: LimitPolicyResponse) => void;
+  canManageDefinitions: boolean;
+  canAssign: boolean;
 }) {
   const queryClient = useQueryClient();
   const deletePolicy = useDeleteLimitPolicyApiV1PoliciesLimitsPolicyIdDelete({
@@ -812,6 +953,12 @@ function LimitPoliciesTable({
       onError: () => toast.error("Limit policy could not be deleted."),
     },
   });
+  const handleDeletePolicy = async (policy: LimitPolicyResponse) => {
+    const confirmed = await confirmPolicyImpact(`Delete limit policy "${policy.name}"?`, () =>
+      getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet(policy.id),
+    );
+    if (confirmed) deletePolicy.mutate({ policyId: policy.id });
+  };
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading policies...</p>;
   if (policies.length === 0) {
     return <EmptyState title="No limit policies" description="Create a budget or cap policy." />;
@@ -829,7 +976,9 @@ function LimitPoliciesTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {policies.map((policy) => (
+          {policies.map((policy) => {
+            const status = limitPolicyStatus(policy, assignmentCount(policy.id, "limit"));
+            return (
             <TableRow key={policy.id}>
               <TableCell>
                 <Link to={`/policies/limits/${policy.id}`} className="font-medium hover:underline">
@@ -845,30 +994,34 @@ function LimitPoliciesTable({
               </TableCell>
               <TableCell>{assignmentCount(policy.id, "limit")}</TableCell>
               <TableCell>
-                <StatusBadge variant={policy.is_active ? "active" : "inactive"}>
-                  {policy.is_active ? "Active" : "Inactive"}
-                </StatusBadge>
+                <StatusBadge variant={status.variant}>{status.label}</StatusBadge>
               </TableCell>
               <TableCell>
                 <div className="flex justify-end gap-1">
-                  <Button variant="ghost" size="icon" onClick={() => onConfigureRules(policy)}>
-                    <SlidersHorizontal />
-                  </Button>
-                  <Button variant="ghost" size="icon" onClick={() => onAssign(policy)}>
-                    <Plus />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`Delete ${policy.name}`}
-                    onClick={() => deletePolicy.mutate({ policyId: policy.id })}
-                  >
-                    <Trash2 />
-                  </Button>
+                  {canManageDefinitions ? (
+                    <Button variant="ghost" size="icon" onClick={() => onConfigureRules(policy)}>
+                      <SlidersHorizontal />
+                    </Button>
+                  ) : null}
+                  {canAssign ? (
+                    <Button variant="ghost" size="icon" onClick={() => onAssign(policy)}>
+                      <Plus />
+                    </Button>
+                  ) : null}
+                  {canManageDefinitions ? (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Delete ${policy.name}`}
+                      onClick={() => void handleDeletePolicy(policy)}
+                    >
+                      <Trash2 />
+                    </Button>
+                  ) : null}
                 </div>
               </TableCell>
             </TableRow>
-          ))}
+          )})}
         </TableBody>
       </Table>
     </div>
@@ -1453,6 +1606,12 @@ function RouteSheet({
     setPriority(String(route.priority));
     setWeight(String(route.weight));
   };
+  const handleDeleteRoute = async (route: AccessPolicyRouteResponse) => {
+    const confirmed = await confirmPolicyImpact("Delete this access route?", () =>
+      getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet(route.id),
+    );
+    if (confirmed) deleteRoute.mutate({ routeId: route.id });
+  };
   const submit = () => {
     if (!state || !providerId || !poolId || selectedModels.length === 0) return;
     if (editingRoute) {
@@ -1529,7 +1688,7 @@ function RouteSheet({
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => deleteRoute.mutate({ routeId: route.id })}
+                            onClick={() => void handleDeleteRoute(route)}
                           >
                             <Trash2 />
                           </Button>
@@ -1755,6 +1914,12 @@ function LimitRulesSheet({
     setIntervalUnit(rule.interval_unit);
     setIntervalCount(String(rule.interval_count));
   };
+  const handleDeleteRule = async (rule: LimitPolicyRuleResponse) => {
+    const confirmed = await confirmPolicyImpact(`Delete limit rule "${rule.name}"?`, () =>
+      getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet(rule.id),
+    );
+    if (confirmed) deleteRule.mutate({ ruleId: rule.id });
+  };
   const rulePayload = {
     name,
     limit_type: limitType,
@@ -1817,7 +1982,7 @@ function LimitRulesSheet({
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => deleteRule.mutate({ ruleId: rule.id })}
+                              onClick={() => void handleDeleteRule(rule)}
                             >
                               <Trash2 />
                             </Button>
@@ -1914,17 +2079,44 @@ function AssignmentSheet({
   state,
   onOpenChange,
   onChanged,
+  canAssignOrg,
 }: {
   state: AssignmentSheetState;
   onOpenChange: (open: boolean) => void;
   onChanged: () => Promise<void>;
+  canAssignOrg: boolean;
 }) {
-  const [scopeType, setScopeType] = useState("org");
+  const [scopeType, setScopeType] = useState(canAssignOrg ? "org" : "project");
   const [scopeId, setScopeId] = useState("");
+  const currentUserQuery = useMeApiV1AuthMeGet();
   const teamsQuery = useListTeamsApiV1TeamsGet();
   const projectsQuery = useListProjectsApiV1ProjectsGet();
+  const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
   const teams = teamsQuery.data?.status === 200 ? teamsQuery.data.data : [];
   const projects = projectsQuery.data?.status === 200 ? projectsQuery.data.data : [];
+  const teamAdminIds = new Set(
+    (currentUser?.team_memberships ?? [])
+      .filter((membership) => membership.role === "team_admin")
+      .map((membership) => membership.team_id),
+  );
+  const projectAdminIds = new Set(
+    (currentUser?.project_memberships ?? [])
+      .filter((membership) => membership.role === "project_admin")
+      .map((membership) => membership.project_id),
+  );
+  const assignableTeams = canAssignOrg
+    ? teams
+    : teams.filter((team) => teamAdminIds.has(team.id));
+  const assignableProjects = canAssignOrg
+    ? projects
+    : projects.filter(
+        (project) => teamAdminIds.has(project.team_id) || projectAdminIds.has(project.id),
+      );
+  const scopeOptions = [
+    ...(canAssignOrg ? ["org"] : []),
+    ...(assignableTeams.length ? ["team"] : []),
+    ...(assignableProjects.length ? ["project", "virtual_key"] : []),
+  ];
   const createAssignment = useCreatePolicyAssignmentApiV1PoliciesAssignmentsPost({
     mutation: {
       onSuccess: async () => {
@@ -1956,7 +2148,7 @@ function AssignmentSheet({
       open={Boolean(state)}
       onOpenChange={(open) => {
         if (!open) {
-          setScopeType("org");
+          setScopeType(canAssignOrg ? "org" : "project");
           setScopeId("");
         }
         onOpenChange(open);
@@ -1977,7 +2169,7 @@ function AssignmentSheet({
               setScopeType(value);
               setScopeId("");
             }}
-            options={["org", "team", "project", "virtual_key"]}
+            options={scopeOptions}
             labels={{ org: "Organization", team: "Team", project: "Project", virtual_key: "Virtual key" }}
           />
           {scopeType === "team" ? (
@@ -1985,8 +2177,8 @@ function AssignmentSheet({
               label="Team"
               value={scopeId}
               onValueChange={setScopeId}
-              options={teams.map((team) => team.id)}
-              labels={teamLabels(teams)}
+              options={assignableTeams.map((team) => team.id)}
+              labels={teamLabels(assignableTeams)}
             />
           ) : null}
           {scopeType === "project" ? (
@@ -1994,8 +2186,8 @@ function AssignmentSheet({
               label="Project"
               value={scopeId}
               onValueChange={setScopeId}
-              options={projects.map((project) => project.id)}
-              labels={projectLabels(projects)}
+              options={assignableProjects.map((project) => project.id)}
+              labels={projectLabels(assignableProjects)}
             />
           ) : null}
           {scopeType === "virtual_key" ? (

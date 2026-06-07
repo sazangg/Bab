@@ -19,6 +19,7 @@ from app.modules.guardrails.schemas import (
     GuardrailRuleInput,
     GuardrailSimulationRequest,
 )
+from app.modules.keys.internal.models import Project, VirtualKey
 
 
 async def _create_actor_scope(db_session: AsyncSession):
@@ -115,6 +116,154 @@ async def test_guardrail_monitor_mode_records_warning_without_blocking(
     events = await guardrails_facade.list_events(scope=scope, db=db_session)
     assert events[0].decision == "allowed"
     assert events[1].decision == "dry_run"
+
+
+async def test_guardrail_assignment_dry_run_records_without_blocking(
+    db_session: AsyncSession,
+) -> None:
+    actor, scope, team = await _create_actor_scope(db_session)
+    policy = await guardrails_facade.create_policy(
+        payload=CreateGuardrailPolicyRequest(
+            name="Dry run provider",
+            rules=[GuardrailRuleInput(rule_type="model", effect="deny", values=["gpt-5-large"])],
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    await guardrails_facade.create_assignment(
+        payload=CreateGuardrailAssignmentRequest(
+            policy_id=policy.id,
+            scope_type="team",
+            team_id=team.id,
+            enforcement_mode="dry_run",
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    await guardrails_facade.evaluate_request(
+        context=_context(org_id=scope.org_id, team_id=team.id, model="gpt-5-large"),
+        db=db_session,
+    )
+
+    events = await guardrails_facade.list_events(scope=scope, db=db_session)
+    assert events[0].decision == "allowed"
+    assert events[1].decision == "dry_run"
+
+
+async def test_has_enforced_response_guardrails_uses_effective_mode(
+    db_session: AsyncSession,
+) -> None:
+    actor, scope, team = await _create_actor_scope(db_session)
+    monitor_policy = await guardrails_facade.create_policy(
+        payload=CreateGuardrailPolicyRequest(
+            name="Monitor response",
+            enforcement_mode="monitor",
+            rules=[
+                GuardrailRuleInput(
+                    rule_type="prompt_contains",
+                    effect="deny",
+                    phase="response",
+                    values=["blocked"],
+                )
+            ],
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    await guardrails_facade.create_assignment(
+        payload=CreateGuardrailAssignmentRequest(
+            policy_id=monitor_policy.id,
+            scope_type="team",
+            team_id=team.id,
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    context = _context(org_id=scope.org_id, team_id=team.id)
+
+    assert (
+        await guardrails_facade.has_enforced_response_guardrails(
+            context=context,
+            db=db_session,
+        )
+        is False
+    )
+
+    dry_run_policy = await guardrails_facade.create_policy(
+        payload=CreateGuardrailPolicyRequest(
+            name="Dry-run response",
+            rules=[
+                GuardrailRuleInput(
+                    rule_type="prompt_contains",
+                    effect="deny",
+                    phase="response",
+                    values=["blocked"],
+                )
+            ],
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    await guardrails_facade.create_assignment(
+        payload=CreateGuardrailAssignmentRequest(
+            policy_id=dry_run_policy.id,
+            scope_type="team",
+            team_id=team.id,
+            enforcement_mode="dry_run",
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    assert (
+        await guardrails_facade.has_enforced_response_guardrails(
+            context=context,
+            db=db_session,
+        )
+        is False
+    )
+
+    blocking_policy = await guardrails_facade.create_policy(
+        payload=CreateGuardrailPolicyRequest(
+            name="Blocking response",
+            rules=[
+                GuardrailRuleInput(
+                    rule_type="prompt_contains",
+                    effect="deny",
+                    phase="response",
+                    values=["blocked"],
+                )
+            ],
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    await guardrails_facade.create_assignment(
+        payload=CreateGuardrailAssignmentRequest(
+            policy_id=blocking_policy.id,
+            scope_type="team",
+            team_id=team.id,
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    assert (
+        await guardrails_facade.has_enforced_response_guardrails(
+            context=context,
+            db=db_session,
+        )
+        is True
+    )
 
 
 async def test_guardrail_policy_blocks_when_any_enabled_rule_denies(
@@ -224,6 +373,89 @@ async def test_guardrail_rejects_assignment_to_missing_target(db_session: AsyncS
         )
 
 
+async def test_guardrail_assignment_validates_project_and_key_ownership(
+    db_session: AsyncSession,
+) -> None:
+    actor, scope, team = await _create_actor_scope(db_session)
+    _other_actor, other_scope, other_team = await _create_actor_scope(db_session)
+    policy = await guardrails_facade.create_policy(
+        payload=CreateGuardrailPolicyRequest(
+            name="Ownership guard",
+            rules=[GuardrailRuleInput(rule_type="model", effect="deny", values=["gpt-5-large"])],
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    project = Project(
+        org_id=scope.org_id,
+        team_id=team.id,
+        created_by=actor.id,
+        name="Guarded project",
+        slug=f"guarded-{uuid4()}",
+    )
+    other_project = Project(
+        org_id=other_scope.org_id,
+        team_id=other_team.id,
+        created_by=actor.id,
+        name="Other project",
+        slug=f"other-{uuid4()}",
+    )
+    db_session.add_all([project, other_project])
+    await db_session.flush()
+    virtual_key = VirtualKey(
+        org_id=scope.org_id,
+        project_id=project.id,
+        name="Guarded key",
+        key_hash=f"hash-{uuid4()}",
+        key_prefix="bab_test_guard",
+        created_by=actor.id,
+    )
+    db_session.add(virtual_key)
+    await db_session.flush()
+    project_id = project.id
+    other_project_id = other_project.id
+    virtual_key_id = virtual_key.id
+    team_id = team.id
+    await db_session.commit()
+
+    with pytest.raises(GuardrailAssignmentTargetNotFoundError):
+        await guardrails_facade.create_assignment(
+            payload=CreateGuardrailAssignmentRequest(
+                policy_id=policy.id,
+                scope_type="project",
+                team_id=other_team.id,
+                project_id=project_id,
+            ),
+            actor=actor,
+            scope=scope,
+            db=db_session,
+        )
+    with pytest.raises(GuardrailAssignmentTargetNotFoundError):
+        await guardrails_facade.create_assignment(
+            payload=CreateGuardrailAssignmentRequest(
+                policy_id=policy.id,
+                scope_type="virtual_key",
+                project_id=other_project_id,
+                virtual_key_id=virtual_key_id,
+            ),
+            actor=actor,
+            scope=scope,
+            db=db_session,
+        )
+    with pytest.raises(GuardrailAssignmentTargetNotFoundError):
+        await guardrails_facade.create_assignment(
+            payload=CreateGuardrailAssignmentRequest(
+                policy_id=policy.id,
+                scope_type="org",
+                team_id=team_id,
+            ),
+            actor=actor,
+            scope=scope,
+            db=db_session,
+        )
+
+
 async def test_deleted_assignment_no_longer_enforces_policy(db_session: AsyncSession) -> None:
     actor, scope, team = await _create_actor_scope(db_session)
     policy = await guardrails_facade.create_policy(
@@ -256,6 +488,64 @@ async def test_deleted_assignment_no_longer_enforces_policy(db_session: AsyncSes
         context=_context(org_id=scope.org_id, team_id=team.id, model="gpt-5-large"),
         db=db_session,
     )
+
+
+async def test_guardrail_impact_reports_assignment_targets(db_session: AsyncSession) -> None:
+    actor, scope, team = await _create_actor_scope(db_session)
+    project = Project(
+        org_id=scope.org_id,
+        team_id=team.id,
+        created_by=actor.id,
+        name="Console",
+        slug=f"console-{uuid4()}",
+    )
+    db_session.add(project)
+    await db_session.flush()
+    key = VirtualKey(
+        org_id=scope.org_id,
+        project_id=project.id,
+        name="Runtime key",
+        key_hash=f"hash-{uuid4()}",
+        key_prefix="bab-test",
+    )
+    db_session.add(key)
+    await db_session.commit()
+    policy = await guardrails_facade.create_policy(
+        payload=CreateGuardrailPolicyRequest(
+            name="Impact policy",
+            rules=[GuardrailRuleInput(rule_type="model", effect="deny", values=["gpt-5-large"])],
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    assignment = await guardrails_facade.create_assignment(
+        payload=CreateGuardrailAssignmentRequest(
+            policy_id=policy.id,
+            scope_type="team",
+            team_id=team.id,
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    policy_impact = await guardrails_facade.get_policy_impact(
+        policy_id=policy.id,
+        scope=scope,
+        db=db_session,
+    )
+    assignment_impact = await guardrails_facade.get_assignment_impact(
+        assignment_id=assignment.id,
+        scope=scope,
+        db=db_session,
+    )
+
+    assert policy_impact.affected_team_count == 1
+    assert policy_impact.affected_project_count == 1
+    assert policy_impact.affected_virtual_key_count == 1
+    assert policy_impact.affected_virtual_keys[0].id == key.id
+    assert assignment_impact.affected_projects[0].id == project.id
 
 
 async def test_guardrail_events_can_be_filtered_by_policy_and_model(
@@ -361,6 +651,29 @@ async def test_guardrail_simulation_reports_pii_match(db_session: AsyncSession) 
 
     assert result.decision == "blocked"
     assert result.matches[0].matched_values == ["email"]
+
+
+async def test_guardrail_simulation_reports_allowlist_miss(db_session: AsyncSession) -> None:
+    _actor, scope, _team = await _create_actor_scope(db_session)
+
+    result = await guardrails_facade.simulate(
+        payload=GuardrailSimulationRequest(
+            requested_model="gpt-5-large",
+            rules=[
+                GuardrailRuleInput(
+                    rule_type="model",
+                    effect="allow",
+                    values=["gpt-5-mini"],
+                )
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    assert result.decision == "blocked"
+    assert result.matches[0].reason == "model_allowlist_miss"
+    assert result.matches[0].matched_values == []
 
 
 async def test_guardrail_pii_rule_uses_configured_detector(db_session: AsyncSession) -> None:

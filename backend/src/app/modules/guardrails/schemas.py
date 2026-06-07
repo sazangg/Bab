@@ -146,6 +146,29 @@ class GuardrailAssignmentResponse(BaseModel):
     updated_at: datetime
 
 
+class GuardrailImpactTarget(BaseModel):
+    id: UUID
+    name: str
+
+
+class GuardrailImpactVirtualKey(GuardrailImpactTarget):
+    project_id: UUID
+    project_name: str
+
+
+class GuardrailImpactResponse(BaseModel):
+    affected_teams: list[GuardrailImpactTarget] = Field(default_factory=list)
+    affected_projects: list[GuardrailImpactTarget] = Field(default_factory=list)
+    affected_virtual_keys: list[GuardrailImpactVirtualKey] = Field(default_factory=list)
+    affected_team_count: int = 0
+    affected_project_count: int = 0
+    affected_virtual_key_count: int = 0
+    virtual_keys_would_become_unusable: list[GuardrailImpactVirtualKey] = Field(
+        default_factory=list
+    )
+    virtual_keys_would_become_unusable_count: int = 0
+
+
 class GuardrailEventResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -40,9 +40,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { hasPermission } from "@/features/auth/lib/permissions";
+import {
+  hasAnyProjectAdminMembership,
+  hasAnyTeamAdminMembership,
+  hasPermission,
+} from "@/features/auth/lib/permissions";
 import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
 import {
+  getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet,
+  getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet,
   useCreateAssignmentApiV1GuardrailsAssignmentsPost,
   useCreatePolicyApiV1GuardrailsPoliciesPost,
   useDeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete,
@@ -65,6 +71,7 @@ import {
 import type {
   GuardrailAssignmentResponse,
   GuardrailEventResponse,
+  GuardrailImpactResponse,
   GuardrailPolicyResponse,
   GuardrailRuleInput,
   GuardrailSimulationResponse,
@@ -133,6 +140,48 @@ function newRuleForm(overrides: Partial<PolicyRuleForm> = {}): PolicyRuleForm {
   };
 }
 
+async function confirmGuardrailImpact(
+  title: string,
+  fetchImpact: () => Promise<{ status: number; data: unknown }>,
+) {
+  const response = await fetchImpact();
+  if (response.status !== 200) {
+    toast.error("Impact preview could not be loaded.");
+    return false;
+  }
+  return window.confirm(formatGuardrailImpactPreview(title, response.data as GuardrailImpactResponse));
+}
+
+function formatGuardrailImpactPreview(title: string, impact: GuardrailImpactResponse) {
+  const lines = [
+    title,
+    "",
+    `Affected teams: ${impact.affected_team_count ?? 0}`,
+    `Affected projects: ${impact.affected_project_count ?? 0}`,
+    `Affected virtual keys: ${impact.affected_virtual_key_count ?? 0}`,
+  ];
+  for (const key of (impact.affected_virtual_keys ?? []).slice(0, 5)) {
+    lines.push(`- ${key.name}`);
+  }
+  return lines.join("\n");
+}
+
+function guardrailPolicyStatus(policy: GuardrailPolicyResponse) {
+  if (!policy.is_active) return { label: "Inactive", variant: "inactive" as const };
+  if (policy.enforcement_mode === "monitor") {
+    return { label: "Monitor/Dry-run", variant: "muted" as const };
+  }
+  return { label: "Blocking traffic", variant: "active" as const };
+}
+
+function guardrailAssignmentStatus(assignment: GuardrailAssignmentResponse) {
+  if (!assignment.is_active) return { label: "Inactive", variant: "inactive" as const };
+  if (assignment.enforcement_mode === "dry_run") {
+    return { label: "Monitor/Dry-run", variant: "muted" as const };
+  }
+  return { label: "Blocking traffic", variant: "active" as const };
+}
+
 export function GuardrailsPage() {
   const queryClient = useQueryClient();
   const [policySheetOpen, setPolicySheetOpen] = useState(false);
@@ -157,6 +206,10 @@ export function GuardrailsPage() {
   const currentUserQuery = useMeApiV1AuthMeGet();
   const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
   const canManageGuardrails = hasPermission(currentUser, "guardrails.manage");
+  const canAssignGuardrails =
+    canManageGuardrails ||
+    hasAnyTeamAdminMembership(currentUser) ||
+    hasAnyProjectAdminMembership(currentUser);
   const policiesQuery = useListPoliciesApiV1GuardrailsPoliciesGet();
   const assignmentsQuery = useListAssignmentsApiV1GuardrailsAssignmentsGet();
   const eventsQuery = useListEventsApiV1GuardrailsEventsGet({
@@ -208,7 +261,35 @@ export function GuardrailsPage() {
       query.data?.status === 200 ? query.data.data.items : [],
     ),
   );
-  const scopeOptions = buildScopeOptions({ teams, projects, virtualKeys });
+  const teamAdminIds = new Set(
+    (currentUser?.team_memberships ?? [])
+      .filter((membership) => membership.role === "team_admin")
+      .map((membership) => membership.team_id),
+  );
+  const projectAdminIds = new Set(
+    (currentUser?.project_memberships ?? [])
+      .filter((membership) => membership.role === "project_admin")
+      .map((membership) => membership.project_id),
+  );
+  const assignableTeams = canManageGuardrails
+    ? teams
+    : teams.filter((team) => teamAdminIds.has(team.id));
+  const assignableProjects = canManageGuardrails
+    ? projects
+    : projects.filter(
+        (project) => teamAdminIds.has(project.team_id) || projectAdminIds.has(project.id),
+      );
+  const assignableProjectIds = new Set(assignableProjects.map((project) => project.id));
+  const assignableVirtualKeys = canManageGuardrails
+    ? virtualKeys
+    : virtualKeys.filter((key) => assignableProjectIds.has(key.project_id));
+  const assignmentScopeOptions = buildScopeOptions({
+    teams: assignableTeams,
+    projects: assignableProjects,
+    virtualKeys: assignableVirtualKeys,
+    includeOrg: canManageGuardrails,
+  });
+  const scopeOptions = buildScopeOptions({ teams, projects, virtualKeys, includeOrg: true });
   const scopeLabels = buildScopeLabels(scopeOptions);
   const policyLabels = Object.fromEntries(policies.map((policy) => [policy.id, policy.name]));
   const activePolicies = policies.filter((policy) => policy.is_active);
@@ -221,7 +302,8 @@ export function GuardrailsPage() {
     assignmentForm.scope_type === "org"
       ? "Organization"
       : scopeLabels[assignmentForm.scope_id] || "No target selected";
-  const selectedAssignmentScopeOptions = scopeOptions[assignmentForm.scope_type as ScopeType] ?? [];
+  const selectedAssignmentScopeOptions =
+    assignmentScopeOptions[assignmentForm.scope_type as ScopeType] ?? [];
   const eventScopeOptions = eventScopeType === "all" ? [] : scopeOptions[eventScopeType];
 
   const invalidateGuardrails = async () => {
@@ -297,6 +379,18 @@ export function GuardrailsPage() {
       onError: () => toast.error("Policy could not be deleted."),
     },
   });
+  const handleDeletePolicy = async (policy: GuardrailPolicyResponse) => {
+    const confirmed = await confirmGuardrailImpact(`Delete guardrail policy "${policy.name}"?`, () =>
+      getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet(policy.id),
+    );
+    if (confirmed) deletePolicy.mutate({ policyId: policy.id });
+  };
+  const handleDeleteAssignment = async (assignment: GuardrailAssignmentResponse) => {
+    const confirmed = await confirmGuardrailImpact("Remove this guardrail assignment?", () =>
+      getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet(assignment.id),
+    );
+    if (confirmed) deleteAssignment.mutate({ assignmentId: assignment.id });
+  };
   const simulateGuardrails = useSimulateGuardrailsApiV1GuardrailsSimulatePost({
     mutation: {
       onSuccess: (response) => {
@@ -313,7 +407,7 @@ export function GuardrailsPage() {
     summary: policy.rules
       .map(
         (rule) =>
-          `${rule.effect} ${rule.phase} ${ruleTypeLabels[rule.rule_type] ?? rule.rule_type}: ${rule.values.join(", ")}`,
+          `${ruleEffectLabel(rule.effect)} ${rule.phase} ${ruleTypeLabels[rule.rule_type] ?? rule.rule_type}: ${rule.values.join(", ")}`,
       )
       .join(" · "),
   }));
@@ -326,7 +420,10 @@ export function GuardrailsPage() {
 
   const openCreateAssignment = () => {
     setEditingAssignment(null);
-    setAssignmentForm(emptyAssignmentForm);
+    setAssignmentForm({
+      ...emptyAssignmentForm,
+      scope_type: canManageGuardrails ? "org" : firstAssignableScope(assignmentScopeOptions),
+    });
     setAssignmentSheetOpen(true);
   };
 
@@ -370,7 +467,7 @@ export function GuardrailsPage() {
     setPolicySheetOpen(true);
   };
 
-  const submitPolicy = () => {
+  const submitPolicy = async () => {
     if (!policyForm.name.trim()) {
       toast.error("Policy name is required.");
       return;
@@ -400,6 +497,13 @@ export function GuardrailsPage() {
       rules,
     };
     if (editingPolicy) {
+      if (editingPolicy.is_active && !payload.is_active) {
+        const confirmed = await confirmGuardrailImpact(
+          `Deactivate guardrail policy "${editingPolicy.name}"?`,
+          () => getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet(editingPolicy.id),
+        );
+        if (!confirmed) return;
+      }
       updatePolicy.mutate({ policyId: editingPolicy.id, data: payload });
     } else {
       createPolicy.mutate({ data: payload });
@@ -436,6 +540,20 @@ export function GuardrailsPage() {
     }
   };
 
+  const toggleAssignmentActive = async (assignment: GuardrailAssignmentResponse) => {
+    if (assignment.is_active) {
+      const confirmed = await confirmGuardrailImpact(
+        "Deactivate this guardrail assignment?",
+        () => getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet(assignment.id),
+      );
+      if (!confirmed) return;
+    }
+    updateAssignment.mutate({
+      assignmentId: assignment.id,
+      data: { is_active: !assignment.is_active },
+    });
+  };
+
   const runSimulation = () => {
     if (!simulationPolicyId) {
       toast.error("Choose a policy to simulate.");
@@ -460,16 +578,20 @@ export function GuardrailsPage() {
         title="Guardrails"
         description="Composable request policies that constrain models, providers, and pools."
         actions={
-          canManageGuardrails ? (
+          canAssignGuardrails || canManageGuardrails ? (
             <div className="flex gap-2">
-              <Button variant="outline" onClick={openCreateAssignment}>
-                <Plus data-icon="inline-start" />
-                Assign policy
-              </Button>
-              <Button onClick={openCreatePolicy}>
-                <Plus data-icon="inline-start" />
-                New policy
-              </Button>
+              {canAssignGuardrails ? (
+                <Button variant="outline" onClick={openCreateAssignment}>
+                  <Plus data-icon="inline-start" />
+                  Assign policy
+                </Button>
+              ) : null}
+              {canManageGuardrails ? (
+                <Button onClick={openCreatePolicy}>
+                  <Plus data-icon="inline-start" />
+                  New policy
+                </Button>
+              ) : null}
             </div>
           ) : null
         }
@@ -544,7 +666,8 @@ export function GuardrailsPage() {
                         className="rounded-md bg-background p-3"
                       >
                         <div className="font-medium">
-                          {ruleTypeLabels[match.rule_type] ?? match.rule_type} · {match.effect}
+                          {ruleTypeLabels[match.rule_type] ?? match.rule_type} ·{" "}
+                          {ruleEffectLabel(match.effect)}
                         </div>
                         <div className="mt-1 text-xs text-muted-foreground">
                           {match.reason} · priority {match.priority}
@@ -552,7 +675,9 @@ export function GuardrailsPage() {
                         <div className="mt-2 font-mono text-xs">
                           {match.matched_values.length > 0
                             ? match.matched_values.join(", ")
-                            : "No direct value match"}
+                            : match.effect === "allow"
+                              ? "Allowlist miss"
+                              : "No direct value match"}
                         </div>
                       </div>
                     ))
@@ -606,7 +731,9 @@ export function GuardrailsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {policyRows.map((policy) => (
+                {policyRows.map((policy) => {
+                  const status = guardrailPolicyStatus(policy);
+                  return (
                   <TableRow key={policy.id}>
                     <TableCell>
                       <div className="font-medium">{policy.name}</div>
@@ -627,9 +754,7 @@ export function GuardrailsPage() {
                       </span>
                     </TableCell>
                     <TableCell>
-                      <StatusBadge variant={policy.is_active ? "active" : "inactive"}>
-                        {policy.is_active ? "Active" : "Inactive"}
-                      </StatusBadge>
+                      <StatusBadge variant={status.variant}>{status.label}</StatusBadge>
                     </TableCell>
                     {canManageGuardrails ? (
                       <TableCell className="text-right">
@@ -650,7 +775,7 @@ export function GuardrailsPage() {
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               variant="destructive"
-                              onSelect={() => deletePolicy.mutate({ policyId: policy.id })}
+                              onSelect={() => void handleDeletePolicy(policy)}
                               disabled={deletePolicy.isPending}
                             >
                               <Trash2 />
@@ -661,7 +786,7 @@ export function GuardrailsPage() {
                       </TableCell>
                     ) : null}
                   </TableRow>
-                ))}
+                )})}
               </TableBody>
             </Table>
           </CardContent>
@@ -689,7 +814,7 @@ export function GuardrailsPage() {
                     <TableHead>Scope</TableHead>
                     <TableHead>Mode</TableHead>
                     <TableHead>Status</TableHead>
-                    {canManageGuardrails ? (
+                    {canAssignGuardrails ? (
                       <TableHead className="w-12">
                         <span className="sr-only">Actions</span>
                       </TableHead>
@@ -697,7 +822,9 @@ export function GuardrailsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {assignments.map((assignment) => (
+                  {assignments.map((assignment) => {
+                    const status = guardrailAssignmentStatus(assignment);
+                    return (
                     <TableRow key={assignment.id}>
                       <TableCell className="font-medium">{assignment.policy_name}</TableCell>
                       <TableCell>
@@ -712,11 +839,9 @@ export function GuardrailsPage() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <StatusBadge variant={assignment.is_active ? "active" : "inactive"}>
-                          {assignment.is_active ? "Active" : "Inactive"}
-                        </StatusBadge>
+                        <StatusBadge variant={status.variant}>{status.label}</StatusBadge>
                       </TableCell>
-                      {canManageGuardrails ? (
+                      {canAssignGuardrails ? (
                         <TableCell className="text-right">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -734,12 +859,7 @@ export function GuardrailsPage() {
                                 Edit assignment
                               </DropdownMenuItem>
                               <DropdownMenuItem
-                                onSelect={() =>
-                                  updateAssignment.mutate({
-                                    assignmentId: assignment.id,
-                                    data: { is_active: !assignment.is_active },
-                                  })
-                                }
+                                onSelect={() => void toggleAssignmentActive(assignment)}
                                 disabled={updateAssignment.isPending}
                               >
                                 {assignment.is_active
@@ -748,9 +868,7 @@ export function GuardrailsPage() {
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 variant="destructive"
-                                onSelect={() =>
-                                  deleteAssignment.mutate({ assignmentId: assignment.id })
-                                }
+                                onSelect={() => void handleDeleteAssignment(assignment)}
                                 disabled={deleteAssignment.isPending}
                               >
                                 <Trash2 />
@@ -761,7 +879,7 @@ export function GuardrailsPage() {
                         </TableCell>
                       ) : null}
                     </TableRow>
-                  ))}
+                  )})}
                 </TableBody>
               </Table>
             )}
@@ -950,8 +1068,8 @@ export function GuardrailsPage() {
                 <div>
                   <h3 className="text-sm font-medium">Rules</h3>
                   <p className="text-sm text-muted-foreground">
-                    Allow rules define permitted sets. Deny rules block matching values. Rules are
-                    evaluated in priority order.
+                    Allowlist rules define permitted sets. Deny rules block matching values. Rules
+                    are evaluated in priority order.
                   </p>
                 </div>
                 <SelectField
@@ -1056,7 +1174,7 @@ export function GuardrailsPage() {
                     scope_id: "",
                   })
                 }
-                options={["org", "team", "project", "virtual_key"]}
+                options={assignmentScopeTypes(assignmentScopeOptions)}
               />
               {assignmentForm.scope_type !== "org" ? (
                 <div className="grid gap-2">
@@ -1066,11 +1184,11 @@ export function GuardrailsPage() {
                     onValueChange={(value) =>
                       setAssignmentForm({ ...assignmentForm, scope_id: value })
                     }
-                    options={scopeOptions[assignmentForm.scope_type as ScopeType].map(
+                    options={assignmentScopeOptions[assignmentForm.scope_type as ScopeType].map(
                       (option) => option.id,
                     )}
                     labels={Object.fromEntries(
-                      scopeOptions[assignmentForm.scope_type as ScopeType].map((option) => [
+                      assignmentScopeOptions[assignmentForm.scope_type as ScopeType].map((option) => [
                         option.id,
                         option.label,
                       ]),
@@ -1212,6 +1330,7 @@ function RuleEditor({
           value={rule.effect}
           onValueChange={(value) => onChange({ ...rule, effect: value })}
           options={["allow", "deny"]}
+          labels={{ allow: "Allowlist", deny: "Deny" }}
         />
         <SelectField
           label="Phase"
@@ -1353,6 +1472,10 @@ function ruleValuePlaceholder(ruleType: string) {
   return "One UUID per line";
 }
 
+function ruleEffectLabel(effect: string) {
+  return effect === "allow" ? "Allowlist" : "Deny";
+}
+
 function buildRuleConfig(rule: PolicyRuleForm) {
   if (rule.rule_type !== "pii") return {};
   return { detector: rule.detector || "local_regex" };
@@ -1422,13 +1545,15 @@ function buildScopeOptions({
   teams,
   projects,
   virtualKeys,
+  includeOrg,
 }: {
   teams: TeamResponse[];
   projects: ProjectResponse[];
   virtualKeys: ScopedVirtualKey[];
+  includeOrg: boolean;
 }): ScopeOptions {
   return {
-    org: [{ id: "org", label: "Organization" }],
+    org: includeOrg ? [{ id: "org", label: "Organization" }] : [],
     team: teams.map((team) => ({ id: team.id, label: team.name })),
     project: projects.map((project) => ({ id: project.id, label: project.name })),
     virtual_key: virtualKeys.map((key) => ({
@@ -1436,6 +1561,16 @@ function buildScopeOptions({
       label: `${key.name} · ${key.project_name} · ${key.key_prefix}`,
     })),
   };
+}
+
+function assignmentScopeTypes(scopeOptions: ScopeOptions) {
+  return (["org", "team", "project", "virtual_key"] as ScopeType[]).filter(
+    (scopeType) => scopeOptions[scopeType].length > 0,
+  );
+}
+
+function firstAssignableScope(scopeOptions: ScopeOptions) {
+  return assignmentScopeTypes(scopeOptions)[0] ?? "project";
 }
 
 function buildScopeLabels(scopeOptions: ScopeOptions) {

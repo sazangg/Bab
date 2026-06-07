@@ -23,6 +23,9 @@ from app.modules.guardrails.schemas import (
     GuardrailAssignmentResponse,
     GuardrailEvaluationContext,
     GuardrailEventResponse,
+    GuardrailImpactResponse,
+    GuardrailImpactTarget,
+    GuardrailImpactVirtualKey,
     GuardrailPolicyResponse,
     GuardrailRuleResponse,
     GuardrailSimulationMatch,
@@ -149,6 +152,21 @@ async def delete_policy(
         )
 
 
+async def get_policy_impact(
+    *, policy_id: UUID, scope: Scope, db: AsyncSession
+) -> GuardrailImpactResponse:
+    policy = await repository.get_policy(policy_id=policy_id, org_id=scope.org_id, db=db)
+    if policy is None:
+        raise GuardrailPolicyNotFoundError
+    assignments = await repository.list_policy_assignments(
+        org_id=scope.org_id,
+        policy_id=policy_id,
+        active_only=True,
+        db=db,
+    )
+    return await _impact_from_assignments(org_id=scope.org_id, assignments=assignments, db=db)
+
+
 async def list_assignments(*, scope: Scope, db: AsyncSession) -> list[GuardrailAssignmentResponse]:
     assignments = await repository.list_assignments(org_id=scope.org_id, db=db)
     policies = await repository.list_policies(org_id=scope.org_id, db=db)
@@ -174,19 +192,19 @@ async def create_assignment(
         )
         if policy is None:
             raise GuardrailPolicyNotFoundError
+        await _validate_assignment_target(
+            org_id=scope.org_id,
+            scope_type=payload.scope_type,
+            team_id=payload.team_id,
+            project_id=payload.project_id,
+            virtual_key_id=payload.virtual_key_id,
+            db=db,
+        )
         team_id, project_id, virtual_key_id = _assignment_scope_ids_from_payload(
             scope_type=payload.scope_type,
             team_id=payload.team_id,
             project_id=payload.project_id,
             virtual_key_id=payload.virtual_key_id,
-        )
-        await _validate_assignment_target(
-            org_id=scope.org_id,
-            scope_type=payload.scope_type,
-            team_id=team_id,
-            project_id=project_id,
-            virtual_key_id=virtual_key_id,
-            db=db,
         )
         existing = await repository.find_assignment_for_scope(
             org_id=scope.org_id,
@@ -333,6 +351,23 @@ async def delete_assignment(
         )
 
 
+async def get_assignment_impact(
+    *, assignment_id: UUID, scope: Scope, db: AsyncSession
+) -> GuardrailImpactResponse:
+    assignment = await repository.get_assignment(
+        assignment_id=assignment_id,
+        org_id=scope.org_id,
+        db=db,
+    )
+    if assignment is None:
+        raise GuardrailAssignmentNotFoundError
+    return await _impact_from_assignments(
+        org_id=scope.org_id,
+        assignments=[assignment] if assignment.is_active else [],
+        db=db,
+    )
+
+
 async def evaluate_request(
     *,
     context: GuardrailEvaluationContext,
@@ -439,17 +474,19 @@ async def _evaluate_context(
             policy_id=rule.policy_id,
             rule_id=rule.id,
             decision="blocked" if mode == "enforce" else "dry_run",
-            reason=f"{rule.rule_type}_{rule.effect}",
+            reason=_rule_denial_reason(rule),
             metadata={
                 "matched_values": evaluation["matched_values"],
+                "allowed_values": rule.values if rule.effect == "allow" else [],
                 "enforcement_mode": mode,
                 "phase": context.phase,
             },
             db=db,
         )
         if mode == "enforce":
+            rule_label = "allowlist" if rule.effect == "allow" else rule.rule_type
             raise GuardrailDeniedError(
-                detail=f"{context.phase} blocked by guardrail {rule.rule_type} rule",
+                detail=f"{context.phase} blocked by guardrail {rule_label} rule",
                 policy_id=rule.policy_id,
                 rule_id=rule.id,
             )
@@ -552,7 +589,7 @@ async def simulate(
                 effect=rule.effect,
                 priority=rule.priority,
                 decision=decision,
-                reason=f"{rule.rule_type}_{rule.effect}",
+                reason=_rule_denial_reason(rule),
                 matched_values=evaluation["matched_values"],
             )
         )
@@ -605,6 +642,12 @@ def _rule_supports_phase(*, rule, phase: str) -> bool:
     if phase == "request":
         return True
     return rule.rule_type in {"prompt_contains", "prompt_regex", "pii"}
+
+
+def _rule_denial_reason(rule) -> str:
+    if rule.effect == "allow":
+        return f"{rule.rule_type}_allowlist_miss"
+    return f"{rule.rule_type}_{rule.effect}"
 
 
 def _guardrail_target_text(context: GuardrailEvaluationContext) -> str:
@@ -744,20 +787,120 @@ async def _validate_assignment_target(
     virtual_key_id: UUID | None,
     db: AsyncSession,
 ) -> None:
-    target_id = {
-        "org": None,
-        "team": team_id,
-        "project": project_id,
-        "virtual_key": virtual_key_id,
-    }[scope_type]
-    exists = await repository.assignment_target_exists(
+    if scope_type == "org":
+        if team_id is not None or project_id is not None or virtual_key_id is not None:
+            raise GuardrailAssignmentTargetNotFoundError
+        return
+    if scope_type == "team":
+        if team_id is None or project_id is not None or virtual_key_id is not None:
+            raise GuardrailAssignmentTargetNotFoundError
+        if await repository.get_team(org_id=org_id, team_id=team_id, db=db) is None:
+            raise GuardrailAssignmentTargetNotFoundError
+        return
+    if scope_type == "project":
+        if project_id is None or virtual_key_id is not None:
+            raise GuardrailAssignmentTargetNotFoundError
+        project = await repository.get_project(org_id=org_id, project_id=project_id, db=db)
+        if project is None:
+            raise GuardrailAssignmentTargetNotFoundError
+        if team_id is not None and team_id != project.team_id:
+            raise GuardrailAssignmentTargetNotFoundError
+        return
+    if scope_type == "virtual_key":
+        if virtual_key_id is None:
+            raise GuardrailAssignmentTargetNotFoundError
+        virtual_key = await repository.get_virtual_key(
+            org_id=org_id, virtual_key_id=virtual_key_id, db=db
+        )
+        if virtual_key is None:
+            raise GuardrailAssignmentTargetNotFoundError
+        project = await repository.get_project(
+            org_id=org_id, project_id=virtual_key.project_id, db=db
+        )
+        if project is None:
+            raise GuardrailAssignmentTargetNotFoundError
+        if project_id is not None and project_id != virtual_key.project_id:
+            raise GuardrailAssignmentTargetNotFoundError
+        if team_id is not None and team_id != project.team_id:
+            raise GuardrailAssignmentTargetNotFoundError
+        return
+    else:
+        raise GuardrailAssignmentTargetNotFoundError
+
+
+async def _impact_from_assignments(
+    *, org_id: UUID, assignments: list[GuardrailAssignment], db: AsyncSession
+) -> GuardrailImpactResponse:
+    teams: dict[UUID, GuardrailImpactTarget] = {}
+    projects: dict[UUID, GuardrailImpactTarget] = {}
+    project_models = await _affected_projects(org_id=org_id, assignments=assignments, db=db)
+    for project in project_models:
+        projects[project.id] = GuardrailImpactTarget(id=project.id, name=project.name)
+    project_names = {project.id: project.name for project in project_models}
+    keys = await repository.list_virtual_keys_for_project_ids(
         org_id=org_id,
-        scope_type=scope_type,
-        target_id=target_id,
+        project_ids=[project.id for project in project_models],
         db=db,
     )
-    if not exists:
-        raise GuardrailAssignmentTargetNotFoundError
+    virtual_keys = {
+        key.id: GuardrailImpactVirtualKey(
+            id=key.id,
+            name=key.name,
+            project_id=key.project_id,
+            project_name=project_names.get(key.project_id, "Unknown project"),
+        )
+        for key in keys
+    }
+    for assignment in assignments:
+        if assignment.scope_type == "team" and assignment.team_id is not None:
+            team = await repository.get_team(org_id=org_id, team_id=assignment.team_id, db=db)
+            if team is not None:
+                teams[team.id] = GuardrailImpactTarget(id=team.id, name=team.name)
+        elif assignment.scope_type == "virtual_key" and assignment.virtual_key_id is not None:
+            key = await repository.get_virtual_key(
+                org_id=org_id,
+                virtual_key_id=assignment.virtual_key_id,
+                db=db,
+            )
+            if key is None:
+                continue
+            project = await repository.get_project(org_id=org_id, project_id=key.project_id, db=db)
+            if project is None:
+                continue
+            virtual_keys[key.id] = GuardrailImpactVirtualKey(
+                id=key.id,
+                name=key.name,
+                project_id=project.id,
+                project_name=project.name,
+            )
+            projects[project.id] = GuardrailImpactTarget(id=project.id, name=project.name)
+    return GuardrailImpactResponse(
+        affected_teams=list(teams.values()),
+        affected_projects=list(projects.values()),
+        affected_virtual_keys=list(virtual_keys.values()),
+        affected_team_count=len(teams),
+        affected_project_count=len(projects),
+        affected_virtual_key_count=len(virtual_keys),
+    )
+
+
+async def _affected_projects(
+    *, org_id: UUID, assignments: list[GuardrailAssignment], db: AsyncSession
+) -> list:
+    project_ids = [item.project_id for item in assignments if item.project_id is not None]
+    team_ids = [item.team_id for item in assignments if item.team_id is not None]
+    projects = []
+    if any(item.scope_type == "org" for item in assignments):
+        projects.extend(await repository.list_all_projects(org_id=org_id, db=db))
+    if team_ids:
+        projects.extend(
+            await repository.list_projects_for_team_ids(org_id=org_id, team_ids=team_ids, db=db)
+        )
+    for project_id in project_ids:
+        project = await repository.get_project(org_id=org_id, project_id=project_id, db=db)
+        if project is not None:
+            projects.append(project)
+    return list({project.id: project for project in projects}.values())
 
 
 def _to_policy_response(policy, rules) -> GuardrailPolicyResponse:

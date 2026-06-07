@@ -56,6 +56,14 @@ DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 VirtualKeyAuthorization = Annotated[str | None, Header(alias="Authorization")]
 ProviderIdHeader = Annotated[UUID | None, Header(alias="X-Bab-Provider-Id")]
 AnthropicApiKey = Annotated[str | None, Header(alias="x-api-key")]
+ESTIMATED_LIMIT_TYPES = {
+    "input_tokens",
+    "output_tokens",
+    "total_tokens",
+    "tokens_per_request",
+    "budget_cents",
+}
+REQUEST_LIMIT_TYPES = {"requests"}
 
 
 async def get_proxy_http_client() -> AsyncGenerator[httpx.AsyncClient]:
@@ -190,10 +198,20 @@ async def create_chat_completion(
             resolved=resolved,
             estimated_input_tokens=estimated_tokens,
             requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
+            limit_types=ESTIMATED_LIMIT_TYPES,
             db=db,
         )
         guardrail_context = _guardrail_context(resolved=resolved, provider_payload=provider_payload)
         await guardrails_facade.evaluate_request(context=guardrail_context, db=db)
+        reservation_ids.extend(
+            await _enforce_limit_policies(
+                resolved=resolved,
+                estimated_input_tokens=estimated_tokens,
+                requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
+                limit_types=REQUEST_LIMIT_TYPES,
+                db=db,
+            )
+        )
         upstream_extra_body = _normalize_provider_extra_body(
             extra_body=provider_payload.extra_body,
             provider_model=resolved.provider_model,
@@ -445,6 +463,7 @@ async def create_anthropic_message(
             resolved=resolved,
             estimated_input_tokens=estimated_tokens,
             requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
+            limit_types=ESTIMATED_LIMIT_TYPES,
             db=db,
         )
         guardrail_payload = ProviderChatCompletionRequest(
@@ -455,6 +474,15 @@ async def create_anthropic_message(
         await guardrails_facade.evaluate_request(
             context=_guardrail_context(resolved=resolved, provider_payload=guardrail_payload),
             db=db,
+        )
+        reservation_ids.extend(
+            await _enforce_limit_policies(
+                resolved=resolved,
+                estimated_input_tokens=estimated_tokens,
+                requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
+                limit_types=REQUEST_LIMIT_TYPES,
+                db=db,
+            )
         )
         upstream = await providers_facade.create_anthropic_message(
             provider_id=resolved.provider_id,
@@ -587,11 +615,21 @@ async def _execute_chat_proxy(
             resolved=resolved,
             estimated_input_tokens=estimated_tokens,
             requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
+            limit_types=ESTIMATED_LIMIT_TYPES,
             db=db,
         )
         await guardrails_facade.evaluate_request(
             context=_guardrail_context(resolved=resolved, provider_payload=provider_payload),
             db=db,
+        )
+        reservation_ids.extend(
+            await _enforce_limit_policies(
+                resolved=resolved,
+                estimated_input_tokens=estimated_tokens,
+                requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
+                limit_types=REQUEST_LIMIT_TYPES,
+                db=db,
+            )
         )
         upstream_extra_body = _normalize_provider_extra_body(
             extra_body=provider_payload.extra_body,
@@ -1109,6 +1147,7 @@ async def _enforce_limit_policies(
     resolved,
     estimated_input_tokens: int,
     requested_output_tokens: int | None,
+    limit_types: set[str] | None = None,
     db: AsyncSession,
 ) -> list[UUID]:
     requested_total_tokens = estimated_input_tokens + (requested_output_tokens or 0)
@@ -1123,11 +1162,17 @@ async def _enforce_limit_policies(
     )
     expires_at = datetime.now(UTC) + timedelta(minutes=5)
     for limit in resolved.limit_policies:
+        if limit_types is not None and limit.limit_type not in limit_types:
+            continue
         if limit.limit_type == "input_tokens" and estimated_input_tokens > limit.limit_value:
             await _raise_proxy_denial(
                 resolved=resolved,
+                limit=limit,
                 detail="limit policy input token limit exceeded",
                 reason="input_token_limit",
+                current_usage=estimated_input_tokens,
+                reserved_usage=0,
+                attempted_usage=estimated_input_tokens,
                 db=db,
             )
         if (
@@ -1137,15 +1182,23 @@ async def _enforce_limit_policies(
         ):
             await _raise_proxy_denial(
                 resolved=resolved,
+                limit=limit,
                 detail="limit policy output token limit exceeded",
                 reason="output_token_limit",
+                current_usage=requested_output_tokens,
+                reserved_usage=0,
+                attempted_usage=requested_output_tokens,
                 db=db,
             )
         if limit.limit_type == "tokens_per_request" and requested_total_tokens > limit.limit_value:
             await _raise_proxy_denial(
                 resolved=resolved,
+                limit=limit,
                 detail="limit policy request token limit exceeded",
                 reason="request_token_limit",
+                current_usage=requested_total_tokens,
+                reserved_usage=0,
+                attempted_usage=requested_total_tokens,
                 db=db,
             )
 
@@ -1173,8 +1226,12 @@ async def _enforce_limit_policies(
         if limit.limit_type == "requests" and request_count + 1 > limit.limit_value:
             await _raise_proxy_denial(
                 resolved=resolved,
+                limit=limit,
                 detail="limit policy request limit exceeded",
                 reason="request_limit",
+                current_usage=request_count,
+                reserved_usage=0,
+                attempted_usage=1,
                 db=db,
             )
         if (
@@ -1183,8 +1240,12 @@ async def _enforce_limit_policies(
         ):
             await _raise_proxy_denial(
                 resolved=resolved,
+                limit=limit,
                 detail="limit policy request limit exceeded",
                 reason="request_limit",
+                current_usage=request_count,
+                reserved_usage=reservations.requests,
+                attempted_usage=1,
                 db=db,
             )
         if (
@@ -1194,8 +1255,12 @@ async def _enforce_limit_policies(
         ):
             await _raise_proxy_denial(
                 resolved=resolved,
+                limit=limit,
                 detail="limit policy input token limit exceeded",
                 reason="input_token_limit",
+                current_usage=prompt_tokens,
+                reserved_usage=reservations.prompt_tokens,
+                attempted_usage=estimated_input_tokens,
                 db=db,
             )
         if (
@@ -1206,8 +1271,12 @@ async def _enforce_limit_policies(
         ):
             await _raise_proxy_denial(
                 resolved=resolved,
+                limit=limit,
                 detail="limit policy output token limit exceeded",
                 reason="output_token_limit",
+                current_usage=completion_tokens,
+                reserved_usage=reservations.completion_tokens,
+                attempted_usage=requested_output_tokens,
                 db=db,
             )
         if (
@@ -1217,8 +1286,12 @@ async def _enforce_limit_policies(
         ):
             await _raise_proxy_denial(
                 resolved=resolved,
+                limit=limit,
                 detail="limit policy budget exceeded",
                 reason="budget_limit",
+                current_usage=cost_cents,
+                reserved_usage=reservations.cost_cents,
+                attempted_usage=estimated_cost_cents,
                 db=db,
             )
         if (
@@ -1232,12 +1305,18 @@ async def _enforce_limit_policies(
         ):
             await _raise_proxy_denial(
                 resolved=resolved,
+                limit=limit,
                 detail="limit policy total token limit exceeded",
                 reason="total_token_limit",
+                current_usage=prompt_tokens + completion_tokens,
+                reserved_usage=reservations.prompt_tokens + reservations.completion_tokens,
+                attempted_usage=requested_total_tokens,
                 db=db,
             )
     reservation_ids: list[UUID] = []
     for limit in resolved.limit_policies:
+        if limit_types is not None and limit.limit_type not in limit_types:
+            continue
         reservation_ids.append(
             await usage_facade.create_limit_policy_reservation(
                 payload=RecordLimitPolicyReservation(
@@ -1284,19 +1363,47 @@ async def _release_reservations(*, reservation_ids: list[UUID], db: AsyncSession
 async def _raise_proxy_denial(
     *,
     resolved,
+    limit,
     detail: str,
     reason: str,
+    current_usage: int | None,
+    reserved_usage: int | None,
+    attempted_usage: int | None,
     db: AsyncSession,
 ) -> None:
+    metadata = {
+        "reason": reason,
+        "limit_policy_id": str(limit.limit_policy_id),
+        "limit_policy_name": limit.limit_policy_name,
+        "limit_policy_rule_id": str(limit.limit_policy_rule_id),
+        "limit_policy_rule_name": limit.name,
+        "limit_policy_assignment_id": str(limit.limit_policy_assignment_id),
+        "limit_policy_assignment_scope": "resolved",
+        "limit_type": limit.limit_type,
+        "current_usage": current_usage,
+        "reserved_usage": reserved_usage,
+        "attempted_usage": attempted_usage,
+        "configured_limit": limit.limit_value,
+        "interval_unit": limit.interval_unit,
+        "interval_count": limit.interval_count,
+    }
+    await _record_proxy_request(
+        resolved=resolved,
+        http_status=status.HTTP_429_TOO_MANY_REQUESTS,
+        latency_ms=0,
+        usage=unknown_usage(),
+        error_code="limit_policy_denied",
+        db=db,
+    )
     await _record_proxy_activity(
         resolved=resolved,
         action="proxy.denied",
         message=detail,
         severity="warning",
-        metadata={"reason": reason},
+        metadata=metadata,
         db=db,
     )
-    raise HTTPException(status_code=403, detail=detail)
+    raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=detail)
 
 
 async def _record_proxy_activity(

@@ -953,10 +953,16 @@ async def _principal_for_user(user_id: UUID, db: AsyncSession) -> AuthenticatedU
     project_membership_rows = list(project_memberships)
     if any(item.role == "team_admin" for item in team_membership_rows):
         permissions.extend(
-            ["keys.manage", "policies.manage", "policies.view", "projects.view", "teams.view"]
+            [
+                "keys.manage",
+                "policies.view",
+                "guardrails.view",
+                "projects.view",
+                "teams.view",
+            ]
         )
     if any(item.role == "project_admin" for item in project_membership_rows):
-        permissions.extend(["keys.manage", "policies.manage", "policies.view", "projects.view"])
+        permissions.extend(["keys.manage", "policies.view", "guardrails.view", "projects.view"])
     permissions = sorted(set(permissions))
     return AuthenticatedUser(
         id=user.id,

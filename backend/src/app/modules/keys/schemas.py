@@ -127,6 +127,10 @@ class EffectiveRouteSummary(BaseModel):
     model_offering_id: UUID
     provider_model: str
     alias: str | None = None
+    access_policy_id: UUID | None = None
+    access_policy_name: str | None = None
+    access_policy_assignment_id: UUID | None = None
+    source_scope: str | None = None
 
 
 class EffectiveLimitReference(BaseModel):
@@ -141,6 +145,7 @@ class EffectiveAccessSummary(BaseModel):
     blocking_reason: str | None
     ownership: OwnershipChainState
     access_policy: EffectivePolicyReference | None
+    access_policies: list[EffectivePolicyReference] = Field(default_factory=list)
     routes: list[EffectiveRouteSummary]
     limit_policies: list[EffectiveLimitReference]
 
@@ -180,6 +185,7 @@ class ResolveAccessRequest(BaseModel):
 class ResolvedLimitPolicy(BaseModel):
     limit_policy_assignment_id: UUID
     limit_policy_id: UUID
+    limit_policy_name: str
     limit_policy_rule_id: UUID
     name: str
     limit_type: str

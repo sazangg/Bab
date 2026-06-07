@@ -219,3 +219,24 @@ class PolicyAssignmentResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+
+
+class PolicyImpactTarget(BaseModel):
+    id: UUID
+    name: str
+
+
+class PolicyImpactVirtualKey(PolicyImpactTarget):
+    project_id: UUID
+    project_name: str
+
+
+class PolicyImpactResponse(BaseModel):
+    affected_teams: list[PolicyImpactTarget] = Field(default_factory=list)
+    affected_projects: list[PolicyImpactTarget] = Field(default_factory=list)
+    affected_virtual_keys: list[PolicyImpactVirtualKey] = Field(default_factory=list)
+    affected_team_count: int = 0
+    affected_project_count: int = 0
+    affected_virtual_key_count: int = 0
+    virtual_keys_would_become_unusable: list[PolicyImpactVirtualKey] = Field(default_factory=list)
+    virtual_keys_would_become_unusable_count: int = 0

@@ -33,6 +33,10 @@ export function hasAnyTeamAdminMembership(user: AuthenticatedUser | null | undef
   return (user?.team_memberships ?? []).some((membership) => membership.role === "team_admin");
 }
 
+export function hasAnyProjectAdminMembership(user: AuthenticatedUser | null | undefined) {
+  return (user?.project_memberships ?? []).some((membership) => membership.role === "project_admin");
+}
+
 export function canViewWorkspace(user: AuthenticatedUser | null | undefined) {
   return (
     hasPermission(user, "teams.view") ||

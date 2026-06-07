@@ -67,6 +67,7 @@ IMPACT_USAGE_WINDOW_DAYS = 30
 
 
 type ResolvedKeyProject = tuple[VirtualKey, Project]
+type EffectiveAccessRouteCandidate = tuple[AccessPolicyRoute, UUID, PolicyAssignment]
 type ResolvedPolicyRoute = tuple[
     AccessPolicyRoute,
     UUID,
@@ -784,9 +785,10 @@ async def resolve_access(*, payload: ResolveAccessRequest, db: AsyncSession) -> 
         access_policy_id=route.access_policy_id,
         access_policy_route_id=route.id,
         model_offering_id=model_offering_id,
-        limit_policy_ids=list({rule.limit_policy_id for rule, _ in limit_rules}),
+        limit_policy_ids=list({policy.id for _rule, policy, _assignment_id in limit_rules}),
         limit_policies=[
-            _to_resolved_limit_policy(rule, assignment_id) for rule, assignment_id in limit_rules
+            _to_resolved_limit_policy(rule, policy, assignment_id)
+            for rule, policy, assignment_id in limit_rules
         ],
         virtual_key_id=virtual_key.id,
         provider_id=provider_id,
@@ -806,7 +808,7 @@ async def list_accessible_models(*, raw_key: str, db: AsyncSession) -> list[Acce
     )
     models: list[AccessibleModel] = []
     seen: set[str] = set()
-    for route, model_offering_id in await _effective_access_routes(
+    for route, model_offering_id, _assignment in await _effective_access_routes(
         org_id=virtual_key.org_id,
         team_id=project.team_id,
         project_id=project.id,
@@ -848,7 +850,7 @@ async def list_project_accessible_models(
         raise ProjectNotFoundError
     models: list[AccessibleModel] = []
     seen: set[tuple[UUID, UUID]] = set()
-    for route, model_offering_id in await _effective_access_routes(
+    for route, model_offering_id, _assignment in await _effective_access_routes(
         org_id=scope.org_id,
         team_id=project.team_id,
         project_id=project.id,
@@ -932,14 +934,6 @@ async def _build_effective_access_summary(
     if blocker is None and not project.is_active:
         blocker = ("project_archived", "The project is archived.")
 
-    assignments = await policies_repository.list_active_policy_assignments_for_targets(
-        org_id=project.org_id,
-        team_id=project.team_id,
-        project_id=project.id,
-        virtual_key_id=virtual_key.id if virtual_key else None,
-        policy_type="access",
-        db=db,
-    )
     routes = await _effective_access_routes(
         org_id=project.org_id,
         team_id=project.team_id,
@@ -948,7 +942,12 @@ async def _build_effective_access_summary(
         db=db,
     )
     routable_routes: list[EffectiveRouteSummary] = []
-    for route, model_offering_id in routes:
+    policy_names = await _access_policy_names(
+        org_id=project.org_id,
+        policy_ids=list({route.access_policy_id for route, _model_id, _assignment in routes}),
+        db=db,
+    )
+    for route, model_offering_id, assignment in routes:
         routable = await _routable_route_model(
             org_id=project.org_id,
             route=route,
@@ -965,12 +964,20 @@ async def _build_effective_access_summary(
                 model_offering_id=model.id,
                 provider_model=model.provider_model_name,
                 alias=model.alias,
+                access_policy_id=route.access_policy_id,
+                access_policy_name=policy_names.get(route.access_policy_id),
+                access_policy_assignment_id=assignment.id,
+                source_scope=assignment.scope_type,
             )
         )
 
-    access_reference = await _effective_access_policy_reference(
-        org_id=project.org_id, assignments=assignments, db=db
+    route_assignments = list(
+        {assignment.id: assignment for _route, _model_id, assignment in routes}.values()
     )
+    access_references = await _effective_access_policy_references(
+        org_id=project.org_id, assignments=route_assignments, db=db
+    )
+    access_reference = access_references[0] if access_references else None
     if blocker is None and access_reference is None:
         blocker = ("no_effective_access_policy", "No effective active access policy applies.")
     elif blocker is None and not routable_routes:
@@ -996,6 +1003,7 @@ async def _build_effective_access_summary(
             key_active=key_active,
         ),
         access_policy=access_reference,
+        access_policies=access_references,
         routes=routable_routes,
         limit_policies=limits,
     )
@@ -1102,7 +1110,7 @@ async def _match_policy_route(
         db=db,
     )
     candidates.sort(key=lambda item: (item[0].priority, -item[0].weight, item[0].created_at))
-    for route, model_offering_id in candidates:
+    for route, model_offering_id, _assignment in candidates:
         routable = await _routable_route_model(
             org_id=org_id,
             route=route,
@@ -1133,7 +1141,7 @@ async def _effective_access_routes(
     project_id: UUID,
     virtual_key_id: UUID | None,
     db: AsyncSession,
-) -> list[tuple[AccessPolicyRoute, UUID]]:
+) -> list[EffectiveAccessRouteCandidate]:
     assignments = await policies_repository.list_active_policy_assignments_for_targets(
         org_id=org_id,
         team_id=team_id,
@@ -1142,7 +1150,7 @@ async def _effective_access_routes(
         policy_type="access",
         db=db,
     )
-    effective: list[tuple[AccessPolicyRoute, UUID]] | None = None
+    effective: list[EffectiveAccessRouteCandidate] | None = None
     for scope_type in ("org", "team", "project", "virtual_key"):
         scoped = [assignment for assignment in assignments if assignment.scope_type == scope_type]
         candidates = await _access_route_candidates(org_id=org_id, assignments=scoped, db=db)
@@ -1164,8 +1172,8 @@ async def _access_route_candidates(
     org_id: UUID,
     assignments: list[PolicyAssignment],
     db: AsyncSession,
-) -> list[tuple[AccessPolicyRoute, UUID]]:
-    candidates: list[tuple[AccessPolicyRoute, UUID]] = []
+) -> list[EffectiveAccessRouteCandidate]:
+    candidates: list[EffectiveAccessRouteCandidate] = []
     for assignment in assignments:
         if assignment.access_policy_id is None:
             continue
@@ -1184,16 +1192,19 @@ async def _access_route_candidates(
         for route in routes:
             if not route.is_active:
                 continue
-            candidates.extend((route, UUID(str(model_id))) for model_id in route.model_offering_ids)
+            candidates.extend(
+                (route, UUID(str(model_id)), assignment)
+                for model_id in route.model_offering_ids
+            )
     return candidates
 
 
 def _route_candidate_matches(
-    child: tuple[AccessPolicyRoute, UUID],
-    ancestor: tuple[AccessPolicyRoute, UUID],
+    child: EffectiveAccessRouteCandidate,
+    ancestor: EffectiveAccessRouteCandidate,
 ) -> bool:
-    child_route, child_model_id = child
-    ancestor_route, ancestor_model_id = ancestor
+    child_route, child_model_id, _child_assignment = child
+    ancestor_route, ancestor_model_id, _ancestor_assignment = ancestor
     return (
         child_route.provider_id == ancestor_route.provider_id
         and child_route.credential_pool_id == ancestor_route.credential_pool_id
@@ -1231,10 +1242,11 @@ async def _effective_limit_policies(
     return policies
 
 
-async def _effective_access_policy_reference(
+async def _effective_access_policy_references(
     *, org_id: UUID, assignments: list[PolicyAssignment], db: AsyncSession
-) -> EffectivePolicyReference | None:
+) -> list[EffectivePolicyReference]:
     scope_order = {"org": 0, "team": 1, "project": 2, "virtual_key": 3}
+    references: dict[UUID, EffectivePolicyReference] = {}
     for assignment in sorted(
         assignments, key=lambda item: scope_order.get(item.scope_type, -1), reverse=True
     ):
@@ -1244,10 +1256,28 @@ async def _effective_access_policy_reference(
             policy_id=assignment.access_policy_id, org_id=org_id, db=db
         )
         if policy is not None and policy.is_active:
-            return EffectivePolicyReference(
-                id=policy.id, name=policy.name, source_scope=assignment.scope_type
+            references.setdefault(
+                policy.id,
+                EffectivePolicyReference(
+                    id=policy.id, name=policy.name, source_scope=assignment.scope_type
+                ),
             )
-    return None
+    return list(references.values())
+
+
+async def _access_policy_names(
+    *, org_id: UUID, policy_ids: list[UUID], db: AsyncSession
+) -> dict[UUID, str]:
+    names: dict[UUID, str] = {}
+    for policy_id in policy_ids:
+        policy = await policies_repository.get_access_policy(
+            policy_id=policy_id,
+            org_id=org_id,
+            db=db,
+        )
+        if policy is not None:
+            names[policy.id] = policy.name
+    return names
 
 
 async def _effective_limit_policy_references(
@@ -1291,7 +1321,7 @@ async def _matching_limit_policies(
     route: AccessPolicyRoute,
     model_offering_id: UUID,
     db: AsyncSession,
-) -> list[tuple[LimitPolicyRule, UUID]]:
+) -> list[tuple[LimitPolicyRule, LimitPolicy, UUID]]:
     policies = await _effective_limit_policies(
         org_id=org_id,
         team_id=team_id,
@@ -1299,7 +1329,7 @@ async def _matching_limit_policies(
         virtual_key_id=virtual_key_id,
         db=db,
     )
-    rules: list[tuple[LimitPolicyRule, UUID]] = []
+    rules: list[tuple[LimitPolicyRule, LimitPolicy, UUID]] = []
     for policy, assignment_id in policies:
         policy_rules = await policies_repository.list_limit_policy_rules(
             org_id=org_id,
@@ -1307,7 +1337,7 @@ async def _matching_limit_policies(
             db=db,
         )
         rules.extend(
-            (rule, assignment_id)
+            (rule, policy, assignment_id)
             for rule in policy_rules
             if rule.is_active
             and _limit_rule_matches_route(
@@ -1380,16 +1410,19 @@ def _to_project_response(project: Project) -> ProjectResponse:
     return ProjectResponse.model_validate(project)
 
 
-def _to_resolved_limit_policy(policy: LimitPolicyRule, assignment_id: UUID) -> ResolvedLimitPolicy:
+def _to_resolved_limit_policy(
+    rule: LimitPolicyRule, policy: LimitPolicy, assignment_id: UUID
+) -> ResolvedLimitPolicy:
     return ResolvedLimitPolicy(
         limit_policy_assignment_id=assignment_id,
-        limit_policy_id=policy.limit_policy_id,
-        limit_policy_rule_id=policy.id,
-        name=policy.name,
-        limit_type=policy.limit_type,
-        limit_value=policy.limit_value,
-        interval_unit=policy.interval_unit,
-        interval_count=policy.interval_count,
+        limit_policy_id=policy.id,
+        limit_policy_name=policy.name,
+        limit_policy_rule_id=rule.id,
+        name=rule.name,
+        limit_type=rule.limit_type,
+        limit_value=rule.limit_value,
+        interval_unit=rule.interval_unit,
+        interval_count=rule.interval_count,
     )
 
 

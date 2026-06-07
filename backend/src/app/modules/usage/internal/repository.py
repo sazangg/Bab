@@ -224,7 +224,10 @@ async def summarize_limit_policy_usage(
     since: datetime | None,
     db: AsyncSession,
 ) -> tuple[int, int, int, int]:
-    filters = [cast(UsageRecord.limit_policy_ids, String).contains(str(limit_policy_id))]
+    filters = [
+        cast(UsageRecord.limit_policy_ids, String).contains(str(limit_policy_id)),
+        UsageRecord.http_status < 400,
+    ]
     if limit_policy_rule_id is not None:
         filters.append(
             cast(UsageRecord.limit_policy_rule_ids, String).contains(str(limit_policy_rule_id))

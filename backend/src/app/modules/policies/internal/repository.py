@@ -1,8 +1,10 @@
 from uuid import UUID
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.auth.internal.models import Team
+from app.modules.keys.internal.models import Project, VirtualKey
 from app.modules.policies.internal.models import (
     AccessPolicy,
     AccessPolicyRoute,
@@ -179,6 +181,61 @@ async def create_policy_assignment(
     return assignment
 
 
+async def find_active_policy_assignment_for_scope(
+    *,
+    org_id: UUID,
+    policy_type: str,
+    access_policy_id: UUID | None,
+    limit_policy_id: UUID | None,
+    scope_type: str,
+    team_id: UUID | None,
+    project_id: UUID | None,
+    virtual_key_id: UUID | None,
+    db: AsyncSession,
+) -> PolicyAssignment | None:
+    return await db.scalar(
+        select(PolicyAssignment).where(
+            PolicyAssignment.org_id == org_id,
+            PolicyAssignment.policy_type == policy_type,
+            PolicyAssignment.access_policy_id.is_(None)
+            if access_policy_id is None
+            else PolicyAssignment.access_policy_id == access_policy_id,
+            PolicyAssignment.limit_policy_id.is_(None)
+            if limit_policy_id is None
+            else PolicyAssignment.limit_policy_id == limit_policy_id,
+            PolicyAssignment.scope_type == scope_type,
+            PolicyAssignment.team_id.is_(None)
+            if team_id is None
+            else PolicyAssignment.team_id == team_id,
+            PolicyAssignment.project_id.is_(None)
+            if project_id is None
+            else PolicyAssignment.project_id == project_id,
+            PolicyAssignment.virtual_key_id.is_(None)
+            if virtual_key_id is None
+            else PolicyAssignment.virtual_key_id == virtual_key_id,
+            PolicyAssignment.is_active.is_(True),
+        )
+    )
+
+
+async def get_team(*, org_id: UUID, team_id: UUID, db: AsyncSession) -> Team | None:
+    return await db.scalar(select(Team).where(Team.org_id == org_id, Team.id == team_id))
+
+
+async def get_project(*, org_id: UUID, project_id: UUID, db: AsyncSession) -> Project | None:
+    return await db.scalar(
+        select(Project).where(Project.org_id == org_id, Project.id == project_id)
+    )
+
+
+async def get_virtual_key(
+    *, org_id: UUID, virtual_key_id: UUID, db: AsyncSession
+) -> VirtualKey | None:
+    return await db.scalar(
+        select(VirtualKey).where(VirtualKey.org_id == org_id, VirtualKey.id == virtual_key_id)
+    )
+
+
 async def list_policy_assignments(*, org_id: UUID, db: AsyncSession) -> list[PolicyAssignment]:
     result = await db.scalars(
         select(PolicyAssignment)
@@ -268,3 +325,87 @@ async def get_policy_assignment(
             PolicyAssignment.org_id == org_id,
         )
     )
+
+
+async def list_policy_assignments_for_access_policy(
+    *, org_id: UUID, access_policy_id: UUID, active_only: bool, db: AsyncSession
+) -> list[PolicyAssignment]:
+    filters = [
+        PolicyAssignment.org_id == org_id,
+        PolicyAssignment.access_policy_id == access_policy_id,
+    ]
+    if active_only:
+        filters.append(PolicyAssignment.is_active.is_(True))
+    result = await db.scalars(select(PolicyAssignment).where(*filters))
+    return list(result)
+
+
+async def list_policy_assignments_for_limit_policy(
+    *, org_id: UUID, limit_policy_id: UUID, active_only: bool, db: AsyncSession
+) -> list[PolicyAssignment]:
+    filters = [
+        PolicyAssignment.org_id == org_id,
+        PolicyAssignment.limit_policy_id == limit_policy_id,
+    ]
+    if active_only:
+        filters.append(PolicyAssignment.is_active.is_(True))
+    result = await db.scalars(select(PolicyAssignment).where(*filters))
+    return list(result)
+
+
+async def list_virtual_keys_for_project_ids(
+    *, org_id: UUID, project_ids: list[UUID], db: AsyncSession
+) -> list[tuple[VirtualKey, Project]]:
+    if not project_ids:
+        return []
+    rows = await db.execute(
+        select(VirtualKey, Project)
+        .join(Project, Project.id == VirtualKey.project_id)
+        .where(
+            VirtualKey.org_id == org_id,
+            Project.org_id == org_id,
+            VirtualKey.project_id.in_(project_ids),
+            VirtualKey.revoked_at.is_(None),
+            or_(VirtualKey.expires_at.is_(None), VirtualKey.expires_at > func.now()),
+        )
+        .order_by(Project.name, VirtualKey.name)
+    )
+    return list(rows.all())
+
+
+async def list_virtual_keys_by_ids(
+    *, org_id: UUID, virtual_key_ids: list[UUID], db: AsyncSession
+) -> list[tuple[VirtualKey, Project]]:
+    if not virtual_key_ids:
+        return []
+    rows = await db.execute(
+        select(VirtualKey, Project)
+        .join(Project, Project.id == VirtualKey.project_id)
+        .where(
+            VirtualKey.org_id == org_id,
+            Project.org_id == org_id,
+            VirtualKey.id.in_(virtual_key_ids),
+        )
+        .order_by(Project.name, VirtualKey.name)
+    )
+    return list(rows.all())
+
+
+async def list_projects_for_team_ids(
+    *, org_id: UUID, team_ids: list[UUID], db: AsyncSession
+) -> list[Project]:
+    if not team_ids:
+        return []
+    result = await db.scalars(
+        select(Project)
+        .where(Project.org_id == org_id, Project.team_id.in_(team_ids))
+        .order_by(Project.name)
+    )
+    return list(result)
+
+
+async def list_all_projects(*, org_id: UUID, db: AsyncSession) -> list[Project]:
+    result = await db.scalars(
+        select(Project).where(Project.org_id == org_id).order_by(Project.name)
+    )
+    return list(result)

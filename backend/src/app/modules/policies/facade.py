@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope
+from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.policies.internal import service
 from app.modules.policies.schemas import (
     AccessPolicyOptionsResponse,
@@ -16,6 +17,7 @@ from app.modules.policies.schemas import (
     LimitPolicyResponse,
     LimitPolicyRuleResponse,
     PolicyAssignmentResponse,
+    PolicyImpactResponse,
     UpdateAccessPolicyRequest,
     UpdateAccessPolicyRouteRequest,
     UpdateLimitPolicyRequest,
@@ -35,41 +37,76 @@ async def get_access_policy(
 
 
 async def create_access_policy(
-    *, payload: CreateAccessPolicyRequest, scope: Scope, db: AsyncSession
+    *,
+    payload: CreateAccessPolicyRequest,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
 ) -> AccessPolicyResponse:
-    return await service.create_access_policy(payload=payload, scope=scope, db=db)
+    return await service.create_access_policy(payload=payload, scope=scope, db=db, actor=actor)
 
 
 async def update_access_policy(
-    *, policy_id: UUID, payload: UpdateAccessPolicyRequest, scope: Scope, db: AsyncSession
+    *,
+    policy_id: UUID,
+    payload: UpdateAccessPolicyRequest,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
 ) -> AccessPolicyResponse:
     return await service.update_access_policy(
-        policy_id=policy_id, payload=payload, scope=scope, db=db
+        policy_id=policy_id, payload=payload, scope=scope, db=db, actor=actor
     )
 
 
-async def delete_access_policy(*, policy_id: UUID, scope: Scope, db: AsyncSession) -> None:
-    await service.delete_access_policy(policy_id=policy_id, scope=scope, db=db)
+async def delete_access_policy(
+    *, policy_id: UUID, scope: Scope, db: AsyncSession, actor: AuthenticatedUser | None = None
+) -> None:
+    await service.delete_access_policy(policy_id=policy_id, scope=scope, db=db, actor=actor)
 
 
 async def create_access_policy_route(
-    *, policy_id: UUID, payload: CreateAccessPolicyRouteRequest, scope: Scope, db: AsyncSession
+    *,
+    policy_id: UUID,
+    payload: CreateAccessPolicyRouteRequest,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
 ) -> AccessPolicyRouteResponse:
     return await service.create_access_policy_route(
-        policy_id=policy_id, payload=payload, scope=scope, db=db
+        policy_id=policy_id, payload=payload, scope=scope, db=db, actor=actor
     )
 
 
 async def update_access_policy_route(
-    *, route_id: UUID, payload: UpdateAccessPolicyRouteRequest, scope: Scope, db: AsyncSession
+    *,
+    route_id: UUID,
+    payload: UpdateAccessPolicyRouteRequest,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
 ) -> AccessPolicyRouteResponse:
     return await service.update_access_policy_route(
-        route_id=route_id, payload=payload, scope=scope, db=db
+        route_id=route_id, payload=payload, scope=scope, db=db, actor=actor
     )
 
 
-async def delete_access_policy_route(*, route_id: UUID, scope: Scope, db: AsyncSession) -> None:
-    await service.delete_access_policy_route(route_id=route_id, scope=scope, db=db)
+async def delete_access_policy_route(
+    *, route_id: UUID, scope: Scope, db: AsyncSession, actor: AuthenticatedUser | None = None
+) -> None:
+    await service.delete_access_policy_route(route_id=route_id, scope=scope, db=db, actor=actor)
+
+
+async def get_access_policy_impact(
+    *, policy_id: UUID, scope: Scope, db: AsyncSession
+) -> PolicyImpactResponse:
+    return await service.get_access_policy_impact(policy_id=policy_id, scope=scope, db=db)
+
+
+async def get_access_policy_route_impact(
+    *, route_id: UUID, scope: Scope, db: AsyncSession
+) -> PolicyImpactResponse:
+    return await service.get_access_policy_route_impact(route_id=route_id, scope=scope, db=db)
 
 
 async def get_access_policy_options(
@@ -104,41 +141,76 @@ async def get_limit_policy(
 
 
 async def create_limit_policy(
-    *, payload: CreateLimitPolicyRequest, scope: Scope, db: AsyncSession
+    *,
+    payload: CreateLimitPolicyRequest,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
 ) -> LimitPolicyResponse:
-    return await service.create_limit_policy(payload=payload, scope=scope, db=db)
+    return await service.create_limit_policy(payload=payload, scope=scope, db=db, actor=actor)
 
 
 async def update_limit_policy(
-    *, policy_id: UUID, payload: UpdateLimitPolicyRequest, scope: Scope, db: AsyncSession
+    *,
+    policy_id: UUID,
+    payload: UpdateLimitPolicyRequest,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
 ) -> LimitPolicyResponse:
     return await service.update_limit_policy(
-        policy_id=policy_id, payload=payload, scope=scope, db=db
+        policy_id=policy_id, payload=payload, scope=scope, db=db, actor=actor
     )
 
 
-async def delete_limit_policy(*, policy_id: UUID, scope: Scope, db: AsyncSession) -> None:
-    await service.delete_limit_policy(policy_id=policy_id, scope=scope, db=db)
+async def delete_limit_policy(
+    *, policy_id: UUID, scope: Scope, db: AsyncSession, actor: AuthenticatedUser | None = None
+) -> None:
+    await service.delete_limit_policy(policy_id=policy_id, scope=scope, db=db, actor=actor)
 
 
 async def create_limit_policy_rule(
-    *, policy_id: UUID, payload: CreateLimitPolicyRuleRequest, scope: Scope, db: AsyncSession
+    *,
+    policy_id: UUID,
+    payload: CreateLimitPolicyRuleRequest,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
 ) -> LimitPolicyRuleResponse:
     return await service.create_limit_policy_rule(
-        policy_id=policy_id, payload=payload, scope=scope, db=db
+        policy_id=policy_id, payload=payload, scope=scope, db=db, actor=actor
     )
 
 
 async def update_limit_policy_rule(
-    *, rule_id: UUID, payload: UpdateLimitPolicyRuleRequest, scope: Scope, db: AsyncSession
+    *,
+    rule_id: UUID,
+    payload: UpdateLimitPolicyRuleRequest,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
 ) -> LimitPolicyRuleResponse:
     return await service.update_limit_policy_rule(
-        rule_id=rule_id, payload=payload, scope=scope, db=db
+        rule_id=rule_id, payload=payload, scope=scope, db=db, actor=actor
     )
 
 
-async def delete_limit_policy_rule(*, rule_id: UUID, scope: Scope, db: AsyncSession) -> None:
-    await service.delete_limit_policy_rule(rule_id=rule_id, scope=scope, db=db)
+async def delete_limit_policy_rule(
+    *, rule_id: UUID, scope: Scope, db: AsyncSession, actor: AuthenticatedUser | None = None
+) -> None:
+    await service.delete_limit_policy_rule(rule_id=rule_id, scope=scope, db=db, actor=actor)
+
+
+async def get_limit_policy_impact(
+    *, policy_id: UUID, scope: Scope, db: AsyncSession
+) -> PolicyImpactResponse:
+    return await service.get_limit_policy_impact(policy_id=policy_id, scope=scope, db=db)
+
+
+async def get_limit_policy_rule_impact(
+    *, rule_id: UUID, scope: Scope, db: AsyncSession
+) -> PolicyImpactResponse:
+    return await service.get_limit_policy_rule_impact(rule_id=rule_id, scope=scope, db=db)
 
 
 async def list_policy_assignments(
@@ -148,18 +220,31 @@ async def list_policy_assignments(
 
 
 async def create_policy_assignment(
-    *, payload: CreatePolicyAssignmentRequest, scope: Scope, db: AsyncSession
+    *,
+    payload: CreatePolicyAssignmentRequest,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
 ) -> PolicyAssignmentResponse:
-    return await service.create_policy_assignment(payload=payload, scope=scope, db=db)
+    return await service.create_policy_assignment(payload=payload, scope=scope, db=db, actor=actor)
 
 
 async def update_policy_assignment(
-    *, assignment_id: UUID, payload: UpdatePolicyAssignmentRequest, scope: Scope, db: AsyncSession
+    *,
+    assignment_id: UUID,
+    payload: UpdatePolicyAssignmentRequest,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
 ) -> PolicyAssignmentResponse:
     return await service.update_policy_assignment(
-        assignment_id=assignment_id, payload=payload, scope=scope, db=db
+        assignment_id=assignment_id, payload=payload, scope=scope, db=db, actor=actor
     )
 
 
-async def delete_policy_assignment(*, assignment_id: UUID, scope: Scope, db: AsyncSession) -> None:
-    await service.delete_policy_assignment(assignment_id=assignment_id, scope=scope, db=db)
+async def delete_policy_assignment(
+    *, assignment_id: UUID, scope: Scope, db: AsyncSession, actor: AuthenticatedUser | None = None
+) -> None:
+    await service.delete_policy_assignment(
+        assignment_id=assignment_id, scope=scope, db=db, actor=actor
+    )

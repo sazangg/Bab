@@ -855,8 +855,14 @@ async def test_gateway_enforces_virtual_key_request_rate_limit(app_client, db_se
             headers={"Authorization": f"Bearer {virtual_key}"},
             json=payload,
         )
-        assert limited_response.status_code == 403
+        assert limited_response.status_code == 429
         assert limited_response.json()["detail"] == "limit policy request limit exceeded"
+
+        usage_response = await client.get("/api/v1/usage/records", headers=admin_headers)
+        assert usage_response.status_code == 200
+        limit_record = usage_response.json()[0]
+        assert limit_record["http_status"] == 429
+        assert limit_record["error_code"] == "limit_policy_denied"
 
 
 @pytest.mark.asyncio
@@ -1109,6 +1115,182 @@ async def test_streaming_is_disabled_when_output_guardrail_is_enforced(
         "streaming is disabled when enforced output guardrails apply"
     )
     assert upstream_called is False
+
+
+@pytest.mark.asyncio
+async def test_input_guardrail_denial_does_not_consume_request_limit(
+    app_client,
+    db_session,
+) -> None:
+    await sync_default_workspace(db_session)
+
+    async def upstream_handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-after-guardrail",
+                "object": "chat.completion",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 4, "completion_tokens": 1, "total_tokens": 5},
+            },
+        )
+
+    async def override_proxy_http_client() -> AsyncGenerator[httpx.AsyncClient]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(upstream_handler)) as client:
+            yield client
+
+    app_client.dependency_overrides[get_proxy_http_client] = override_proxy_http_client
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://test",
+    ) as client:
+        admin_headers = await _login(client)
+        virtual_key, _credential_id, _provider_id = await _provision_gateway_path(
+            client,
+            admin_headers,
+            limit_payload={
+                "rules": [
+                    {
+                        "name": "One accepted request",
+                        "limit_type": "requests",
+                        "limit_value": 1,
+                        "interval_unit": "day",
+                    }
+                ]
+            },
+        )
+        policy_response = await client.post(
+            "/api/v1/guardrails/policies",
+            headers=admin_headers,
+            json={
+                "name": "Block prompt",
+                "rules": [
+                    {
+                        "rule_type": "prompt_contains",
+                        "effect": "deny",
+                        "phase": "request",
+                        "values": ["blocked prompt"],
+                    }
+                ],
+            },
+        )
+        assert policy_response.status_code == 201
+        assignment_response = await client.post(
+            "/api/v1/guardrails/assignments",
+            headers=admin_headers,
+            json={"policy_id": policy_response.json()["id"], "scope_type": "org"},
+        )
+        assert assignment_response.status_code == 201
+
+        blocked_response = await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": f"Bearer {virtual_key}"},
+            json={
+                "model": "gpt-test",
+                "messages": [{"role": "user", "content": "blocked prompt"}],
+            },
+        )
+        assert blocked_response.status_code == 403
+
+        accepted_response = await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": f"Bearer {virtual_key}"},
+            json={
+                "model": "gpt-test",
+                "messages": [{"role": "user", "content": "allowed prompt"}],
+            },
+        )
+        assert accepted_response.status_code == 200
+
+        limited_response = await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": f"Bearer {virtual_key}"},
+            json={
+                "model": "gpt-test",
+                "messages": [{"role": "user", "content": "allowed prompt"}],
+            },
+        )
+        assert limited_response.status_code == 429
+
+
+@pytest.mark.asyncio
+async def test_streaming_is_allowed_when_output_guardrail_is_monitor_only(
+    app_client,
+    db_session,
+) -> None:
+    await sync_default_workspace(db_session)
+    upstream_called = False
+
+    async def upstream_handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal upstream_called
+        upstream_called = True
+        return httpx.Response(
+            200,
+            content=(
+                b"data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n"
+                b"data: [DONE]\n\n"
+            ),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    async def override_proxy_http_client() -> AsyncGenerator[httpx.AsyncClient]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(upstream_handler)) as client:
+            yield client
+
+    app_client.dependency_overrides[get_proxy_http_client] = override_proxy_http_client
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://test",
+    ) as client:
+        admin_headers = await _login(client)
+        virtual_key, _credential_id, _provider_id = await _provision_gateway_path(
+            client,
+            admin_headers,
+        )
+        policy_response = await client.post(
+            "/api/v1/guardrails/policies",
+            headers=admin_headers,
+            json={
+                "name": "Monitor output",
+                "enforcement_mode": "monitor",
+                "rules": [
+                    {
+                        "rule_type": "prompt_contains",
+                        "effect": "deny",
+                        "phase": "response",
+                        "values": ["anything"],
+                    }
+                ],
+            },
+        )
+        assert policy_response.status_code == 201
+        assignment_response = await client.post(
+            "/api/v1/guardrails/assignments",
+            headers=admin_headers,
+            json={"policy_id": policy_response.json()["id"], "scope_type": "org"},
+        )
+        assert assignment_response.status_code == 201
+
+        proxy_response = await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": f"Bearer {virtual_key}"},
+            json={
+                "model": "gpt-test",
+                "stream": True,
+                "messages": [{"role": "user", "content": "Say hello."}],
+            },
+        )
+
+    assert proxy_response.status_code == 200
+    assert upstream_called is True
 
 
 @pytest.mark.asyncio

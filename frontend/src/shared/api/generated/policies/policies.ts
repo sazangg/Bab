@@ -37,6 +37,7 @@ import type {
   LimitPolicyResponse,
   LimitPolicyRuleResponse,
   PolicyAssignmentResponse,
+  PolicyImpactResponse,
   UpdateAccessPolicyRequest,
   UpdateAccessPolicyRouteRequest,
   UpdateLimitPolicyRequest,
@@ -815,7 +816,245 @@ export const useDeleteAccessPolicyRouteApiV1PoliciesAccessRoutesRouteIdDelete = 
       > => {
       return useMutation(getDeleteAccessPolicyRouteApiV1PoliciesAccessRoutesRouteIdDeleteMutationOptions(options), queryClient);
     }
-    export type getAccessPolicyOptionsApiV1PoliciesAccessOptionsGetResponse200 = {
+    export type getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetResponse200 = {
+  data: PolicyImpactResponse
+  status: 200
+}
+
+export type getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetResponseSuccess = (getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetResponse200) & {
+  headers: Headers;
+};
+export type getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetResponseError = (getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetResponse422) & {
+  headers: Headers;
+};
+
+export type getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetResponse = (getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetResponseSuccess | getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetResponseError)
+
+export const getGetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetUrl = (policyId: string,) => {
+
+
+
+
+  return `/api/v1/policies/access/${policyId}/impact`
+}
+
+/**
+ * @summary Get Access Policy Impact
+ */
+export const getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet = async (policyId: string, options?: RequestInit): Promise<getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetResponse> => {
+
+  return apiMutator<getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetResponse>(getGetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetUrl(policyId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetQueryKey = (policyId: string,) => {
+    return [
+    `/api/v1/policies/access/${policyId}/impact`
+    ] as const;
+    }
+
+
+export const getGetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>, TError = HTTPValidationError>(policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetQueryKey(policyId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>> = ({ signal }) => getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet(policyId, { signal });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(policyId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetQueryResult = NonNullable<Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>>
+export type GetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetQueryError = HTTPValidationError
+
+
+export function useGetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>, TError = HTTPValidationError>(
+ policyId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>, TError = HTTPValidationError>(
+ policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>, TError = HTTPValidationError>(
+ policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get Access Policy Impact
+ */
+
+export function useGetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>, TError = HTTPValidationError>(
+ policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetQueryOptions(policyId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export type getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGetResponse200 = {
+  data: PolicyImpactResponse
+  status: 200
+}
+
+export type getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGetResponseSuccess = (getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGetResponse200) & {
+  headers: Headers;
+};
+export type getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGetResponseError = (getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGetResponse422) & {
+  headers: Headers;
+};
+
+export type getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGetResponse = (getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGetResponseSuccess | getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGetResponseError)
+
+export const getGetAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGetUrl = (routeId: string,) => {
+
+
+
+
+  return `/api/v1/policies/access/routes/${routeId}/impact`
+}
+
+/**
+ * @summary Get Access Policy Route Impact
+ */
+export const getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet = async (routeId: string, options?: RequestInit): Promise<getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGetResponse> => {
+
+  return apiMutator<getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGetResponse>(getGetAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGetUrl(routeId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGetQueryKey = (routeId: string,) => {
+    return [
+    `/api/v1/policies/access/routes/${routeId}/impact`
+    ] as const;
+    }
+
+
+export const getGetAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet>>, TError = HTTPValidationError>(routeId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGetQueryKey(routeId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet>>> = ({ signal }) => getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet(routeId, { signal });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(routeId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGetQueryResult = NonNullable<Awaited<ReturnType<typeof getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet>>>
+export type GetAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGetQueryError = HTTPValidationError
+
+
+export function useGetAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet<TData = Awaited<ReturnType<typeof getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet>>, TError = HTTPValidationError>(
+ routeId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet<TData = Awaited<ReturnType<typeof getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet>>, TError = HTTPValidationError>(
+ routeId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet<TData = Awaited<ReturnType<typeof getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet>>, TError = HTTPValidationError>(
+ routeId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get Access Policy Route Impact
+ */
+
+export function useGetAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet<TData = Awaited<ReturnType<typeof getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet>>, TError = HTTPValidationError>(
+ routeId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGetQueryOptions(routeId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export type getAccessPolicyOptionsApiV1PoliciesAccessOptionsGetResponse200 = {
   data: AccessPolicyOptionsResponse
   status: 200
 }
@@ -1707,7 +1946,245 @@ export const useDeleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDelete = <TEr
       > => {
       return useMutation(getDeleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDeleteMutationOptions(options), queryClient);
     }
-    export type listPolicyAssignmentsApiV1PoliciesAssignmentsGetResponse200 = {
+    export type getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetResponse200 = {
+  data: PolicyImpactResponse
+  status: 200
+}
+
+export type getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetResponseSuccess = (getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetResponse200) & {
+  headers: Headers;
+};
+export type getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetResponseError = (getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetResponse422) & {
+  headers: Headers;
+};
+
+export type getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetResponse = (getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetResponseSuccess | getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetResponseError)
+
+export const getGetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetUrl = (policyId: string,) => {
+
+
+
+
+  return `/api/v1/policies/limits/${policyId}/impact`
+}
+
+/**
+ * @summary Get Limit Policy Impact
+ */
+export const getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet = async (policyId: string, options?: RequestInit): Promise<getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetResponse> => {
+
+  return apiMutator<getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetResponse>(getGetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetUrl(policyId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetQueryKey = (policyId: string,) => {
+    return [
+    `/api/v1/policies/limits/${policyId}/impact`
+    ] as const;
+    }
+
+
+export const getGetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>, TError = HTTPValidationError>(policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetQueryKey(policyId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>> = ({ signal }) => getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet(policyId, { signal });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(policyId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetQueryResult = NonNullable<Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>>
+export type GetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetQueryError = HTTPValidationError
+
+
+export function useGetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>, TError = HTTPValidationError>(
+ policyId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>, TError = HTTPValidationError>(
+ policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>, TError = HTTPValidationError>(
+ policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get Limit Policy Impact
+ */
+
+export function useGetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>, TError = HTTPValidationError>(
+ policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetQueryOptions(policyId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export type getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetResponse200 = {
+  data: PolicyImpactResponse
+  status: 200
+}
+
+export type getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetResponseSuccess = (getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetResponse200) & {
+  headers: Headers;
+};
+export type getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetResponseError = (getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetResponse422) & {
+  headers: Headers;
+};
+
+export type getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetResponse = (getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetResponseSuccess | getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetResponseError)
+
+export const getGetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetUrl = (ruleId: string,) => {
+
+
+
+
+  return `/api/v1/policies/limits/rules/${ruleId}/impact`
+}
+
+/**
+ * @summary Get Limit Policy Rule Impact
+ */
+export const getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet = async (ruleId: string, options?: RequestInit): Promise<getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetResponse> => {
+
+  return apiMutator<getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetResponse>(getGetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetUrl(ruleId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetQueryKey = (ruleId: string,) => {
+    return [
+    `/api/v1/policies/limits/rules/${ruleId}/impact`
+    ] as const;
+    }
+
+
+export const getGetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>, TError = HTTPValidationError>(ruleId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetQueryKey(ruleId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>> = ({ signal }) => getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet(ruleId, { signal });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(ruleId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetQueryResult = NonNullable<Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>>
+export type GetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetQueryError = HTTPValidationError
+
+
+export function useGetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet<TData = Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>, TError = HTTPValidationError>(
+ ruleId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet<TData = Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>, TError = HTTPValidationError>(
+ ruleId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet<TData = Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>, TError = HTTPValidationError>(
+ ruleId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get Limit Policy Rule Impact
+ */
+
+export function useGetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet<TData = Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>, TError = HTTPValidationError>(
+ ruleId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetQueryOptions(ruleId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export type listPolicyAssignmentsApiV1PoliciesAssignmentsGetResponse200 = {
   data: PolicyAssignmentResponse[]
   status: 200
 }

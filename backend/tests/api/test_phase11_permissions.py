@@ -5,6 +5,10 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import require_project_view_or_permission, require_team_view_or_permission
+from app.api.v1.routes.guardrails import _require_assignment_admin as require_guardrail_assignment
+from app.api.v1.routes.guardrails import update_assignment as update_guardrail_assignment
+from app.api.v1.routes.policies import _require_assignment_admin as require_policy_assignment
+from app.core.database import Scope
 from app.modules.auth.internal.models import (
     Organization,
     ProjectMembership,
@@ -17,7 +21,13 @@ from app.modules.auth.schemas import (
     AuthenticatedTeamMembership,
     AuthenticatedUser,
 )
-from app.modules.keys.internal.models import Project
+from app.modules.guardrails import facade as guardrails_facade
+from app.modules.guardrails.schemas import (
+    CreateGuardrailAssignmentRequest,
+    CreateGuardrailPolicyRequest,
+    UpdateGuardrailAssignmentRequest,
+)
+from app.modules.keys.internal.models import Project, VirtualKey
 
 
 def _user(
@@ -76,14 +86,30 @@ async def _workspace(db_session: AsyncSession):
         slug="cross",
     )
     db_session.add_all([project, other_project, cross_org_project])
+    await db_session.flush()
+    key = VirtualKey(
+        org_id=org.id,
+        project_id=project.id,
+        name="Runtime key",
+        key_hash=f"hash-{uuid4()}",
+        key_prefix="bab-test",
+    )
+    other_key = VirtualKey(
+        org_id=org.id,
+        project_id=other_project.id,
+        name="Other key",
+        key_hash=f"hash-{uuid4()}",
+        key_prefix="bab-test",
+    )
+    db_session.add_all([key, other_key])
     await db_session.commit()
-    return org, team, project, other_team, other_project, cross_org_project
+    return org, team, project, other_team, other_project, cross_org_project, key, other_key
 
 
 async def test_org_admin_can_view_team_and_project_without_memberships(
     db_session: AsyncSession,
 ) -> None:
-    org, team, project, _, _, _ = await _workspace(db_session)
+    org, team, project, _, _, _, _, _ = await _workspace(db_session)
     user = _user(
         org_id=org.id,
         role="org_admin",
@@ -107,7 +133,7 @@ async def test_org_admin_can_view_team_and_project_without_memberships(
 async def test_team_member_can_view_own_team_project_but_not_other_team(
     db_session: AsyncSession,
 ) -> None:
-    org, team, project, other_team, _, _ = await _workspace(db_session)
+    org, team, project, other_team, _, _, _, _ = await _workspace(db_session)
     user = _user(org_id=org.id)
     db_session.add(_user_row(user))
     db_session.add(
@@ -146,7 +172,7 @@ async def test_team_member_can_view_own_team_project_but_not_other_team(
 async def test_project_admin_can_view_own_project_but_not_cross_project_or_org(
     db_session: AsyncSession,
 ) -> None:
-    org, _, project, _, other_project, cross_org_project = await _workspace(db_session)
+    org, _, project, _, other_project, cross_org_project, _, _ = await _workspace(db_session)
     user = _user(org_id=org.id)
     db_session.add(_user_row(user))
     db_session.add(
@@ -174,3 +200,305 @@ async def test_project_admin_can_view_own_project_but_not_cross_project_or_org(
                 db=db_session,
             )
         assert exc.value.status_code == 403
+
+
+@pytest.mark.parametrize("guard", [require_policy_assignment, require_guardrail_assignment])
+async def test_org_admin_can_manage_any_policy_assignment_scope(
+    db_session: AsyncSession,
+    guard,
+) -> None:
+    org, _team, _project, _other_team, _other_project, _cross_org_project, _key, _other_key = (
+        await _workspace(db_session)
+    )
+    user = _user(org_id=org.id, role="org_admin")
+
+    await guard(
+        user=user,
+        scope_type="org",
+        team_id=None,
+        project_id=None,
+        virtual_key_id=None,
+        scope=Scope(org_id=org.id),
+        db=db_session,
+    )
+
+
+@pytest.mark.parametrize("guard", [require_policy_assignment, require_guardrail_assignment])
+async def test_team_admin_can_manage_team_projects_and_keys(
+    db_session: AsyncSession,
+    guard,
+) -> None:
+    org, team, project, _other_team, _other_project, _cross_org_project, key, _other_key = (
+        await _workspace(db_session)
+    )
+    user = _user(
+        org_id=org.id,
+        team_memberships=[AuthenticatedTeamMembership(team_id=team.id, role="team_admin")],
+    )
+
+    for scope_type, team_id, project_id, virtual_key_id in (
+        ("team", team.id, None, None),
+        ("project", None, project.id, None),
+        ("virtual_key", None, None, key.id),
+    ):
+        await guard(
+            user=user,
+            scope_type=scope_type,
+            team_id=team_id,
+            project_id=project_id,
+            virtual_key_id=virtual_key_id,
+            scope=Scope(org_id=org.id),
+            db=db_session,
+        )
+
+
+@pytest.mark.parametrize("guard", [require_policy_assignment, require_guardrail_assignment])
+async def test_project_admin_can_manage_project_and_keys_but_not_team_or_org(
+    db_session: AsyncSession,
+    guard,
+) -> None:
+    org, team, project, _other_team, _other_project, _cross_org_project, key, _other_key = (
+        await _workspace(db_session)
+    )
+    user = _user(
+        org_id=org.id,
+        project_memberships=[
+            AuthenticatedProjectMembership(project_id=project.id, role="project_admin")
+        ],
+    )
+
+    for scope_type, team_id, project_id, virtual_key_id in (
+        ("project", None, project.id, None),
+        ("virtual_key", None, None, key.id),
+    ):
+        await guard(
+            user=user,
+            scope_type=scope_type,
+            team_id=team_id,
+            project_id=project_id,
+            virtual_key_id=virtual_key_id,
+            scope=Scope(org_id=org.id),
+            db=db_session,
+        )
+
+    for scope_type, team_id, project_id, virtual_key_id in (
+        ("org", None, None, None),
+        ("team", team.id, None, None),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await guard(
+                user=user,
+                scope_type=scope_type,
+                team_id=team_id,
+                project_id=project_id,
+                virtual_key_id=virtual_key_id,
+                scope=Scope(org_id=org.id),
+                db=db_session,
+            )
+        assert exc.value.status_code == 403
+
+
+@pytest.mark.parametrize("guard", [require_policy_assignment, require_guardrail_assignment])
+async def test_unrelated_scoped_admin_cannot_manage_assignment_targets(
+    db_session: AsyncSession,
+    guard,
+) -> None:
+    org, _team, project, other_team, _other_project, _cross_org_project, key, _other_key = (
+        await _workspace(db_session)
+    )
+    user = _user(
+        org_id=org.id,
+        team_memberships=[AuthenticatedTeamMembership(team_id=other_team.id, role="team_admin")],
+    )
+
+    for scope_type, team_id, project_id, virtual_key_id in (
+        ("project", None, project.id, None),
+        ("virtual_key", None, None, key.id),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await guard(
+                user=user,
+                scope_type=scope_type,
+                team_id=team_id,
+                project_id=project_id,
+                virtual_key_id=virtual_key_id,
+                scope=Scope(org_id=org.id),
+                db=db_session,
+            )
+        assert exc.value.status_code == 403
+
+
+async def _guardrail_assignment(*, db_session: AsyncSession, org_id, scope_type: str, **ids):
+    actor = _user(org_id=org_id, role="org_admin")
+    scope = Scope(org_id=org_id)
+    policy = await guardrails_facade.create_policy(
+        payload=CreateGuardrailPolicyRequest(name=f"Guard {uuid4()}"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    assignment = await guardrails_facade.create_assignment(
+        payload=CreateGuardrailAssignmentRequest(
+            policy_id=policy.id,
+            scope_type=scope_type,
+            **ids,
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    return policy, assignment
+
+
+async def test_project_admin_cannot_move_other_project_guardrail_assignment(
+    db_session: AsyncSession,
+) -> None:
+    org, _team, project, _other_team, other_project, *_ = await _workspace(db_session)
+    _policy, assignment = await _guardrail_assignment(
+        db_session=db_session,
+        org_id=org.id,
+        scope_type="project",
+        project_id=project.id,
+    )
+    actor = _user(
+        org_id=org.id,
+        project_memberships=[
+            AuthenticatedProjectMembership(project_id=other_project.id, role="project_admin")
+        ],
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await update_guardrail_assignment(
+            assignment_id=assignment.id,
+            payload=UpdateGuardrailAssignmentRequest(
+                scope_type="project",
+                project_id=other_project.id,
+            ),
+            actor=actor,
+            scope=Scope(org_id=org.id),
+            db=db_session,
+        )
+
+    assert exc.value.status_code == 403
+
+
+async def test_project_admin_cannot_move_org_guardrail_assignment_to_project(
+    db_session: AsyncSession,
+) -> None:
+    org, _team, project, *_ = await _workspace(db_session)
+    _policy, assignment = await _guardrail_assignment(
+        db_session=db_session,
+        org_id=org.id,
+        scope_type="org",
+    )
+    actor = _user(
+        org_id=org.id,
+        project_memberships=[
+            AuthenticatedProjectMembership(project_id=project.id, role="project_admin")
+        ],
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await update_guardrail_assignment(
+            assignment_id=assignment.id,
+            payload=UpdateGuardrailAssignmentRequest(
+                scope_type="project",
+                project_id=project.id,
+            ),
+            actor=actor,
+            scope=Scope(org_id=org.id),
+            db=db_session,
+        )
+
+    assert exc.value.status_code == 403
+
+
+async def test_project_admin_can_update_own_project_guardrail_assignment(
+    db_session: AsyncSession,
+) -> None:
+    org, _team, project, *_ = await _workspace(db_session)
+    _policy, assignment = await _guardrail_assignment(
+        db_session=db_session,
+        org_id=org.id,
+        scope_type="project",
+        project_id=project.id,
+    )
+    actor = _user(
+        org_id=org.id,
+        project_memberships=[
+            AuthenticatedProjectMembership(project_id=project.id, role="project_admin")
+        ],
+    )
+
+    updated = await update_guardrail_assignment(
+        assignment_id=assignment.id,
+        payload=UpdateGuardrailAssignmentRequest(enforcement_mode="dry_run", is_active=False),
+        actor=actor,
+        scope=Scope(org_id=org.id),
+        db=db_session,
+    )
+
+    assert updated.enforcement_mode == "dry_run"
+    assert updated.is_active is False
+
+
+async def test_team_admin_can_move_guardrail_assignment_only_within_team(
+    db_session: AsyncSession,
+) -> None:
+    org, team, project, _other_team, other_project, *_ = await _workspace(db_session)
+    _policy, assignment = await _guardrail_assignment(
+        db_session=db_session,
+        org_id=org.id,
+        scope_type="project",
+        project_id=project.id,
+    )
+    actor = _user(
+        org_id=org.id,
+        team_memberships=[AuthenticatedTeamMembership(team_id=team.id, role="team_admin")],
+    )
+
+    moved = await update_guardrail_assignment(
+        assignment_id=assignment.id,
+        payload=UpdateGuardrailAssignmentRequest(scope_type="team", team_id=team.id),
+        actor=actor,
+        scope=Scope(org_id=org.id),
+        db=db_session,
+    )
+    assert moved.scope_type == "team"
+    assert moved.team_id == team.id
+
+    with pytest.raises(HTTPException) as exc:
+        await update_guardrail_assignment(
+            assignment_id=assignment.id,
+            payload=UpdateGuardrailAssignmentRequest(
+                scope_type="project",
+                project_id=other_project.id,
+            ),
+            actor=actor,
+            scope=Scope(org_id=org.id),
+            db=db_session,
+        )
+    assert exc.value.status_code == 403
+
+
+async def test_global_guardrail_manager_can_update_any_assignment(
+    db_session: AsyncSession,
+) -> None:
+    org, _team, project, *_ = await _workspace(db_session)
+    _policy, assignment = await _guardrail_assignment(
+        db_session=db_session,
+        org_id=org.id,
+        scope_type="project",
+        project_id=project.id,
+    )
+    actor = _user(org_id=org.id, permissions=["guardrails.manage"])
+
+    updated = await update_guardrail_assignment(
+        assignment_id=assignment.id,
+        payload=UpdateGuardrailAssignmentRequest(is_active=False),
+        actor=actor,
+        scope=Scope(org_id=org.id),
+        db=db_session,
+    )
+
+    assert updated.is_active is False
