@@ -10,12 +10,19 @@ from fastapi.responses import Response as FastApiResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, get_scope, require_permission
+from app.core.config import settings
 from app.core.database import Scope, get_db
 from app.modules.auth import facade
 from app.modules.auth.errors import (
+    DuplicateInviteError,
     InvalidCredentialsError,
+    InvalidInviteTargetError,
     InvalidRefreshTokenError,
+    InviteLifecycleError,
+    InviteNotFoundError,
     LastOwnerError,
+    MemberNotFoundError,
+    PermissionDeniedError,
 )
 from app.modules.auth.schemas import (
     AcceptInviteRequest,
@@ -127,7 +134,10 @@ async def create_member(
     db: DatabaseSession,
     actor: MemberAdmin,
 ) -> MemberResponse:
-    return await facade.create_member(payload=payload, actor=actor, scope=scope, db=db)
+    try:
+        return await facade.create_member(payload=payload, actor=actor, scope=scope, db=db)
+    except PermissionDeniedError as exc:
+        raise HTTPException(status_code=403, detail="insufficient permissions") from exc
 
 
 @router.patch("/members/{user_id}")
@@ -148,6 +158,10 @@ async def update_member(
         )
     except LastOwnerError as exc:
         raise HTTPException(status_code=400, detail="cannot demote the last owner") from exc
+    except MemberNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="member not found") from exc
+    except PermissionDeniedError as exc:
+        raise HTTPException(status_code=403, detail="insufficient permissions") from exc
 
 
 @router.patch("/members/{user_id}/status")
@@ -168,15 +182,19 @@ async def update_member_status(
         )
     except LastOwnerError as exc:
         raise HTTPException(status_code=400, detail="cannot deactivate the last owner") from exc
+    except MemberNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="member not found") from exc
+    except PermissionDeniedError as exc:
+        raise HTTPException(status_code=403, detail="insufficient permissions") from exc
 
 
 @router.get("/invites")
 async def list_invites(
     scope: RequestScope,
     db: DatabaseSession,
-    _: MemberAdmin,
+    actor: CurrentUser,
 ) -> list[InviteResponse]:
-    return await facade.list_invites(scope=scope, db=db)
+    return await facade.list_invites(actor=actor, scope=scope, db=db)
 
 
 @router.post("/invites", status_code=status.HTTP_201_CREATED)
@@ -184,15 +202,22 @@ async def create_invite(
     payload: CreateInviteRequest,
     scope: RequestScope,
     db: DatabaseSession,
-    actor: MemberAdmin,
+    actor: CurrentUser,
 ) -> InviteResponse:
-    return await facade.create_invite(
-        payload=payload,
-        actor=actor,
-        scope=scope,
-        public_base_url=None,
-        db=db,
-    )
+    try:
+        return await facade.create_invite(
+            payload=payload,
+            actor=actor,
+            scope=scope,
+            public_base_url=None,
+            db=db,
+        )
+    except InvalidInviteTargetError as exc:
+        raise HTTPException(status_code=400, detail="invalid invite target") from exc
+    except DuplicateInviteError as exc:
+        raise HTTPException(status_code=409, detail="pending invite already exists") from exc
+    except PermissionDeniedError as exc:
+        raise HTTPException(status_code=403, detail="insufficient permissions") from exc
 
 
 @router.delete("/invites/{invite_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -200,9 +225,16 @@ async def revoke_invite(
     invite_id: UUID,
     scope: RequestScope,
     db: DatabaseSession,
-    actor: MemberAdmin,
+    actor: CurrentUser,
 ) -> None:
-    await facade.revoke_invite(invite_id=invite_id, actor=actor, scope=scope, db=db)
+    try:
+        await facade.revoke_invite(invite_id=invite_id, actor=actor, scope=scope, db=db)
+    except InviteNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="invite not found") from exc
+    except InviteLifecycleError as exc:
+        raise HTTPException(status_code=400, detail="invite is not pending") from exc
+    except PermissionDeniedError as exc:
+        raise HTTPException(status_code=403, detail="insufficient permissions") from exc
 
 
 @router.get("/audit")
@@ -318,9 +350,10 @@ def _set_refresh_cookie(response: Response, value: str) -> None:
         key=REFRESH_COOKIE_NAME,
         value=value,
         httponly=True,
-        secure=False,
-        samesite="lax",
-        path="/api/v1/auth",
+        secure=_refresh_cookie_secure(),
+        samesite=settings.refresh_cookie_samesite,
+        domain=settings.refresh_cookie_domain,
+        path=settings.refresh_cookie_path,
         max_age=60 * 60 * 24 * 30,
     )
 
@@ -328,5 +361,14 @@ def _set_refresh_cookie(response: Response, value: str) -> None:
 def _clear_refresh_cookie(response: Response) -> None:
     response.delete_cookie(
         key=REFRESH_COOKIE_NAME,
-        path="/api/v1/auth",
+        domain=settings.refresh_cookie_domain,
+        path=settings.refresh_cookie_path,
+        secure=_refresh_cookie_secure(),
+        samesite=settings.refresh_cookie_samesite,
     )
+
+
+def _refresh_cookie_secure() -> bool:
+    if settings.refresh_cookie_secure is not None:
+        return settings.refresh_cookie_secure
+    return settings.environment == "production"

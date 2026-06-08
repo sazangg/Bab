@@ -228,8 +228,13 @@ async def create_invite(
     )
 
 
-async def list_invites(*, scope: Scope, db: AsyncSession) -> list[InviteResponse]:
-    return await service.list_invites(scope=scope, db=db)
+async def list_invites(
+    *,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[InviteResponse]:
+    return await service.list_invites(actor=actor, scope=scope, db=db)
 
 
 async def revoke_invite(

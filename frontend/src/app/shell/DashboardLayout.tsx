@@ -64,7 +64,9 @@ import {
   canViewDashboardHome,
   canViewOrgAdminSurface,
   hasAnyDirectTeamMembership,
+  hasAnyProjectAdminMembership,
   hasAnyTeamMembership,
+  hasAnyTeamAdminMembership,
   hasPermission,
 } from "@/features/auth/lib/permissions";
 import { useAuthStore } from "@/features/auth/model/auth-store";
@@ -78,7 +80,7 @@ const organizationNav = [
   { to: "/usage", label: "Usage", icon: ChartNoAxesCombined, permission: "usage.view" },
   { to: "/activity", label: "Activity", icon: Activity, permission: "activity.view" },
   { to: "/audit", label: "Audit", icon: ClipboardList, permission: "audit.view" },
-  { to: "/users", label: "Users", icon: Users, permission: "members.manage" },
+  { to: "/users", label: "Users", icon: Users, permission: "members.manage", scopedAdmin: true },
   { to: "/settings", label: "Settings", icon: Settings, permission: "settings.view" },
 ];
 
@@ -183,6 +185,13 @@ export function DashboardLayout() {
   };
   const visibleOrganizationNav = organizationNav.filter((item) => {
     if (item.to === "/") return canViewDashboardHome(currentUser);
+    if (item.scopedAdmin) {
+      return (
+        canView(item.permission) ||
+        hasAnyTeamAdminMembership(currentUser) ||
+        hasAnyProjectAdminMembership(currentUser)
+      );
+    }
     return canView(item.permission);
   });
   const visibleWorkspaceNav = workspaceNav.filter((item) => {

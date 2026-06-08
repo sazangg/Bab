@@ -16,3 +16,27 @@ class InvalidAccessTokenError(AuthError):
 
 class LastOwnerError(AuthError):
     pass
+
+
+class MemberNotFoundError(AuthError):
+    pass
+
+
+class PermissionDeniedError(AuthError):
+    pass
+
+
+class DuplicateInviteError(AuthError):
+    pass
+
+
+class InvalidInviteTargetError(AuthError):
+    pass
+
+
+class InviteNotFoundError(AuthError):
+    pass
+
+
+class InviteLifecycleError(AuthError):
+    pass

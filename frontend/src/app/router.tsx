@@ -36,7 +36,9 @@ function ProbePage({ kind }: { kind: "health" | "readyz" }) {
     <main className="grid min-h-svh place-items-center bg-background p-6 text-foreground">
       <div className="w-full max-w-lg rounded-md border bg-card p-6 shadow-sm">
         <p className="text-sm text-muted-foreground">Bab probe</p>
-        <h1 className="mt-1 text-2xl font-semibold">{kind === "health" ? "Health" : "Readiness"}</h1>
+        <h1 className="mt-1 text-2xl font-semibold">
+          {kind === "health" ? "Health" : "Readiness"}
+        </h1>
         <p className="mt-3 text-sm text-muted-foreground">
           Use the backend endpoint{" "}
           <code className="rounded bg-muted px-1 py-0.5">
@@ -100,7 +102,7 @@ export function AppRoutes() {
           <Route element={<ProtectedRoute permission="audit.view" />}>
             <Route path="/audit" element={<AuditPage />} />
           </Route>
-          <Route element={<ProtectedRoute permission="members.manage" />}>
+          <Route element={<ProtectedRoute permission="members.manage" requireScopedAdmin />}>
             <Route path="/users" element={<UsersPage />} />
           </Route>
           <Route element={<ProtectedRoute permission="settings.view" />}>

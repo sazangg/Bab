@@ -1,8 +1,19 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { Copy, RotateCcw, Trash2, UserPlus, UserX, Users } from "lucide-react";
-import { useState } from "react";
+import {
+  ChevronDown,
+  Copy,
+  FilterX,
+  RotateCcw,
+  Search,
+  Trash2,
+  UserPlus,
+  UserX,
+  Users,
+} from "lucide-react";
+import { Fragment, type ReactNode, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -23,30 +34,122 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  hasAnyProjectAdminMembership,
+  hasAnyTeamAdminMembership,
+  hasPermission,
+  isProjectAdmin,
+  isTeamAdmin,
+} from "@/features/auth/lib/permissions";
+import {
   useCreateInviteApiV1AuthInvitesPost,
   useCreateMemberApiV1AuthMembersPost,
   useListInvitesApiV1AuthInvitesGet,
   useListMembersApiV1AuthMembersGet,
+  useMeApiV1AuthMeGet,
   useRevokeInviteApiV1AuthInvitesInviteIdDelete,
   useUpdateMemberApiV1AuthMembersUserIdPatch,
   useUpdateMemberStatusApiV1AuthMembersUserIdStatusPatch,
 } from "@/shared/api/generated/auth/auth";
+import { useListProjectsApiV1ProjectsGet } from "@/shared/api/generated/projects/projects";
+import type {
+  AuthenticatedUser,
+  InviteResponse,
+  MemberResponse,
+  ProjectResponse,
+  TeamResponse,
+} from "@/shared/api/generated/schemas";
+import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
 
+const NO_SCOPE = "__none__";
+const ALL_STATUSES = "__all_statuses__";
+const ALL_ROLES = "__all_roles__";
+
 export function UsersPage() {
   const queryClient = useQueryClient();
+  const currentUserQuery = useMeApiV1AuthMeGet();
+  const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
+  const canManageOrgMembers = hasPermission(currentUser, "members.manage");
+  const canInvite =
+    canManageOrgMembers ||
+    hasAnyTeamAdminMembership(currentUser) ||
+    hasAnyProjectAdminMembership(currentUser);
+
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState("org_viewer");
+  const [role, setRole] = useState("org_member");
+  const [teamId, setTeamId] = useState(NO_SCOPE);
+  const [teamRole, setTeamRole] = useState(NO_SCOPE);
+  const [projectId, setProjectId] = useState(NO_SCOPE);
+  const [projectRole, setProjectRole] = useState(NO_SCOPE);
   const [createEmail, setCreateEmail] = useState("");
   const [createName, setCreateName] = useState("");
   const [createPassword, setCreatePassword] = useState("");
   const [createRole, setCreateRole] = useState("org_viewer");
-  const membersQuery = useListMembersApiV1AuthMembersGet();
-  const invitesQuery = useListInvitesApiV1AuthInvitesGet();
+  const [memberSearch, setMemberSearch] = useState("");
+  const [memberRoleFilter, setMemberRoleFilter] = useState(ALL_ROLES);
+  const [memberStatusFilter, setMemberStatusFilter] = useState(ALL_STATUSES);
+  const [inviteStatusFilter, setInviteStatusFilter] = useState("pending");
+  const [expandedMemberId, setExpandedMemberId] = useState<string | null>(null);
+
+  const membersQuery = useListMembersApiV1AuthMembersGet({
+    query: { enabled: canManageOrgMembers },
+  });
+  const invitesQuery = useListInvitesApiV1AuthInvitesGet({
+    query: { enabled: canInvite },
+  });
+  const teamsQuery = useListTeamsApiV1TeamsGet({ query: { enabled: canInvite } });
+  const projectsQuery = useListProjectsApiV1ProjectsGet({ query: { enabled: canInvite } });
+
   const members = membersQuery.data?.status === 200 ? membersQuery.data.data : [];
   const invites = invitesQuery.data?.status === 200 ? invitesQuery.data.data : [];
-  const pendingInvites = invites.filter((invite) => invite.status === "pending");
+  const teams = useMemo(
+    () => (teamsQuery.data?.status === 200 ? teamsQuery.data.data : []),
+    [teamsQuery.data],
+  );
+  const projects = useMemo(
+    () => (projectsQuery.data?.status === 200 ? projectsQuery.data.data : []),
+    [projectsQuery.data],
+  );
+  const teamById = useMemo(() => indexById(teams), [teams]);
+  const projectById = useMemo(() => indexById(projects), [projects]);
+  const manageableTeams = useMemo(
+    () => teams.filter((team) => team.is_active && canInviteToTeam(currentUser, team.id)),
+    [currentUser, teams],
+  );
+  const manageableProjects = useMemo(
+    () =>
+      projects.filter((project) => project.is_active && canInviteToProject(currentUser, project)),
+    [currentUser, projects],
+  );
+  const visibleProjects = useMemo(
+    () => manageableProjects.filter((project) => teamId === NO_SCOPE || project.team_id === teamId),
+    [manageableProjects, teamId],
+  );
+  const assignableOrgRoles = getAssignableOrgRoles(currentUser);
+  const filteredMembers = useMemo(
+    () =>
+      members.filter((member) => {
+        const needle = memberSearch.trim().toLowerCase();
+        const matchesText =
+          !needle ||
+          member.email.toLowerCase().includes(needle) ||
+          (member.name ?? "").toLowerCase().includes(needle);
+        const matchesRole = memberRoleFilter === ALL_ROLES || member.role === memberRoleFilter;
+        const matchesStatus =
+          memberStatusFilter === ALL_STATUSES || member.status === memberStatusFilter;
+        return matchesText && matchesRole && matchesStatus;
+      }),
+    [memberRoleFilter, memberSearch, memberStatusFilter, members],
+  );
+  const filteredInvites = useMemo(
+    () =>
+      invites.filter(
+        (invite) => inviteStatusFilter === ALL_STATUSES || invite.status === inviteStatusFilter,
+      ),
+    [inviteStatusFilter, invites],
+  );
+
   const inviteMutation = useCreateInviteApiV1AuthInvitesPost({
     mutation: {
       onSuccess: async (response) => {
@@ -105,14 +208,37 @@ export function UsersPage() {
       onError: () => toast.error("Invite could not be revoked."),
     },
   });
+
   const isPending =
     inviteMutation.isPending ||
     createMemberMutation.isPending ||
     updateMemberMutation.isPending ||
     updateMemberStatusMutation.isPending ||
     revokeInviteMutation.isPending;
+  const scopedInviteHasTarget =
+    teamId !== NO_SCOPE || (projectId !== NO_SCOPE && projectRole !== NO_SCOPE);
+  const createUserDisabled =
+    isPending || !canManageOrgMembers || !createEmail.trim() || createPassword.trim().length < 8;
+  const inviteDisabled =
+    isPending ||
+    !canInvite ||
+    !email.trim() ||
+    (!canManageOrgMembers && !scopedInviteHasTarget) ||
+    (projectId !== NO_SCOPE && projectRole === NO_SCOPE);
 
-  const createUserDisabled = isPending || !createEmail.trim() || createPassword.trim().length < 8;
+  function submitInvite() {
+    inviteMutation.mutate({
+      data: {
+        email: email.trim(),
+        role,
+        team_id: teamId === NO_SCOPE ? null : teamId,
+        team_role: teamRole === NO_SCOPE ? null : teamRole,
+        project_id: projectId === NO_SCOPE ? null : projectId,
+        project_role: projectRole === NO_SCOPE ? null : projectRole,
+      },
+    });
+    setEmail("");
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -120,102 +246,87 @@ export function UsersPage() {
         title="Users"
         description="Organization members, scoped roles, and onboarding invites."
         actions={
-          <Button
-            disabled={isPending || !email.trim()}
-            onClick={() => {
-              inviteMutation.mutate({ data: { email: email.trim(), role } });
-              setEmail("");
-            }}
-          >
+          <Button disabled={inviteDisabled} onClick={submitInvite}>
             <UserPlus data-icon="inline-start" />
             Invite user
           </Button>
         }
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Create local user</CardTitle>
-          <CardDescription>
-            Add a testable local account immediately and assign its organization role.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px_180px_auto]">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="users-create-email">Email</Label>
-            <Input
-              id="users-create-email"
-              type="email"
-              value={createEmail}
-              onChange={(event) => setCreateEmail(event.target.value)}
-              placeholder="teammate@example.com"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="users-create-name">Name</Label>
-            <Input
-              id="users-create-name"
-              value={createName}
-              onChange={(event) => setCreateName(event.target.value)}
-              placeholder="Optional"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="users-create-password">Password</Label>
-            <Input
-              id="users-create-password"
-              type="password"
-              value={createPassword}
-              onChange={(event) => setCreatePassword(event.target.value)}
-              placeholder="8+ characters"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label>Org role</Label>
-            <Select value={createRole} onValueChange={setCreateRole}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="org_owner">Owner</SelectItem>
-                <SelectItem value="org_admin">Admin</SelectItem>
-                <SelectItem value="org_viewer">Viewer</SelectItem>
-                <SelectItem value="org_member">Member</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-end">
-            <Button
-              type="button"
-              disabled={createUserDisabled}
-              onClick={() =>
-                createMemberMutation.mutate({
-                  data: {
-                    email: createEmail.trim(),
-                    name: createName.trim() || null,
-                    password: createPassword,
-                    role: createRole,
-                  },
-                })
-              }
-            >
-              <UserPlus data-icon="inline-start" />
-              Create user
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      {canManageOrgMembers ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Create local user</CardTitle>
+            <CardDescription>
+              Add a local account immediately and assign its organization role.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px_180px_auto]">
+            <Field id="users-create-email" label="Email">
+              <Input
+                id="users-create-email"
+                type="email"
+                value={createEmail}
+                onChange={(event) => setCreateEmail(event.target.value)}
+                placeholder="teammate@example.com"
+              />
+            </Field>
+            <Field id="users-create-name" label="Name">
+              <Input
+                id="users-create-name"
+                value={createName}
+                onChange={(event) => setCreateName(event.target.value)}
+                placeholder="Optional"
+              />
+            </Field>
+            <Field id="users-create-password" label="Password">
+              <Input
+                id="users-create-password"
+                type="password"
+                value={createPassword}
+                onChange={(event) => setCreatePassword(event.target.value)}
+                placeholder="8+ characters"
+              />
+            </Field>
+            <Field label="Org role">
+              <RoleSelect
+                value={createRole}
+                onValueChange={setCreateRole}
+                roles={assignableOrgRoles}
+              />
+            </Field>
+            <div className="flex items-end">
+              <Button
+                type="button"
+                disabled={createUserDisabled}
+                onClick={() =>
+                  createMemberMutation.mutate({
+                    data: {
+                      email: createEmail.trim(),
+                      name: createName.trim() || null,
+                      password: createPassword,
+                      role: createRole,
+                    },
+                  })
+                }
+              >
+                <UserPlus data-icon="inline-start" />
+                Create user
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>
           <CardTitle>Invite user</CardTitle>
           <CardDescription>
-            Create a local invite link. Team access can be assigned after the user joins.
+            Invite links are copied when created and are not shown again after creation.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="users-invite-email">Email</Label>
+        <CardContent className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_160px_180px_170px_180px_170px]">
+          <Field id="users-invite-email" label="Email">
             <Input
               id="users-invite-email"
               type="email"
@@ -223,189 +334,715 @@ export function UsersPage() {
               onChange={(event) => setEmail(event.target.value)}
               placeholder="teammate@example.com"
             />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label>Org role</Label>
-            <Select value={role} onValueChange={setRole}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="org_admin">Admin</SelectItem>
-                <SelectItem value="org_viewer">Viewer</SelectItem>
-                <SelectItem value="org_member">Member</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Members</CardTitle>
-          <CardDescription>Org-level roles define product-wide access.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {membersQuery.isPending ? (
-            <p className="text-sm text-muted-foreground">Loading members...</p>
-          ) : members.length === 0 ? (
-            <EmptyState
-              icon={Users}
-              title="No members found"
-              description="Invite or create the first user to start assigning team access."
+          </Field>
+          <Field label="Org role">
+            <RoleSelect value={role} onValueChange={setRole} roles={assignableOrgRoles} />
+          </Field>
+          <Field label="Team">
+            <ScopeSelect
+              value={teamId}
+              onValueChange={(value) => {
+                setTeamId(value);
+                if (value === NO_SCOPE) setTeamRole(NO_SCOPE);
+                if (value !== NO_SCOPE && projectId !== NO_SCOPE) {
+                  const project = projectById[projectId];
+                  if (project?.team_id !== value) setProjectId(NO_SCOPE);
+                }
+              }}
+              placeholder="No team"
+              options={manageableTeams.map((team) => ({ value: team.id, label: team.name }))}
             />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>User</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Joined</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {members.map((member) => (
-                  <TableRow
-                    key={member.user_id}
-                    className={member.status !== "active" ? "opacity-60" : undefined}
-                  >
-                    <TableCell>
-                      <div className="font-medium">{member.email}</div>
-                      {member.name ? (
-                        <div className="text-xs text-muted-foreground">{member.name}</div>
-                      ) : null}
-                    </TableCell>
-                    <TableCell className="capitalize">{member.status}</TableCell>
-                    <TableCell>
-                      <Select
-                        value={member.role}
-                        onValueChange={(value) =>
-                          updateMemberMutation.mutate({
-                            userId: member.user_id,
-                            data: { role: value },
-                          })
-                        }
-                        disabled={isPending || member.status !== "active"}
-                      >
-                        <SelectTrigger className="w-36">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="org_owner">Owner</SelectItem>
-                          <SelectItem value="org_admin">Admin</SelectItem>
-                          <SelectItem value="org_viewer">Viewer</SelectItem>
-                          <SelectItem value="org_member">Member</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                    <TableCell>{new Date(member.created_at).toLocaleDateString()}</TableCell>
-                    <TableCell className="text-right">
-                      {member.status === "active" ? (
-                        <Button
-                          type="button"
-                          size="icon-sm"
-                          variant="ghost"
-                          disabled={isPending}
-                          onClick={() =>
-                            updateMemberStatusMutation.mutate({
-                              userId: member.user_id,
-                              data: { status: "inactive" },
-                            })
-                          }
-                          aria-label="Deactivate user"
-                        >
-                          <UserX />
-                        </Button>
-                      ) : (
-                        <Button
-                          type="button"
-                          size="icon-sm"
-                          variant="ghost"
-                          disabled={isPending}
-                          onClick={() =>
-                            updateMemberStatusMutation.mutate({
-                              userId: member.user_id,
-                              data: { status: "active" },
-                            })
-                          }
-                          aria-label="Reactivate user"
-                        >
-                          <RotateCcw />
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
+          </Field>
+          <Field label="Team role">
+            <ScopeSelect
+              value={teamRole}
+              onValueChange={setTeamRole}
+              placeholder="No role"
+              disabled={teamId === NO_SCOPE}
+              options={[
+                { value: "team_member", label: "Member" },
+                { value: "team_admin", label: "Admin" },
+              ]}
+            />
+          </Field>
+          <Field label="Project">
+            <ScopeSelect
+              value={projectId}
+              onValueChange={(value) => {
+                setProjectId(value);
+                if (value === NO_SCOPE) setProjectRole(NO_SCOPE);
+                if (value !== NO_SCOPE && projectRole === NO_SCOPE) setProjectRole("project_admin");
+              }}
+              placeholder="No project"
+              options={visibleProjects.map((project) => ({
+                value: project.id,
+                label: project.name,
+              }))}
+            />
+          </Field>
+          <Field label="Project role">
+            <ScopeSelect
+              value={projectRole}
+              onValueChange={setProjectRole}
+              placeholder="No role"
+              disabled={projectId === NO_SCOPE}
+              options={[{ value: "project_admin", label: "Admin" }]}
+            />
+          </Field>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Pending invites</CardTitle>
-          <CardDescription>Links are shown only at invite creation time.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {invitesQuery.isPending ? (
-            <p className="text-sm text-muted-foreground">Loading invites...</p>
-          ) : pendingInvites.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No pending invites.</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Expires</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {pendingInvites.map((invite) => (
-                  <TableRow key={invite.id}>
-                    <TableCell>{invite.email}</TableCell>
-                    <TableCell>{formatOrgRole(invite.role)}</TableCell>
-                    <TableCell>{new Date(invite.expires_at).toLocaleDateString()}</TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        {invite.invite_url ? (
+      {canManageOrgMembers ? (
+        <MembersCard
+          members={filteredMembers}
+          allMembers={members}
+          isLoading={membersQuery.isPending}
+          isPending={isPending}
+          search={memberSearch}
+          roleFilter={memberRoleFilter}
+          statusFilter={memberStatusFilter}
+          expandedMemberId={expandedMemberId}
+          currentUserId={currentUser?.id}
+          currentUserRole={currentUser?.role}
+          assignableRoles={assignableOrgRoles}
+          teamById={teamById}
+          projectById={projectById}
+          onSearch={setMemberSearch}
+          onRoleFilter={setMemberRoleFilter}
+          onStatusFilter={setMemberStatusFilter}
+          onToggleExpanded={(memberId) =>
+            setExpandedMemberId((current) => (current === memberId ? null : memberId))
+          }
+          onUpdateRole={(member, nextRole) =>
+            updateMemberMutation.mutate({ userId: member.user_id, data: { role: nextRole } })
+          }
+          onUpdateStatus={(member, status) =>
+            updateMemberStatusMutation.mutate({ userId: member.user_id, data: { status } })
+          }
+        />
+      ) : (
+        <ScopedAccessCard teams={manageableTeams} projects={manageableProjects} />
+      )}
+
+      {canManageOrgMembers ? (
+        <InvitesCard
+          invites={filteredInvites}
+          isLoading={invitesQuery.isPending}
+          isPending={isPending}
+          statusFilter={inviteStatusFilter}
+          teamById={teamById}
+          projectById={projectById}
+          onStatusFilter={setInviteStatusFilter}
+          onRevoke={(invite) => revokeInviteMutation.mutate({ inviteId: invite.id })}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function MembersCard({
+  members,
+  allMembers,
+  isLoading,
+  isPending,
+  search,
+  roleFilter,
+  statusFilter,
+  expandedMemberId,
+  currentUserId,
+  currentUserRole,
+  assignableRoles,
+  teamById,
+  projectById,
+  onSearch,
+  onRoleFilter,
+  onStatusFilter,
+  onToggleExpanded,
+  onUpdateRole,
+  onUpdateStatus,
+}: {
+  members: MemberResponse[];
+  allMembers: MemberResponse[];
+  isLoading: boolean;
+  isPending: boolean;
+  search: string;
+  roleFilter: string;
+  statusFilter: string;
+  expandedMemberId: string | null;
+  currentUserId?: string;
+  currentUserRole?: string;
+  assignableRoles: string[];
+  teamById: Record<string, TeamResponse>;
+  projectById: Record<string, ProjectResponse>;
+  onSearch: (value: string) => void;
+  onRoleFilter: (value: string) => void;
+  onStatusFilter: (value: string) => void;
+  onToggleExpanded: (memberId: string) => void;
+  onUpdateRole: (member: MemberResponse, role: string) => void;
+  onUpdateStatus: (member: MemberResponse, status: "active" | "inactive") => void;
+}) {
+  const hasFilters = search || roleFilter !== ALL_ROLES || statusFilter !== ALL_STATUSES;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Members</CardTitle>
+        <CardDescription>Org roles plus team and project access for each account.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_180px_auto]">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(event) => onSearch(event.target.value)}
+              placeholder="Search by email or name"
+              className="pl-9"
+            />
+          </div>
+          <ScopeSelect
+            value={roleFilter}
+            onValueChange={onRoleFilter}
+            placeholder="All roles"
+            includeNone={false}
+            options={[
+              { value: ALL_ROLES, label: "All roles" },
+              { value: "org_owner", label: "Owner" },
+              { value: "org_admin", label: "Admin" },
+              { value: "org_viewer", label: "Viewer" },
+              { value: "org_member", label: "Member" },
+            ]}
+          />
+          <ScopeSelect
+            value={statusFilter}
+            onValueChange={onStatusFilter}
+            placeholder="All statuses"
+            includeNone={false}
+            options={[
+              { value: ALL_STATUSES, label: "All statuses" },
+              { value: "active", label: "Active" },
+              { value: "inactive", label: "Inactive" },
+            ]}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            disabled={!hasFilters}
+            onClick={() => {
+              onSearch("");
+              onRoleFilter(ALL_ROLES);
+              onStatusFilter(ALL_STATUSES);
+            }}
+          >
+            <FilterX data-icon="inline-start" />
+            Clear
+          </Button>
+        </div>
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading members...</p>
+        ) : allMembers.length === 0 ? (
+          <EmptyState
+            icon={Users}
+            title="No members found"
+            description="Invite or create the first user to start assigning access."
+          />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>User</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Org role</TableHead>
+                <TableHead>Scoped roles</TableHead>
+                <TableHead>Joined</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {members.map((member) => {
+                const expanded = expandedMemberId === member.user_id;
+                const canChangeRole = canManageMemberRole(
+                  currentUserRole,
+                  member.role,
+                  member.user_id,
+                  currentUserId,
+                );
+                return (
+                  <Fragment key={member.user_id}>
+                    <TableRow className={member.status !== "active" ? "opacity-60" : undefined}>
+                      <TableCell>
+                        <button
+                          type="button"
+                          className="flex min-w-0 items-center gap-2 text-left"
+                          onClick={() => onToggleExpanded(member.user_id)}
+                        >
+                          <ChevronDown
+                            className={`size-4 shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`}
+                          />
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium">{member.email}</span>
+                            {member.name ? (
+                              <span className="block truncate text-xs text-muted-foreground">
+                                {member.name}
+                              </span>
+                            ) : null}
+                          </span>
+                        </button>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={member.status === "active" ? "secondary" : "outline"}>
+                          {member.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {canChangeRole && member.status === "active" ? (
+                          <RoleSelect
+                            value={member.role}
+                            onValueChange={(value) => onUpdateRole(member, value)}
+                            roles={assignableRoles.filter((role) =>
+                              canAssignRole(currentUserRole, member.role, role),
+                            )}
+                          />
+                        ) : (
+                          <Badge variant="outline">{formatOrgRole(member.role)}</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <ScopedBadges
+                          member={member}
+                          teamById={teamById}
+                          projectById={projectById}
+                        />
+                      </TableCell>
+                      <TableCell>{new Date(member.created_at).toLocaleDateString()}</TableCell>
+                      <TableCell className="text-right">
+                        {canChangeRole && member.status === "active" ? (
                           <Button
                             type="button"
                             size="icon-sm"
-                            variant="outline"
-                            onClick={() => {
-                              void navigator.clipboard?.writeText(invite.invite_url ?? "");
-                              toast.success("Invite link copied.");
-                            }}
-                            aria-label="Copy invite link"
+                            variant="ghost"
+                            disabled={isPending}
+                            onClick={() => onUpdateStatus(member, "inactive")}
+                            aria-label="Deactivate user"
                           >
-                            <Copy />
+                            <UserX />
+                          </Button>
+                        ) : canChangeRole ? (
+                          <Button
+                            type="button"
+                            size="icon-sm"
+                            variant="ghost"
+                            disabled={isPending}
+                            onClick={() => onUpdateStatus(member, "active")}
+                            aria-label="Reactivate user"
+                          >
+                            <RotateCcw />
                           </Button>
                         ) : null}
+                      </TableCell>
+                    </TableRow>
+                    {expanded ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="bg-muted/30">
+                          <MemberDetails
+                            member={member}
+                            teamById={teamById}
+                            projectById={projectById}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                  </Fragment>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function InvitesCard({
+  invites,
+  isLoading,
+  isPending,
+  statusFilter,
+  teamById,
+  projectById,
+  onStatusFilter,
+  onRevoke,
+}: {
+  invites: InviteResponse[];
+  isLoading: boolean;
+  isPending: boolean;
+  statusFilter: string;
+  teamById: Record<string, TeamResponse>;
+  projectById: Record<string, ProjectResponse>;
+  onStatusFilter: (value: string) => void;
+  onRevoke: (invite: InviteResponse) => void;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Invites</CardTitle>
+        <CardDescription>Invite links are one-time display at creation.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="max-w-48">
+          <ScopeSelect
+            value={statusFilter}
+            onValueChange={onStatusFilter}
+            placeholder="Status"
+            includeNone={false}
+            options={[
+              { value: ALL_STATUSES, label: "All statuses" },
+              { value: "pending", label: "Pending" },
+              { value: "accepted", label: "Accepted" },
+              { value: "revoked", label: "Revoked" },
+              { value: "expired", label: "Expired" },
+            ]}
+          />
+        </div>
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading invites...</p>
+        ) : invites.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No invites match this filter.</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Email</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Access</TableHead>
+                <TableHead>Expires</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {invites.map((invite) => (
+                <TableRow key={invite.id}>
+                  <TableCell>{invite.email}</TableCell>
+                  <TableCell>
+                    <Badge variant={invite.status === "pending" ? "secondary" : "outline"}>
+                      {invite.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <InviteAccess invite={invite} teamById={teamById} projectById={projectById} />
+                  </TableCell>
+                  <TableCell>{new Date(invite.expires_at).toLocaleDateString()}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      {invite.invite_url ? (
+                        <Button
+                          type="button"
+                          size="icon-sm"
+                          variant="outline"
+                          onClick={() => {
+                            void navigator.clipboard?.writeText(invite.invite_url ?? "");
+                            toast.success("Invite link copied.");
+                          }}
+                          aria-label="Copy invite link"
+                        >
+                          <Copy />
+                        </Button>
+                      ) : null}
+                      {invite.status === "pending" ? (
                         <Button
                           type="button"
                           size="icon-sm"
                           variant="ghost"
                           disabled={isPending}
-                          onClick={() => revokeInviteMutation.mutate({ inviteId: invite.id })}
+                          onClick={() => onRevoke(invite)}
                           aria-label="Revoke invite"
                         >
                           <Trash2 />
                         </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+                      ) : null}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ScopedAccessCard({
+  teams,
+  projects,
+}: {
+  teams: TeamResponse[];
+  projects: ProjectResponse[];
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Scoped access</CardTitle>
+        <CardDescription>Your account can invite only inside these managed scopes.</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4 md:grid-cols-2">
+        <ScopeSummary title="Teams" items={teams.map((team) => team.name)} />
+        <ScopeSummary title="Projects" items={projects.map((project) => project.name)} />
+      </CardContent>
+    </Card>
+  );
+}
+
+function ScopeSummary({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div className="rounded-md border p-4">
+      <div className="mb-3 text-sm font-medium">{title}</div>
+      {items.length === 0 ? (
+        <p className="text-sm text-muted-foreground">None</p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {items.map((item) => (
+            <Badge key={item} variant="outline">
+              {item}
+            </Badge>
+          ))}
+        </div>
+      )}
     </div>
+  );
+}
+
+function MemberDetails({
+  member,
+  teamById,
+  projectById,
+}: {
+  member: MemberResponse;
+  teamById: Record<string, TeamResponse>;
+  projectById: Record<string, ProjectResponse>;
+}) {
+  return (
+    <div className="grid gap-4 text-sm lg:grid-cols-3">
+      <DetailGroup title="Team roles">
+        {member.team_memberships?.length ? (
+          member.team_memberships.map((item) => (
+            <Badge key={item.team_id} variant="outline">
+              {teamById[item.team_id]?.name ?? item.team_id}: {formatScopedRole(item.role)}
+            </Badge>
+          ))
+        ) : (
+          <span className="text-muted-foreground">No team role</span>
+        )}
+      </DetailGroup>
+      <DetailGroup title="Project roles">
+        {member.project_memberships?.length ? (
+          member.project_memberships.map((item) => (
+            <Badge key={item.project_id} variant="outline">
+              {projectById[item.project_id]?.name ?? item.project_id}: {formatScopedRole(item.role)}
+            </Badge>
+          ))
+        ) : (
+          <span className="text-muted-foreground">No project role</span>
+        )}
+      </DetailGroup>
+      <DetailGroup title="Effective permissions">
+        {member.effective_permissions?.length ? (
+          member.effective_permissions.slice(0, 12).map((permission) => (
+            <Badge key={permission} variant="secondary">
+              {permission}
+            </Badge>
+          ))
+        ) : (
+          <span className="text-muted-foreground">No derived capabilities</span>
+        )}
+      </DetailGroup>
+    </div>
+  );
+}
+
+function DetailGroup({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="space-y-2">
+      <div className="text-xs font-medium uppercase text-muted-foreground">{title}</div>
+      <div className="flex flex-wrap gap-2">{children}</div>
+    </div>
+  );
+}
+
+function ScopedBadges({
+  member,
+  teamById,
+  projectById,
+}: {
+  member: MemberResponse;
+  teamById: Record<string, TeamResponse>;
+  projectById: Record<string, ProjectResponse>;
+}) {
+  const badges = [
+    ...(member.team_memberships ?? []).map((item) => ({
+      key: `team-${item.team_id}`,
+      label: `${teamById[item.team_id]?.name ?? "Team"} ${formatScopedRole(item.role)}`,
+    })),
+    ...(member.project_memberships ?? []).map((item) => ({
+      key: `project-${item.project_id}`,
+      label: `${projectById[item.project_id]?.name ?? "Project"} ${formatScopedRole(item.role)}`,
+    })),
+  ];
+  if (badges.length === 0) return <span className="text-sm text-muted-foreground">None</span>;
+  return (
+    <div className="flex max-w-sm flex-wrap gap-1.5">
+      {badges.slice(0, 3).map((badge) => (
+        <Badge key={badge.key} variant="outline">
+          {badge.label}
+        </Badge>
+      ))}
+      {badges.length > 3 ? <Badge variant="secondary">+{badges.length - 3}</Badge> : null}
+    </div>
+  );
+}
+
+function InviteAccess({
+  invite,
+  teamById,
+  projectById,
+}: {
+  invite: InviteResponse;
+  teamById: Record<string, TeamResponse>;
+  projectById: Record<string, ProjectResponse>;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      <Badge variant="outline">{formatOrgRole(invite.role)}</Badge>
+      {invite.team_id ? (
+        <Badge variant="outline">
+          {teamById[invite.team_id]?.name ?? "Team"} {formatScopedRole(invite.team_role ?? "")}
+        </Badge>
+      ) : null}
+      {invite.project_id ? (
+        <Badge variant="outline">
+          {projectById[invite.project_id]?.name ?? "Project"}{" "}
+          {formatScopedRole(invite.project_role ?? "")}
+        </Badge>
+      ) : null}
+    </div>
+  );
+}
+
+function Field({ id, label, children }: { id?: string; label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      {children}
+    </div>
+  );
+}
+
+function RoleSelect({
+  value,
+  onValueChange,
+  roles,
+}: {
+  value: string;
+  onValueChange: (value: string) => void;
+  roles: string[];
+}) {
+  return (
+    <Select value={value} onValueChange={onValueChange}>
+      <SelectTrigger>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {roles.map((role) => (
+          <SelectItem key={role} value={role}>
+            {formatOrgRole(role)}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function ScopeSelect({
+  value,
+  onValueChange,
+  options,
+  placeholder,
+  disabled = false,
+  includeNone = true,
+}: {
+  value: string;
+  onValueChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  placeholder: string;
+  disabled?: boolean;
+  includeNone?: boolean;
+}) {
+  return (
+    <Select value={value} onValueChange={onValueChange} disabled={disabled}>
+      <SelectTrigger>
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        {includeNone ? <SelectItem value={NO_SCOPE}>{placeholder}</SelectItem> : null}
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function indexById<T extends { id: string }>(items: T[]) {
+  return items.reduce<Record<string, T>>((acc, item) => {
+    acc[item.id] = item;
+    return acc;
+  }, {});
+}
+
+function getAssignableOrgRoles(user: { role?: string; permissions?: string[] } | null) {
+  if (user?.role === "org_owner" || user?.permissions?.includes("*")) {
+    return ["org_owner", "org_admin", "org_viewer", "org_member"];
+  }
+  if (user?.role === "org_admin") return ["org_viewer", "org_member"];
+  return ["org_member"];
+}
+
+function canManageMemberRole(
+  actorRole: string | undefined,
+  targetRole: string,
+  targetUserId: string,
+  actorUserId?: string,
+) {
+  if (!actorRole) return false;
+  if (targetUserId === actorUserId) return false;
+  if (actorRole === "org_owner") return true;
+  if (actorRole === "org_admin") return targetRole === "org_viewer" || targetRole === "org_member";
+  return false;
+}
+
+function canAssignRole(actorRole: string | undefined, currentRole: string, nextRole: string) {
+  if (actorRole === "org_owner") return true;
+  if (actorRole === "org_admin") {
+    return (
+      currentRole !== "org_owner" &&
+      currentRole !== "org_admin" &&
+      nextRole !== "org_owner" &&
+      nextRole !== "org_admin"
+    );
+  }
+  return false;
+}
+
+function canInviteToTeam(user: AuthenticatedUser | null | undefined, teamId: string) {
+  return hasPermission(user, "members.manage") || isTeamAdmin(user, teamId);
+}
+
+function canInviteToProject(user: AuthenticatedUser | null | undefined, project: ProjectResponse) {
+  return (
+    hasPermission(user, "members.manage") ||
+    isTeamAdmin(user, project.team_id) ||
+    isProjectAdmin(user, project.id)
   );
 }
 
@@ -414,4 +1051,10 @@ function formatOrgRole(value: string) {
   if (value === "org_admin") return "Admin";
   if (value === "org_member") return "Member";
   return "Viewer";
+}
+
+function formatScopedRole(value: string) {
+  if (value === "team_admin" || value === "project_admin") return "Admin";
+  if (value === "team_member") return "Member";
+  return value || "Role";
 }

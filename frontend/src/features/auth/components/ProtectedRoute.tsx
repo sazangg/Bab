@@ -8,6 +8,7 @@ import {
   canViewDashboardHome,
   canViewWorkspace,
   hasAnyDirectTeamMembership,
+  hasAnyProjectAdminMembership,
   hasAnyTeamAdminMembership,
   hasPermission,
 } from "@/features/auth/lib/permissions";
@@ -19,6 +20,7 @@ type ProtectedRouteProps = {
   allowTeamScope?: boolean;
   requireTeamAdminScope?: boolean;
   requireKeyManager?: boolean;
+  requireScopedAdmin?: boolean;
   allowDashboardHome?: boolean;
   requireOrgAdminSurface?: boolean;
 };
@@ -29,6 +31,7 @@ export function ProtectedRoute({
   allowTeamScope = false,
   requireTeamAdminScope = false,
   requireKeyManager = false,
+  requireScopedAdmin = false,
   allowDashboardHome = false,
   requireOrgAdminSurface = false,
 }: ProtectedRouteProps) {
@@ -47,6 +50,9 @@ export function ProtectedRoute({
       : false) ||
     (requireTeamAdminScope ? hasAnyTeamAdminMembership(currentUser) : false) ||
     (requireKeyManager ? canManageKeys(currentUser) : false) ||
+    (requireScopedAdmin
+      ? hasAnyTeamAdminMembership(currentUser) || hasAnyProjectAdminMembership(currentUser)
+      : false) ||
     (allowDashboardHome ? canViewDashboardHome(currentUser) : false) ||
     (requireOrgAdminSurface ? canViewOrgAdminSurface(currentUser) : false) ||
     (!permission &&
@@ -54,6 +60,7 @@ export function ProtectedRoute({
       !allowTeamScope &&
       !requireTeamAdminScope &&
       !requireKeyManager &&
+      !requireScopedAdmin &&
       !allowDashboardHome &&
       !requireOrgAdminSurface);
 
@@ -78,9 +85,9 @@ export function NoAccessPage() {
           <div className="space-y-2">
             <h1 className="text-xl font-semibold">No workspace access yet</h1>
             <p className="text-sm text-muted-foreground">
-              Your organization account is active, but no team role or gateway permissions have
-              been assigned yet. Ask an organization admin to add you to a team or grant the
-              permissions needed for your work.
+              Your organization account is active, but no team role or gateway permissions have been
+              assigned yet. Ask an organization admin to add you to a team or grant the permissions
+              needed for your work.
             </p>
           </div>
         </CardContent>

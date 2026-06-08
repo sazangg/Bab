@@ -11,4 +11,6 @@ export interface CreateInviteRequest {
   role?: string;
   team_id?: string | null;
   team_role?: string | null;
+  project_id?: string | null;
+  project_role?: string | null;
 }

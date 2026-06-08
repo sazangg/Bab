@@ -58,6 +58,30 @@ class IdentityAccount(Base):
     )
 
 
+class RefreshSession(Base):
+    __tablename__ = "refresh_sessions"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    org_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        index=True,
+    )
+    token_hash: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    replaced_by_session_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("refresh_sessions.id"),
+        nullable=True,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class OrganizationMembership(Base):
     __tablename__ = "organization_memberships"
     __table_args__ = (UniqueConstraint("org_id", "user_id", name="uq_org_membership_user"),)
@@ -163,9 +187,15 @@ class Invite(Base):
         index=True,
     )
     team_id: Mapped[UUID | None] = mapped_column(ForeignKey("teams.id"), nullable=True, index=True)
+    project_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("projects.id"),
+        nullable=True,
+        index=True,
+    )
     email: Mapped[str] = mapped_column(String(255), index=True)
     role: Mapped[str] = mapped_column(String(50), default="org_viewer")
     team_role: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    project_role: Mapped[str | None] = mapped_column(String(50), nullable=True)
     token_hash: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     status: Mapped[str] = mapped_column(String(50), default="pending", index=True)
     invited_by_user_id: Mapped[UUID | None] = mapped_column(nullable=True, index=True)

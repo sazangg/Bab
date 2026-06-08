@@ -19,10 +19,16 @@ from app.core.security import (
     verify_password,
 )
 from app.modules.auth.errors import (
+    DuplicateInviteError,
     InvalidAccessTokenError,
     InvalidCredentialsError,
+    InvalidInviteTargetError,
     InvalidRefreshTokenError,
+    InviteLifecycleError,
+    InviteNotFoundError,
     LastOwnerError,
+    MemberNotFoundError,
+    PermissionDeniedError,
 )
 from app.modules.auth.internal.models import (
     AuditEvent,
@@ -34,6 +40,11 @@ from app.modules.auth.internal.models import (
     TeamMembership,
     User,
 )
+from app.modules.auth.internal.refresh_sessions import (
+    create_refresh_session,
+    revoke_refresh_session,
+    rotate_refresh_session,
+)
 from app.modules.auth.schemas import (
     AcceptInviteRequest,
     AuditEventResponse,
@@ -44,7 +55,9 @@ from app.modules.auth.schemas import (
     CreateMemberRequest,
     InviteResponse,
     LoginRequest,
+    MemberProjectMembershipResponse,
     MemberResponse,
+    MemberTeamMembershipResponse,
     ProjectMemberResponse,
     TeamMemberResponse,
     TokenResponse,
@@ -58,7 +71,6 @@ from app.modules.auth.schemas import (
 from app.modules.keys.internal.models import Project
 
 MOCK_ADMIN_ID = UUID("00000000-0000-4000-8000-000000000001")
-REFRESH_TOKEN_TTL = timedelta(days=30)
 INVITE_TOKEN_TTL = timedelta(days=7)
 
 ROLE_PERMISSIONS = {
@@ -98,38 +110,56 @@ ROLE_PERMISSIONS = {
 
 
 async def login(payload: LoginRequest, db: AsyncSession) -> tuple[TokenResponse, str]:
-    user = await db.scalar(select(User).where(User.email == str(payload.email).lower()))
-    if user is None or not user.is_active or not user.password_hash:
-        raise InvalidCredentialsError
-    try:
-        password_is_valid = verify_password(payload.password, user.password_hash)
-    except SecurityError as exc:
-        raise InvalidCredentialsError from exc
-    if not password_is_valid:
-        raise InvalidCredentialsError
+    async with transaction(db):
+        user = await db.scalar(select(User).where(User.email == str(payload.email).lower()))
+        if user is None or not user.is_active or not user.password_hash:
+            raise InvalidCredentialsError
+        try:
+            password_is_valid = verify_password(payload.password, user.password_hash)
+        except SecurityError as exc:
+            raise InvalidCredentialsError from exc
+        if not password_is_valid:
+            raise InvalidCredentialsError
 
-    principal = await _principal_for_user(user.id, db)
-    raw_refresh_token = _create_refresh_token(principal)
+        principal = await _principal_for_user(user.id, db)
+        raw_refresh_token = await create_refresh_session(
+            user_id=principal.id,
+            org_id=principal.org_id,
+            db=db,
+        )
     return _access_response(principal), raw_refresh_token
 
 
 async def refresh(raw_refresh_token: str | None, db: AsyncSession) -> tuple[TokenResponse, str]:
-    if not raw_refresh_token:
-        raise InvalidRefreshTokenError
-
-    try:
-        claims = decode_access_token(raw_refresh_token, expected_type="refresh")
-        user_id = UUID(str(claims.get("sub")))
-    except (SecurityError, ValueError, TypeError) as exc:
-        raise InvalidRefreshTokenError from exc
-
-    principal = await _principal_for_user(user_id, db)
-    return _access_response(principal), _create_refresh_token(principal)
+    async with transaction(db):
+        session, new_raw_refresh_token = await rotate_refresh_session(
+            raw_token=raw_refresh_token,
+            db=db,
+        )
+        try:
+            principal = await _principal_for_user(session.user_id, db)
+        except InvalidAccessTokenError as exc:
+            raise InvalidRefreshTokenError from exc
+    return _access_response(principal), new_raw_refresh_token
 
 
 async def logout(raw_refresh_token: str | None, db: AsyncSession) -> None:
-    if not raw_refresh_token:
-        return
+    async with transaction(db):
+        session = await revoke_refresh_session(raw_token=raw_refresh_token, db=db)
+        if session is None:
+            return
+        try:
+            actor = await _principal_for_user(session.user_id, db)
+        except InvalidAccessTokenError:
+            return
+        await record_audit_event(
+            actor=actor,
+            action="refresh_session.revoked",
+            entity_type="refresh_session",
+            entity_id=session.id,
+            metadata={"user_id": str(session.user_id), "reason": "logout"},
+            db=db,
+        )
 
 
 async def verify_access_token(token: str, db: AsyncSession) -> AuthenticatedUser:
@@ -149,17 +179,34 @@ async def list_members(*, scope: Scope, db: AsyncSession) -> list[MemberResponse
         .where(OrganizationMembership.org_id == scope.org_id)
         .order_by(User.email)
     )
-    return [
-        MemberResponse(
-            user_id=user.id,
-            email=user.email,
-            name=user.name,
-            role=membership.role,
-            status=membership.status,
-            created_at=membership.created_at,
+    memberships_by_user = await _scoped_memberships_by_user(scope=scope, db=db)
+    members = []
+    for user, membership in rows:
+        team_memberships, project_memberships = memberships_by_user.get(user.id, ([], []))
+        members.append(
+            MemberResponse(
+                user_id=user.id,
+                email=user.email,
+                name=user.name,
+                role=membership.role,
+                status=membership.status,
+                created_at=membership.created_at,
+                team_memberships=[
+                    MemberTeamMembershipResponse(team_id=item.team_id, role=item.role)
+                    for item in team_memberships
+                ],
+                project_memberships=[
+                    MemberProjectMembershipResponse(project_id=item.project_id, role=item.role)
+                    for item in project_memberships
+                ],
+                effective_permissions=_effective_permissions_for_memberships(
+                    org_role=membership.role,
+                    team_memberships=team_memberships,
+                    project_memberships=project_memberships,
+                ),
+            )
         )
-        for user, membership in rows
-    ]
+    return members
 
 
 async def create_member(
@@ -171,6 +218,7 @@ async def create_member(
 ) -> MemberResponse:
     email = str(payload.email).lower()
     async with transaction(db):
+        _ensure_actor_can_manage_org_role(actor=actor, current_role=None, new_role=payload.role)
         user = await db.scalar(select(User).where(User.email == email))
         if user is None:
             user = User(
@@ -199,6 +247,8 @@ async def create_member(
                 OrganizationMembership.user_id == user.id,
             )
         )
+        previous_role = membership.role if membership else None
+        previous_status = membership.status if membership else None
         if membership is None:
             membership = OrganizationMembership(
                 org_id=scope.org_id,
@@ -208,6 +258,11 @@ async def create_member(
             )
             db.add(membership)
         else:
+            _ensure_actor_can_manage_org_role(
+                actor=actor,
+                current_role=membership.role,
+                new_role=payload.role,
+            )
             membership.role = payload.role
             membership.status = "active"
         await db.flush()
@@ -216,7 +271,13 @@ async def create_member(
             action="member.created",
             entity_type="user",
             entity_id=user.id,
-            metadata={"email": email, "role": payload.role},
+            metadata={
+                "email": email,
+                "previous_role": previous_role,
+                "role": payload.role,
+                "previous_status": previous_status,
+                "status": "active",
+            },
             db=db,
         )
     members = await list_members(scope=scope, db=db)
@@ -239,9 +300,21 @@ async def update_member(
             )
         )
         if membership is None:
-            raise InvalidAccessTokenError
-        if membership.role == "org_owner" and payload.role != "org_owner":
+            raise MemberNotFoundError
+        _ensure_actor_can_manage_org_role(
+            actor=actor,
+            current_role=membership.role,
+            new_role=payload.role,
+        )
+        previous_role = membership.role
+        if previous_role == "org_owner" and payload.role != "org_owner":
             await _ensure_not_last_owner(scope=scope, excluding_user_id=user_id, db=db)
+        _ensure_not_self_demoting_member_admin(
+            actor=actor,
+            user_id=user_id,
+            current_role=previous_role,
+            new_role=payload.role,
+        )
         membership.role = payload.role
         await db.flush()
         await record_audit_event(
@@ -249,7 +322,7 @@ async def update_member(
             action="member.role_updated",
             entity_type="user",
             entity_id=user_id,
-            metadata={"role": payload.role},
+            metadata={"previous_role": previous_role, "role": payload.role},
             db=db,
         )
     members = await list_members(scope=scope, db=db)
@@ -276,14 +349,22 @@ async def update_member_status(
             )
         ).first()
         if row is None:
-            raise InvalidAccessTokenError
+            raise MemberNotFoundError
         user, membership = row
+        _ensure_actor_can_manage_org_role(
+            actor=actor,
+            current_role=membership.role,
+            new_role=membership.role,
+        )
         if payload.status == "inactive":
             if membership.role == "org_owner":
                 await _ensure_not_last_owner(scope=scope, excluding_user_id=user_id, db=db)
+            _ensure_not_self_deactivating(actor=actor, user_id=user_id)
+            previous_status = membership.status
             membership.status = "inactive"
             user.is_active = False
         else:
+            previous_status = membership.status
             membership.status = "active"
             user.is_active = True
         await db.flush()
@@ -292,7 +373,7 @@ async def update_member_status(
             action="member.status_updated",
             entity_type="user",
             entity_id=user_id,
-            metadata={"status": payload.status},
+            metadata={"previous_status": previous_status, "status": payload.status},
             db=db,
         )
     members = await list_members(scope=scope, db=db)
@@ -312,6 +393,83 @@ async def _ensure_not_last_owner(
     )
     if remaining_owner is None:
         raise LastOwnerError
+
+
+def _ensure_actor_can_manage_org_role(
+    *,
+    actor: AuthenticatedUser,
+    current_role: str | None,
+    new_role: str,
+) -> None:
+    if actor.role == "org_owner" or "*" in actor.permissions:
+        return
+    if actor.role != "org_admin":
+        raise PermissionDeniedError
+    if current_role in {"org_owner", "org_admin"} or new_role in {"org_owner", "org_admin"}:
+        raise PermissionDeniedError
+
+
+def _ensure_not_self_demoting_member_admin(
+    *,
+    actor: AuthenticatedUser,
+    user_id: UUID,
+    current_role: str,
+    new_role: str,
+) -> None:
+    if actor.id != user_id or current_role == new_role:
+        return
+    if has_permission(actor, "members.manage") and new_role not in {"org_owner", "org_admin"}:
+        raise PermissionDeniedError
+
+
+def _ensure_not_self_deactivating(*, actor: AuthenticatedUser, user_id: UUID) -> None:
+    if actor.id == user_id and has_permission(actor, "members.manage"):
+        raise PermissionDeniedError
+
+
+async def _scoped_memberships_by_user(
+    *,
+    scope: Scope,
+    db: AsyncSession,
+) -> dict[UUID, tuple[list[TeamMembership], list[ProjectMembership]]]:
+    team_rows = list(
+        await db.scalars(select(TeamMembership).where(TeamMembership.org_id == scope.org_id))
+    )
+    project_rows = list(
+        await db.scalars(
+            select(ProjectMembership).where(ProjectMembership.org_id == scope.org_id)
+        )
+    )
+    memberships: dict[UUID, tuple[list[TeamMembership], list[ProjectMembership]]] = {}
+    for item in team_rows:
+        teams, projects = memberships.setdefault(item.user_id, ([], []))
+        teams.append(item)
+    for item in project_rows:
+        teams, projects = memberships.setdefault(item.user_id, ([], []))
+        projects.append(item)
+    return memberships
+
+
+def _effective_permissions_for_memberships(
+    *,
+    org_role: str,
+    team_memberships: list[TeamMembership],
+    project_memberships: list[ProjectMembership],
+) -> list[str]:
+    permissions = set(ROLE_PERMISSIONS.get(org_role, set()))
+    if any(item.role == "team_admin" for item in team_memberships):
+        permissions.update(
+            {
+                "keys.manage",
+                "policies.view",
+                "guardrails.view",
+                "projects.view",
+                "teams.view",
+            }
+        )
+    if any(item.role == "project_admin" for item in project_memberships):
+        permissions.update({"keys.manage", "policies.view", "guardrails.view", "projects.view"})
+    return sorted(permissions)
 
 
 async def list_team_members(
@@ -353,6 +511,7 @@ async def upsert_team_member(
 ) -> TeamMemberResponse:
     async with transaction(db):
         await _require_team(team_id=team_id, scope=scope, db=db)
+        _ensure_actor_can_manage_team_members(actor=actor, team_id=team_id)
         org_membership = await db.scalar(
             select(OrganizationMembership).where(
                 OrganizationMembership.org_id == scope.org_id,
@@ -370,6 +529,7 @@ async def upsert_team_member(
             )
         )
         action = "team_member.added"
+        previous_role = None
         if team_membership is None:
             team_membership = TeamMembership(
                 org_id=scope.org_id,
@@ -380,6 +540,7 @@ async def upsert_team_member(
             db.add(team_membership)
         else:
             action = "team_member.role_updated"
+            previous_role = team_membership.role
             team_membership.role = payload.role
         await db.flush()
         await record_audit_event(
@@ -390,6 +551,7 @@ async def upsert_team_member(
             metadata={
                 "team_id": str(team_id),
                 "user_id": str(payload.user_id),
+                "previous_role": previous_role,
                 "role": payload.role,
             },
             db=db,
@@ -426,6 +588,7 @@ async def remove_team_member(
 ) -> None:
     async with transaction(db):
         await _require_team(team_id=team_id, scope=scope, db=db)
+        _ensure_actor_can_manage_team_members(actor=actor, team_id=team_id)
         team_membership = await db.scalar(
             select(TeamMembership).where(
                 TeamMembership.org_id == scope.org_id,
@@ -434,14 +597,18 @@ async def remove_team_member(
             )
         )
         if team_membership is None:
-            return
+            raise MemberNotFoundError
         await db.delete(team_membership)
         await record_audit_event(
             actor=actor,
             action="team_member.removed",
             entity_type="team_member",
             entity_id=team_membership.id,
-            metadata={"team_id": str(team_id), "user_id": str(user_id)},
+            metadata={
+                "team_id": str(team_id),
+                "user_id": str(user_id),
+                "previous_role": team_membership.role,
+            },
             db=db,
         )
 
@@ -484,7 +651,8 @@ async def upsert_project_member(
     db: AsyncSession,
 ) -> ProjectMemberResponse:
     async with transaction(db):
-        await _require_project(project_id=project_id, scope=scope, db=db)
+        project = await _require_project(project_id=project_id, scope=scope, db=db)
+        _ensure_actor_can_manage_project_members(actor=actor, project=project)
         org_membership = await db.scalar(
             select(OrganizationMembership).where(
                 OrganizationMembership.org_id == scope.org_id,
@@ -502,6 +670,7 @@ async def upsert_project_member(
             )
         )
         action = "project_member.added"
+        previous_role = None
         if project_membership is None:
             project_membership = ProjectMembership(
                 org_id=scope.org_id,
@@ -512,6 +681,7 @@ async def upsert_project_member(
             db.add(project_membership)
         else:
             action = "project_member.role_updated"
+            previous_role = project_membership.role
             project_membership.role = payload.role
         await db.flush()
         await record_audit_event(
@@ -522,6 +692,7 @@ async def upsert_project_member(
             metadata={
                 "project_id": str(project_id),
                 "user_id": str(payload.user_id),
+                "previous_role": previous_role,
                 "role": payload.role,
             },
             db=db,
@@ -557,7 +728,8 @@ async def remove_project_member(
     db: AsyncSession,
 ) -> None:
     async with transaction(db):
-        await _require_project(project_id=project_id, scope=scope, db=db)
+        project = await _require_project(project_id=project_id, scope=scope, db=db)
+        _ensure_actor_can_manage_project_members(actor=actor, project=project)
         project_membership = await db.scalar(
             select(ProjectMembership).where(
                 ProjectMembership.org_id == scope.org_id,
@@ -566,14 +738,18 @@ async def remove_project_member(
             )
         )
         if project_membership is None:
-            return
+            raise MemberNotFoundError
         await db.delete(project_membership)
         await record_audit_event(
             actor=actor,
             action="project_member.removed",
             entity_type="project_member",
             entity_id=project_membership.id,
-            metadata={"project_id": str(project_id), "user_id": str(user_id)},
+            metadata={
+                "project_id": str(project_id),
+                "user_id": str(user_id),
+                "previous_role": project_membership.role,
+            },
             db=db,
         )
 
@@ -588,12 +764,30 @@ async def create_invite(
 ) -> InviteResponse:
     raw_token = generate_secret_token()
     async with transaction(db):
+        team, project = await _validate_invite_target(payload=payload, scope=scope, db=db)
+        _ensure_actor_can_create_invite(
+            actor=actor,
+            role=payload.role,
+            team_id=payload.team_id,
+            team_role=payload.team_role,
+            project=project,
+            project_role=payload.project_role,
+        )
+        await _ensure_no_duplicate_pending_invite(
+            org_id=scope.org_id,
+            email=str(payload.email).lower(),
+            team_id=payload.team_id,
+            project_id=payload.project_id,
+            db=db,
+        )
         invite = Invite(
             org_id=scope.org_id,
             team_id=payload.team_id,
+            project_id=payload.project_id,
             email=str(payload.email).lower(),
             role=payload.role,
             team_role=payload.team_role,
+            project_role=payload.project_role,
             token_hash=hash_token(raw_token),
             invited_by_user_id=actor.id,
             expires_at=datetime.now(UTC) + INVITE_TOKEN_TTL,
@@ -605,17 +799,178 @@ async def create_invite(
             action="invite.created",
             entity_type="invite",
             entity_id=invite.id,
-            metadata={"email": invite.email, "role": invite.role},
+            metadata={
+                "email": invite.email,
+                "role": invite.role,
+                "team_id": str(team.id) if team else None,
+                "team_role": invite.team_role,
+                "project_id": str(project.id) if project else None,
+                "project_role": invite.project_role,
+            },
             db=db,
         )
     return _invite_response(invite, raw_token=raw_token, public_base_url=public_base_url)
 
 
-async def list_invites(*, scope: Scope, db: AsyncSession) -> list[InviteResponse]:
+async def list_invites(
+    *,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[InviteResponse]:
     invites = await db.scalars(
         select(Invite).where(Invite.org_id == scope.org_id).order_by(Invite.created_at.desc())
     )
-    return [_invite_response(invite, raw_token=None, public_base_url=None) for invite in invites]
+    project_team_by_id = await _project_team_by_id(scope=scope, db=db)
+    return [
+        _invite_response(invite, raw_token=None, public_base_url=None)
+        for invite in invites
+        if _actor_can_manage_invite(
+            actor=actor,
+            invite=invite,
+            project_team_id=project_team_by_id.get(invite.project_id),
+        )
+    ]
+
+
+async def _validate_invite_target(
+    *,
+    payload: CreateInviteRequest,
+    scope: Scope,
+    db: AsyncSession,
+) -> tuple[Team | None, Project | None]:
+    if payload.team_role and payload.team_id is None:
+        raise InvalidInviteTargetError
+    if payload.project_role and payload.project_id is None:
+        raise InvalidInviteTargetError
+    if payload.project_id and payload.project_role is None:
+        raise InvalidInviteTargetError
+
+    team = None
+    if payload.team_id:
+        team = await db.scalar(
+            select(Team).where(
+                Team.id == payload.team_id,
+                Team.org_id == scope.org_id,
+                Team.is_active.is_(True),
+            )
+        )
+        if team is None:
+            raise InvalidInviteTargetError
+
+    project = None
+    if payload.project_id:
+        project = await db.scalar(
+            select(Project).where(
+                Project.id == payload.project_id,
+                Project.org_id == scope.org_id,
+                Project.is_active.is_(True),
+            )
+        )
+        if project is None:
+            raise InvalidInviteTargetError
+        if payload.team_id and project.team_id != payload.team_id:
+            raise InvalidInviteTargetError
+
+    return team, project
+
+
+async def _ensure_no_duplicate_pending_invite(
+    *,
+    org_id: UUID,
+    email: str,
+    team_id: UUID | None,
+    project_id: UUID | None,
+    db: AsyncSession,
+) -> None:
+    pending_invites = await db.scalars(
+        select(Invite).where(
+            Invite.org_id == org_id,
+            Invite.email == email,
+            Invite.status == "pending",
+        )
+    )
+    for invite in pending_invites:
+        if _is_past(invite.expires_at):
+            continue
+        if invite.team_id == team_id and invite.project_id == project_id:
+            raise DuplicateInviteError
+
+
+def _ensure_actor_can_create_invite(
+    *,
+    actor: AuthenticatedUser,
+    role: str,
+    team_id: UUID | None,
+    team_role: str | None,
+    project: Project | None,
+    project_role: str | None,
+) -> None:
+    if has_permission(actor, "members.manage"):
+        _ensure_actor_can_manage_org_role(actor=actor, current_role=None, new_role=role)
+        return
+
+    if role != "org_member":
+        raise PermissionDeniedError
+
+    if team_id and _is_team_admin_actor(actor=actor, team_id=team_id):
+        if project and project.team_id != team_id:
+            raise PermissionDeniedError
+        return
+
+    if project and _is_team_admin_actor(actor=actor, team_id=project.team_id):
+        return
+
+    if project and _is_project_admin_actor(actor=actor, project_id=project.id):
+        if team_id or team_role:
+            raise PermissionDeniedError
+        if project_role != "project_admin":
+            raise PermissionDeniedError
+        return
+
+    raise PermissionDeniedError
+
+
+def _is_team_admin_actor(*, actor: AuthenticatedUser, team_id: UUID) -> bool:
+    return any(
+        item.team_id == team_id and item.role == "team_admin"
+        for item in actor.team_memberships
+    )
+
+
+def _is_project_admin_actor(*, actor: AuthenticatedUser, project_id: UUID) -> bool:
+    return any(
+        item.project_id == project_id and item.role == "project_admin"
+        for item in actor.project_memberships
+    )
+
+
+async def _project_team_by_id(*, scope: Scope, db: AsyncSession) -> dict[UUID, UUID]:
+    rows = await db.execute(
+        select(Project.id, Project.team_id).where(Project.org_id == scope.org_id)
+    )
+    return {project_id: team_id for project_id, team_id in rows if team_id is not None}
+
+
+def _actor_can_manage_invite(
+    *,
+    actor: AuthenticatedUser,
+    invite: Invite,
+    project_team_id: UUID | None,
+) -> bool:
+    if has_permission(actor, "members.manage"):
+        return True
+    if invite.team_id and _is_team_admin_actor(actor=actor, team_id=invite.team_id):
+        return True
+    if project_team_id and _is_team_admin_actor(actor=actor, team_id=project_team_id):
+        return True
+    if (
+        invite.project_id
+        and invite.team_id is None
+        and _is_project_admin_actor(actor=actor, project_id=invite.project_id)
+    ):
+        return True
+    return False
 
 
 async def revoke_invite(
@@ -630,14 +985,39 @@ async def revoke_invite(
             select(Invite).where(Invite.id == invite_id, Invite.org_id == scope.org_id)
         )
         if invite is None:
-            return
+            raise InviteNotFoundError
+        project_team_id = None
+        if invite.project_id:
+            project_team_id = await db.scalar(
+                select(Project.team_id).where(
+                    Project.id == invite.project_id,
+                    Project.org_id == scope.org_id,
+                )
+            )
+        if not _actor_can_manage_invite(
+            actor=actor,
+            invite=invite,
+            project_team_id=project_team_id,
+        ):
+            raise PermissionDeniedError
+        if invite.status != "pending" or _is_past(invite.expires_at):
+            raise InviteLifecycleError
         invite.status = "revoked"
         await record_audit_event(
             actor=actor,
             action="invite.revoked",
             entity_type="invite",
             entity_id=invite.id,
-            metadata={"email": invite.email},
+            metadata={
+                "email": invite.email,
+                "previous_status": "pending",
+                "status": "revoked",
+                "role": invite.role,
+                "team_id": str(invite.team_id) if invite.team_id else None,
+                "team_role": invite.team_role,
+                "project_id": str(invite.project_id) if invite.project_id else None,
+                "project_role": invite.project_role,
+            },
             db=db,
         )
 
@@ -685,6 +1065,8 @@ async def accept_invite(
                     status="active",
                 )
             )
+        elif membership.status != "active":
+            raise InvalidCredentialsError
         if invite.team_id and invite.team_role:
             team_membership = await db.scalar(
                 select(TeamMembership).where(
@@ -701,12 +1083,50 @@ async def accept_invite(
                         role=invite.team_role,
                     )
                 )
+        if invite.project_id and invite.project_role:
+            project_membership = await db.scalar(
+                select(ProjectMembership).where(
+                    ProjectMembership.project_id == invite.project_id,
+                    ProjectMembership.user_id == user.id,
+                )
+            )
+            if project_membership is None:
+                db.add(
+                    ProjectMembership(
+                        org_id=invite.org_id,
+                        project_id=invite.project_id,
+                        user_id=user.id,
+                        role=invite.project_role,
+                    )
+                )
         invite.status = "accepted"
         invite.accepted_by_user_id = user.id
         invite.accepted_at = datetime.now(UTC)
         await db.flush()
         principal = await _principal_for_user(user.id, db)
-    return _access_response(principal), _create_refresh_token(principal)
+        await record_audit_event(
+            actor=principal,
+            action="invite.accepted",
+            entity_type="invite",
+            entity_id=invite.id,
+            metadata={
+                "email": invite.email,
+                "previous_status": "pending",
+                "status": "accepted",
+                "role": invite.role,
+                "team_id": str(invite.team_id) if invite.team_id else None,
+                "team_role": invite.team_role,
+                "project_id": str(invite.project_id) if invite.project_id else None,
+                "project_role": invite.project_role,
+            },
+            db=db,
+        )
+        raw_refresh_token = await create_refresh_session(
+            user_id=principal.id,
+            org_id=principal.org_id,
+            db=db,
+        )
+    return _access_response(principal), raw_refresh_token
 
 
 async def _require_team(*, team_id: UUID, scope: Scope, db: AsyncSession) -> Team:
@@ -723,6 +1143,41 @@ async def _require_project(*, project_id: UUID, scope: Scope, db: AsyncSession) 
     if project is None:
         raise InvalidAccessTokenError
     return project
+
+
+def _ensure_actor_can_manage_team_members(
+    *,
+    actor: AuthenticatedUser,
+    team_id: UUID,
+) -> None:
+    if has_permission(actor, "teams.manage"):
+        return
+    if any(
+        item.team_id == team_id and item.role == "team_admin"
+        for item in actor.team_memberships
+    ):
+        return
+    raise PermissionDeniedError
+
+
+def _ensure_actor_can_manage_project_members(
+    *,
+    actor: AuthenticatedUser,
+    project: Project,
+) -> None:
+    if has_permission(actor, "projects.manage"):
+        return
+    if any(
+        item.team_id == project.team_id and item.role == "team_admin"
+        for item in actor.team_memberships
+    ):
+        return
+    if any(
+        item.project_id == project.id and item.role == "project_admin"
+        for item in actor.project_memberships
+    ):
+        return
+    raise PermissionDeniedError
 
 
 async def record_audit_event(
@@ -936,7 +1391,6 @@ async def _principal_for_user(user_id: UUID, db: AsyncSession) -> AuthenticatedU
     if row is None:
         raise InvalidAccessTokenError
     user, membership = row
-    permissions = sorted(ROLE_PERMISSIONS.get(membership.role, set()))
     team_memberships = await db.scalars(
         select(TeamMembership).where(
             TeamMembership.org_id == membership.org_id,
@@ -951,19 +1405,11 @@ async def _principal_for_user(user_id: UUID, db: AsyncSession) -> AuthenticatedU
     )
     team_membership_rows = list(team_memberships)
     project_membership_rows = list(project_memberships)
-    if any(item.role == "team_admin" for item in team_membership_rows):
-        permissions.extend(
-            [
-                "keys.manage",
-                "policies.view",
-                "guardrails.view",
-                "projects.view",
-                "teams.view",
-            ]
-        )
-    if any(item.role == "project_admin" for item in project_membership_rows):
-        permissions.extend(["keys.manage", "policies.view", "guardrails.view", "projects.view"])
-    permissions = sorted(set(permissions))
+    permissions = _effective_permissions_for_memberships(
+        org_role=membership.role,
+        team_memberships=team_membership_rows,
+        project_memberships=project_membership_rows,
+    )
     return AuthenticatedUser(
         id=user.id,
         org_id=membership.org_id,
@@ -992,16 +1438,6 @@ def _access_response(principal: AuthenticatedUser) -> TokenResponse:
     )
 
 
-def _create_refresh_token(principal: AuthenticatedUser) -> str:
-    return create_access_token(
-        user_id=principal.id,
-        org_id=principal.org_id,
-        role=principal.role,
-        expires_delta=REFRESH_TOKEN_TTL,
-        token_type="refresh",
-    )
-
-
 def _invite_response(
     invite: Invite,
     *,
@@ -1016,14 +1452,19 @@ def _invite_response(
             if base_url
             else f"/accept-invite?token={raw_token}"
         )
+    status = (
+        "expired" if invite.status == "pending" and _is_past(invite.expires_at) else invite.status
+    )
     return InviteResponse(
         id=invite.id,
         org_id=invite.org_id,
         team_id=invite.team_id,
+        project_id=invite.project_id,
         email=invite.email,
         role=invite.role,
         team_role=invite.team_role,
-        status=invite.status,
+        project_role=invite.project_role,
+        status=status,
         expires_at=invite.expires_at,
         accepted_at=invite.accepted_at,
         created_at=invite.created_at,

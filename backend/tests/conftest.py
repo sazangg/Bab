@@ -16,6 +16,7 @@ from app.modules.auth.internal.models import (  # noqa: F401
     Invite,
     Organization,
     OrganizationMembership,
+    RefreshSession,
     Team,
     TeamMembership,
     User,

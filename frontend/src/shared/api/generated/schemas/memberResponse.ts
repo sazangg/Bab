@@ -4,6 +4,8 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
+import type { MemberProjectMembershipResponse } from "./memberProjectMembershipResponse";
+import type { MemberTeamMembershipResponse } from "./memberTeamMembershipResponse";
 
 export interface MemberResponse {
   user_id: string;
@@ -12,4 +14,7 @@ export interface MemberResponse {
   role: string;
   status: string;
   created_at: string;
+  team_memberships?: MemberTeamMembershipResponse[];
+  project_memberships?: MemberProjectMembershipResponse[];
+  effective_permissions?: string[];
 }

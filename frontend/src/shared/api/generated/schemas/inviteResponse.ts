@@ -9,9 +9,11 @@ export interface InviteResponse {
   id: string;
   org_id: string;
   team_id: string | null;
+  project_id: string | null;
   email: string;
   role: string;
   team_role: string | null;
+  project_role: string | null;
   status: string;
   expires_at: string;
   accepted_at: string | null;

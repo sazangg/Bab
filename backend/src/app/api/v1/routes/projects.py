@@ -14,7 +14,11 @@ from app.api.v1.deps import (
 )
 from app.core.database import Scope, get_db
 from app.modules.auth import facade as auth_facade
-from app.modules.auth.errors import InvalidAccessTokenError
+from app.modules.auth.errors import (
+    InvalidAccessTokenError,
+    MemberNotFoundError,
+    PermissionDeniedError,
+)
 from app.modules.auth.schemas import (
     AuthenticatedUser,
     ProjectMemberResponse,
@@ -269,6 +273,10 @@ async def add_project_member(
         )
     except InvalidAccessTokenError as exc:
         raise HTTPException(status_code=404, detail="project or user not found") from exc
+    except MemberNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project member not found") from exc
+    except PermissionDeniedError as exc:
+        raise HTTPException(status_code=403, detail="insufficient permissions") from exc
 
 
 @router.patch("/{project_id}/members/{user_id}")
@@ -291,6 +299,10 @@ async def update_project_member(
         )
     except InvalidAccessTokenError as exc:
         raise HTTPException(status_code=404, detail="project or user not found") from exc
+    except MemberNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project member not found") from exc
+    except PermissionDeniedError as exc:
+        raise HTTPException(status_code=403, detail="insufficient permissions") from exc
 
 
 @router.delete("/{project_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -311,6 +323,10 @@ async def remove_project_member(
         )
     except InvalidAccessTokenError as exc:
         raise HTTPException(status_code=404, detail="project or user not found") from exc
+    except MemberNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project member not found") from exc
+    except PermissionDeniedError as exc:
+        raise HTTPException(status_code=403, detail="insufficient permissions") from exc
 
 
 @router.get("/{project_id}/accessible-models")

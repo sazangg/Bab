@@ -43,6 +43,22 @@ class Settings(BaseSettings):
         min_length=12,
         validation_alias="BAB_DEFAULT_ADMIN_PASSWORD",
     )
+    refresh_cookie_secure: bool | None = Field(
+        default=None,
+        validation_alias="BAB_REFRESH_COOKIE_SECURE",
+    )
+    refresh_cookie_samesite: str = Field(
+        default="lax",
+        validation_alias="BAB_REFRESH_COOKIE_SAMESITE",
+    )
+    refresh_cookie_domain: str | None = Field(
+        default=None,
+        validation_alias="BAB_REFRESH_COOKIE_DOMAIN",
+    )
+    refresh_cookie_path: str = Field(
+        default="/api/v1/auth",
+        validation_alias="BAB_REFRESH_COOKIE_PATH",
+    )
     run_live_openai_tests: bool = Field(
         default=False,
         validation_alias="BAB_RUN_LIVE_OPENAI_TESTS",
@@ -62,6 +78,14 @@ class Settings(BaseSettings):
         normalized = value.lower()
         if normalized not in {"development", "test", "production"}:
             raise ValueError("BAB_ENVIRONMENT must be development, test, or production")
+        return normalized
+
+    @field_validator("refresh_cookie_samesite")
+    @classmethod
+    def validate_refresh_cookie_samesite(cls, value: str) -> str:
+        normalized = value.lower()
+        if normalized not in {"lax", "strict", "none"}:
+            raise ValueError("BAB_REFRESH_COOKIE_SAMESITE must be lax, strict, or none")
         return normalized
 
     @field_validator("encryption_key")
