@@ -561,7 +561,8 @@ async function downloadActivityExport(params: ReturnType<typeof buildActivitySco
   start_at?: string;
   end_at?: string;
 }) {
-  const { limit: _limit, ...exportParams } = params;
+  const exportParams = { ...params };
+  delete exportParams.limit;
   const response = await httpClient.get<Blob>("/api/v1/activity/export", {
     params: exportParams,
     responseType: "blob",

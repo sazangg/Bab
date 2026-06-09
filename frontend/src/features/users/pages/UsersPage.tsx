@@ -101,8 +101,14 @@ export function UsersPage() {
   const teamsQuery = useListTeamsApiV1TeamsGet({ query: { enabled: canInvite } });
   const projectsQuery = useListProjectsApiV1ProjectsGet({ query: { enabled: canInvite } });
 
-  const members = membersQuery.data?.status === 200 ? membersQuery.data.data : [];
-  const invites = invitesQuery.data?.status === 200 ? invitesQuery.data.data : [];
+  const members = useMemo(
+    () => (membersQuery.data?.status === 200 ? membersQuery.data.data : []),
+    [membersQuery.data],
+  );
+  const invites = useMemo(
+    () => (invitesQuery.data?.status === 200 ? invitesQuery.data.data : []),
+    [invitesQuery.data],
+  );
   const teams = useMemo(
     () => (teamsQuery.data?.status === 200 ? teamsQuery.data.data : []),
     [teamsQuery.data],
