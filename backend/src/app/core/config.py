@@ -9,6 +9,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    app_name: str = Field(default="Bab API", validation_alias="BAB_APP_NAME")
+    app_version: str = Field(default="0.1.0", validation_alias="BAB_APP_VERSION")
     database_url: str = Field(
         default="sqlite+aiosqlite:///./bab.db",
         validation_alias="DATABASE_URL",

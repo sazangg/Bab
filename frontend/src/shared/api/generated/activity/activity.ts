@@ -21,6 +21,7 @@ import type {
 
 import type {
   ActivityEventResponse,
+  ExportActivityEventsApiV1ActivityExportGetParams,
   HTTPValidationError,
   ListActivityEventsApiV1ActivityGetParams
 } from '../schemas';
@@ -145,6 +146,132 @@ export function useListActivityEventsApiV1ActivityGet<TData = Awaited<ReturnType
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getListActivityEventsApiV1ActivityGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export type exportActivityEventsApiV1ActivityExportGetResponse200 = {
+  data: unknown
+  status: 200
+}
+
+export type exportActivityEventsApiV1ActivityExportGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type exportActivityEventsApiV1ActivityExportGetResponseSuccess = (exportActivityEventsApiV1ActivityExportGetResponse200) & {
+  headers: Headers;
+};
+export type exportActivityEventsApiV1ActivityExportGetResponseError = (exportActivityEventsApiV1ActivityExportGetResponse422) & {
+  headers: Headers;
+};
+
+export type exportActivityEventsApiV1ActivityExportGetResponse = (exportActivityEventsApiV1ActivityExportGetResponseSuccess | exportActivityEventsApiV1ActivityExportGetResponseError)
+
+export const getExportActivityEventsApiV1ActivityExportGetUrl = (params?: ExportActivityEventsApiV1ActivityExportGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/activity/export?${stringifiedParams}` : `/api/v1/activity/export`
+}
+
+/**
+ * @summary Export Activity Events
+ */
+export const exportActivityEventsApiV1ActivityExportGet = async (params?: ExportActivityEventsApiV1ActivityExportGetParams, options?: RequestInit): Promise<exportActivityEventsApiV1ActivityExportGetResponse> => {
+
+  return apiMutator<exportActivityEventsApiV1ActivityExportGetResponse>(getExportActivityEventsApiV1ActivityExportGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getExportActivityEventsApiV1ActivityExportGetQueryKey = (params?: ExportActivityEventsApiV1ActivityExportGetParams,) => {
+    return [
+    `/api/v1/activity/export`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getExportActivityEventsApiV1ActivityExportGetQueryOptions = <TData = Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>, TError = HTTPValidationError>(params?: ExportActivityEventsApiV1ActivityExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExportActivityEventsApiV1ActivityExportGetQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>> = ({ signal }) => exportActivityEventsApiV1ActivityExportGet(params, { signal });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ExportActivityEventsApiV1ActivityExportGetQueryResult = NonNullable<Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>>
+export type ExportActivityEventsApiV1ActivityExportGetQueryError = HTTPValidationError
+
+
+export function useExportActivityEventsApiV1ActivityExportGet<TData = Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>, TError = HTTPValidationError>(
+ params: undefined |  ExportActivityEventsApiV1ActivityExportGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>,
+          TError,
+          Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useExportActivityEventsApiV1ActivityExportGet<TData = Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>, TError = HTTPValidationError>(
+ params?: ExportActivityEventsApiV1ActivityExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>,
+          TError,
+          Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useExportActivityEventsApiV1ActivityExportGet<TData = Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>, TError = HTTPValidationError>(
+ params?: ExportActivityEventsApiV1ActivityExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Export Activity Events
+ */
+
+export function useExportActivityEventsApiV1ActivityExportGet<TData = Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>, TError = HTTPValidationError>(
+ params?: ExportActivityEventsApiV1ActivityExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getExportActivityEventsApiV1ActivityExportGetQueryOptions(params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

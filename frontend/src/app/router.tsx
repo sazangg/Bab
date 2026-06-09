@@ -31,6 +31,8 @@ import { ActivityPage } from "@/features/activity/pages/ActivityPage";
 import { UsagePage } from "@/features/usage/pages/UsagePage";
 import { UsersPage } from "@/features/users/pages/UsersPage";
 
+const isProductionBuild = import.meta.env.PROD;
+
 function ProbePage({ kind }: { kind: "health" | "readyz" }) {
   return (
     <main className="grid min-h-svh place-items-center bg-background p-6 text-foreground">
@@ -114,7 +116,9 @@ export function AppRoutes() {
           <Route element={<ProtectedRoute permission="guardrails.view" />}>
             <Route path="/guardrails" element={<GuardrailsPage />} />
           </Route>
-          <Route path="/design-system" element={<DesignSystemPage />} />
+          {!isProductionBuild ? (
+            <Route path="/design-system" element={<DesignSystemPage />} />
+          ) : null}
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/login" replace />} />

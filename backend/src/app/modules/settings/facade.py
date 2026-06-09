@@ -47,6 +47,7 @@ async def update_organization_settings(
                 default_max_body_bytes=env_settings.proxy_max_body_bytes,
                 db=db,
             )
+        metadata = _build_update_metadata(settings=settings, payload=payload)
         for field in payload.model_fields_set:
             setattr(settings, field, getattr(payload, field))
         if "organization_name" in payload.model_fields_set and payload.organization_name:
@@ -60,6 +61,7 @@ async def update_organization_settings(
             action="settings.updated",
             message="Updated organization settings.",
             db=db,
+            metadata=metadata,
         )
     return _to_response(settings)
 
@@ -72,3 +74,29 @@ def _to_response(settings) -> OrganizationSettingsResponse:
             "activity_retention_days": env_settings.activity_retention_days,
         }
     )
+
+
+SAFE_AUDIT_FIELDS = {
+    "organization_name",
+    "public_base_url",
+    "default_request_timeout_seconds",
+    "default_retry_count",
+    "default_max_body_bytes",
+    "default_model_sync_mode",
+    "default_virtual_key_expiration_days",
+    "virtual_key_prefix",
+    "allow_secret_copy",
+    "organization_logo_url",
+}
+
+
+def _build_update_metadata(*, settings, payload: UpdateOrganizationSettingsRequest) -> dict:
+    changes = {}
+    for field in sorted(payload.model_fields_set):
+        if field not in SAFE_AUDIT_FIELDS:
+            continue
+        old_value = getattr(settings, field)
+        new_value = getattr(payload, field)
+        if old_value != new_value:
+            changes[field] = {"old": old_value, "new": new_value}
+    return {"changed_fields": list(changes), "changes": changes}

@@ -57,13 +57,12 @@ async def upload_organization_logo(
         "image/png": ".png",
         "image/jpeg": ".jpg",
         "image/webp": ".webp",
-        "image/svg+xml": ".svg",
     }
     extension = extension_by_type.get(content_type)
     if extension is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="logo must be a png, jpg, webp, or svg image",
+            detail="logo must be a png, jpg, or webp image",
         )
     content = await file.read()
     if len(content) > 2_000_000:

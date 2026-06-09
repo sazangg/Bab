@@ -1,17 +1,19 @@
 import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Outlet } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppRoutes } from "@/app/router";
 import { TooltipProvider } from "@/components/ui/tooltip";
+
+const protectedRouteMock = vi.hoisted(() => vi.fn(() => <Outlet />));
 
 vi.mock("@/features/auth/components/AuthGate", () => ({
   AuthGate: () => <Outlet />,
 }));
 
 vi.mock("@/features/auth/components/ProtectedRoute", () => ({
-  ProtectedRoute: () => <Outlet />,
+  ProtectedRoute: protectedRouteMock,
 }));
 
 function renderRoute(path: string) {
@@ -34,6 +36,10 @@ function renderRoute(path: string) {
 }
 
 describe("AppRoutes", () => {
+  beforeEach(() => {
+    protectedRouteMock.mockClear();
+  });
+
   it("renders the login route", () => {
     renderRoute("/login");
 
@@ -51,5 +57,14 @@ describe("AppRoutes", () => {
     renderRoute("/missing");
 
     expect(screen.getByLabelText("Email")).toBeInTheDocument();
+  });
+
+  it("guards API Docs with key-manager access", () => {
+    renderRoute("/api-docs");
+
+    expect(protectedRouteMock).toHaveBeenCalledWith(
+      expect.objectContaining({ requireKeyManager: true }),
+      undefined,
+    );
   });
 });

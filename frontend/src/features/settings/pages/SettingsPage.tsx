@@ -30,11 +30,19 @@ import type { UpdateOrganizationSettingsRequest } from "@/shared/api/generated/s
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
 
-const browserOrigin = typeof window !== "undefined" ? window.location.origin : "";
-
 const settingsSchema = z.object({
   organization_name: z.string().min(1).max(255),
-  public_base_url: z.string().max(500).optional(),
+  public_base_url: z.preprocess(
+    (value) => (typeof value === "string" ? value.trim() : value),
+    z
+      .string()
+      .max(500)
+      .refine((value) => value === "" || isAbsoluteHttpUrl(value), {
+        message: "Enter an absolute http:// or https:// gateway URL.",
+      })
+      .transform((value) => value.replace(/\/$/, ""))
+      .optional(),
+  ),
   default_request_timeout_seconds: z.coerce.number().int().min(1).max(300),
   default_retry_count: z.coerce.number().int().min(0).max(10),
   default_max_body_bytes: z.coerce.number().int().min(1024).max(100_000_000),
@@ -100,7 +108,7 @@ export function SettingsPage() {
     if (!settings) return;
     form.reset({
       organization_name: settings.organization_name,
-      public_base_url: settings.public_base_url ?? browserOrigin,
+      public_base_url: settings.public_base_url ?? "",
       default_request_timeout_seconds: settings.default_request_timeout_seconds,
       default_retry_count: settings.default_retry_count,
       default_max_body_bytes: settings.default_max_body_bytes,
@@ -177,13 +185,13 @@ export function SettingsPage() {
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium">Organization logo</p>
                   <p className="text-xs text-muted-foreground">
-                    Optional image shown in the app header.
+                    Optional PNG, JPEG, or WebP image shown in the app header.
                   </p>
                 </div>
                 <input
                   ref={logoInputRef}
                   type="file"
-                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                  accept="image/png,image/jpeg,image/webp"
                   className="hidden"
                   onChange={(event) => handleLogoChange(event.target.files?.[0])}
                 />
@@ -393,4 +401,20 @@ function resolveAssetUrl(url: string) {
   if (/^https?:\/\//i.test(url)) return url;
   const apiBaseUrl = import.meta.env.VITE_BAB_API_URL as string | undefined;
   return apiBaseUrl ? new URL(url, apiBaseUrl).toString() : url;
+}
+
+function isAbsoluteHttpUrl(value: string) {
+  try {
+    const parsed = new URL(value);
+    return (
+      (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+      !parsed.username &&
+      !parsed.password &&
+      parsed.pathname === "/" &&
+      !parsed.search &&
+      !parsed.hash
+    );
+  } catch {
+    return false;
+  }
 }

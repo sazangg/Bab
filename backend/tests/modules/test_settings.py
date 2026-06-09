@@ -1,9 +1,11 @@
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import Scope
-from app.modules.auth.internal.models import Organization
+from app.modules.activity.internal.models import ActivityEvent
+from app.modules.auth.internal.models import AuditEvent, Organization
 from app.modules.auth.internal.service import MOCK_ADMIN_ID
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.settings import facade
@@ -56,3 +58,76 @@ async def test_settings_update_syncs_organization_name(db_session: AsyncSession)
     assert response.default_retry_count == 2
     assert response.allow_secret_copy is False
     assert org.name == "Bab Labs"
+
+
+async def test_settings_update_records_changed_fields_metadata(db_session: AsyncSession):
+    org = Organization(name="Acme", slug="acme")
+    db_session.add(org)
+    await db_session.commit()
+    actor = AuthenticatedUser(
+        id=MOCK_ADMIN_ID,
+        org_id=org.id,
+        team_id=org.id,
+        email="admin@example.com",
+        role="super_admin",
+    )
+
+    await facade.update_organization_settings(
+        payload=UpdateOrganizationSettingsRequest(
+            organization_name="Bab Labs",
+            public_base_url="https://gateway.example.com/",
+            default_retry_count=2,
+        ),
+        actor=actor,
+        scope=Scope(org_id=org.id),
+        db=db_session,
+    )
+
+    activity = await db_session.scalar(
+        select(ActivityEvent).where(ActivityEvent.action == "settings.updated")
+    )
+    audit = await db_session.scalar(
+        select(AuditEvent).where(AuditEvent.action == "settings.updated")
+    )
+    assert activity is not None
+    assert audit is not None
+    assert activity.metadata_["changed_fields"] == [
+        "default_retry_count",
+        "organization_name",
+        "public_base_url",
+    ]
+    assert audit.metadata_["changed_fields"] == activity.metadata_["changed_fields"]
+    assert activity.metadata_["changes"]["organization_name"] == {
+        "old": "Acme",
+        "new": "Bab Labs",
+    }
+    assert activity.metadata_["changes"]["public_base_url"] == {
+        "old": None,
+        "new": "https://gateway.example.com",
+    }
+    assert activity.metadata_["changes"]["default_retry_count"] == {"old": 0, "new": 2}
+    assert audit.metadata_["changes"] == activity.metadata_["changes"]
+
+
+def test_public_base_url_is_normalized_and_validated():
+    payload = UpdateOrganizationSettingsRequest(public_base_url=" https://gateway.example.com/ ")
+
+    assert payload.public_base_url == "https://gateway.example.com"
+
+    assert UpdateOrganizationSettingsRequest(public_base_url="").public_base_url is None
+    assert UpdateOrganizationSettingsRequest(public_base_url=None).public_base_url is None
+
+    for value in [
+        "gateway.example.com",
+        "ftp://gateway.example.com",
+        "/api",
+        "https://gateway.example.com/v1",
+        "https://gateway.example.com?x=1",
+        "https://gateway.example.com#docs",
+        "https://user:pass@gateway.example.com",
+    ]:
+        try:
+            UpdateOrganizationSettingsRequest(public_base_url=value)
+        except ValidationError:
+            continue
+        raise AssertionError(f"{value} should be rejected")

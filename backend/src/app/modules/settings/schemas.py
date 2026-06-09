@@ -1,7 +1,8 @@
 from datetime import datetime
+from urllib.parse import urlparse
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class OrganizationSettingsResponse(BaseModel):
@@ -39,3 +40,30 @@ class UpdateOrganizationSettingsRequest(BaseModel):
     default_virtual_key_expiration_days: int | None = Field(default=None, ge=1, le=3650)
     virtual_key_prefix: str | None = Field(default=None, min_length=1, max_length=32)
     allow_secret_copy: bool | None = None
+
+    @field_validator("public_base_url")
+    @classmethod
+    def validate_public_base_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            return None
+        parsed = urlparse(stripped)
+        try:
+            _ = parsed.port
+        except ValueError as exc:
+            raise ValueError("public_base_url must be a gateway origin URL") from exc
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.netloc
+            or parsed.username
+            or parsed.password
+            or not parsed.hostname
+            or parsed.path not in {"", "/"}
+            or parsed.params
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("public_base_url must be a gateway origin URL")
+        return stripped.rstrip("/")

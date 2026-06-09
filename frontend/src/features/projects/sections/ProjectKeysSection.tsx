@@ -519,9 +519,9 @@ function keyUsageLabel(lastUsedAt: string | null | undefined) {
 }
 
 function resolveGatewayBaseUrl(publicBaseUrl?: string | null) {
-  if (publicBaseUrl?.trim()) return publicBaseUrl.replace(/\/$/, "");
+  if (publicBaseUrl?.trim()) return publicBaseUrl.replace(/\/+$/, "");
   const envBaseUrl = import.meta.env.VITE_BAB_API_URL as string | undefined;
-  return envBaseUrl?.replace(/\/$/, "") ?? "http://localhost:8000";
+  return envBaseUrl?.replace(/\/+$/, "") ?? "http://localhost:8000";
 }
 
 function sampleCurl({ baseUrl, key, model }: { baseUrl: string; key: string; model: string }) {

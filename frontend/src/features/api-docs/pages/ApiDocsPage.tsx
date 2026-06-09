@@ -1,4 +1,4 @@
-import { Copy, ExternalLink, Terminal } from "lucide-react";
+import { Copy, ExternalLink, LinkIcon, Terminal } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,13 +25,28 @@ export function ApiDocsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/20 p-3">
+            <div className="flex min-w-0 items-center gap-2 text-sm">
+              <LinkIcon className="size-4 text-muted-foreground" />
+              <code className="truncate">{baseUrl}</code>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => navigator.clipboard.writeText(baseUrl)}
+            >
+              <Copy />
+              Copy base URL
+            </Button>
+          </div>
           <CommandBlock
             title="List key-visible models"
             command={`curl ${baseUrl}/v1/models \\
   -H "Authorization: Bearer bab-sk-..."`}
           />
           <CommandBlock
-            title="Chat completions"
+            title="Chat completions (primary)"
             command={`curl ${baseUrl}/v1/chat/completions \\
   -H "Authorization: Bearer bab-sk-..." \\
   -H "Content-Type: application/json" \\
@@ -44,7 +59,7 @@ export function ApiDocsPage() {
   }'`}
           />
           <CommandBlock
-            title="Responses compatibility"
+            title="Responses compatibility adapter"
             command={`curl ${baseUrl}/v1/responses \\
   -H "Authorization: Bearer bab-sk-..." \\
   -H "Content-Type: application/json" \\
@@ -55,7 +70,7 @@ export function ApiDocsPage() {
   }'`}
           />
           <CommandBlock
-            title="Legacy completions compatibility"
+            title="Legacy completions compatibility adapter"
             command={`curl ${baseUrl}/v1/completions \\
   -H "Authorization: Bearer bab-sk-..." \\
   -H "Content-Type: application/json" \\
@@ -66,15 +81,42 @@ export function ApiDocsPage() {
   }'`}
           />
           <CommandBlock
-            title="Embeddings status"
-            command={`curl ${baseUrl}/v1/embeddings \\
-  -H "Authorization: Bearer bab-sk-..." \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "model": "text-embedding-3-small",
-    "input": "hello"
-  }'`}
+            title="OpenAI SDK JS/TS"
+            command={`import OpenAI from "openai";
+
+const client = new OpenAI({
+  apiKey: "bab-sk-...",
+  baseURL: "${baseUrl}/v1",
+});
+
+const response = await client.chat.completions.create({
+  model: "gpt-4o-mini",
+  messages: [{ role: "user", content: "Reply with pong" }],
+  max_completion_tokens: 32,
+});`}
           />
+          <CommandBlock
+            title="OpenAI SDK Python"
+            command={`from openai import OpenAI
+
+client = OpenAI(
+    api_key="bab-sk-...",
+    base_url="${baseUrl}/v1",
+)
+
+response = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[{"role": "user", "content": "Reply with pong"}],
+    max_completion_tokens=32,
+)`}
+          />
+          <div className="rounded-md border bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
+            <div className="font-medium text-foreground">Embeddings unavailable</div>
+            <p>
+              <code>/v1/embeddings</code> currently returns <code>501 Not Implemented</code>. It is
+              not a supported V1 endpoint yet.
+            </p>
+          </div>
           <div className="rounded-md border bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
             <div className="font-medium text-foreground">Postman setup</div>
             <p>Method: POST</p>
@@ -119,9 +161,9 @@ export function ApiDocsPage() {
 }
 
 function resolveGatewayBaseUrl(publicBaseUrl?: string | null) {
-  if (publicBaseUrl?.trim()) return publicBaseUrl.replace(/\/$/, "");
+  if (publicBaseUrl?.trim()) return publicBaseUrl.replace(/\/+$/, "");
   const envBaseUrl = import.meta.env.VITE_BAB_API_URL as string | undefined;
-  return envBaseUrl?.replace(/\/$/, "") ?? "http://localhost:8000";
+  return envBaseUrl?.replace(/\/+$/, "") ?? "http://localhost:8000";
 }
 
 function CommandBlock({ title, command }: { title: string; command: string }) {

@@ -66,3 +66,23 @@ async def test_readiness_reports_database_and_migrations() -> None:
     assert readyz_body["status"] == "ready"
     assert body["checks"]["database"]["ok"] is True
     assert body["checks"]["migrations"]["ok"] is True
+
+
+@pytest.mark.asyncio
+async def test_runtime_info_returns_safe_runtime_summary() -> None:
+    app = create_app()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get("/api/v1/runtime-info")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["app_name"]
+    assert body["app_version"]
+    assert body["environment"] in {"development", "test", "production"}
+    assert "migrations" in body
+    assert "database_url" not in body
+    assert "secret_key" not in body

@@ -27,6 +27,7 @@ import {
   useLogoutApiV1AuthLogoutPost,
   useMeApiV1AuthMeGet,
 } from "@/shared/api/generated/auth/auth";
+import { useRuntimeInfoApiV1RuntimeInfoGet } from "@/shared/api/generated/health/health";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -58,6 +59,7 @@ import {
   SidebarProvider,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   canViewActivity,
@@ -115,6 +117,7 @@ const workspaceNav = [
 const internalNav = [{ to: "/design-system", label: "Design system", icon: Palette }];
 const fallbackOrganizationName =
   import.meta.env.VITE_BAB_ORGANIZATION_NAME ?? "Default organization";
+const isProductionBuild = import.meta.env.PROD;
 
 type ReadinessResponse = {
   status: "ready" | "not_ready";
@@ -173,6 +176,9 @@ export function DashboardLayout() {
     },
     refetchInterval: 30_000,
   });
+  const generatedRuntimeInfoQuery = useRuntimeInfoApiV1RuntimeInfoGet({
+    query: { staleTime: 300_000 },
+  });
   const settings = settingsQuery.data?.status === 200 ? settingsQuery.data.data : undefined;
   const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
   const canView = (permission?: string) => !permission || hasPermission(currentUser, permission);
@@ -201,7 +207,8 @@ export function DashboardLayout() {
   const visibleWorkspaceNav = workspaceNav.filter((item) => {
     return canViewWorkspaceItem(item);
   });
-  const showApiDocs = canManageKeys(currentUser) || hasPermission(currentUser, "providers.view");
+  const showApiDocs = canManageKeys(currentUser);
+  const visibleInternalNav = isProductionBuild ? [] : internalNav;
   const organizationName = settings?.organization_name ?? fallbackOrganizationName;
   const clearSession = useAuthStore((state) => state.clearSession);
   const logoutMutation = useLogoutApiV1AuthLogoutPost({
@@ -218,6 +225,10 @@ export function DashboardLayout() {
     readinessQuery.data?.status,
     readinessQuery.data?.data,
   );
+  const runtimeInfo =
+    generatedRuntimeInfoQuery.data?.status === 200
+      ? generatedRuntimeInfoQuery.data.data
+      : undefined;
 
   const isActive = (path: string, end?: boolean) =>
     end || path === "/" ? location.pathname === path : location.pathname.startsWith(path);
@@ -358,7 +369,7 @@ export function DashboardLayout() {
         </SidebarContent>
         <SidebarFooter className="mb-7 border-t p-2">
           <SidebarMenu>
-            {internalNav.map((item) => (
+            {visibleInternalNav.map((item) => (
               <SidebarMenuItem key={item.to}>
                 <SidebarMenuButton asChild isActive={isActive(item.to)} tooltip={item.label}>
                   <Link to={item.to}>
@@ -388,23 +399,56 @@ export function DashboardLayout() {
         className="fixed inset-x-0 bottom-0 z-30 flex h-7 items-center justify-between border-t bg-sidebar px-3 text-xs text-muted-foreground"
       >
         <div
-          className="flex items-center gap-1.5"
           role="status"
           aria-live="polite"
           aria-label={`System status: ${gatewayStatus.label}`}
         >
-          <span className="relative flex size-2 shrink-0" aria-hidden="true">
-            {gatewayStatus.variant === "ready" ? (
-              <span className="absolute inset-0 rounded-full bg-emerald-500/60 motion-safe:animate-ping" />
-            ) : null}
-            <span className={`relative size-2 rounded-full ${gatewayStatus.className}`} />
-          </span>
-          <span>{gatewayStatus.label}</span>
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className="flex items-center gap-1.5 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <span className="relative flex size-2 shrink-0" aria-hidden="true">
+                  {gatewayStatus.variant === "ready" ? (
+                    <span className="absolute inset-0 rounded-full bg-emerald-500/60 motion-safe:animate-ping" />
+                  ) : null}
+                  <span className={`relative size-2 rounded-full ${gatewayStatus.className}`} />
+                </span>
+                <span>{gatewayStatus.label}</span>
+              </button>
+            </PopoverTrigger>
+            <PopoverContent side="top" align="start" className="w-80 text-xs">
+              <div className="space-y-3">
+                <div>
+                  <div className="font-medium text-foreground">Readiness checks</div>
+                  <div className="text-muted-foreground">
+                    Last checked: {formatCheckedAt(readinessQuery.dataUpdatedAt)}
+                  </div>
+                </div>
+                <div className="grid gap-2">
+                  {Object.entries(readinessQuery.data?.data?.checks ?? {}).map(
+                    ([name, check]) => (
+                      <div key={name} className="flex items-center justify-between gap-3">
+                        <span className="capitalize">{name.replace(/_/g, " ")}</span>
+                        <span className={check.ok ? "text-emerald-600" : "text-amber-600"}>
+                          {check.ok ? "OK" : "Needs attention"}
+                        </span>
+                      </div>
+                    ),
+                  )}
+                  {!readinessQuery.data?.data?.checks ? (
+                    <div className="text-muted-foreground">No readiness details available.</div>
+                  ) : null}
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
         <div className="flex items-center gap-3">
-          <span className="tabular-nums">v0.1.0</span>
+          <span className="tabular-nums">v{runtimeInfo?.app_version ?? "unknown"}</span>
           <span aria-hidden="true">·</span>
-          <span>Local development</span>
+          <span>{formatEnvironment(runtimeInfo?.environment)}</span>
         </div>
       </footer>
     </SidebarProvider>
@@ -445,4 +489,14 @@ function formatRole(role?: string) {
   if (role === "org_viewer") return "Viewer";
   if (role === "org_member") return "Member";
   return "Unknown role";
+}
+
+function formatEnvironment(environment?: string) {
+  if (!environment) return "Environment unknown";
+  return environment.charAt(0).toUpperCase() + environment.slice(1);
+}
+
+function formatCheckedAt(timestamp: number) {
+  if (!timestamp) return "Never";
+  return new Date(timestamp).toLocaleTimeString();
 }

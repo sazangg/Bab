@@ -25,7 +25,8 @@ import type {
   ReadinessCheckApiV1ReadyGet200,
   ReadinessCheckReadyGet200,
   ReadinessProbeApiV1ReadyzGet200,
-  ReadinessProbeReadyzGet200
+  ReadinessProbeReadyzGet200,
+  RuntimeInfoResponse
 } from '../schemas';
 
 import { apiMutator } from '../../orval-mutator';
@@ -369,6 +370,118 @@ export function useReadinessProbeApiV1ReadyzGet<TData = Awaited<ReturnType<typeo
 
 
 
+export type runtimeInfoApiV1RuntimeInfoGetResponse200 = {
+  data: RuntimeInfoResponse
+  status: 200
+}
+
+export type runtimeInfoApiV1RuntimeInfoGetResponseSuccess = (runtimeInfoApiV1RuntimeInfoGetResponse200) & {
+  headers: Headers;
+};
+;
+
+export type runtimeInfoApiV1RuntimeInfoGetResponse = (runtimeInfoApiV1RuntimeInfoGetResponseSuccess)
+
+export const getRuntimeInfoApiV1RuntimeInfoGetUrl = () => {
+
+
+
+
+  return `/api/v1/runtime-info`
+}
+
+/**
+ * @summary Runtime Info
+ */
+export const runtimeInfoApiV1RuntimeInfoGet = async ( options?: RequestInit): Promise<runtimeInfoApiV1RuntimeInfoGetResponse> => {
+
+  return apiMutator<runtimeInfoApiV1RuntimeInfoGetResponse>(getRuntimeInfoApiV1RuntimeInfoGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getRuntimeInfoApiV1RuntimeInfoGetQueryKey = () => {
+    return [
+    `/api/v1/runtime-info`
+    ] as const;
+    }
+
+
+export const getRuntimeInfoApiV1RuntimeInfoGetQueryOptions = <TData = Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getRuntimeInfoApiV1RuntimeInfoGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>> = ({ signal }) => runtimeInfoApiV1RuntimeInfoGet({ signal });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type RuntimeInfoApiV1RuntimeInfoGetQueryResult = NonNullable<Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>>
+export type RuntimeInfoApiV1RuntimeInfoGetQueryError = unknown
+
+
+export function useRuntimeInfoApiV1RuntimeInfoGet<TData = Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>,
+          TError,
+          Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useRuntimeInfoApiV1RuntimeInfoGet<TData = Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>,
+          TError,
+          Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useRuntimeInfoApiV1RuntimeInfoGet<TData = Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Runtime Info
+ */
+
+export function useRuntimeInfoApiV1RuntimeInfoGet<TData = Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getRuntimeInfoApiV1RuntimeInfoGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 export type healthCheckHealthGetResponse200 = {
   data: HealthCheckHealthGet200
   status: 200
@@ -694,6 +807,118 @@ export function useReadinessProbeReadyzGet<TData = Awaited<ReturnType<typeof rea
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getReadinessProbeReadyzGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export type runtimeInfoRuntimeInfoGetResponse200 = {
+  data: RuntimeInfoResponse
+  status: 200
+}
+
+export type runtimeInfoRuntimeInfoGetResponseSuccess = (runtimeInfoRuntimeInfoGetResponse200) & {
+  headers: Headers;
+};
+;
+
+export type runtimeInfoRuntimeInfoGetResponse = (runtimeInfoRuntimeInfoGetResponseSuccess)
+
+export const getRuntimeInfoRuntimeInfoGetUrl = () => {
+
+
+
+
+  return `/runtime-info`
+}
+
+/**
+ * @summary Runtime Info
+ */
+export const runtimeInfoRuntimeInfoGet = async ( options?: RequestInit): Promise<runtimeInfoRuntimeInfoGetResponse> => {
+
+  return apiMutator<runtimeInfoRuntimeInfoGetResponse>(getRuntimeInfoRuntimeInfoGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getRuntimeInfoRuntimeInfoGetQueryKey = () => {
+    return [
+    `/runtime-info`
+    ] as const;
+    }
+
+
+export const getRuntimeInfoRuntimeInfoGetQueryOptions = <TData = Awaited<ReturnType<typeof runtimeInfoRuntimeInfoGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof runtimeInfoRuntimeInfoGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getRuntimeInfoRuntimeInfoGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof runtimeInfoRuntimeInfoGet>>> = ({ signal }) => runtimeInfoRuntimeInfoGet({ signal });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof runtimeInfoRuntimeInfoGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type RuntimeInfoRuntimeInfoGetQueryResult = NonNullable<Awaited<ReturnType<typeof runtimeInfoRuntimeInfoGet>>>
+export type RuntimeInfoRuntimeInfoGetQueryError = unknown
+
+
+export function useRuntimeInfoRuntimeInfoGet<TData = Awaited<ReturnType<typeof runtimeInfoRuntimeInfoGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof runtimeInfoRuntimeInfoGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof runtimeInfoRuntimeInfoGet>>,
+          TError,
+          Awaited<ReturnType<typeof runtimeInfoRuntimeInfoGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useRuntimeInfoRuntimeInfoGet<TData = Awaited<ReturnType<typeof runtimeInfoRuntimeInfoGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof runtimeInfoRuntimeInfoGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof runtimeInfoRuntimeInfoGet>>,
+          TError,
+          Awaited<ReturnType<typeof runtimeInfoRuntimeInfoGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useRuntimeInfoRuntimeInfoGet<TData = Awaited<ReturnType<typeof runtimeInfoRuntimeInfoGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof runtimeInfoRuntimeInfoGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Runtime Info
+ */
+
+export function useRuntimeInfoRuntimeInfoGet<TData = Awaited<ReturnType<typeof runtimeInfoRuntimeInfoGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof runtimeInfoRuntimeInfoGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getRuntimeInfoRuntimeInfoGetQueryOptions(options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
