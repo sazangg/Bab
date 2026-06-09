@@ -67,4 +67,13 @@ describe("AppRoutes", () => {
       undefined,
     );
   });
+
+  it("guards Virtual keys with key-manager access", () => {
+    renderRoute("/virtual-keys");
+
+    expect(protectedRouteMock).toHaveBeenCalledWith(
+      expect.objectContaining({ requireKeyManager: true }),
+      undefined,
+    );
+  });
 });

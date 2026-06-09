@@ -20,6 +20,10 @@ async def create_access_policy(
     name: str,
     description: str | None,
     is_active: bool,
+    owning_scope_type: str | None = None,
+    owning_team_id: UUID | None = None,
+    owning_project_id: UUID | None = None,
+    owning_virtual_key_id: UUID | None = None,
     db: AsyncSession,
 ) -> AccessPolicy:
     policy = AccessPolicy(
@@ -27,6 +31,10 @@ async def create_access_policy(
         name=name,
         description=description,
         is_active=is_active,
+        owning_scope_type=owning_scope_type,
+        owning_team_id=owning_team_id,
+        owning_project_id=owning_project_id,
+        owning_virtual_key_id=owning_virtual_key_id,
     )
     db.add(policy)
     await db.flush()

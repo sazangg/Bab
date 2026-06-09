@@ -17,12 +17,14 @@ async def create_settings(
     org_id: UUID,
     organization_name: str,
     default_max_body_bytes: int,
+    public_app_url: str | None = None,
     db: AsyncSession,
 ) -> OrganizationSettings:
     settings = OrganizationSettings(
         org_id=org_id,
         organization_name=organization_name,
         default_max_body_bytes=default_max_body_bytes,
+        public_app_url=public_app_url,
     )
     db.add(settings)
     await db.flush()

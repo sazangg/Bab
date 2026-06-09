@@ -77,8 +77,10 @@ async def test_runtime_info_returns_safe_runtime_summary() -> None:
         base_url="http://testserver",
     ) as client:
         response = await client.get("/api/v1/runtime-info")
+        root_response = await client.get("/runtime-info")
 
     assert response.status_code == 200
+    assert root_response.status_code == 404
     body = response.json()
     assert body["app_name"]
     assert body["app_version"]

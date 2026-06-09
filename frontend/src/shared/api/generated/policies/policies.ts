@@ -32,12 +32,14 @@ import type {
   CreateLimitPolicyRequest,
   CreateLimitPolicyRuleRequest,
   CreatePolicyAssignmentRequest,
+  CreateScopedPolicyAssignmentRequest,
   GetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetParams,
   HTTPValidationError,
   LimitPolicyResponse,
   LimitPolicyRuleResponse,
   PolicyAssignmentResponse,
   PolicyImpactResponse,
+  ScopedPolicyAssignmentResponse,
   UpdateAccessPolicyRequest,
   UpdateAccessPolicyRouteRequest,
   UpdateLimitPolicyRequest,
@@ -2384,6 +2386,95 @@ export const useCreatePolicyAssignmentApiV1PoliciesAssignmentsPost = <TError = H
         TContext
       > => {
       return useMutation(getCreatePolicyAssignmentApiV1PoliciesAssignmentsPostMutationOptions(options), queryClient);
+    }
+    export type createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostResponse201 = {
+  data: ScopedPolicyAssignmentResponse
+  status: 201
+}
+
+export type createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostResponseSuccess = (createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostResponse201) & {
+  headers: Headers;
+};
+export type createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostResponseError = (createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostResponse422) & {
+  headers: Headers;
+};
+
+export type createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostResponse = (createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostResponseSuccess | createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostResponseError)
+
+export const getCreateScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostUrl = () => {
+
+
+
+
+  return `/api/v1/policies/assignments/scoped-policy`
+}
+
+/**
+ * @summary Create Scoped Policy Assignment
+ */
+export const createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPost = async (createScopedPolicyAssignmentRequest: CreateScopedPolicyAssignmentRequest, options?: RequestInit): Promise<createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostResponse> => {
+
+  return apiMutator<createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostResponse>(getCreateScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      createScopedPolicyAssignmentRequest,)
+  }
+);}
+
+
+
+
+export const getCreateScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPost>>, TError,{data: CreateScopedPolicyAssignmentRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPost>>, TError,{data: CreateScopedPolicyAssignmentRequest}, TContext> => {
+
+const mutationKey = ['createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPost'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPost>>, {data: CreateScopedPolicyAssignmentRequest}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPost(data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostMutationResult = NonNullable<Awaited<ReturnType<typeof createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPost>>>
+    export type CreateScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostMutationBody = CreateScopedPolicyAssignmentRequest
+    export type CreateScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostMutationError = HTTPValidationError
+
+    /**
+ * @summary Create Scoped Policy Assignment
+ */
+export const useCreateScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPost = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPost>>, TError,{data: CreateScopedPolicyAssignmentRequest}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPost>>,
+        TError,
+        {data: CreateScopedPolicyAssignmentRequest},
+        TContext
+      > => {
+      return useMutation(getCreateScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostMutationOptions(options), queryClient);
     }
     export type updatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatchResponse200 = {
   data: PolicyAssignmentResponse

@@ -85,7 +85,7 @@ export function AppRoutes() {
             <Route path="/policies/access/:policyId" element={<AccessPolicyDetailPage />} />
             <Route path="/policies/limits/:policyId" element={<LimitPolicyDetailPage />} />
           </Route>
-          <Route element={<ProtectedRoute requireOrgAdminSurface />}>
+          <Route element={<ProtectedRoute requireKeyManager />}>
             <Route path="/virtual-keys" element={<VirtualKeysPage />} />
           </Route>
           <Route element={<ProtectedRoute requireKeyManager />}>

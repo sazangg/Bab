@@ -32,6 +32,17 @@ import { PageHeader } from "@/shared/components/PageHeader";
 
 const settingsSchema = z.object({
   organization_name: z.string().min(1).max(255),
+  public_app_url: z.preprocess(
+    (value) => (typeof value === "string" ? value.trim() : value),
+    z
+      .string()
+      .max(500)
+      .refine((value) => value === "" || isAbsoluteHttpUrl(value), {
+        message: "Enter an absolute http:// or https:// app URL.",
+      })
+      .transform((value) => value.replace(/\/$/, ""))
+      .optional(),
+  ),
   public_base_url: z.preprocess(
     (value) => (typeof value === "string" ? value.trim() : value),
     z
@@ -70,6 +81,7 @@ export function SettingsPage() {
     resolver: zodResolver(settingsSchema),
     defaultValues: {
       organization_name: "",
+      public_app_url: "",
       public_base_url: "",
       default_request_timeout_seconds: 30,
       default_retry_count: 0,
@@ -108,6 +120,7 @@ export function SettingsPage() {
     if (!settings) return;
     form.reset({
       organization_name: settings.organization_name,
+      public_app_url: settings.public_app_url ?? "",
       public_base_url: settings.public_base_url ?? "",
       default_request_timeout_seconds: settings.default_request_timeout_seconds,
       default_retry_count: settings.default_retry_count,
@@ -124,6 +137,7 @@ export function SettingsPage() {
     if (!canManageSettings) return;
     const payload: UpdateOrganizationSettingsRequest = {
       ...values,
+      public_app_url: values.public_app_url?.trim() ? values.public_app_url : null,
       public_base_url: values.public_base_url?.trim() ? values.public_base_url : null,
       default_virtual_key_expiration_days: values.default_virtual_key_expiration_days ?? null,
     };
@@ -212,13 +226,27 @@ export function SettingsPage() {
                   {...form.register("organization_name")}
                 />
               </Field>
-              <Field label="Public base URL" htmlFor="settings-public-url">
+              <Field label="Public app URL" htmlFor="settings-public-app-url">
+                <Input
+                  id="settings-public-app-url"
+                  placeholder="https://admin.example.com"
+                  disabled={!canManageSettings}
+                  {...form.register("public_app_url")}
+                />
+                <p className="text-xs text-muted-foreground">
+                  App/admin console origin used for invite links.
+                </p>
+              </Field>
+              <Field label="Public gateway URL" htmlFor="settings-public-url">
                 <Input
                   id="settings-public-url"
                   placeholder="https://gateway.example.com"
                   disabled={!canManageSettings}
                   {...form.register("public_base_url")}
                 />
+                <p className="text-xs text-muted-foreground">
+                  API/gateway origin used for docs and SDK examples.
+                </p>
               </Field>
             </CardContent>
           </Card>

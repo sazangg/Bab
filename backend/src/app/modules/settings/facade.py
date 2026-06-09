@@ -24,6 +24,7 @@ async def get_organization_settings(
             org_id=scope.org_id,
             organization_name=org.name if org else env_settings.default_organization_name,
             default_max_body_bytes=env_settings.proxy_max_body_bytes,
+            public_app_url=env_settings.public_app_url,
             db=db,
         )
         await db.commit()
@@ -45,6 +46,7 @@ async def update_organization_settings(
                 org_id=scope.org_id,
                 organization_name=org.name if org else env_settings.default_organization_name,
                 default_max_body_bytes=env_settings.proxy_max_body_bytes,
+                public_app_url=env_settings.public_app_url,
                 db=db,
             )
         metadata = _build_update_metadata(settings=settings, payload=payload)
@@ -78,6 +80,7 @@ def _to_response(settings) -> OrganizationSettingsResponse:
 
 SAFE_AUDIT_FIELDS = {
     "organization_name",
+    "public_app_url",
     "public_base_url",
     "default_request_timeout_seconds",
     "default_retry_count",

@@ -62,6 +62,10 @@ class AccessPolicyResponse(BaseModel):
     org_id: UUID
     name: str
     description: str | None
+    owning_scope_type: str | None
+    owning_team_id: UUID | None
+    owning_project_id: UUID | None
+    owning_virtual_key_id: UUID | None
     routes: list[AccessPolicyRouteResponse] = Field(default_factory=list)
     is_active: bool
     created_at: datetime
@@ -167,6 +171,10 @@ class LimitPolicyResponse(BaseModel):
     org_id: UUID
     name: str
     description: str | None
+    owning_scope_type: str | None
+    owning_team_id: UUID | None
+    owning_project_id: UUID | None
+    owning_virtual_key_id: UUID | None
     rules: list[LimitPolicyRuleResponse] = Field(default_factory=list)
     is_active: bool
     created_at: datetime
@@ -219,6 +227,39 @@ class PolicyAssignmentResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+
+
+class CreateScopedPolicyAssignmentRequest(BaseModel):
+    policy_type: str = Field(pattern="^(access|limit)$")
+    access_policy: CreateAccessPolicyRequest | None = None
+    limit_policy: CreateLimitPolicyRequest | None = None
+    scope_type: str = Field(pattern="^(team|project|virtual_key)$")
+    team_id: UUID | None = None
+    project_id: UUID | None = None
+    virtual_key_id: UUID | None = None
+    is_active: bool = True
+
+    @model_validator(mode="after")
+    def validate_scoped_policy_assignment(self):
+        if self.policy_type == "access" and self.access_policy is None:
+            raise ValueError("access_policy is required for access scoped policy assignments")
+        if self.policy_type == "limit" and self.limit_policy is None:
+            raise ValueError("limit_policy is required for limit scoped policy assignments")
+        expected_scope_id = {
+            "team": self.team_id,
+            "project": self.project_id,
+            "virtual_key": self.virtual_key_id,
+        }[self.scope_type]
+        if expected_scope_id is None:
+            raise ValueError(f"{self.scope_type}_id is required for this scope")
+        return self
+
+
+class ScopedPolicyAssignmentResponse(BaseModel):
+    policy_type: str
+    access_policy: AccessPolicyResponse | None = None
+    limit_policy: LimitPolicyResponse | None = None
+    assignment: PolicyAssignmentResponse
 
 
 class PolicyImpactTarget(BaseModel):

@@ -19,6 +19,7 @@ class OrganizationSettings(Base):
     )
     organization_name: Mapped[str] = mapped_column(String(255))
     organization_logo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    public_app_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     public_base_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     default_request_timeout_seconds: Mapped[int] = mapped_column(Integer, default=30)
     default_retry_count: Mapped[int] = mapped_column(Integer, default=0)

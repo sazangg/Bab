@@ -12,6 +12,7 @@ class OrganizationSettingsResponse(BaseModel):
     org_id: UUID
     organization_name: str
     organization_logo_url: str | None
+    public_app_url: str | None
     public_base_url: str | None
     default_request_timeout_seconds: int
     default_retry_count: int
@@ -29,6 +30,7 @@ class OrganizationSettingsResponse(BaseModel):
 class UpdateOrganizationSettingsRequest(BaseModel):
     organization_name: str | None = Field(default=None, min_length=1, max_length=255)
     organization_logo_url: str | None = Field(default=None, max_length=500)
+    public_app_url: str | None = Field(default=None, max_length=500)
     public_base_url: str | None = Field(default=None, max_length=500)
     default_request_timeout_seconds: int | None = Field(default=None, ge=1, le=300)
     default_retry_count: int | None = Field(default=None, ge=0, le=10)
@@ -41,9 +43,9 @@ class UpdateOrganizationSettingsRequest(BaseModel):
     virtual_key_prefix: str | None = Field(default=None, min_length=1, max_length=32)
     allow_secret_copy: bool | None = None
 
-    @field_validator("public_base_url")
+    @field_validator("public_app_url", "public_base_url")
     @classmethod
-    def validate_public_base_url(cls, value: str | None) -> str | None:
+    def validate_public_url(cls, value: str | None, info) -> str | None:
         if value is None:
             return None
         stripped = value.strip()
@@ -53,7 +55,7 @@ class UpdateOrganizationSettingsRequest(BaseModel):
         try:
             _ = parsed.port
         except ValueError as exc:
-            raise ValueError("public_base_url must be a gateway origin URL") from exc
+            raise ValueError(f"{info.field_name} must be an origin URL") from exc
         if (
             parsed.scheme not in {"http", "https"}
             or not parsed.netloc
@@ -65,5 +67,5 @@ class UpdateOrganizationSettingsRequest(BaseModel):
             or parsed.query
             or parsed.fragment
         ):
-            raise ValueError("public_base_url must be a gateway origin URL")
+            raise ValueError(f"{info.field_name} must be an origin URL")
         return stripped.rstrip("/")

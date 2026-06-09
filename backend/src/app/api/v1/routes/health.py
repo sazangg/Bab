@@ -9,6 +9,7 @@ from app.core.database import engine
 from app.core.migrations import get_migration_state
 
 router = APIRouter(tags=["health"])
+root_router = APIRouter(tags=["health"])
 
 
 class RuntimeMigrationSummary(BaseModel):
@@ -26,6 +27,7 @@ class RuntimeInfoResponse(BaseModel):
 
 
 @router.get("/health")
+@root_router.get("/health")
 async def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
@@ -60,6 +62,7 @@ async def readiness_check(response: Response) -> dict[str, Any]:
 
 
 @router.get("/readyz")
+@root_router.get("/readyz")
 async def readiness_probe(response: Response) -> dict[str, Any]:
     return await readiness_check(response)
 

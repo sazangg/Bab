@@ -11,6 +11,10 @@ export interface LimitPolicyResponse {
   org_id: string;
   name: string;
   description: string | null;
+  owning_scope_type: string | null;
+  owning_team_id: string | null;
+  owning_project_id: string | null;
+  owning_virtual_key_id: string | null;
   rules?: LimitPolicyRuleResponse[];
   is_active: boolean;
   created_at: string;

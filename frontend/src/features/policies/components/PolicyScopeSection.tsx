@@ -27,9 +27,8 @@ import {
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  useCreateAccessPolicyApiV1PoliciesAccessPost,
-  useCreateLimitPolicyApiV1PoliciesLimitsPost,
   useCreatePolicyAssignmentApiV1PoliciesAssignmentsPost,
+  useCreateScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPost,
   useDeletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDelete,
   useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet,
   useListAccessPoliciesApiV1PoliciesAccessGet,
@@ -51,6 +50,7 @@ type ScopeTarget =
   | { type: "virtual_key"; projectId: string; virtualKeyId: string };
 
 type SheetKind = "access" | "limit" | null;
+type AssignKind = "access" | "limit" | null;
 type DraftLimitRule = {
   name: string;
   limitType: string;
@@ -76,6 +76,7 @@ export function PolicyScopeSection({
   canManage: boolean;
 }) {
   const [sheetKind, setSheetKind] = useState<SheetKind>(null);
+  const [assignKind, setAssignKind] = useState<AssignKind>(null);
   const queryClient = useQueryClient();
   const accessQuery = useListAccessPoliciesApiV1PoliciesAccessGet();
   const limitsQuery = useListLimitPoliciesApiV1PoliciesLimitsGet();
@@ -116,14 +117,22 @@ export function PolicyScopeSection({
             Direct assignments for this {target.type}. Higher-scope policies still apply at runtime.
           </CardDescription>
           {canManage ? (
-            <CardAction className="flex gap-2">
+            <CardAction className="flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={() => setAssignKind("limit")}>
+                <Plus />
+                Assign limit
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setAssignKind("access")}>
+                <Plus />
+                Assign access
+              </Button>
               <Button size="sm" variant="outline" onClick={() => setSheetKind("limit")}>
                 <Plus />
-                Limit policy
+                New limit
               </Button>
               <Button size="sm" onClick={() => setSheetKind("access")}>
                 <Plus />
-                Access policy
+                New access
               </Button>
             </CardAction>
           ) : null}
@@ -189,7 +198,119 @@ export function PolicyScopeSection({
         target={target}
         onOpenChange={(open) => !open && setSheetKind(null)}
       />
+      <AssignExistingPolicySheet
+        kind={assignKind}
+        target={target}
+        accessPolicies={accessPolicies}
+        limitPolicies={limitPolicies}
+        assignedAccessPolicyIds={new Set(
+          scopedAssignments
+            .map((assignment) => assignment.access_policy_id)
+            .filter((policyId): policyId is string => Boolean(policyId)),
+        )}
+        assignedLimitPolicyIds={new Set(
+          scopedAssignments
+            .map((assignment) => assignment.limit_policy_id)
+            .filter((policyId): policyId is string => Boolean(policyId)),
+        )}
+        onOpenChange={(open) => !open && setAssignKind(null)}
+      />
     </>
+  );
+}
+
+function AssignExistingPolicySheet({
+  kind,
+  target,
+  accessPolicies,
+  limitPolicies,
+  assignedAccessPolicyIds,
+  assignedLimitPolicyIds,
+  onOpenChange,
+}: {
+  kind: AssignKind;
+  target: ScopeTarget;
+  accessPolicies: AccessPolicyResponse[];
+  limitPolicies: LimitPolicyResponse[];
+  assignedAccessPolicyIds: Set<string>;
+  assignedLimitPolicyIds: Set<string>;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [policyId, setPolicyId] = useState("");
+  const createAssignment = useCreatePolicyAssignmentApiV1PoliciesAssignmentsPost();
+  const isAccess = kind === "access";
+  const policies = isAccess
+    ? accessPolicies.filter((policy) => !assignedAccessPolicyIds.has(policy.id))
+    : limitPolicies.filter((policy) => !assignedLimitPolicyIds.has(policy.id));
+  const assignTarget =
+    target.type === "team"
+      ? { scope_type: "team", team_id: target.teamId }
+      : target.type === "project"
+        ? { scope_type: "project", project_id: target.projectId }
+        : { scope_type: "virtual_key", virtual_key_id: target.virtualKeyId };
+  const submit = async () => {
+    if (!kind || !policyId) return;
+    try {
+      await createAssignment.mutateAsync({
+        data:
+          kind === "access"
+            ? { policy_type: "access", access_policy_id: policyId, ...assignTarget }
+            : { policy_type: "limit", limit_policy_id: policyId, ...assignTarget },
+      });
+      toast.success("Policy assigned.");
+      setPolicyId("");
+      onOpenChange(false);
+      await queryClient.invalidateQueries();
+    } catch {
+      toast.error("Policy could not be assigned.");
+    }
+  };
+
+  return (
+    <Sheet
+      open={Boolean(kind)}
+      onOpenChange={(open) => {
+        if (!open) setPolicyId("");
+        onOpenChange(open);
+      }}
+    >
+      <SheetContent>
+        <SheetHeader>
+          <SheetTitle>{isAccess ? "Assign access policy" : "Assign limit policy"}</SheetTitle>
+          <SheetDescription>
+            Assign an available policy directly to this {target.type}.
+          </SheetDescription>
+        </SheetHeader>
+        <div className="grid gap-4 overflow-y-auto px-6 py-5">
+          <Field label="Policy">
+            <Select value={policyId} onValueChange={setPolicyId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select policy" />
+              </SelectTrigger>
+              <SelectContent>
+                {policies.map((policy) => (
+                  <SelectItem key={policy.id} value={policy.id}>
+                    {policy.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          {policies.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No available policies to assign.</p>
+          ) : null}
+        </div>
+        <SheetFooter>
+          <Button onClick={submit} disabled={!policyId || createAssignment.isPending}>
+            Assign policy
+          </Button>
+          <SheetClose asChild>
+            <Button variant="outline">Cancel</Button>
+          </SheetClose>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -221,9 +342,7 @@ function ScopedPolicySheet({
   );
   const accessOptions =
     accessOptionsQuery.data?.status === 200 ? accessOptionsQuery.data.data.providers ?? [] : [];
-  const createAccess = useCreateAccessPolicyApiV1PoliciesAccessPost();
-  const createLimit = useCreateLimitPolicyApiV1PoliciesLimitsPost();
-  const createAssignment = useCreatePolicyAssignmentApiV1PoliciesAssignmentsPost();
+  const createScopedPolicy = useCreateScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPost();
   const reset = () => {
     setName("");
     setDescription("");
@@ -259,46 +378,36 @@ function ScopedPolicySheet({
         if (currentLimitRuleHasLimits) {
           rules.push(currentLimitRule());
         }
-        const response = await createLimit.mutateAsync({
+        await createScopedPolicy.mutateAsync({
           data: {
-            name,
-            description: description || null,
-            rules: rules.map(toLimitRuleInput),
+            policy_type: "limit",
+            limit_policy: {
+              name,
+              description: description || null,
+              rules: rules.map(toLimitRuleInput),
+            },
+            ...assignTarget,
           },
         });
-        if (response.status === 201) {
-          await createAssignment.mutateAsync({
-            data: {
-              policy_type: "limit",
-              limit_policy_id: response.data.id,
-              ...assignTarget,
-            },
-          });
-        }
       }
       if (kind === "access") {
-        const response = await createAccess.mutateAsync({
+        await createScopedPolicy.mutateAsync({
           data: {
-            name,
-            description: description || null,
-            routes: [
-              {
-                provider_id: providerId,
-                credential_pool_id: poolId,
-                model_offering_ids: effectiveSelectedModels,
-              },
-            ],
+            policy_type: "access",
+            access_policy: {
+              name,
+              description: description || null,
+              routes: [
+                {
+                  provider_id: providerId,
+                  credential_pool_id: poolId,
+                  model_offering_ids: effectiveSelectedModels,
+                },
+              ],
+            },
+            ...assignTarget,
           },
         });
-        if (response.status === 201) {
-          await createAssignment.mutateAsync({
-            data: {
-              policy_type: "access",
-              access_policy_id: response.data.id,
-              ...assignTarget,
-            },
-          });
-        }
       }
       toast.success("Policy created and assigned.");
       reset();
@@ -458,7 +567,7 @@ function ScopedPolicySheet({
           ) : null}
         </div>
         <SheetFooter>
-          <Button onClick={submit} disabled={!canSubmit || createAccess.isPending || createLimit.isPending || createAssignment.isPending}>
+          <Button onClick={submit} disabled={!canSubmit || createScopedPolicy.isPending}>
             Create and assign
           </Button>
           <SheetClose asChild>

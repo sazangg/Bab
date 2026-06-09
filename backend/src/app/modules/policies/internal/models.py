@@ -18,6 +18,22 @@ class AccessPolicy(Base):
     )
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    owning_scope_type: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    owning_team_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("teams.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    owning_project_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    owning_virtual_key_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("virtual_keys.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -75,6 +91,22 @@ class LimitPolicy(Base):
     )
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    owning_scope_type: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    owning_team_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("teams.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    owning_project_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    owning_virtual_key_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("virtual_keys.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

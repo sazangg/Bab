@@ -25,10 +25,12 @@ from app.modules.policies.schemas import (
     CreateLimitPolicyRequest,
     CreateLimitPolicyRuleRequest,
     CreatePolicyAssignmentRequest,
+    CreateScopedPolicyAssignmentRequest,
     LimitPolicyResponse,
     LimitPolicyRuleResponse,
     PolicyAssignmentResponse,
     PolicyImpactResponse,
+    ScopedPolicyAssignmentResponse,
     UpdateAccessPolicyRequest,
     UpdateAccessPolicyRouteRequest,
     UpdateLimitPolicyRequest,
@@ -50,7 +52,7 @@ async def list_access_policies(
     scope: RequestScope,
     db: DatabaseSession,
 ) -> list[AccessPolicyResponse]:
-    return await facade.list_access_policies(scope=scope, db=db)
+    return await facade.list_access_policies(scope=scope, db=db, actor=_user)
 
 
 @router.post("/access", status_code=status.HTTP_201_CREATED)
@@ -216,7 +218,7 @@ async def list_limit_policies(
     scope: RequestScope,
     db: DatabaseSession,
 ) -> list[LimitPolicyResponse]:
-    return await facade.list_limit_policies(scope=scope, db=db)
+    return await facade.list_limit_policies(scope=scope, db=db, actor=_user)
 
 
 @router.post("/limits", status_code=status.HTTP_201_CREATED)
@@ -353,11 +355,11 @@ async def get_limit_policy_rule_impact(
 
 @router.get("/assignments")
 async def list_policy_assignments(
-    _user: PolicyViewer,
+    _user: AssignmentActor,
     scope: RequestScope,
     db: DatabaseSession,
 ) -> list[PolicyAssignmentResponse]:
-    return await facade.list_policy_assignments(scope=scope, db=db)
+    return await facade.list_policy_assignments(scope=scope, db=db, actor=_user)
 
 
 @router.post("/assignments", status_code=status.HTTP_201_CREATED)
@@ -389,6 +391,35 @@ async def create_policy_assignment(
         raise HTTPException(status_code=409, detail="policy assignment already exists") from exc
     except PolicyValidationError as exc:
         raise HTTPException(status_code=400, detail="invalid policy assignment") from exc
+
+
+@router.post("/assignments/scoped-policy", status_code=status.HTTP_201_CREATED)
+async def create_scoped_policy_assignment(
+    payload: CreateScopedPolicyAssignmentRequest,
+    _user: AssignmentActor,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> ScopedPolicyAssignmentResponse:
+    try:
+        await _require_assignment_admin(
+            user=_user,
+            scope_type=payload.scope_type,
+            team_id=payload.team_id,
+            project_id=payload.project_id,
+            virtual_key_id=payload.virtual_key_id,
+            scope=scope,
+            db=db,
+        )
+        return await facade.create_scoped_policy_assignment(
+            payload=payload,
+            scope=scope,
+            db=db,
+            actor=_user,
+        )
+    except PolicyNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="policy scope not found") from exc
+    except PolicyValidationError as exc:
+        raise HTTPException(status_code=400, detail="invalid scoped policy assignment") from exc
 
 
 @router.patch("/assignments/{assignment_id}")

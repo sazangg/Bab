@@ -14,10 +14,12 @@ from app.modules.policies.schemas import (
     CreateLimitPolicyRequest,
     CreateLimitPolicyRuleRequest,
     CreatePolicyAssignmentRequest,
+    CreateScopedPolicyAssignmentRequest,
     LimitPolicyResponse,
     LimitPolicyRuleResponse,
     PolicyAssignmentResponse,
     PolicyImpactResponse,
+    ScopedPolicyAssignmentResponse,
     UpdateAccessPolicyRequest,
     UpdateAccessPolicyRouteRequest,
     UpdateLimitPolicyRequest,
@@ -26,8 +28,10 @@ from app.modules.policies.schemas import (
 )
 
 
-async def list_access_policies(*, scope: Scope, db: AsyncSession) -> list[AccessPolicyResponse]:
-    return await service.list_access_policies(scope=scope, db=db)
+async def list_access_policies(
+    *, scope: Scope, db: AsyncSession, actor: AuthenticatedUser | None = None
+) -> list[AccessPolicyResponse]:
+    return await service.list_access_policies(scope=scope, db=db, actor=actor)
 
 
 async def get_access_policy(
@@ -130,8 +134,10 @@ async def get_access_policy_options(
     )
 
 
-async def list_limit_policies(*, scope: Scope, db: AsyncSession) -> list[LimitPolicyResponse]:
-    return await service.list_limit_policies(scope=scope, db=db)
+async def list_limit_policies(
+    *, scope: Scope, db: AsyncSession, actor: AuthenticatedUser | None = None
+) -> list[LimitPolicyResponse]:
+    return await service.list_limit_policies(scope=scope, db=db, actor=actor)
 
 
 async def get_limit_policy(
@@ -214,9 +220,9 @@ async def get_limit_policy_rule_impact(
 
 
 async def list_policy_assignments(
-    *, scope: Scope, db: AsyncSession
+    *, scope: Scope, db: AsyncSession, actor: AuthenticatedUser | None = None
 ) -> list[PolicyAssignmentResponse]:
-    return await service.list_policy_assignments(scope=scope, db=db)
+    return await service.list_policy_assignments(scope=scope, db=db, actor=actor)
 
 
 async def create_policy_assignment(
@@ -227,6 +233,18 @@ async def create_policy_assignment(
     actor: AuthenticatedUser | None = None,
 ) -> PolicyAssignmentResponse:
     return await service.create_policy_assignment(payload=payload, scope=scope, db=db, actor=actor)
+
+
+async def create_scoped_policy_assignment(
+    *,
+    payload: CreateScopedPolicyAssignmentRequest,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser,
+) -> ScopedPolicyAssignmentResponse:
+    return await service.create_scoped_policy_assignment(
+        payload=payload, scope=scope, db=db, actor=actor
+    )
 
 
 async def update_policy_assignment(

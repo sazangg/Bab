@@ -32,6 +32,7 @@ from app.modules.policies.schemas import (
     CreateLimitPolicyRequest,
     CreateLimitPolicyRuleRequest,
     CreatePolicyAssignmentRequest,
+    CreateScopedPolicyAssignmentRequest,
     LimitPolicyResponse,
     LimitPolicyRuleInput,
     LimitPolicyRuleResponse,
@@ -39,6 +40,7 @@ from app.modules.policies.schemas import (
     PolicyImpactResponse,
     PolicyImpactTarget,
     PolicyImpactVirtualKey,
+    ScopedPolicyAssignmentResponse,
     UpdateAccessPolicyRequest,
     UpdateAccessPolicyRouteRequest,
     UpdateLimitPolicyRequest,
@@ -49,9 +51,15 @@ from app.modules.providers import facade as providers_facade
 from app.modules.providers.errors import ProviderNotFoundError
 
 
-async def list_access_policies(*, scope: Scope, db: AsyncSession) -> list[AccessPolicyResponse]:
+async def list_access_policies(
+    *, scope: Scope, db: AsyncSession, actor: AuthenticatedUser | None = None
+) -> list[AccessPolicyResponse]:
     policies = await repository.list_access_policies(org_id=scope.org_id, db=db)
-    return [await _access_policy_response(policy=policy, scope=scope, db=db) for policy in policies]
+    return [
+        await _access_policy_response(policy=policy, scope=scope, db=db)
+        for policy in policies
+        if await _can_view_policy(policy=policy, actor=actor, scope=scope, db=db)
+    ]
 
 
 async def get_access_policy(
@@ -267,9 +275,15 @@ async def delete_access_policy_route(
         )
 
 
-async def list_limit_policies(*, scope: Scope, db: AsyncSession) -> list[LimitPolicyResponse]:
+async def list_limit_policies(
+    *, scope: Scope, db: AsyncSession, actor: AuthenticatedUser | None = None
+) -> list[LimitPolicyResponse]:
     policies = await repository.list_limit_policies(org_id=scope.org_id, db=db)
-    return [await _limit_policy_response(policy=policy, scope=scope, db=db) for policy in policies]
+    return [
+        await _limit_policy_response(policy=policy, scope=scope, db=db)
+        for policy in policies
+        if await _can_view_policy(policy=policy, actor=actor, scope=scope, db=db)
+    ]
 
 
 async def get_limit_policy(
@@ -479,10 +493,15 @@ async def get_access_policy_options(
 
 
 async def list_policy_assignments(
-    *, scope: Scope, db: AsyncSession
+    *, scope: Scope, db: AsyncSession, actor: AuthenticatedUser | None = None
 ) -> list[PolicyAssignmentResponse]:
     assignments = await repository.list_policy_assignments(org_id=scope.org_id, db=db)
-    return [PolicyAssignmentResponse.model_validate(assignment) for assignment in assignments]
+    visible = [
+        assignment
+        for assignment in assignments
+        if await _can_view_assignment(assignment=assignment, actor=actor, scope=scope, db=db)
+    ]
+    return [PolicyAssignmentResponse.model_validate(assignment) for assignment in visible]
 
 
 async def create_policy_assignment(
@@ -492,7 +511,6 @@ async def create_policy_assignment(
     db: AsyncSession,
     actor: AuthenticatedUser | None = None,
 ) -> PolicyAssignmentResponse:
-    await _validate_assignment_policy(payload=payload, scope=scope, db=db)
     team_id, project_id, virtual_key_id = await _validate_assignment_target(
         scope_type=payload.scope_type,
         team_id=payload.team_id,
@@ -501,13 +519,21 @@ async def create_policy_assignment(
         scope=scope,
         db=db,
     )
+    normalized_payload = payload.model_copy(
+        update={
+            "team_id": team_id,
+            "project_id": project_id,
+            "virtual_key_id": virtual_key_id,
+        }
+    )
+    await _validate_assignment_policy(payload=normalized_payload, scope=scope, db=db)
     async with transaction(db):
         existing = await repository.find_active_policy_assignment_for_scope(
             org_id=scope.org_id,
-            policy_type=payload.policy_type,
-            access_policy_id=payload.access_policy_id,
-            limit_policy_id=payload.limit_policy_id,
-            scope_type=payload.scope_type,
+            policy_type=normalized_payload.policy_type,
+            access_policy_id=normalized_payload.access_policy_id,
+            limit_policy_id=normalized_payload.limit_policy_id,
+            scope_type=normalized_payload.scope_type,
             team_id=team_id,
             project_id=project_id,
             virtual_key_id=virtual_key_id,
@@ -515,7 +541,7 @@ async def create_policy_assignment(
         )
         if existing is not None and payload.is_active:
             raise PolicyAssignmentConflictError
-        values = payload.model_dump()
+        values = normalized_payload.model_dump()
         values.update(
             {
                 "team_id": team_id,
@@ -543,6 +569,130 @@ async def create_policy_assignment(
             db=db,
         )
     return PolicyAssignmentResponse.model_validate(assignment)
+
+
+async def create_scoped_policy_assignment(
+    *,
+    payload: CreateScopedPolicyAssignmentRequest,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser,
+) -> ScopedPolicyAssignmentResponse:
+    team_id, project_id, virtual_key_id = await _validate_assignment_target(
+        scope_type=payload.scope_type,
+        team_id=payload.team_id,
+        project_id=payload.project_id,
+        virtual_key_id=payload.virtual_key_id,
+        scope=scope,
+        db=db,
+    )
+    async with transaction(db):
+        if payload.policy_type == "access":
+            assert payload.access_policy is not None
+            await _validate_scoped_access_policy_narrowing(
+                routes=payload.access_policy.routes,
+                scope_type=payload.scope_type,
+                team_id=team_id,
+                project_id=project_id,
+                virtual_key_id=virtual_key_id,
+                scope=scope,
+                db=db,
+            )
+            access_policy = await repository.create_access_policy(
+                org_id=scope.org_id,
+                name=payload.access_policy.name,
+                description=payload.access_policy.description,
+                is_active=payload.access_policy.is_active,
+                owning_scope_type=payload.scope_type,
+                owning_team_id=team_id,
+                owning_project_id=project_id,
+                owning_virtual_key_id=virtual_key_id,
+                db=db,
+            )
+            for route in payload.access_policy.routes:
+                await _validate_access_route(route=route, scope=scope, db=db)
+                await repository.create_access_policy_route(
+                    org_id=scope.org_id,
+                    access_policy_id=access_policy.id,
+                    provider_id=route.provider_id,
+                    credential_pool_id=route.credential_pool_id,
+                    model_offering_ids=[str(model_id) for model_id in route.model_offering_ids],
+                    priority=route.priority,
+                    weight=route.weight,
+                    is_active=route.is_active,
+                    db=db,
+                )
+            assignment_payload = CreatePolicyAssignmentRequest(
+                policy_type="access",
+                access_policy_id=access_policy.id,
+                scope_type=payload.scope_type,
+                team_id=team_id,
+                project_id=project_id,
+                virtual_key_id=virtual_key_id,
+                is_active=payload.is_active,
+            )
+            policy_response = await _access_policy_response(
+                policy=access_policy, scope=scope, db=db
+            )
+            limit_response = None
+        else:
+            assert payload.limit_policy is not None
+            limit_policy = await repository.create_limit_policy(
+                org_id=scope.org_id,
+                values={
+                    **payload.limit_policy.model_dump(exclude={"rules"}),
+                    "owning_scope_type": payload.scope_type,
+                    "owning_team_id": team_id,
+                    "owning_project_id": project_id,
+                    "owning_virtual_key_id": virtual_key_id,
+                },
+                db=db,
+            )
+            for rule in payload.limit_policy.rules:
+                await _validate_limit_rule_filters(payload=rule, scope=scope, db=db)
+                await repository.create_limit_policy_rule(
+                    org_id=scope.org_id,
+                    limit_policy_id=limit_policy.id,
+                    values=rule.model_dump(),
+                    db=db,
+                )
+            assignment_payload = CreatePolicyAssignmentRequest(
+                policy_type="limit",
+                limit_policy_id=limit_policy.id,
+                scope_type=payload.scope_type,
+                team_id=team_id,
+                project_id=project_id,
+                virtual_key_id=virtual_key_id,
+                is_active=payload.is_active,
+            )
+            policy_response = None
+            limit_response = await _limit_policy_response(policy=limit_policy, scope=scope, db=db)
+        await _validate_assignment_policy(payload=assignment_payload, scope=scope, db=db)
+        assignment = await repository.create_policy_assignment(
+            org_id=scope.org_id,
+            values=assignment_payload.model_dump(),
+            db=db,
+        )
+        activity_team_id, activity_project_id = await _assignment_activity_scope_ids(
+            scope=scope, assignment=assignment, db=db
+        )
+        await _record_policy_activity(
+            actor=actor,
+            scope=scope,
+            action="policy_assignment.created",
+            message="Created scoped policy assignment.",
+            team_id=activity_team_id,
+            project_id=activity_project_id,
+            virtual_key_id=assignment.virtual_key_id,
+            metadata=_assignment_metadata(assignment),
+            db=db,
+        )
+    return ScopedPolicyAssignmentResponse(
+        policy_type=payload.policy_type,
+        access_policy=policy_response,
+        limit_policy=limit_response,
+        assignment=PolicyAssignmentResponse.model_validate(assignment),
+    )
 
 
 async def update_policy_assignment(
@@ -1026,6 +1176,57 @@ async def _validate_access_route(
         raise PolicyValidationError from exc
 
 
+async def _validate_scoped_access_policy_narrowing(
+    *,
+    routes: list[AccessPolicyRouteInput],
+    scope_type: str,
+    team_id: UUID | None,
+    project_id: UUID | None,
+    virtual_key_id: UUID | None,
+    scope: Scope,
+    db: AsyncSession,
+) -> None:
+    parent_routes = await _parent_access_route_options(
+        scope_type=scope_type,
+        team_id=team_id,
+        project_id=project_id,
+        virtual_key_id=virtual_key_id,
+        exclude_policy_id=None,
+        scope=scope,
+        db=db,
+    )
+    if not parent_routes:
+        return
+    for route in routes:
+        for model_id in route.model_offering_ids:
+            candidate = _SubmittedAccessRouteCandidate(
+                provider_id=route.provider_id,
+                credential_pool_id=route.credential_pool_id,
+                model_id=model_id,
+            )
+            if not any(_submitted_route_matches(candidate, parent) for parent in parent_routes):
+                raise PolicyValidationError
+
+
+class _SubmittedAccessRouteCandidate:
+    def __init__(self, *, provider_id: UUID, credential_pool_id: UUID, model_id: UUID) -> None:
+        self.provider_id = provider_id
+        self.credential_pool_id = credential_pool_id
+        self.model_id = model_id
+
+
+def _submitted_route_matches(
+    child: _SubmittedAccessRouteCandidate,
+    parent: tuple[AccessPolicyRoute, UUID],
+) -> bool:
+    parent_route, parent_model_id = parent
+    return (
+        child.provider_id == parent_route.provider_id
+        and child.credential_pool_id == parent_route.credential_pool_id
+        and child.model_id == parent_model_id
+    )
+
+
 async def _validate_limit_rule_filters(
     *, payload: LimitPolicyRuleInput, scope: Scope, db: AsyncSession
 ) -> None:
@@ -1052,12 +1253,147 @@ async def _validate_assignment_policy(
     *, payload: CreatePolicyAssignmentRequest, scope: Scope, db: AsyncSession
 ) -> None:
     if payload.policy_type == "access" and payload.access_policy_id is not None:
-        await _get_access_policy_or_raise(policy_id=payload.access_policy_id, scope=scope, db=db)
+        policy = await _get_access_policy_or_raise(
+            policy_id=payload.access_policy_id, scope=scope, db=db
+        )
+        _validate_policy_assignment_scope(policy=policy, payload=payload)
         return
     if payload.policy_type == "limit" and payload.limit_policy_id is not None:
-        await _get_limit_policy_or_raise(policy_id=payload.limit_policy_id, scope=scope, db=db)
+        policy = await _get_limit_policy_or_raise(
+            policy_id=payload.limit_policy_id, scope=scope, db=db
+        )
+        _validate_policy_assignment_scope(policy=policy, payload=payload)
         return
     raise PolicyValidationError
+
+
+def _validate_policy_assignment_scope(
+    *, policy: AccessPolicy | LimitPolicy, payload: CreatePolicyAssignmentRequest
+) -> None:
+    if policy.owning_scope_type is None:
+        return
+    expected = _policy_owner_tuple(policy)
+    actual = (
+        payload.scope_type,
+        payload.team_id,
+        payload.project_id,
+        payload.virtual_key_id,
+    )
+    if actual != expected:
+        raise PolicyValidationError
+
+
+def _policy_owner_tuple(
+    policy: AccessPolicy | LimitPolicy,
+) -> tuple[str | None, UUID | None, UUID | None, UUID | None]:
+    return (
+        policy.owning_scope_type,
+        policy.owning_team_id,
+        policy.owning_project_id,
+        policy.owning_virtual_key_id,
+    )
+
+
+async def _can_view_policy(
+    *,
+    policy: AccessPolicy | LimitPolicy,
+    actor: AuthenticatedUser | None,
+    scope: Scope,
+    db: AsyncSession,
+) -> bool:
+    if actor is None or _is_org_policy_viewer(actor):
+        return True
+    if policy.owning_scope_type is None:
+        return _has_scoped_admin_membership(actor)
+    return await _is_admin_for_scope(
+        actor=actor,
+        scope_type=policy.owning_scope_type,
+        team_id=policy.owning_team_id,
+        project_id=policy.owning_project_id,
+        virtual_key_id=policy.owning_virtual_key_id,
+        scope=scope,
+        db=db,
+    )
+
+
+def _is_org_policy_admin(actor: AuthenticatedUser) -> bool:
+    return "*" in actor.permissions or actor.role in {"org_owner", "org_admin"}
+
+
+def _is_org_policy_viewer(actor: AuthenticatedUser) -> bool:
+    return "*" in actor.permissions or actor.role in {"org_owner", "org_admin", "org_viewer"}
+
+
+def _has_scoped_admin_membership(actor: AuthenticatedUser) -> bool:
+    return any(
+        membership.role == "team_admin" for membership in actor.team_memberships
+    ) or any(membership.role == "project_admin" for membership in actor.project_memberships)
+
+
+async def _is_admin_for_scope(
+    *,
+    actor: AuthenticatedUser,
+    scope_type: str | None,
+    team_id: UUID | None,
+    project_id: UUID | None,
+    virtual_key_id: UUID | None,
+    scope: Scope,
+    db: AsyncSession,
+) -> bool:
+    team_admin_ids = {
+        membership.team_id
+        for membership in actor.team_memberships
+        if membership.role == "team_admin"
+    }
+    project_admin_ids = {
+        membership.project_id
+        for membership in actor.project_memberships
+        if membership.role == "project_admin"
+    }
+    if scope_type == "team":
+        return team_id in team_admin_ids
+    if scope_type == "project":
+        if project_id is None:
+            return False
+        project = await repository.get_project(org_id=scope.org_id, project_id=project_id, db=db)
+        return project is not None and (
+            project.id in project_admin_ids or project.team_id in team_admin_ids
+        )
+    if scope_type == "virtual_key":
+        if virtual_key_id is None:
+            return False
+        virtual_key = await repository.get_virtual_key(
+            org_id=scope.org_id, virtual_key_id=virtual_key_id, db=db
+        )
+        if virtual_key is None:
+            return False
+        project = await repository.get_project(
+            org_id=scope.org_id, project_id=virtual_key.project_id, db=db
+        )
+        return project is not None and (
+            project.id in project_admin_ids or project.team_id in team_admin_ids
+        )
+    return False
+
+
+async def _can_view_assignment(
+    *,
+    assignment: PolicyAssignment,
+    actor: AuthenticatedUser | None,
+    scope: Scope,
+    db: AsyncSession,
+) -> bool:
+    if actor is None or _is_org_policy_viewer(actor):
+        return True
+    return await _is_admin_for_scope(
+        actor=actor,
+        scope_type=assignment.scope_type,
+        team_id=assignment.team_id,
+        project_id=assignment.project_id,
+        virtual_key_id=assignment.virtual_key_id,
+        scope=scope,
+        db=db,
+    )
 
 
 async def _policy_impact_from_assignments(

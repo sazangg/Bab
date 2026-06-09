@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.v1.routes.activity import router as activity_router
 from app.api.v1.routes.auth import router as auth_router
 from app.api.v1.routes.guardrails import router as guardrails_router
+from app.api.v1.routes.health import root_router as root_health_router
 from app.api.v1.routes.health import router as health_router
 from app.api.v1.routes.policies import router as policies_router
 from app.api.v1.routes.projects import router as projects_router
@@ -53,7 +54,7 @@ def create_app() -> FastAPI:
     app.include_router(teams_router, prefix="/api/v1")
     app.include_router(usage_router, prefix="/api/v1")
     app.include_router(virtual_keys_router, prefix="/api/v1")
-    app.include_router(health_router)
+    app.include_router(root_health_router)
     app.include_router(proxy_router)
     app.mount("/assets", StaticFiles(directory=settings.assets_dir), name="assets")
     return app

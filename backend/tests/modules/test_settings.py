@@ -131,3 +131,27 @@ def test_public_base_url_is_normalized_and_validated():
         except ValidationError:
             continue
         raise AssertionError(f"{value} should be rejected")
+
+
+def test_public_app_url_is_normalized_and_validated():
+    payload = UpdateOrganizationSettingsRequest(public_app_url=" https://app.example.com/ ")
+
+    assert payload.public_app_url == "https://app.example.com"
+
+    assert UpdateOrganizationSettingsRequest(public_app_url="").public_app_url is None
+    assert UpdateOrganizationSettingsRequest(public_app_url=None).public_app_url is None
+
+    for value in [
+        "app.example.com",
+        "ftp://app.example.com",
+        "/app",
+        "https://app.example.com/invites",
+        "https://app.example.com?x=1",
+        "https://app.example.com#invite",
+        "https://user:pass@app.example.com",
+    ]:
+        try:
+            UpdateOrganizationSettingsRequest(public_app_url=value)
+        except ValidationError:
+            continue
+        raise AssertionError(f"{value} should be rejected")

@@ -38,6 +38,7 @@ from app.modules.auth.schemas import (
     UpdateMemberRequest,
     UpdateMemberStatusRequest,
 )
+from app.modules.settings import facade as settings_facade
 
 REFRESH_COOKIE_NAME = "bab_refresh_token"
 
@@ -205,11 +206,12 @@ async def create_invite(
     actor: CurrentUser,
 ) -> InviteResponse:
     try:
+        org_settings = await settings_facade.get_organization_settings(scope=scope, db=db)
         return await facade.create_invite(
             payload=payload,
             actor=actor,
             scope=scope,
-            public_base_url=None,
+            public_base_url=org_settings.public_app_url,
             db=db,
         )
     except InvalidInviteTargetError as exc:

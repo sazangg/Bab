@@ -337,6 +337,7 @@ async def test_migrations_create_current_schema(tmp_path) -> None:
                 for item in inspect(sync_connection).get_unique_constraints("projects")
             }
         )
+        policy_owner_schema = await connection.run_sync(_policy_owner_schema)
 
     await engine.dispose()
 
@@ -360,6 +361,51 @@ async def test_migrations_create_current_schema(tmp_path) -> None:
     assert "slug" in project_columns
     assert "ix_projects_slug" in project_indexes
     assert "uq_projects_org_team_slug" in project_unique_constraints
+    for table_schema in policy_owner_schema.values():
+        assert {
+            "owning_scope_type",
+            "owning_team_id",
+            "owning_project_id",
+            "owning_virtual_key_id",
+        } <= table_schema["columns"]
+        assert {
+            "owning_scope_type",
+            "owning_team_id",
+            "owning_project_id",
+            "owning_virtual_key_id",
+        } <= table_schema["indexed_columns"]
+        assert {
+            ("owning_team_id", "teams", "id"),
+            ("owning_project_id", "projects", "id"),
+            ("owning_virtual_key_id", "virtual_keys", "id"),
+        } <= table_schema["foreign_keys"]
+
+
+def _policy_owner_schema(sync_connection):
+    inspector = inspect(sync_connection)
+    schema = {}
+    for table_name in ("access_policies", "limit_policies"):
+        indexes = inspector.get_indexes(table_name)
+        foreign_keys = inspector.get_foreign_keys(table_name)
+        schema[table_name] = {
+            "columns": {item["name"] for item in inspector.get_columns(table_name)},
+            "indexed_columns": {
+                column_name
+                for index in indexes
+                for column_name in index.get("column_names", [])
+            },
+            "foreign_keys": {
+                (
+                    foreign_key["constrained_columns"][0],
+                    foreign_key["referred_table"],
+                    foreign_key["referred_columns"][0],
+                )
+                for foreign_key in foreign_keys
+                if len(foreign_key.get("constrained_columns") or []) == 1
+                and len(foreign_key.get("referred_columns") or []) == 1
+            },
+        }
+    return schema
 
 
 @pytest.mark.asyncio

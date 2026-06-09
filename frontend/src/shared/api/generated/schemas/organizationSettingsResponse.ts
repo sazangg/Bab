@@ -10,6 +10,7 @@ export interface OrganizationSettingsResponse {
   org_id: string;
   organization_name: string;
   organization_logo_url: string | null;
+  public_app_url: string | null;
   public_base_url: string | null;
   default_request_timeout_seconds: number;
   default_retry_count: number;

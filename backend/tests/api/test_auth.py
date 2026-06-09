@@ -448,6 +448,51 @@ async def test_invite_acceptance_and_team_membership_flow(
 
 
 @pytest.mark.asyncio
+async def test_invite_url_uses_public_app_url_when_configured(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "admin@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    await bootstrap.sync_default_workspace(db_session)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        login_response = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "admin@example.com", "password": "correct-password"},
+        )
+        admin_headers = {"Authorization": f"Bearer {login_response.json()['access_token']}"}
+        relative_response = await client.post(
+            "/api/v1/auth/invites",
+            headers=admin_headers,
+            json={"email": "relative-invite@example.com", "role": "org_member"},
+        )
+        settings_response = await client.patch(
+            "/api/v1/settings",
+            headers=admin_headers,
+            json={"public_app_url": "https://app.example.com/"},
+        )
+        absolute_response = await client.post(
+            "/api/v1/auth/invites",
+            headers=admin_headers,
+            json={"email": "absolute-invite@example.com", "role": "org_member"},
+        )
+
+    assert relative_response.status_code == 201
+    assert relative_response.json()["invite_url"].startswith("/accept-invite?token=")
+    assert settings_response.status_code == 200
+    assert settings_response.json()["public_app_url"] == "https://app.example.com"
+    assert absolute_response.status_code == 201
+    assert absolute_response.json()["invite_url"].startswith(
+        "https://app.example.com/accept-invite?token="
+    )
+
+
+@pytest.mark.asyncio
 async def test_project_invite_acceptance_creates_project_membership(
     app_client,
     db_session: AsyncSession,

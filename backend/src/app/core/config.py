@@ -1,5 +1,6 @@
 from functools import lru_cache
 from typing import Any
+from urllib.parse import urlparse
 
 from cryptography.fernet import Fernet
 from pydantic import Field, field_validator
@@ -25,6 +26,7 @@ class Settings(BaseSettings):
         default=1_000_000,
         validation_alias="BAB_PROXY_MAX_BODY_BYTES",
     )
+    public_app_url: str | None = Field(default=None, validation_alias="BAB_PUBLIC_APP_URL")
     assets_dir: str = Field(
         default="./var/assets",
         validation_alias="BAB_ASSETS_DIR",
@@ -107,6 +109,33 @@ class Settings(BaseSettings):
         if value == "":
             return None
         return value
+
+    @field_validator("public_app_url")
+    @classmethod
+    def validate_public_app_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            return None
+        parsed = urlparse(stripped)
+        try:
+            _ = parsed.port
+        except ValueError as exc:
+            raise ValueError("BAB_PUBLIC_APP_URL must be an app origin URL") from exc
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.netloc
+            or parsed.username
+            or parsed.password
+            or not parsed.hostname
+            or parsed.path not in {"", "/"}
+            or parsed.params
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("BAB_PUBLIC_APP_URL must be an app origin URL")
+        return stripped.rstrip("/")
 
     @field_validator("encryption_key")
     @classmethod
