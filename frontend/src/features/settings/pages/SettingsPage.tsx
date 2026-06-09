@@ -269,6 +269,14 @@ export function SettingsPage() {
                   manually triggered from each provider.
                 </p>
               </Field>
+              <div className="rounded-md border bg-muted/20 p-3 md:col-span-2">
+                <div className="text-sm font-medium">Usage retention</div>
+                <div className="mt-1 text-sm text-muted-foreground">
+                  {settings.usage_retention_days == null
+                    ? "Retain usage records indefinitely. No retention deletion job is configured."
+                    : `Retention intent is ${settings.usage_retention_days.toLocaleString()} days. No deletion job is configured.`}
+                </div>
+              </div>
             </CardContent>
           </Card>
 

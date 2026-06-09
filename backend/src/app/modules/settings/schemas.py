@@ -17,6 +17,7 @@ class OrganizationSettingsResponse(BaseModel):
     default_max_body_bytes: int
     default_model_sync_mode: str
     default_virtual_key_expiration_days: int | None
+    usage_retention_days: int | None = None
     virtual_key_prefix: str
     allow_secret_copy: bool
     created_at: datetime

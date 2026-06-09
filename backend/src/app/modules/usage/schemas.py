@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, computed_field
 
 
 class RecordUsage(BaseModel):
@@ -38,6 +38,27 @@ class UsageRecordResponse(RecordUsage):
     provider_credential_name: str | None = None
     provider_credential_prefix: str | None = None
 
+    @computed_field
+    @property
+    def spend_type(self) -> str:
+        if self.cost_cents is None or self.usage_source in {None, "unknown"}:
+            return "unknown"
+        if self.usage_source == "provider_reported":
+            return "confirmed"
+        if self.usage_source == "estimated":
+            return "estimated"
+        return "unknown"
+
+    @computed_field
+    @property
+    def confirmed_spend_cents(self) -> int:
+        return self.cost_cents or 0 if self.spend_type == "confirmed" else 0
+
+    @computed_field
+    @property
+    def estimated_spend_cents(self) -> int:
+        return self.cost_cents or 0 if self.spend_type == "estimated" else 0
+
 
 class RecordLimitPolicyReservation(BaseModel):
     org_id: UUID
@@ -69,6 +90,10 @@ class UsageSummaryTotals(BaseModel):
     completion_tokens: int = 0
     total_tokens: int = 0
     cost_cents: int = 0
+    confirmed_spend_cents: int = 0
+    estimated_spend_cents: int = 0
+    unknown_usage_count: int = 0
+    unknown_total_tokens: int = 0
     average_latency_ms: int | None = None
     last_request_at: datetime | None = None
 

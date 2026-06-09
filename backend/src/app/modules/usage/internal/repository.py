@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import String, case, cast, func, select, update
+from sqlalchemy import Integer, case, cast, func, or_, select, update
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.request_ids import current_request_id
@@ -177,24 +178,23 @@ async def list_usage_records(
     project_id: UUID | None,
     virtual_key_id: UUID | None,
     model: str | None,
+    allowed_team_ids: set[UUID] | None,
+    allowed_project_ids: set[UUID] | None,
     limit: int | None,
     db: AsyncSession,
 ) -> list[UsageRecordResponse]:
-    filters = [UsageRecord.org_id == org_id]
-    if since is not None:
-        filters.append(UsageRecord.created_at >= since)
-    if until is not None:
-        filters.append(UsageRecord.created_at <= until)
-    if team_id is not None:
-        filters.append(UsageRecord.team_id == team_id)
-    if provider_id is not None:
-        filters.append(UsageRecord.provider_id == provider_id)
-    if project_id is not None:
-        filters.append(UsageRecord.project_id == project_id)
-    if virtual_key_id is not None:
-        filters.append(UsageRecord.virtual_key_id == virtual_key_id)
-    if model:
-        filters.append(UsageRecord.provider_model == model)
+    filters = _usage_filters(
+        org_id=org_id,
+        since=since,
+        until=until,
+        team_id=team_id,
+        provider_id=provider_id,
+        project_id=project_id,
+        virtual_key_id=virtual_key_id,
+        model=model,
+        allowed_team_ids=allowed_team_ids,
+        allowed_project_ids=allowed_project_ids,
+    )
     query = (
         select(UsageRecord, ProviderCredential.name, ProviderCredential.key_prefix)
         .outerjoin(ProviderCredential, ProviderCredential.id == UsageRecord.provider_credential_id)
@@ -225,17 +225,19 @@ async def summarize_limit_policy_usage(
     db: AsyncSession,
 ) -> tuple[int, int, int, int]:
     filters = [
-        cast(UsageRecord.limit_policy_ids, String).contains(str(limit_policy_id)),
+        _json_array_contains(UsageRecord.limit_policy_ids, limit_policy_id, db=db),
         UsageRecord.http_status < 400,
     ]
     if limit_policy_rule_id is not None:
         filters.append(
-            cast(UsageRecord.limit_policy_rule_ids, String).contains(str(limit_policy_rule_id))
+            _json_array_contains(UsageRecord.limit_policy_rule_ids, limit_policy_rule_id, db=db)
         )
     if limit_policy_assignment_id is not None:
         filters.append(
-            cast(UsageRecord.limit_policy_assignment_ids, String).contains(
-                str(limit_policy_assignment_id)
+            _json_array_contains(
+                UsageRecord.limit_policy_assignment_ids,
+                limit_policy_assignment_id,
+                db=db,
             )
         )
     if since is not None:
@@ -282,24 +284,24 @@ async def get_organization_usage_summary(
     project_id: UUID | None = None,
     virtual_key_id: UUID | None = None,
     model: str | None = None,
+    allowed_team_ids: set[UUID] | None = None,
+    allowed_project_ids: set[UUID] | None = None,
     db: AsyncSession,
 ) -> OrganizationUsageSummary:
-    base_filters = [UsageRecord.org_id == org_id]
-    if since is not None:
-        base_filters.append(UsageRecord.created_at >= since)
-    if until is not None:
-        base_filters.append(UsageRecord.created_at <= until)
-    if team_id is not None:
-        base_filters.append(UsageRecord.team_id == team_id)
-    if provider_id is not None:
-        base_filters.append(UsageRecord.provider_id == provider_id)
-    if project_id is not None:
-        base_filters.append(UsageRecord.project_id == project_id)
-    if virtual_key_id is not None:
-        base_filters.append(UsageRecord.virtual_key_id == virtual_key_id)
-    if model:
-        base_filters.append(UsageRecord.provider_model == model)
-    filters = tuple(base_filters)
+    filters = tuple(
+        _usage_filters(
+            org_id=org_id,
+            since=since,
+            until=until,
+            team_id=team_id,
+            provider_id=provider_id,
+            project_id=project_id,
+            virtual_key_id=virtual_key_id,
+            model=model,
+            allowed_team_ids=allowed_team_ids,
+            allowed_project_ids=allowed_project_ids,
+        )
+    )
     return OrganizationUsageSummary(
         window=window,
         totals=await _totals(*filters, db=db),
@@ -372,36 +374,55 @@ async def get_organization_usage_timeseries(
     project_id: UUID | None = None,
     virtual_key_id: UUID | None = None,
     model: str | None = None,
+    allowed_team_ids: set[UUID] | None = None,
+    allowed_project_ids: set[UUID] | None = None,
     db: AsyncSession,
 ) -> list[UsageTimeSeriesPoint]:
-    filters = [UsageRecord.org_id == org_id]
-    if since is not None:
-        filters.append(UsageRecord.created_at >= since)
-    if until is not None:
-        filters.append(UsageRecord.created_at <= until)
-    if team_id is not None:
-        filters.append(UsageRecord.team_id == team_id)
-    if provider_id is not None:
-        filters.append(UsageRecord.provider_id == provider_id)
-    if project_id is not None:
-        filters.append(UsageRecord.project_id == project_id)
-    if virtual_key_id is not None:
-        filters.append(UsageRecord.virtual_key_id == virtual_key_id)
-    if model:
-        filters.append(UsageRecord.provider_model == model)
-    records = (
-        await db.scalars(select(UsageRecord).where(*filters).order_by(UsageRecord.created_at.asc()))
+    filters = _usage_filters(
+        org_id=org_id,
+        since=since,
+        until=until,
+        team_id=team_id,
+        provider_id=provider_id,
+        project_id=project_id,
+        virtual_key_id=virtual_key_id,
+        model=model,
+        allowed_team_ids=allowed_team_ids,
+        allowed_project_ids=allowed_project_ids,
+    )
+    bucket_expr = _bucket_expression(grain=grain, db=db)
+    rows = (
+        await db.execute(
+            select(
+                bucket_expr.label("bucket"),
+                func.count(UsageRecord.id),
+                func.coalesce(
+                    func.sum(case((UsageRecord.http_status < 400, 1), else_=0)),
+                    0,
+                ),
+                func.coalesce(
+                    func.sum(case((UsageRecord.http_status >= 400, 1), else_=0)),
+                    0,
+                ),
+                func.coalesce(func.sum(UsageRecord.prompt_tokens), 0),
+                func.coalesce(func.sum(UsageRecord.completion_tokens), 0),
+                func.coalesce(func.sum(UsageRecord.total_tokens), 0),
+                func.coalesce(func.sum(UsageRecord.cost_cents), 0),
+                *_spend_classification_columns(),
+                func.avg(UsageRecord.latency_ms),
+                func.max(UsageRecord.created_at),
+            )
+            .where(*filters)
+            .group_by(bucket_expr)
+            .order_by(bucket_expr.asc())
+        )
     ).all()
-    buckets: dict[datetime, list[UsageRecord]] = {}
-    for record in records:
-        bucket = _bucket_datetime(record.created_at, grain)
-        buckets.setdefault(bucket, []).append(record)
     return [
         UsageTimeSeriesPoint(
-            bucket=bucket,
-            **_records_to_totals(bucket_records).model_dump(),
+            bucket=_coerce_bucket_datetime(row[0]),
+            **_row_to_totals(row[1:]).model_dump(),
         )
-        for bucket, bucket_records in sorted(buckets.items())
+        for row in rows
     ]
 
 
@@ -416,23 +437,22 @@ async def get_spend_insights(
     project_id: UUID | None,
     virtual_key_id: UUID | None,
     model: str | None,
+    allowed_team_ids: set[UUID] | None,
+    allowed_project_ids: set[UUID] | None,
     db: AsyncSession,
 ) -> SpendInsights:
-    filters = [UsageRecord.org_id == org_id]
-    if since is not None:
-        filters.append(UsageRecord.created_at >= since)
-    if until is not None:
-        filters.append(UsageRecord.created_at <= until)
-    if team_id is not None:
-        filters.append(UsageRecord.team_id == team_id)
-    if provider_id is not None:
-        filters.append(UsageRecord.provider_id == provider_id)
-    if project_id is not None:
-        filters.append(UsageRecord.project_id == project_id)
-    if virtual_key_id is not None:
-        filters.append(UsageRecord.virtual_key_id == virtual_key_id)
-    if model:
-        filters.append(UsageRecord.provider_model == model)
+    filters = _usage_filters(
+        org_id=org_id,
+        since=since,
+        until=until,
+        team_id=team_id,
+        provider_id=provider_id,
+        project_id=project_id,
+        virtual_key_id=virtual_key_id,
+        model=model,
+        allowed_team_ids=allowed_team_ids,
+        allowed_project_ids=allowed_project_ids,
+    )
     top_spend_drivers = await _breakdown(
         UsageRecord.provider_model,
         UsageRecord.provider_model,
@@ -455,6 +475,8 @@ async def get_spend_insights(
             project_id=project_id,
             virtual_key_id=virtual_key_id,
             model=model,
+            allowed_team_ids=allowed_team_ids,
+            allowed_project_ids=allowed_project_ids,
             db=db,
         ),
     )
@@ -514,6 +536,8 @@ async def _limit_policy_budget_burn(
     project_id: UUID | None = None,
     virtual_key_id: UUID | None = None,
     model: str | None = None,
+    allowed_team_ids: set[UUID] | None = None,
+    allowed_project_ids: set[UUID] | None = None,
     db: AsyncSession,
 ) -> list[LimitPolicyBudgetBurnRow]:
     rules = (
@@ -536,8 +560,8 @@ async def _limit_policy_budget_burn(
             continue
         filters = [
             UsageRecord.org_id == org_id,
-            cast(UsageRecord.limit_policy_ids, String).contains(str(rule.limit_policy_id)),
-            cast(UsageRecord.limit_policy_rule_ids, String).contains(str(rule.id)),
+            _json_array_contains(UsageRecord.limit_policy_ids, rule.limit_policy_id, db=db),
+            _json_array_contains(UsageRecord.limit_policy_rule_ids, rule.id, db=db),
         ]
         if since is not None:
             filters.append(UsageRecord.created_at >= since)
@@ -553,6 +577,11 @@ async def _limit_policy_budget_burn(
             filters.append(UsageRecord.virtual_key_id == virtual_key_id)
         if model:
             filters.append(UsageRecord.provider_model == model)
+        _add_allowed_scope_filters(
+            filters,
+            allowed_team_ids=allowed_team_ids,
+            allowed_project_ids=allowed_project_ids,
+        )
         spent_query = select(func.coalesce(func.sum(UsageRecord.cost_cents), 0)).where(*filters)
         spent = (await db.scalar(spent_query)) or 0
         rows.append(
@@ -580,6 +609,100 @@ def format_limit_rule_interval(*, interval_unit: str, interval_count: int) -> st
     return f"{interval_count} {interval_unit}{'' if interval_count == 1 else 's'}"
 
 
+def _usage_filters(
+    *,
+    org_id: UUID,
+    since: datetime | None,
+    until: datetime | None,
+    team_id: UUID | None,
+    provider_id: UUID | None,
+    project_id: UUID | None,
+    virtual_key_id: UUID | None,
+    model: str | None,
+    allowed_team_ids: set[UUID] | None,
+    allowed_project_ids: set[UUID] | None,
+) -> list:
+    filters = [UsageRecord.org_id == org_id]
+    if since is not None:
+        filters.append(UsageRecord.created_at >= since)
+    if until is not None:
+        filters.append(UsageRecord.created_at <= until)
+    if team_id is not None:
+        filters.append(UsageRecord.team_id == team_id)
+    if provider_id is not None:
+        filters.append(UsageRecord.provider_id == provider_id)
+    if project_id is not None:
+        filters.append(UsageRecord.project_id == project_id)
+    if virtual_key_id is not None:
+        filters.append(UsageRecord.virtual_key_id == virtual_key_id)
+    if model:
+        filters.append(UsageRecord.provider_model == model)
+    _add_allowed_scope_filters(
+        filters,
+        allowed_team_ids=allowed_team_ids,
+        allowed_project_ids=allowed_project_ids,
+    )
+    return filters
+
+
+def _add_allowed_scope_filters(
+    filters: list,
+    *,
+    allowed_team_ids: set[UUID] | None,
+    allowed_project_ids: set[UUID] | None,
+) -> None:
+    if allowed_team_ids is None and allowed_project_ids is None:
+        return
+    scope_filters = []
+    if allowed_team_ids:
+        scope_filters.append(UsageRecord.team_id.in_(allowed_team_ids))
+    if allowed_project_ids:
+        scope_filters.append(UsageRecord.project_id.in_(allowed_project_ids))
+    filters.append(or_(*scope_filters) if scope_filters else UsageRecord.id.is_(None))
+
+
+def _json_array_contains(column, value: UUID, *, db: AsyncSession):
+    value_text = str(value)
+    if db.bind and db.bind.dialect.name == "sqlite":
+        json_each = func.json_each(column).table_valued("value")
+        return select(1).select_from(json_each).where(json_each.c.value == value_text).exists()
+    if db.bind and db.bind.dialect.name == "postgresql":
+        return _json_array_contains_postgresql(column, value)
+    return column.contains([value_text])
+
+
+def _json_array_contains_postgresql(column, value: UUID):
+    return cast(column, JSONB).contains([str(value)])
+
+
+def _bucket_expression(*, grain: str, db: AsyncSession):
+    dialect_name = db.bind.dialect.name if db.bind else ""
+    if dialect_name == "sqlite":
+        if grain == "hour":
+            return func.strftime("%Y-%m-%d %H:00:00", UsageRecord.created_at)
+        if grain == "week":
+            weekday_offset = (cast(func.strftime("%w", UsageRecord.created_at), Integer) + 6) % 7
+            return func.strftime(
+                "%Y-%m-%d 00:00:00",
+                func.date(
+                    UsageRecord.created_at,
+                    func.printf("-%d days", weekday_offset),
+                ),
+            )
+        return func.strftime("%Y-%m-%d 00:00:00", UsageRecord.created_at)
+    if grain == "hour":
+        return func.date_trunc("hour", UsageRecord.created_at)
+    if grain == "week":
+        return func.date_trunc("week", UsageRecord.created_at)
+    return func.date_trunc("day", UsageRecord.created_at)
+
+
+def _coerce_bucket_datetime(value) -> datetime:
+    if isinstance(value, datetime):
+        return value
+    return datetime.fromisoformat(str(value))
+
+
 async def _totals(*filters, db: AsyncSession) -> UsageSummaryTotals:
     row = (
         await db.execute(
@@ -597,6 +720,7 @@ async def _totals(*filters, db: AsyncSession) -> UsageSummaryTotals:
                 func.coalesce(func.sum(UsageRecord.completion_tokens), 0),
                 func.coalesce(func.sum(UsageRecord.total_tokens), 0),
                 func.coalesce(func.sum(UsageRecord.cost_cents), 0),
+                *_spend_classification_columns(),
                 func.avg(UsageRecord.latency_ms),
                 func.max(UsageRecord.created_at),
             ).where(*filters)
@@ -623,6 +747,7 @@ async def _breakdown(
         func.coalesce(func.sum(UsageRecord.completion_tokens), 0),
         func.coalesce(func.sum(UsageRecord.total_tokens), 0),
         func.coalesce(func.sum(UsageRecord.cost_cents), 0),
+        *_spend_classification_columns(),
         func.avg(UsageRecord.latency_ms),
     ).where(*filters)
     if join_model is not None and join_on is not None:
@@ -641,8 +766,12 @@ def _row_to_totals(row) -> UsageSummaryTotals:
         completion_tokens=int(row[4]),
         total_tokens=int(row[5]),
         cost_cents=int(row[6]),
-        average_latency_ms=None if row[7] is None else round(row[7]),
-        last_request_at=row[8],
+        confirmed_spend_cents=int(row[7]),
+        estimated_spend_cents=int(row[8]),
+        unknown_usage_count=int(row[9]),
+        unknown_total_tokens=int(row[10]),
+        average_latency_ms=None if row[11] is None else round(row[11]),
+        last_request_at=row[12],
     )
 
 
@@ -657,7 +786,11 @@ def _row_to_breakdown(row) -> UsageBreakdownRow:
         completion_tokens=int(row[6]),
         total_tokens=int(row[7]),
         cost_cents=int(row[8]),
-        average_latency_ms=None if row[9] is None else round(row[9]),
+        confirmed_spend_cents=int(row[9]),
+        estimated_spend_cents=int(row[10]),
+        unknown_usage_count=int(row[11]),
+        unknown_total_tokens=int(row[12]),
+        average_latency_ms=None if row[13] is None else round(row[13]),
         last_request_at=None,
     )
 
@@ -696,5 +829,70 @@ def _records_to_totals(records: list[UsageRecord]) -> UsageSummaryTotals:
         completion_tokens=sum(record.completion_tokens or 0 for record in records),
         total_tokens=sum(record.total_tokens or 0 for record in records),
         cost_cents=sum(record.cost_cents or 0 for record in records),
+        confirmed_spend_cents=sum(
+            record.cost_cents or 0
+            for record in records
+            if getattr(record, "usage_source", None) == "provider_reported"
+            and record.cost_cents is not None
+        ),
+        estimated_spend_cents=sum(
+            record.cost_cents or 0
+            for record in records
+            if getattr(record, "usage_source", None) == "estimated"
+            and record.cost_cents is not None
+        ),
+        unknown_usage_count=sum(
+            1
+            for record in records
+            if record.cost_cents is None
+            or getattr(record, "usage_source", None) in (None, "unknown")
+        ),
+        unknown_total_tokens=sum(
+            record.total_tokens or 0
+            for record in records
+            if record.cost_cents is None
+            or getattr(record, "usage_source", None) in (None, "unknown")
+        ),
         average_latency_ms=round(sum(latencies) / len(latencies)) if latencies else None,
+    )
+
+
+def _spend_classification_columns():
+    unknown_condition = (
+        (UsageRecord.cost_cents.is_(None))
+        | (UsageRecord.usage_source.is_(None))
+        | (UsageRecord.usage_source == "unknown")
+    )
+    return (
+        func.coalesce(
+            func.sum(
+                case(
+                    (
+                        (UsageRecord.usage_source == "provider_reported")
+                        & UsageRecord.cost_cents.is_not(None),
+                        UsageRecord.cost_cents,
+                    ),
+                    else_=0,
+                )
+            ),
+            0,
+        ),
+        func.coalesce(
+            func.sum(
+                case(
+                    (
+                        (UsageRecord.usage_source == "estimated")
+                        & UsageRecord.cost_cents.is_not(None),
+                        UsageRecord.cost_cents,
+                    ),
+                    else_=0,
+                )
+            ),
+            0,
+        ),
+        func.coalesce(func.sum(case((unknown_condition, 1), else_=0)), 0),
+        func.coalesce(
+            func.sum(case((unknown_condition, UsageRecord.total_tokens), else_=0)),
+            0,
+        ),
     )

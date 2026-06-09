@@ -93,7 +93,7 @@ export function AppRoutes() {
             <Route path="/providers" element={<ProvidersPage />} />
             <Route path="/providers/:providerId" element={<ProviderDetailPage />} />
           </Route>
-          <Route element={<ProtectedRoute permission="usage.view" />}>
+          <Route element={<ProtectedRoute allowUsageScope />}>
             <Route path="/usage" element={<UsagePage />} />
           </Route>
           <Route element={<ProtectedRoute permission="activity.view" />}>

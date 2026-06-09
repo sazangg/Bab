@@ -101,6 +101,8 @@ async def list_usage_records(
     project_id: UUID | None = None,
     virtual_key_id: UUID | None = None,
     model: str | None = None,
+    allowed_team_ids: set[UUID] | None = None,
+    allowed_project_ids: set[UUID] | None = None,
     limit: int | None = 100,
     db: AsyncSession,
 ) -> list[UsageRecordResponse]:
@@ -113,6 +115,8 @@ async def list_usage_records(
         project_id=project_id,
         virtual_key_id=virtual_key_id,
         model=model,
+        allowed_team_ids=allowed_team_ids,
+        allowed_project_ids=allowed_project_ids,
         limit=limit,
         db=db,
     )
@@ -160,6 +164,8 @@ async def get_organization_usage_summary(
     project_id: UUID | None = None,
     virtual_key_id: UUID | None = None,
     model: str | None = None,
+    allowed_team_ids: set[UUID] | None = None,
+    allowed_project_ids: set[UUID] | None = None,
     db: AsyncSession,
 ) -> OrganizationUsageSummary:
     return await repository.get_organization_usage_summary(
@@ -172,6 +178,8 @@ async def get_organization_usage_summary(
         project_id=project_id,
         virtual_key_id=virtual_key_id,
         model=model,
+        allowed_team_ids=allowed_team_ids,
+        allowed_project_ids=allowed_project_ids,
         db=db,
     )
 
@@ -188,6 +196,8 @@ async def get_organization_usage_timeseries(
     project_id: UUID | None = None,
     virtual_key_id: UUID | None = None,
     model: str | None = None,
+    allowed_team_ids: set[UUID] | None = None,
+    allowed_project_ids: set[UUID] | None = None,
     db: AsyncSession,
 ) -> list[UsageTimeSeriesPoint]:
     return await repository.get_organization_usage_timeseries(
@@ -200,6 +210,8 @@ async def get_organization_usage_timeseries(
         project_id=project_id,
         virtual_key_id=virtual_key_id,
         model=model,
+        allowed_team_ids=allowed_team_ids,
+        allowed_project_ids=allowed_project_ids,
         db=db,
     )
 
@@ -215,6 +227,8 @@ async def get_spend_insights(
     project_id: UUID | None = None,
     virtual_key_id: UUID | None = None,
     model: str | None = None,
+    allowed_team_ids: set[UUID] | None = None,
+    allowed_project_ids: set[UUID] | None = None,
     db: AsyncSession,
 ) -> SpendInsights:
     return await repository.get_spend_insights(
@@ -227,6 +241,8 @@ async def get_spend_insights(
         project_id=project_id,
         virtual_key_id=virtual_key_id,
         model=model,
+        allowed_team_ids=allowed_team_ids,
+        allowed_project_ids=allowed_project_ids,
         db=db,
     )
 

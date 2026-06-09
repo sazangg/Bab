@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Any
 
 from cryptography.fernet import Fernet
 from pydantic import Field, field_validator
@@ -71,6 +72,11 @@ class Settings(BaseSettings):
         default=None,
         validation_alias="BAB_LIVE_OPENAI_MODEL",
     )
+    usage_retention_days: int | None = Field(
+        default=None,
+        ge=1,
+        validation_alias="BAB_USAGE_RETENTION_DAYS",
+    )
 
     @field_validator("environment")
     @classmethod
@@ -87,6 +93,13 @@ class Settings(BaseSettings):
         if normalized not in {"lax", "strict", "none"}:
             raise ValueError("BAB_REFRESH_COOKIE_SAMESITE must be lax, strict, or none")
         return normalized
+
+    @field_validator("usage_retention_days", mode="before")
+    @classmethod
+    def normalize_usage_retention_days(cls, value: Any) -> Any:
+        if value == "":
+            return None
+        return value
 
     @field_validator("encryption_key")
     @classmethod

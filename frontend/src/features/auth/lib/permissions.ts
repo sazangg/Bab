@@ -45,6 +45,14 @@ export function canViewWorkspace(user: AuthenticatedUser | null | undefined) {
   );
 }
 
+export function canViewUsage(user: AuthenticatedUser | null | undefined) {
+  return (
+    hasPermission(user, "usage.view") ||
+    hasAnyDirectTeamMembership(user) ||
+    hasAnyProjectAdminMembership(user)
+  );
+}
+
 export function canManageKeys(user: AuthenticatedUser | null | undefined) {
   return (
     hasPermission(user, "keys.manage") ||

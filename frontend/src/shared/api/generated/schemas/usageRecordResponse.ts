@@ -33,4 +33,7 @@ export interface UsageRecordResponse {
   created_at: string;
   provider_credential_name?: string | null;
   provider_credential_prefix?: string | null;
+  spend_type: string;
+  confirmed_spend_cents: number;
+  estimated_spend_cents: number;
 }

@@ -27,7 +27,7 @@ async def get_organization_settings(
             db=db,
         )
         await db.commit()
-    return OrganizationSettingsResponse.model_validate(settings)
+    return _to_response(settings)
 
 
 async def update_organization_settings(
@@ -61,4 +61,9 @@ async def update_organization_settings(
             message="Updated organization settings.",
             db=db,
         )
-    return OrganizationSettingsResponse.model_validate(settings)
+    return _to_response(settings)
+
+
+def _to_response(settings) -> OrganizationSettingsResponse:
+    response = OrganizationSettingsResponse.model_validate(settings)
+    return response.model_copy(update={"usage_retention_days": env_settings.usage_retention_days})

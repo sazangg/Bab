@@ -63,6 +63,7 @@ import {
   canManageKeys,
   canViewDashboardHome,
   canViewOrgAdminSurface,
+  canViewUsage,
   hasAnyDirectTeamMembership,
   hasAnyProjectAdminMembership,
   hasAnyTeamMembership,
@@ -192,6 +193,7 @@ export function DashboardLayout() {
         hasAnyProjectAdminMembership(currentUser)
       );
     }
+    if (item.to === "/usage") return canViewUsage(currentUser);
     return canView(item.permission);
   });
   const visibleWorkspaceNav = workspaceNav.filter((item) => {

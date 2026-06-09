@@ -113,6 +113,8 @@ async def list_events(
     severity: str | None = None,
     entity_type: str | None = None,
     entity_id: UUID | None = None,
+    allowed_team_ids: set[UUID] | None = None,
+    allowed_project_ids: set[UUID] | None = None,
     since: datetime | None = None,
     limit: int = 100,
 ) -> list[ActivityEventResponse]:
@@ -122,6 +124,8 @@ async def list_events(
         severity=severity,
         entity_type=entity_type,
         entity_id=entity_id,
+        allowed_team_ids=allowed_team_ids,
+        allowed_project_ids=allowed_project_ids,
         since=since,
         limit=limit,
         db=db,

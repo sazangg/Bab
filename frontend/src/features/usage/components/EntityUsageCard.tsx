@@ -48,7 +48,12 @@ export function EntityUsageCard({
                 label="Tokens"
                 value={(totals?.total_tokens ?? 0).toLocaleString()}
               />
-              <UsageFact icon={WalletCards} label="Spend" value={formatCents(totals?.cost_cents)} />
+              <UsageFact
+                icon={WalletCards}
+                label="Confirmed"
+                value={formatCents(totals?.confirmed_spend_cents)}
+                detail={`${formatCents(totals?.estimated_spend_cents)} estimated`}
+              />
               <UsageFact icon={Boxes} label="Errors" value={errorRate} />
               <UsageFact
                 icon={Clock}
@@ -100,10 +105,12 @@ function UsageFact({
   icon: Icon,
   label,
   value,
+  detail,
 }: {
   icon: typeof Activity;
   label: string;
   value: string;
+  detail?: string;
 }) {
   return (
     <div className="rounded-md border bg-muted/20 p-3">
@@ -112,6 +119,7 @@ function UsageFact({
         {label}
       </div>
       <div className="mt-2 text-lg font-semibold">{value}</div>
+      {detail ? <div className="mt-1 text-xs text-muted-foreground">{detail}</div> : null}
     </div>
   );
 }

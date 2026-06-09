@@ -35,10 +35,17 @@ import {
   useGetSpendInsightsApiV1UsageSpendInsightsGet,
   useListUsageRecordsApiV1UsageRecordsGet,
 } from "@/shared/api/generated/usage/usage";
+import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
+import { useListProjectsApiV1ProjectsGet } from "@/shared/api/generated/projects/projects";
+import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
 import { httpClient } from "@/shared/api/http-client";
+import { canViewUsage, hasPermission } from "@/features/auth/lib/permissions";
 import type {
   ActivityEventResponse,
+  AuthenticatedUser,
   LimitPolicyBudgetBurnRow,
+  ProjectResponse,
+  TeamResponse,
   UsageRecordResponse,
   UsageBreakdownRow,
   UsageTimeSeriesPoint,
@@ -49,8 +56,12 @@ import { PageHeader } from "@/shared/components/PageHeader";
 type UsageWindow = "24h" | "7d" | "30d" | "90d" | "lifetime";
 type UsageGrain = "hour" | "day" | "week";
 type UsageChartMetric = "requests" | "spend" | "tokens";
+type UsageScopeValue = "authorized" | `team:${string}` | `project:${string}`;
 
 export function UsagePage() {
+  const currentUserQuery = useMeApiV1AuthMeGet();
+  const teamsQuery = useListTeamsApiV1TeamsGet();
+  const projectsQuery = useListProjectsApiV1ProjectsGet();
   const [window, setWindow] = useState<UsageWindow>("30d");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -60,8 +71,17 @@ export function UsagePage() {
   const [projectId, setProjectId] = useState("all");
   const [model, setModel] = useState("all");
   const [virtualKeyId, setVirtualKeyId] = useState("all");
+  const [scopeValue, setScopeValue] = useState<UsageScopeValue>("authorized");
   const [recordFilter, setRecordFilter] = useState("");
   const [chartMetric, setChartMetric] = useState<UsageChartMetric>("spend");
+  const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
+  const canViewOrgUsage = hasPermission(currentUser, "usage.view");
+  const teams = teamsQuery.data?.status === 200 ? teamsQuery.data.data : [];
+  const projects = projectsQuery.data?.status === 200 ? projectsQuery.data.data : [];
+  const usageScopes = buildUsageScopes({ canViewOrgUsage, teams, projects, currentUser });
+  const selectedUsageScope = usageScopes.some((scope) => scope.value === scopeValue)
+    ? scopeValue
+    : "authorized";
   const grain = getUsageGrain(window, customRangeEnabled, startDate, endDate);
   const usageParams = buildUsageParams({
     window,
@@ -72,6 +92,7 @@ export function UsagePage() {
     projectId,
     model,
     virtualKeyId,
+    scopeValue: canViewOrgUsage ? "authorized" : selectedUsageScope,
   });
   const usageQuery = useGetOrganizationUsageSummaryApiV1UsageSummaryGet(usageParams);
   const timeseriesQuery = useGetOrganizationUsageTimeseriesApiV1UsageTimeseriesGet({
@@ -106,12 +127,29 @@ export function UsagePage() {
   const projectOptions = summary?.by_project ?? [];
   const modelOptions = summary?.by_model ?? [];
   const virtualKeyOptions = summary?.by_virtual_key ?? [];
+  const pageDescription = canViewOrgUsage
+    ? "Organization-wide gateway consumption, spend, latency, and errors."
+    : "Usage for your authorized teams and directly administered projects.";
+
+  if (currentUserQuery.isPending) {
+    return <p className="text-sm text-muted-foreground">Checking usage access...</p>;
+  }
+
+  if (!canViewUsage(currentUser)) {
+    return (
+      <EmptyState
+        icon={ChartNoAxesCombined}
+        title="No usage access"
+        description="Your account does not have an organization, team, or project usage scope."
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Usage"
-        description="Organization-wide gateway consumption, spend, latency, and errors."
+        description={pageDescription}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Select
@@ -154,6 +192,7 @@ export function UsagePage() {
                 setProjectId("all");
                 setModel("all");
                 setVirtualKeyId("all");
+                setScopeValue("authorized");
                 setRecordFilter("");
               }}
             >
@@ -165,6 +204,18 @@ export function UsagePage() {
 
       <Card>
         <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          {!canViewOrgUsage ? (
+            <ScopeSelect
+              value={selectedUsageScope}
+              scopes={usageScopes}
+              onChange={(value) => {
+                setScopeValue(value);
+                setProviderId("all");
+                setModel("all");
+                setVirtualKeyId("all");
+              }}
+            />
+          ) : null}
           <UsageSelect
             label="Provider"
             value={providerId}
@@ -172,20 +223,24 @@ export function UsagePage() {
             options={providerOptions}
             onChange={setProviderId}
           />
-          <UsageSelect
-            label="Team"
-            value={teamId}
-            placeholder="All teams"
-            options={teamOptions}
-            onChange={setTeamId}
-          />
-          <UsageSelect
-            label="Project"
-            value={projectId}
-            placeholder="All projects"
-            options={projectOptions}
-            onChange={setProjectId}
-          />
+          {canViewOrgUsage ? (
+            <>
+              <UsageSelect
+                label="Team"
+                value={teamId}
+                placeholder="All teams"
+                options={teamOptions}
+                onChange={setTeamId}
+              />
+              <UsageSelect
+                label="Project"
+                value={projectId}
+                placeholder="All projects"
+                options={projectOptions}
+                onChange={setProjectId}
+              />
+            </>
+          ) : null}
           <UsageSelect
             label="Model"
             value={model}
@@ -226,8 +281,9 @@ export function UsagePage() {
               icon={Timer}
             />
             <MetricCard
-              label="Spend"
-              value={formatCents(totals?.cost_cents ?? 0)}
+              label="Confirmed spend"
+              value={formatCents(totals?.confirmed_spend_cents ?? 0)}
+              detail={`${formatCents(totals?.estimated_spend_cents ?? 0)} estimated`}
               icon={WalletCards}
             />
             <MetricCard
@@ -239,6 +295,11 @@ export function UsagePage() {
             <MetricCard
               label="Avg latency"
               value={totals?.average_latency_ms == null ? "-" : `${totals.average_latency_ms}ms`}
+              detail={
+                (totals?.unknown_usage_count ?? 0) > 0
+                  ? `${totals?.unknown_usage_count ?? 0} unpriced`
+                  : undefined
+              }
               icon={Clock}
             />
           </section>
@@ -260,8 +321,14 @@ export function UsagePage() {
             <BreakdownCard title="Providers" rows={summary.by_provider} onSelect={setProviderId} />
             <BreakdownCard title="Models" rows={summary.by_model} onSelect={setModel} />
             <BreakdownCard title="Pools" rows={summary.by_pool} />
-            <BreakdownCard title="Teams" rows={summary.by_team} />
-            <BreakdownCard title="Projects" rows={summary.by_project} />
+            {canViewOrgUsage ? (
+              <>
+                <BreakdownCard title="Teams" rows={summary.by_team} />
+                <BreakdownCard title="Projects" rows={summary.by_project} />
+              </>
+            ) : (
+              <BreakdownCard title="Authorized scopes" rows={scopeBreakdown(summary)} />
+            )}
             <BreakdownCard title="Access policies" rows={summary.by_access_policy} />
             <BreakdownCard
               title="Virtual keys"
@@ -380,6 +447,34 @@ function UsageSelect({
   );
 }
 
+function ScopeSelect({
+  value,
+  scopes,
+  onChange,
+}: {
+  value: UsageScopeValue;
+  scopes: UsageScopeOption[];
+  onChange: (value: UsageScopeValue) => void;
+}) {
+  return (
+    <label className="grid gap-1.5 text-sm">
+      <span className="font-medium">Scope</span>
+      <Select value={value} onValueChange={(nextValue) => onChange(nextValue as UsageScopeValue)}>
+        <SelectTrigger>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {scopes.map((scope) => (
+            <SelectItem key={scope.value} value={scope.value}>
+              {scope.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </label>
+  );
+}
+
 function UsageTrendCard({
   points,
   grain,
@@ -434,8 +529,16 @@ function UsageTrendCard({
                 value={Math.max(...points.map((point) => point.total_tokens ?? 0)).toLocaleString()}
               />
               <TrendStat
-                label="Known spend"
-                value={formatCents(points.reduce((sum, point) => sum + (point.cost_cents ?? 0), 0))}
+                label="Confirmed spend"
+                value={formatCents(
+                  points.reduce((sum, point) => sum + (point.confirmed_spend_cents ?? 0), 0),
+                )}
+              />
+              <TrendStat
+                label="Estimated spend"
+                value={formatCents(
+                  points.reduce((sum, point) => sum + (point.estimated_spend_cents ?? 0), 0),
+                )}
               />
             </div>
           </div>
@@ -478,6 +581,34 @@ function TrendStat({ label, value }: { label: string; value: string }) {
     <div className="rounded-md border bg-background p-3">
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="mt-1 font-medium">{value}</div>
+    </div>
+  );
+}
+
+function SpendCell({
+  confirmed,
+  estimated,
+  unknown,
+}: {
+  confirmed?: number | null;
+  estimated?: number | null;
+  unknown?: boolean;
+}) {
+  if (unknown) {
+    return <span className="text-muted-foreground">Unpriced</span>;
+  }
+  if ((confirmed ?? 0) > 0) {
+    return (
+      <div>
+        <div>{formatCents(confirmed ?? 0)}</div>
+        <div className="text-xs text-muted-foreground">confirmed</div>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <div>{formatCents(estimated ?? 0)}</div>
+      <div className="text-xs text-muted-foreground">estimated</div>
     </div>
   );
 }
@@ -566,7 +697,11 @@ function UsageRecordsCard({
                     {(record.total_tokens ?? 0).toLocaleString()}
                   </TableCell>
                   <TableCell className="text-right">
-                    {record.cost_cents == null ? "Unpriced" : formatCents(record.cost_cents)}
+                    <SpendCell
+                      confirmed={record.confirmed_spend_cents}
+                      estimated={record.estimated_spend_cents}
+                      unknown={record.spend_type === "unknown"}
+                    />
                   </TableCell>
                   <TableCell className="text-right">{record.latency_ms}ms</TableCell>
                 </TableRow>
@@ -598,7 +733,9 @@ function SpendDriversCard({ rows }: { rows: UsageBreakdownRow[] }) {
                 <div key={row.id} className="space-y-1.5">
                   <div className="flex items-center justify-between gap-3 text-sm">
                     <span className="min-w-0 truncate font-medium">{row.label}</span>
-                    <span className="shrink-0 text-muted-foreground">{formatCents(spend)}</span>
+                    <span className="shrink-0 text-muted-foreground">
+                      {formatSpendParts(row)}
+                    </span>
                   </div>
                   <div className="h-2 overflow-hidden rounded-full bg-muted">
                     <div
@@ -687,6 +824,7 @@ function buildUsageParams({
   projectId,
   model,
   virtualKeyId,
+  scopeValue,
 }: {
   window: UsageWindow;
   startDate: string;
@@ -696,6 +834,7 @@ function buildUsageParams({
   projectId: string;
   model: string;
   virtualKeyId: string;
+  scopeValue: UsageScopeValue;
 }) {
   const params: {
     window: UsageWindow;
@@ -716,10 +855,18 @@ function buildUsageParams({
   if (providerId !== "all") {
     params.provider_id = providerId;
   }
-  if (teamId !== "all") {
+  const scopedTeamId = scopeValue.startsWith("team:") ? scopeValue.slice("team:".length) : null;
+  const scopedProjectId = scopeValue.startsWith("project:")
+    ? scopeValue.slice("project:".length)
+    : null;
+  if (scopedTeamId) {
+    params.team_id = scopedTeamId;
+  } else if (teamId !== "all") {
     params.team_id = teamId;
   }
-  if (projectId !== "all") {
+  if (scopedProjectId) {
+    params.project_id = scopedProjectId;
+  } else if (projectId !== "all") {
     params.project_id = projectId;
   }
   if (model !== "all") {
@@ -729,6 +876,64 @@ function buildUsageParams({
     params.virtual_key_id = virtualKeyId;
   }
   return params;
+}
+
+type UsageScopeOption = {
+  value: UsageScopeValue;
+  label: string;
+};
+
+function buildUsageScopes({
+  canViewOrgUsage,
+  teams,
+  projects,
+  currentUser,
+}: {
+  canViewOrgUsage: boolean;
+  teams: TeamResponse[];
+  projects: ProjectResponse[];
+  currentUser: AuthenticatedUser | null;
+}): UsageScopeOption[] {
+  if (canViewOrgUsage) {
+    return [{ value: "authorized", label: "Organization" }];
+  }
+  const teamById = Object.fromEntries(teams.map((team) => [team.id, team]));
+  const projectById = Object.fromEntries(projects.map((project) => [project.id, project]));
+  const options: UsageScopeOption[] = [{ value: "authorized", label: "All authorized usage" }];
+  for (const membership of currentUser?.team_memberships ?? []) {
+    options.push({
+      value: `team:${membership.team_id}`,
+      label: teamById[membership.team_id]?.name ?? `Team ${shortId(membership.team_id)}`,
+    });
+  }
+  for (const membership of currentUser?.project_memberships ?? []) {
+    if (membership.role !== "project_admin") continue;
+    const project = projectById[membership.project_id];
+    const team = project ? teamById[project.team_id] : null;
+    options.push({
+      value: `project:${membership.project_id}`,
+      label: `${project?.name ?? `Project ${shortId(membership.project_id)}`}${
+        team ? ` (${team.name})` : ""
+      }`,
+    });
+  }
+  return dedupeScopes(options);
+}
+
+function dedupeScopes(options: UsageScopeOption[]) {
+  const seen = new Set<UsageScopeValue>();
+  return options.filter((option) => {
+    if (seen.has(option.value)) return false;
+    seen.add(option.value);
+    return true;
+  });
+}
+
+function scopeBreakdown(summary: {
+  by_team: UsageBreakdownRow[];
+  by_project: UsageBreakdownRow[];
+}) {
+  return [...summary.by_team, ...summary.by_project];
 }
 
 function getUsageGrain(
@@ -826,7 +1031,7 @@ function BreakdownCard({
                   <TableCell className="text-right">
                     {(row.total_tokens ?? 0).toLocaleString()}
                   </TableCell>
-                  <TableCell className="text-right">{formatCents(row.cost_cents ?? 0)}</TableCell>
+                  <TableCell className="text-right">{formatSpendParts(row)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -878,12 +1083,30 @@ function formatCents(value: number) {
   return `$${(value / 100).toLocaleString()}`;
 }
 
+function formatSpendParts(row: {
+  confirmed_spend_cents?: number;
+  estimated_spend_cents?: number;
+  unknown_usage_count?: number;
+  cost_cents?: number;
+}) {
+  const confirmed = row.confirmed_spend_cents ?? 0;
+  const estimated = row.estimated_spend_cents ?? 0;
+  const unknown = row.unknown_usage_count ?? 0;
+  const parts = [];
+  if (confirmed > 0) parts.push(`${formatCents(confirmed)} confirmed`);
+  if (estimated > 0) parts.push(`${formatCents(estimated)} estimated`);
+  if (unknown > 0) parts.push(`${unknown.toLocaleString()} unpriced`);
+  return parts.length > 0 ? parts.join(" / ") : formatCents(row.cost_cents ?? 0);
+}
+
 function shortId(value: string | null | undefined) {
   return value ? value.slice(0, 8) : "-";
 }
 
 function metricValue(point: UsageTimeSeriesPoint, metric: UsageChartMetric) {
-  if (metric === "spend") return point.cost_cents ?? 0;
+  if (metric === "spend") {
+    return (point.confirmed_spend_cents ?? 0) + (point.estimated_spend_cents ?? 0);
+  }
   if (metric === "tokens") return point.total_tokens ?? 0;
   return point.requests ?? 0;
 }

@@ -524,7 +524,10 @@ async def test_gateway_path_records_usage_with_mocked_upstream(app_client, db_se
         assert records[0]["provider_credential_name"] == "Integration provider key"
         assert records[0]["request_id"] == proxy_response.headers["x-request-id"]
         assert records[0]["http_status"] == 200
+        assert records[0]["prompt_tokens"] == 12
+        assert records[0]["completion_tokens"] == 5
         assert records[0]["total_tokens"] == 17
+        assert records[0]["usage_source"] == "provider_reported"
 
         export_response = await client.get(
             "/api/v1/usage/records/export",
@@ -603,6 +606,7 @@ async def test_native_anthropic_messages_preserves_shape_and_records_usage(
     assert records[0]["prompt_tokens"] == 8
     assert records[0]["completion_tokens"] == 3
     assert records[0]["total_tokens"] == 11
+    assert records[0]["usage_source"] == "provider_reported"
 
 
 @pytest.mark.asyncio
@@ -671,6 +675,8 @@ async def test_native_anthropic_messages_records_upstream_failure(app_client, db
     assert len(records) == 1
     assert records[0]["http_status"] == 401
     assert records[0]["error_code"] == "provider_upstream_error"
+    assert records[0]["usage_source"] == "unknown"
+    assert records[0]["total_tokens"] is None
 
 
 @pytest.mark.asyncio
@@ -1288,9 +1294,14 @@ async def test_streaming_is_allowed_when_output_guardrail_is_monitor_only(
                 "messages": [{"role": "user", "content": "Say hello."}],
             },
         )
+        usage_response = await client.get("/api/v1/usage/records", headers=admin_headers)
 
     assert proxy_response.status_code == 200
     assert upstream_called is True
+    records = usage_response.json()
+    assert len(records) == 1
+    assert records[0]["usage_source"] == "estimated"
+    assert records[0]["total_tokens"] > 0
 
 
 @pytest.mark.asyncio

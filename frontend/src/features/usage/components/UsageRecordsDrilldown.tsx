@@ -85,7 +85,9 @@ export function UsageRecordsDrilldown({
                     {shortId(record.request_id)}
                   </TableCell>
                   <TableCell>{record.http_status}</TableCell>
-                  <TableCell className="text-right">{formatCents(record.cost_cents)}</TableCell>
+                  <TableCell className="text-right">
+                    {formatRecordSpend(record)}
+                  </TableCell>
                   <TableCell className="text-right">{record.latency_ms}ms</TableCell>
                 </TableRow>
               ))}
@@ -105,6 +107,9 @@ function downloadCsv(records: UsageRecordResponse[]) {
     "http_status",
     "total_tokens",
     "cost_cents",
+    "confirmed_spend_cents",
+    "estimated_spend_cents",
+    "spend_type",
     "latency_ms",
     "provider_credential_id",
     "provider_credential_name",
@@ -120,6 +125,9 @@ function downloadCsv(records: UsageRecordResponse[]) {
       record.http_status,
       record.total_tokens ?? 0,
       record.cost_cents ?? 0,
+      record.confirmed_spend_cents,
+      record.estimated_spend_cents,
+      record.spend_type,
       record.latency_ms,
       record.provider_credential_id ?? "",
       record.provider_credential_name ?? "",
@@ -144,5 +152,13 @@ function shortId(value: string | null | undefined) {
 }
 
 function formatCents(value: number | null | undefined) {
-  return value == null ? "Unpriced" : `$${(value / 100).toLocaleString()}`;
+  return `$${((value ?? 0) / 100).toLocaleString()}`;
+}
+
+function formatRecordSpend(record: UsageRecordResponse) {
+  if (record.spend_type === "unknown") return "Unpriced";
+  if (record.spend_type === "confirmed") {
+    return `${formatCents(record.confirmed_spend_cents)} confirmed`;
+  }
+  return `${formatCents(record.estimated_spend_cents)} estimated`;
 }

@@ -13,6 +13,10 @@ export interface UsageSummaryTotals {
   completion_tokens?: number;
   total_tokens?: number;
   cost_cents?: number;
+  confirmed_spend_cents?: number;
+  estimated_spend_cents?: number;
+  unknown_usage_count?: number;
+  unknown_total_tokens?: number;
   average_latency_ms?: number | null;
   last_request_at?: string | null;
 }

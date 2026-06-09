@@ -26,3 +26,9 @@ def test_development_allows_sqlite_database() -> None:
     )
 
     validate_runtime_settings(settings)
+
+
+def test_usage_retention_defaults_to_no_deletion_intent() -> None:
+    settings = Settings.model_construct(usage_retention_days=None)
+
+    assert settings.usage_retention_days is None

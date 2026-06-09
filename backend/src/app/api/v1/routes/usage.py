@@ -6,20 +6,19 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import (
     get_current_user,
     get_scope,
-    require_permission,
-    require_project_view_or_permission,
-    require_team_view_or_permission,
 )
 from app.core.database import Scope, get_db
 from app.modules.activity import facade as activity_facade
 from app.modules.activity.schemas import ActivityEventResponse
 from app.modules.auth import facade as auth_facade
 from app.modules.auth.schemas import AuthenticatedUser
+from app.modules.keys.internal.models import Project, VirtualKey
 from app.modules.usage import facade
 from app.modules.usage.schemas import (
     OrganizationUsageSummary,
@@ -31,7 +30,6 @@ from app.modules.usage.schemas import (
 router = APIRouter(prefix="/usage", tags=["usage"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RequestScope = Annotated[Scope, Depends(get_scope)]
-UsageViewer = Annotated[AuthenticatedUser, Depends(require_permission("usage.view"))]
 CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]
 UsageWindow = Literal["24h", "7d", "30d", "90d", "lifetime"]
 UsageGrain = Literal["hour", "day", "week"]
@@ -45,7 +43,7 @@ class OrganizationUsagePage(OrganizationUsageSummary):
 async def get_organization_usage_summary(
     scope: RequestScope,
     db: DatabaseSession,
-    _: UsageViewer,
+    user: CurrentUser,
     window: UsageWindow = "30d",
     start_at: datetime | None = None,
     end_at: datetime | None = None,
@@ -55,6 +53,14 @@ async def get_organization_usage_summary(
     virtual_key_id: UUID | None = None,
     model: str | None = None,
 ) -> OrganizationUsagePage:
+    usage_scope = await _resolve_usage_scope(
+        user=user,
+        org_id=scope.org_id,
+        db=db,
+        team_id=team_id,
+        project_id=project_id,
+        virtual_key_id=virtual_key_id,
+    )
     summary = await facade.get_organization_usage_summary(
         org_id=scope.org_id,
         window=window,
@@ -65,6 +71,8 @@ async def get_organization_usage_summary(
         project_id=project_id,
         virtual_key_id=virtual_key_id,
         model=model,
+        allowed_team_ids=usage_scope.allowed_team_ids,
+        allowed_project_ids=usage_scope.allowed_project_ids,
         db=db,
     )
     recent_denials = await activity_facade.list_events(
@@ -74,6 +82,8 @@ async def get_organization_usage_summary(
         entity_type=None,
         entity_id=None,
         since=start_at or facade.window_start(window),
+        allowed_team_ids=usage_scope.allowed_team_ids,
+        allowed_project_ids=usage_scope.allowed_project_ids,
         limit=20,
         db=db,
     )
@@ -98,26 +108,14 @@ async def list_usage_records(
     model: str | None = None,
     limit: int = 100,
 ) -> list[UsageRecordResponse]:
-    if not auth_facade.has_permission(user, "usage.view"):
-        if team_id is not None:
-            await require_team_view_or_permission(
-                team_id=str(team_id),
-                permission="usage.view",
-                user=user,
-                db=db,
-            )
-        elif project_id is not None:
-            await require_project_view_or_permission(
-                project_id=str(project_id),
-                permission="usage.view",
-                user=user,
-                db=db,
-            )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="insufficient permissions",
-            )
+    usage_scope = await _resolve_usage_scope(
+        user=user,
+        org_id=scope.org_id,
+        db=db,
+        team_id=team_id,
+        project_id=project_id,
+        virtual_key_id=virtual_key_id,
+    )
     return await facade.list_usage_records(
         org_id=scope.org_id,
         window=window,
@@ -128,6 +126,8 @@ async def list_usage_records(
         project_id=project_id,
         virtual_key_id=virtual_key_id,
         model=model,
+        allowed_team_ids=usage_scope.allowed_team_ids,
+        allowed_project_ids=usage_scope.allowed_project_ids,
         limit=min(max(limit, 1), 500),
         db=db,
     )
@@ -147,26 +147,14 @@ async def export_usage_records(
     virtual_key_id: UUID | None = None,
     model: str | None = None,
 ) -> Response:
-    if not auth_facade.has_permission(user, "usage.view"):
-        if team_id is not None:
-            await require_team_view_or_permission(
-                team_id=str(team_id),
-                permission="usage.view",
-                user=user,
-                db=db,
-            )
-        elif project_id is not None:
-            await require_project_view_or_permission(
-                project_id=str(project_id),
-                permission="usage.view",
-                user=user,
-                db=db,
-            )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="insufficient permissions",
-            )
+    usage_scope = await _resolve_usage_scope(
+        user=user,
+        org_id=scope.org_id,
+        db=db,
+        team_id=team_id,
+        project_id=project_id,
+        virtual_key_id=virtual_key_id,
+    )
     records = await facade.list_usage_records(
         org_id=scope.org_id,
         window=window,
@@ -177,6 +165,8 @@ async def export_usage_records(
         project_id=project_id,
         virtual_key_id=virtual_key_id,
         model=model,
+        allowed_team_ids=usage_scope.allowed_team_ids,
+        allowed_project_ids=usage_scope.allowed_project_ids,
         limit=None,
         db=db,
     )
@@ -206,6 +196,9 @@ async def export_usage_records(
             "completion_tokens",
             "total_tokens",
             "cost_cents",
+            "confirmed_spend_cents",
+            "estimated_spend_cents",
+            "spend_type",
             "usage_source",
             "error_code",
         ],
@@ -234,6 +227,9 @@ async def export_usage_records(
                 record.completion_tokens,
                 record.total_tokens,
                 record.cost_cents,
+                record.confirmed_spend_cents,
+                record.estimated_spend_cents,
+                record.spend_type,
                 record.usage_source,
                 record.error_code,
             ]
@@ -246,7 +242,7 @@ async def export_usage_records(
 async def get_organization_usage_timeseries(
     scope: RequestScope,
     db: DatabaseSession,
-    _: UsageViewer,
+    user: CurrentUser,
     window: UsageWindow = "30d",
     grain: UsageGrain = "day",
     start_at: datetime | None = None,
@@ -257,6 +253,14 @@ async def get_organization_usage_timeseries(
     virtual_key_id: UUID | None = None,
     model: str | None = None,
 ) -> list[UsageTimeSeriesPoint]:
+    usage_scope = await _resolve_usage_scope(
+        user=user,
+        org_id=scope.org_id,
+        db=db,
+        team_id=team_id,
+        project_id=project_id,
+        virtual_key_id=virtual_key_id,
+    )
     return await facade.get_organization_usage_timeseries(
         org_id=scope.org_id,
         window=window,
@@ -268,6 +272,8 @@ async def get_organization_usage_timeseries(
         project_id=project_id,
         virtual_key_id=virtual_key_id,
         model=model,
+        allowed_team_ids=usage_scope.allowed_team_ids,
+        allowed_project_ids=usage_scope.allowed_project_ids,
         db=db,
     )
 
@@ -288,7 +294,7 @@ def _csv_response(*, filename: str, header: list[str], rows: list[list[object]])
 async def get_spend_insights(
     scope: RequestScope,
     db: DatabaseSession,
-    _: UsageViewer,
+    user: CurrentUser,
     window: UsageWindow = "30d",
     start_at: datetime | None = None,
     end_at: datetime | None = None,
@@ -298,6 +304,14 @@ async def get_spend_insights(
     virtual_key_id: UUID | None = None,
     model: str | None = None,
 ) -> SpendInsights:
+    usage_scope = await _resolve_usage_scope(
+        user=user,
+        org_id=scope.org_id,
+        db=db,
+        team_id=team_id,
+        project_id=project_id,
+        virtual_key_id=virtual_key_id,
+    )
     return await facade.get_spend_insights(
         org_id=scope.org_id,
         window=window,
@@ -308,5 +322,129 @@ async def get_spend_insights(
         project_id=project_id,
         virtual_key_id=virtual_key_id,
         model=model,
+        allowed_team_ids=usage_scope.allowed_team_ids,
+        allowed_project_ids=usage_scope.allowed_project_ids,
         db=db,
     )
+
+
+class _UsageScope:
+    def __init__(
+        self,
+        *,
+        allowed_team_ids: set[UUID] | None,
+        allowed_project_ids: set[UUID] | None,
+    ) -> None:
+        self.allowed_team_ids = allowed_team_ids
+        self.allowed_project_ids = allowed_project_ids
+
+
+async def _resolve_usage_scope(
+    *,
+    user: AuthenticatedUser,
+    org_id: UUID,
+    db: AsyncSession,
+    team_id: UUID | None,
+    project_id: UUID | None,
+    virtual_key_id: UUID | None,
+) -> _UsageScope:
+    if auth_facade.has_permission(user, "usage.view"):
+        await _validate_filter_relationships(
+            org_id=org_id,
+            db=db,
+            team_id=team_id,
+            project_id=project_id,
+            virtual_key_id=virtual_key_id,
+        )
+        return _UsageScope(allowed_team_ids=None, allowed_project_ids=None)
+
+    allowed_team_ids = {membership.team_id for membership in user.team_memberships}
+    allowed_project_ids = {
+        membership.project_id
+        for membership in user.project_memberships
+        if membership.role == "project_admin"
+    }
+    if not allowed_team_ids and not allowed_project_ids:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="insufficient permissions",
+        )
+
+    project = await _validate_filter_relationships(
+        org_id=org_id,
+        db=db,
+        team_id=team_id,
+        project_id=project_id,
+        virtual_key_id=virtual_key_id,
+    )
+    if team_id is not None and team_id not in allowed_team_ids:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="insufficient permissions",
+        )
+    if project is not None and (
+        project.team_id not in allowed_team_ids and project.id not in allowed_project_ids
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="insufficient permissions",
+        )
+    return _UsageScope(
+        allowed_team_ids=allowed_team_ids,
+        allowed_project_ids=allowed_project_ids,
+    )
+
+
+async def _validate_filter_relationships(
+    *,
+    org_id: UUID,
+    db: AsyncSession,
+    team_id: UUID | None,
+    project_id: UUID | None,
+    virtual_key_id: UUID | None,
+) -> Project | None:
+    project: Project | None = None
+    if project_id is not None:
+        project = await db.scalar(
+            select(Project).where(Project.org_id == org_id, Project.id == project_id)
+        )
+        if project is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="insufficient permissions",
+            )
+        if team_id is not None and project.team_id != team_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="project does not belong to team",
+            )
+    if virtual_key_id is not None:
+        virtual_key = await db.scalar(
+            select(VirtualKey).where(
+                VirtualKey.org_id == org_id,
+                VirtualKey.id == virtual_key_id,
+            )
+        )
+        if virtual_key is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="insufficient permissions",
+            )
+        if project_id is not None and virtual_key.project_id != project_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="virtual key does not belong to project",
+            )
+        if project is None:
+            project = await db.scalar(
+                select(Project).where(
+                    Project.org_id == org_id,
+                    Project.id == virtual_key.project_id,
+                )
+            )
+        if project is None or (team_id is not None and project.team_id != team_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="virtual key does not belong to team",
+            )
+    return project
