@@ -60,6 +60,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
+  canViewActivity,
   canManageKeys,
   canViewDashboardHome,
   canViewOrgAdminSurface,
@@ -194,6 +195,7 @@ export function DashboardLayout() {
       );
     }
     if (item.to === "/usage") return canViewUsage(currentUser);
+    if (item.to === "/activity") return canViewActivity(currentUser);
     return canView(item.permission);
   });
   const visibleWorkspaceNav = workspaceNav.filter((item) => {

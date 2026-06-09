@@ -12,6 +12,7 @@ from app.main import create_app
 from app.modules.activity.internal.models import ActivityEvent  # noqa: F401
 from app.modules.auth.internal.models import (  # noqa: F401
     AuditEvent,
+    AuditLedgerState,
     IdentityAccount,
     Invite,
     Organization,

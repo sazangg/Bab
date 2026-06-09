@@ -3,6 +3,7 @@ import { Outlet } from "react-router-dom";
 
 import { Card, CardContent } from "@/components/ui/card";
 import {
+  canViewActivity,
   canManageKeys,
   canViewUsage,
   canViewOrgAdminSurface,
@@ -23,6 +24,7 @@ type ProtectedRouteProps = {
   requireKeyManager?: boolean;
   requireScopedAdmin?: boolean;
   allowUsageScope?: boolean;
+  allowActivityScope?: boolean;
   allowDashboardHome?: boolean;
   requireOrgAdminSurface?: boolean;
 };
@@ -35,6 +37,7 @@ export function ProtectedRoute({
   requireKeyManager = false,
   requireScopedAdmin = false,
   allowUsageScope = false,
+  allowActivityScope = false,
   allowDashboardHome = false,
   requireOrgAdminSurface = false,
 }: ProtectedRouteProps) {
@@ -57,6 +60,7 @@ export function ProtectedRoute({
       ? hasAnyTeamAdminMembership(currentUser) || hasAnyProjectAdminMembership(currentUser)
       : false) ||
     (allowUsageScope ? canViewUsage(currentUser) : false) ||
+    (allowActivityScope ? canViewActivity(currentUser) : false) ||
     (allowDashboardHome ? canViewDashboardHome(currentUser) : false) ||
     (requireOrgAdminSurface ? canViewOrgAdminSurface(currentUser) : false) ||
     (!permission &&
@@ -66,6 +70,7 @@ export function ProtectedRoute({
       !requireKeyManager &&
       !requireScopedAdmin &&
       !allowUsageScope &&
+      !allowActivityScope &&
       !allowDashboardHome &&
       !requireOrgAdminSurface);
 

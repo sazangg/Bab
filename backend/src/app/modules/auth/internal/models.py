@@ -228,3 +228,18 @@ class AuditEvent(Base):
         default=lambda: datetime.now(UTC),
         index=True,
     )
+
+
+class AuditLedgerState(Base):
+    __tablename__ = "audit_ledger_states"
+
+    org_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    latest_event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )

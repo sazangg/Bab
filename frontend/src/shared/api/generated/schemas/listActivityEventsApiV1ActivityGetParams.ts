@@ -10,6 +10,11 @@ category?: string | null;
 severity?: string | null;
 entity_type?: string | null;
 entity_id?: string | null;
+team_id?: string | null;
+project_id?: string | null;
+virtual_key_id?: string | null;
+start_at?: string | null;
+end_at?: string | null;
 /**
  * @minimum 1
  * @maximum 100

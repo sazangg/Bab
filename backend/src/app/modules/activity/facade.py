@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.activity.internal import repository
 from app.modules.activity.schemas import ActivityEventResponse, RecordActivityEvent
-from app.modules.auth.internal.models import AuditEvent
+from app.modules.auth import facade as auth_facade
 from app.modules.auth.schemas import AuthenticatedUser
 
 
@@ -32,33 +32,38 @@ async def record_admin_event(
     provider_id: UUID | None = None,
     pool_id: UUID | None = None,
     model_offering_id: UUID | None = None,
+    audit_entity_type: str | None = None,
+    audit_entity_id: UUID | None = None,
     metadata: dict | None = None,
 ) -> None:
-    db.add(
-        AuditEvent(
-            org_id=actor.org_id,
-            actor_user_id=actor.id,
-            actor_email=str(actor.email),
-            actor_role=actor.role,
-            action=action,
-            entity_type=_audit_entity_type(
+    await auth_facade.record_audit_event(
+        actor=actor,
+        action=action,
+        entity_type=(
+            audit_entity_type
+            or _audit_entity_type(
                 team_id=team_id,
                 project_id=project_id,
                 virtual_key_id=virtual_key_id,
                 provider_id=provider_id,
                 pool_id=pool_id,
                 model_offering_id=model_offering_id,
-            ),
-            entity_id=(
+            )
+        ),
+        entity_id=(
+            audit_entity_id
+            if audit_entity_id is not None
+            else (
                 virtual_key_id
                 or project_id
                 or team_id
                 or provider_id
                 or pool_id
                 or model_offering_id
-            ),
-            metadata_=metadata or {},
-        )
+            )
+        ),
+        metadata=metadata or {},
+        db=db,
     )
     await record_event(
         payload=RecordActivityEvent(
@@ -113,10 +118,14 @@ async def list_events(
     severity: str | None = None,
     entity_type: str | None = None,
     entity_id: UUID | None = None,
+    team_id: UUID | None = None,
+    project_id: UUID | None = None,
+    virtual_key_id: UUID | None = None,
     allowed_team_ids: set[UUID] | None = None,
     allowed_project_ids: set[UUID] | None = None,
     since: datetime | None = None,
-    limit: int = 100,
+    end_at: datetime | None = None,
+    limit: int | None = 100,
 ) -> list[ActivityEventResponse]:
     events = await repository.list_activity_events(
         org_id=org_id,
@@ -124,9 +133,13 @@ async def list_events(
         severity=severity,
         entity_type=entity_type,
         entity_id=entity_id,
+        team_id=team_id,
+        project_id=project_id,
+        virtual_key_id=virtual_key_id,
         allowed_team_ids=allowed_team_ids,
         allowed_project_ids=allowed_project_ids,
         since=since,
+        end_at=end_at,
         limit=limit,
         db=db,
     )

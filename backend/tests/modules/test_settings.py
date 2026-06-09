@@ -21,6 +21,7 @@ async def test_settings_created_from_environment_defaults(db_session: AsyncSessi
     assert response.organization_name == "Acme"
     assert response.default_max_body_bytes == settings.proxy_max_body_bytes
     assert response.usage_retention_days == settings.usage_retention_days
+    assert response.activity_retention_days == settings.activity_retention_days
     stored = await db_session.scalar(
         select(OrganizationSettings).where(OrganizationSettings.org_id == org.id)
     )

@@ -17,6 +17,7 @@ export interface OrganizationSettingsResponse {
   default_model_sync_mode: string;
   default_virtual_key_expiration_days: number | null;
   usage_retention_days?: number | null;
+  activity_retention_days?: number | null;
   virtual_key_prefix: string;
   allow_secret_copy: boolean;
   created_at: string;

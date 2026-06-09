@@ -4,7 +4,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope, transaction
 from app.modules.activity import facade as activity_facade
-from app.modules.activity.schemas import RecordActivityEvent
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys import facade as keys_facade
 from app.modules.policies.errors import (
@@ -529,11 +528,17 @@ async def create_policy_assignment(
             values=values,
             db=db,
         )
+        activity_team_id, activity_project_id = await _assignment_activity_scope_ids(
+            scope=scope, assignment=assignment, db=db
+        )
         await _record_policy_activity(
             actor=actor,
             scope=scope,
             action="policy_assignment.created",
             message="Created policy assignment.",
+            team_id=activity_team_id,
+            project_id=activity_project_id,
+            virtual_key_id=assignment.virtual_key_id,
             metadata=_assignment_metadata(assignment),
             db=db,
         )
@@ -555,11 +560,17 @@ async def update_policy_assignment(
         if payload.is_active is not None:
             assignment.is_active = payload.is_active
         await db.flush()
+        activity_team_id, activity_project_id = await _assignment_activity_scope_ids(
+            scope=scope, assignment=assignment, db=db
+        )
         await _record_policy_activity(
             actor=actor,
             scope=scope,
             action="policy_assignment.updated",
             message="Updated policy assignment.",
+            team_id=activity_team_id,
+            project_id=activity_project_id,
+            virtual_key_id=assignment.virtual_key_id,
             metadata={
                 **_assignment_metadata(assignment),
                 "changed_fields": sorted(payload.model_fields_set),
@@ -580,12 +591,19 @@ async def delete_policy_assignment(
         assignment = await _get_policy_assignment_or_raise(
             assignment_id=assignment_id, scope=scope, db=db
         )
+        team_id, project_id = await _assignment_activity_scope_ids(
+            scope=scope, assignment=assignment, db=db
+        )
+        virtual_key_id = assignment.virtual_key_id
         await db.delete(assignment)
         await _record_policy_activity(
             actor=actor,
             scope=scope,
             action="policy_assignment.deleted",
             message="Deleted policy assignment.",
+            team_id=team_id,
+            project_id=project_id,
+            virtual_key_id=virtual_key_id,
             metadata=_assignment_metadata(assignment),
             db=db,
         )
@@ -1311,24 +1329,71 @@ async def _record_policy_activity(
     scope: Scope,
     action: str,
     message: str,
+    team_id: UUID | None = None,
+    project_id: UUID | None = None,
+    virtual_key_id: UUID | None = None,
     metadata: dict,
     db: AsyncSession,
 ) -> None:
     if actor is None:
         return
-    await activity_facade.record_event(
-        payload=RecordActivityEvent(
-            org_id=scope.org_id,
-            category="policy",
-            severity="info",
-            action=action,
-            message=message,
-            actor_user_id=actor.id,
-            actor_email=str(actor.email),
-            metadata=metadata,
-        ),
+    audit_entity_type, audit_entity_id = _policy_audit_entity(metadata)
+    await activity_facade.record_admin_event(
+        actor=actor,
+        category="policy",
+        action=action,
+        message=message,
+        team_id=team_id,
+        project_id=project_id,
+        virtual_key_id=virtual_key_id,
+        audit_entity_type=audit_entity_type,
+        audit_entity_id=audit_entity_id,
+        metadata=metadata,
         db=db,
     )
+
+
+def _policy_audit_entity(metadata: dict) -> tuple[str, UUID | None]:
+    for entity_type, key in (
+        ("policy_assignment", "assignment_id"),
+        ("access_policy_route", "access_policy_route_id"),
+        ("limit_policy_rule", "limit_policy_rule_id"),
+        ("access_policy", "access_policy_id"),
+        ("limit_policy", "limit_policy_id"),
+    ):
+        value = metadata.get(key)
+        if value:
+            return entity_type, UUID(str(value))
+    return "organization", None
+
+
+async def _assignment_activity_scope_ids(
+    *, scope: Scope, assignment: PolicyAssignment, db: AsyncSession
+) -> tuple[UUID | None, UUID | None]:
+    if assignment.team_id is not None:
+        return assignment.team_id, None
+    if assignment.project_id is not None:
+        project = await repository.get_project(
+            org_id=scope.org_id,
+            project_id=assignment.project_id,
+            db=db,
+        )
+        return (project.team_id if project is not None else None), assignment.project_id
+    if assignment.virtual_key_id is not None:
+        virtual_key = await repository.get_virtual_key(
+            org_id=scope.org_id,
+            virtual_key_id=assignment.virtual_key_id,
+            db=db,
+        )
+        if virtual_key is None:
+            return None, None
+        project = await repository.get_project(
+            org_id=scope.org_id,
+            project_id=virtual_key.project_id,
+            db=db,
+        )
+        return (project.team_id if project is not None else None), virtual_key.project_id
+    return None, None
 
 
 def _assignment_metadata(assignment: PolicyAssignment) -> dict:

@@ -280,3 +280,22 @@ async def list_audit_events(
 
 async def verify_audit_chain(*, scope: Scope, db: AsyncSession):
     return await service.verify_audit_chain(scope=scope, db=db)
+
+
+async def record_audit_event(
+    *,
+    actor: AuthenticatedUser,
+    action: str,
+    entity_type: str,
+    entity_id: UUID | None,
+    metadata: dict,
+    db: AsyncSession,
+) -> None:
+    await service.record_audit_event(
+        actor=actor,
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        metadata=metadata,
+        db=db,
+    )

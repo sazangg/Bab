@@ -4,7 +4,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -18,6 +18,7 @@ from app.core.security import (
     hash_token,
     verify_password,
 )
+from app.modules.activity.metadata import sanitize_metadata
 from app.modules.auth.errors import (
     DuplicateInviteError,
     InvalidAccessTokenError,
@@ -32,8 +33,10 @@ from app.modules.auth.errors import (
 )
 from app.modules.auth.internal.models import (
     AuditEvent,
+    AuditLedgerState,
     IdentityAccount,
     Invite,
+    Organization,
     OrganizationMembership,
     ProjectMembership,
     Team,
@@ -1190,7 +1193,9 @@ async def record_audit_event(
     db: AsyncSession,
 ) -> None:
     created_at = datetime.now(UTC)
-    previous_hash = await _latest_audit_hash(org_id=actor.org_id, db=db)
+    metadata = sanitize_metadata(metadata)
+    ledger_state = await _audit_ledger_state(org_id=actor.org_id, db=db)
+    previous_hash = ledger_state.latest_event_hash
     event_hash = _audit_event_hash(
         org_id=actor.org_id,
         actor_user_id=actor.id,
@@ -1219,6 +1224,7 @@ async def record_audit_event(
             created_at=created_at,
         )
     )
+    ledger_state.latest_event_hash = event_hash
 
 
 async def list_audit_events(
@@ -1323,6 +1329,32 @@ async def _latest_audit_hash(*, org_id: UUID, db: AsyncSession) -> str | None:
         .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
         .limit(1)
     )
+
+
+async def _audit_ledger_state(*, org_id: UUID, db: AsyncSession) -> AuditLedgerState:
+    await db.execute(
+        update(Organization).where(Organization.id == org_id).values(name=Organization.name)
+    )
+    await db.execute(
+        update(AuditLedgerState)
+        .where(AuditLedgerState.org_id == org_id)
+        .values(latest_event_hash=AuditLedgerState.latest_event_hash)
+    )
+    await db.scalar(select(Organization).where(Organization.id == org_id).with_for_update())
+    state = await db.scalar(
+        select(AuditLedgerState)
+        .where(AuditLedgerState.org_id == org_id)
+        .with_for_update()
+    )
+    if state is not None:
+        return state
+    state = AuditLedgerState(
+        org_id=org_id,
+        latest_event_hash=await _latest_audit_hash(org_id=org_id, db=db),
+    )
+    db.add(state)
+    await db.flush()
+    return state
 
 
 def _audit_event_hash(

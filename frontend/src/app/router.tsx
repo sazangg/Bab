@@ -96,7 +96,7 @@ export function AppRoutes() {
           <Route element={<ProtectedRoute allowUsageScope />}>
             <Route path="/usage" element={<UsagePage />} />
           </Route>
-          <Route element={<ProtectedRoute permission="activity.view" />}>
+          <Route element={<ProtectedRoute allowActivityScope />}>
             <Route path="/activity" element={<ActivityPage />} />
           </Route>
           <Route element={<ProtectedRoute permission="audit.view" />}>

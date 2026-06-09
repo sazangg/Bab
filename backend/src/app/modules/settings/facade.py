@@ -66,4 +66,9 @@ async def update_organization_settings(
 
 def _to_response(settings) -> OrganizationSettingsResponse:
     response = OrganizationSettingsResponse.model_validate(settings)
-    return response.model_copy(update={"usage_retention_days": env_settings.usage_retention_days})
+    return response.model_copy(
+        update={
+            "usage_retention_days": env_settings.usage_retention_days,
+            "activity_retention_days": env_settings.activity_retention_days,
+        }
+    )

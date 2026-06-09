@@ -5,7 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope, transaction
 from app.modules.activity import facade as activity_facade
-from app.modules.activity.schemas import RecordActivityEvent
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.guardrails.detectors.registry import DEFAULT_PII_DETECTOR, get_detector
 from app.modules.guardrails.errors import (
@@ -69,17 +68,14 @@ async def create_policy(
             rules=[rule.model_dump() for rule in payload.rules],
             db=db,
         )
-        await activity_facade.record_event(
-            payload=RecordActivityEvent(
-                org_id=scope.org_id,
-                category="guardrail",
-                severity="info",
-                action="guardrail.policy_created",
-                message=f"Created guardrail policy {policy.name}.",
-                actor_user_id=actor.id,
-                actor_email=actor.email,
-                metadata={"policy_id": str(policy.id)},
-            ),
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="guardrail",
+            action="guardrail.policy_created",
+            message=f"Created guardrail policy {policy.name}.",
+            audit_entity_type="guardrail_policy",
+            audit_entity_id=policy.id,
+            metadata={"policy_id": str(policy.id)},
             db=db,
         )
     rules = await repository.list_policy_rules(org_id=scope.org_id, policy_ids=[policy.id], db=db)
@@ -108,17 +104,14 @@ async def update_policy(
                 rules=[rule.model_dump() for rule in payload.rules],
                 db=db,
             )
-        await activity_facade.record_event(
-            payload=RecordActivityEvent(
-                org_id=scope.org_id,
-                category="guardrail",
-                severity="info",
-                action="guardrail.policy_updated",
-                message=f"Updated guardrail policy {policy.name}.",
-                actor_user_id=actor.id,
-                actor_email=actor.email,
-                metadata={"policy_id": str(policy.id)},
-            ),
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="guardrail",
+            action="guardrail.policy_updated",
+            message=f"Updated guardrail policy {policy.name}.",
+            audit_entity_type="guardrail_policy",
+            audit_entity_id=policy.id,
+            metadata={"policy_id": str(policy.id)},
             db=db,
         )
     rules = await repository.list_policy_rules(org_id=scope.org_id, policy_ids=[policy.id], db=db)
@@ -137,17 +130,14 @@ async def delete_policy(
         if policy is None:
             raise GuardrailPolicyNotFoundError
         await repository.delete_policy(policy=policy, db=db)
-        await activity_facade.record_event(
-            payload=RecordActivityEvent(
-                org_id=scope.org_id,
-                category="guardrail",
-                severity="info",
-                action="guardrail.policy_deleted",
-                message=f"Deleted guardrail policy {policy.name}.",
-                actor_user_id=actor.id,
-                actor_email=actor.email,
-                metadata={"policy_id": str(policy_id)},
-            ),
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="guardrail",
+            action="guardrail.policy_deleted",
+            message=f"Deleted guardrail policy {policy.name}.",
+            audit_entity_type="guardrail_policy",
+            audit_entity_id=policy_id,
+            metadata={"policy_id": str(policy_id)},
             db=db,
         )
 
@@ -228,17 +218,21 @@ async def create_assignment(
             is_active=payload.is_active,
             db=db,
         )
-        await activity_facade.record_event(
-            payload=RecordActivityEvent(
-                org_id=scope.org_id,
-                category="guardrail",
-                severity="info",
-                action="guardrail.assignment_created",
-                message=f"Assigned guardrail policy {policy.name}.",
-                actor_user_id=actor.id,
-                actor_email=actor.email,
-                metadata={"policy_id": str(policy.id), "scope_type": payload.scope_type},
-            ),
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="guardrail",
+            action="guardrail.assignment_created",
+            message=f"Assigned guardrail policy {policy.name}.",
+            team_id=team_id,
+            project_id=project_id,
+            virtual_key_id=virtual_key_id,
+            audit_entity_type="guardrail_assignment",
+            audit_entity_id=assignment.id,
+            metadata={
+                "assignment_id": str(assignment.id),
+                "policy_id": str(policy.id),
+                "scope_type": payload.scope_type,
+            },
             db=db,
         )
     return _to_assignment_response(assignment, policy.name)
@@ -304,17 +298,17 @@ async def update_assignment(
             assignment.enforcement_mode = payload.enforcement_mode
         if payload.is_active is not None:
             assignment.is_active = payload.is_active
-        await activity_facade.record_event(
-            payload=RecordActivityEvent(
-                org_id=scope.org_id,
-                category="guardrail",
-                severity="info",
-                action="guardrail.assignment_updated",
-                message="Updated guardrail assignment.",
-                actor_user_id=actor.id,
-                actor_email=actor.email,
-                metadata={"assignment_id": str(assignment.id)},
-            ),
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="guardrail",
+            action="guardrail.assignment_updated",
+            message="Updated guardrail assignment.",
+            team_id=team_id,
+            project_id=project_id,
+            virtual_key_id=virtual_key_id,
+            audit_entity_type="guardrail_assignment",
+            audit_entity_id=assignment.id,
+            metadata={"assignment_id": str(assignment.id)},
             db=db,
         )
     return _to_assignment_response(assignment, policy.name if policy else "Unknown policy")
@@ -336,17 +330,17 @@ async def delete_assignment(
         if assignment is None:
             raise GuardrailAssignmentNotFoundError
         await repository.delete_assignment(assignment=assignment, db=db)
-        await activity_facade.record_event(
-            payload=RecordActivityEvent(
-                org_id=scope.org_id,
-                category="guardrail",
-                severity="info",
-                action="guardrail.assignment_deleted",
-                message="Deleted guardrail assignment.",
-                actor_user_id=actor.id,
-                actor_email=actor.email,
-                metadata={"assignment_id": str(assignment_id)},
-            ),
+        await activity_facade.record_admin_event(
+            actor=actor,
+            category="guardrail",
+            action="guardrail.assignment_deleted",
+            message="Deleted guardrail assignment.",
+            team_id=assignment.team_id,
+            project_id=assignment.project_id,
+            virtual_key_id=assignment.virtual_key_id,
+            audit_entity_type="guardrail_assignment",
+            audit_entity_id=assignment_id,
+            metadata={"assignment_id": str(assignment_id)},
             db=db,
         )
 
