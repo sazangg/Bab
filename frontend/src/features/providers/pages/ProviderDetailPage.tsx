@@ -276,7 +276,7 @@ export function ProviderDetailPage() {
         </CardHeader>
         <CardContent className="grid gap-x-6 gap-y-4 md:grid-cols-4">
           <Fact label="Integration" value={provider.supported_integration} />
-          <Fact label="Adapter" value={provider.adapter_type} />
+          <Fact label="Adapter" value={formatAdapterLabel(provider)} />
           <Fact label="Active credentials" value={`${activeCredentials.length}`} />
           <Fact
             label="Last successful request"
@@ -629,6 +629,16 @@ function providerCapabilityLabels(capabilities: Record<string, boolean> | undefi
   return Object.entries(capabilities ?? {})
     .filter(([, enabled]) => enabled)
     .map(([key]) => labels[key] ?? key);
+}
+
+function formatAdapterLabel(provider: { adapter_type: string; supported_integration: string }) {
+  if (provider.supported_integration === "anthropic_messages") {
+    return "Native Anthropic messages";
+  }
+  if (provider.adapter_type === "openai_compat") {
+    return "OpenAI-compatible";
+  }
+  return provider.adapter_type;
 }
 
 function countByHealth(credentials: { health_status: string }[]) {
