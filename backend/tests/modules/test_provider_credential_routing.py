@@ -12,10 +12,15 @@ from app.core.database import Scope
 from app.modules.auth.internal.models import Organization
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.providers import facade as providers_facade
-from app.modules.providers.errors import ProviderCredentialRequiredError, ProviderUpstreamError
+from app.modules.providers.errors import (
+    ProviderCredentialRequiredError,
+    ProviderResourceConflictError,
+    ProviderUpstreamError,
+)
 from app.modules.providers.internal import service
 from app.modules.providers.internal.models import (
     CredentialPoolCredential,
+    ModelOffering,
     Provider,
     ProviderCredential,
 )
@@ -274,6 +279,7 @@ async def test_credential_validation_records_success_and_readiness(
         db=db_session,
     )
     assert before_validation.readiness.status == "degraded"
+    assert before_validation.readiness.is_ready is False
 
     async def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/v1/models"
@@ -300,6 +306,67 @@ async def test_credential_validation_records_success_and_readiness(
         db=db_session,
     )
     assert after_validation.readiness.status == "needs_pool"
+    assert after_validation.readiness.is_ready is False
+
+
+async def test_provider_readiness_requires_clean_active_credential_health(
+    db_session: AsyncSession,
+) -> None:
+    actor, scope = await _create_actor_scope(db_session)
+    provider = await providers_facade.create_provider(
+        payload=CreateProviderRequest(name="Provider", base_url="https://api.example.test/v1"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    credential = await providers_facade.create_provider_credential(
+        provider_id=provider.id,
+        payload=CreateProviderCredentialRequest(name="Credential", api_key="invalid-secret"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    credential_model = await service._get_provider_credential_or_raise(
+        provider_id=provider.id,
+        provider_credential_id=credential.id,
+        scope=scope,
+        db=db_session,
+    )
+    credential_model.health_status = "invalid"
+    pool = await providers_facade.create_credential_pool(
+        provider_id=provider.id,
+        payload=CreateCredentialPoolRequest(name="Default"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    await providers_facade.add_credential_pool_credential(
+        provider_id=provider.id,
+        pool_id=pool.id,
+        payload=AddCredentialPoolCredentialRequest(provider_credential_id=credential.id),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    db_session.add(
+        ModelOffering(
+            org_id=scope.org_id,
+            provider_id=provider.id,
+            provider_model_name="model-a",
+            input_modalities=["text"],
+            output_modalities=["text"],
+        )
+    )
+    await db_session.commit()
+
+    readiness = await providers_facade.get_provider(
+        provider_id=provider.id,
+        scope=scope,
+        db=db_session,
+    )
+
+    assert readiness.readiness.status == "degraded"
+    assert readiness.readiness.is_ready is False
 
 
 async def test_credential_validation_records_structured_failure(
@@ -338,6 +405,74 @@ async def test_credential_validation_records_structured_failure(
     assert result.last_failure_at == result.last_validation_at
     assert result.failure_reason == "authentication_failed"
     assert result.failure_message == "Invalid API key"
+
+
+async def test_provider_resource_conflicts_are_reported_before_database_constraints(
+    db_session: AsyncSession,
+) -> None:
+    actor, scope = await _create_actor_scope(db_session)
+    provider = await providers_facade.create_provider(
+        payload=CreateProviderRequest(name="Provider", base_url="https://api.example.test/v1"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    credential = await providers_facade.create_provider_credential(
+        provider_id=provider.id,
+        payload=CreateProviderCredentialRequest(name="Credential", api_key="secret"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    pool = await providers_facade.create_credential_pool(
+        provider_id=provider.id,
+        payload=CreateCredentialPoolRequest(name="Default"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    await providers_facade.add_credential_pool_credential(
+        provider_id=provider.id,
+        pool_id=pool.id,
+        payload=AddCredentialPoolCredentialRequest(provider_credential_id=credential.id),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    with pytest.raises(ProviderResourceConflictError):
+        await providers_facade.add_credential_pool_credential(
+            provider_id=provider.id,
+            pool_id=pool.id,
+            payload=AddCredentialPoolCredentialRequest(provider_credential_id=credential.id),
+            actor=actor,
+            scope=scope,
+            db=db_session,
+        )
+
+    await providers_facade.create_model_offering(
+        provider_id=provider.id,
+        payload=CreateModelOfferingRequest(provider_model_name="model-a", alias="stable"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    with pytest.raises(ProviderResourceConflictError):
+        await providers_facade.create_model_offering(
+            provider_id=provider.id,
+            payload=CreateModelOfferingRequest(provider_model_name="model-a"),
+            actor=actor,
+            scope=scope,
+            db=db_session,
+        )
+    with pytest.raises(ProviderResourceConflictError):
+        await providers_facade.create_model_offering(
+            provider_id=provider.id,
+            payload=CreateModelOfferingRequest(provider_model_name="model-b", alias="stable"),
+            actor=actor,
+            scope=scope,
+            db=db_session,
+        )
 
 
 async def test_anthropic_validation_and_model_sync_use_native_auth(
@@ -416,6 +551,7 @@ async def test_anthropic_validation_and_model_sync_use_native_auth(
     assert sync.summary.added == 1
     assert sync.models[0].provider_model_name == "claude-sonnet-4-5"
     assert readiness.readiness.status == "ready"
+    assert readiness.readiness.is_ready is True
 
 
 async def test_invalid_anthropic_credential_records_structured_failure(
@@ -514,9 +650,7 @@ async def test_anthropic_model_test_uses_native_messages_and_pool_routing(
 ) -> None:
     actor, scope = await _create_actor_scope(db_session)
     created = await providers_facade.create_provider(
-        payload=CreateProviderRequest(
-            name="Anthropic", base_url="https://api.anthropic.com/v1"
-        ),
+        payload=CreateProviderRequest(name="Anthropic", base_url="https://api.anthropic.com/v1"),
         actor=actor,
         scope=scope,
         db=db_session,
@@ -586,9 +720,7 @@ async def test_anthropic_model_test_auth_failure_updates_credential_health(
 ) -> None:
     actor, scope = await _create_actor_scope(db_session)
     created = await providers_facade.create_provider(
-        payload=CreateProviderRequest(
-            name="Anthropic", base_url="https://api.anthropic.com/v1"
-        ),
+        payload=CreateProviderRequest(name="Anthropic", base_url="https://api.anthropic.com/v1"),
         actor=actor,
         scope=scope,
         db=db_session,

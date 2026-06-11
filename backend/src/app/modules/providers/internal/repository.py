@@ -431,6 +431,22 @@ async def get_model_offering_by_name(
     )
 
 
+async def get_model_offering_by_alias(
+    *,
+    org_id: UUID,
+    provider_id: UUID,
+    alias: str,
+    db: AsyncSession,
+) -> ModelOffering | None:
+    return await db.scalar(
+        select(ModelOffering).where(
+            ModelOffering.org_id == org_id,
+            ModelOffering.provider_id == provider_id,
+            ModelOffering.alias == alias,
+        )
+    )
+
+
 async def get_model_offering(
     *,
     org_id: UUID,

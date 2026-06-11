@@ -30,7 +30,7 @@ export const routingPolicyOptions = [
   {
     value: "weighted",
     label: "Weighted",
-    description: "Randomly select a credential, with lower priority numbers receiving more weight.",
+    description: "Randomly select a credential using each pool membership's weight.",
   },
 ] as const;
 
@@ -54,7 +54,7 @@ export const retryPolicySchema = z.object({
 export const circuitBreakerPolicySchema = z.object({
   enabled: z.boolean(),
   failure_threshold_pct: z.coerce.number().int().min(0).max(100),
-  min_request_count: z.coerce.number().int().min(0),
+  min_request_count: z.coerce.number().int().min(1),
   window_seconds: z.coerce.number().int().min(1),
   cooldown_seconds: z.coerce.number().int().min(1),
 });

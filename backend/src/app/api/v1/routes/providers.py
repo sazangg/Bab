@@ -12,6 +12,7 @@ from app.modules.providers import facade
 from app.modules.providers.errors import (
     ProviderCredentialRequiredError,
     ProviderNotFoundError,
+    ProviderResourceConflictError,
     ProviderSlugConflictError,
     ProviderUpstreamError,
 )
@@ -248,6 +249,8 @@ async def add_credential_pool_credential(
             status_code=404,
             detail="credential pool or credential not found",
         ) from exc
+    except ProviderResourceConflictError as exc:
+        raise HTTPException(status_code=409, detail="credential is already in this pool") from exc
 
 
 @router.patch("/{provider_id}/pools/{pool_id}/credentials/{pool_credential_id}")
@@ -451,6 +454,8 @@ async def create_model_offering(
         )
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc
+    except ProviderResourceConflictError as exc:
+        raise HTTPException(status_code=409, detail="model offering already exists") from exc
 
 
 @router.patch("/{provider_id}/offerings/{model_offering_id}")
@@ -473,6 +478,8 @@ async def update_model_offering(
         )
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="model offering not found") from exc
+    except ProviderResourceConflictError as exc:
+        raise HTTPException(status_code=409, detail="model offering already exists") from exc
 
 
 @router.post("/{provider_id}/offerings/{model_offering_id}/test")

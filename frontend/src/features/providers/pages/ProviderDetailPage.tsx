@@ -51,7 +51,10 @@ import { StatusBadge } from "@/shared/components/StatusBadge";
 import { EditProviderSheet } from "@/features/providers/components/EditProviderSheet";
 import { hasPermission } from "@/features/auth/lib/permissions";
 import { ProviderResourcesPanel } from "@/features/providers/components/ProviderResourcesPanel";
-import { formatRelativeFromNow } from "@/features/providers/lib/format";
+import {
+  formatRelativeFromNow,
+  sanitizeCredentialValidationMessage,
+} from "@/features/providers/lib/format";
 import { UsageRecordsDrilldown } from "@/features/usage/components/UsageRecordsDrilldown";
 
 export function ProviderDetailPage() {
@@ -620,6 +623,7 @@ function providerCapabilityLabels(capabilities: Record<string, boolean> | undefi
     openai_compatible_completions: "Completions compatibility",
     streaming: "Streaming",
     native_anthropic_messages: "Native Anthropic Messages",
+    native_anthropic_models_list: "Native Anthropic model list",
     embeddings: "Embeddings",
   };
   return Object.entries(capabilities ?? {})
@@ -655,11 +659,25 @@ function lastSuccessfulRequestAt(
 }
 
 function lastCredentialFailure(
-  credentials: { last_validation_error: string | null; health_status: string }[],
+  credentials: {
+    failure_message?: string | null;
+    last_failure_at?: string | null;
+    last_validation_error: string | null;
+    health_status: string;
+  }[],
 ) {
-  const failed = credentials.find((credential) => credential.last_validation_error);
+  const failed = [...credentials]
+    .filter((credential) => credential.failure_message || credential.last_validation_error)
+    .sort((a, b) => {
+      const aTime = a.last_failure_at ? new Date(a.last_failure_at).getTime() : 0;
+      const bTime = b.last_failure_at ? new Date(b.last_failure_at).getTime() : 0;
+      return bTime - aTime;
+    })[0];
   if (!failed) return null;
-  return failed.last_validation_error;
+  return (
+    sanitizeCredentialValidationMessage(failed.failure_message ?? failed.last_validation_error) ??
+    "Credential validation failed."
+  );
 }
 
 function formatCents(value: number) {

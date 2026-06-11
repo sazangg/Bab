@@ -1,6 +1,17 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, MoreHorizontal, Pencil, Plug, Plus, Power, RotateCcw, Search, Star, X } from "lucide-react";
+import {
+  ChevronDown,
+  MoreHorizontal,
+  Pencil,
+  Plug,
+  Plus,
+  Power,
+  RotateCcw,
+  Search,
+  Star,
+  X,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link } from "react-router-dom";
@@ -8,11 +19,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Dialog,
   DialogClose,
@@ -99,14 +106,14 @@ export function ProvidersPage() {
     configured: providerStateCounts.configured,
     available: providerStateCounts.available,
     custom: providers.filter((provider) => provider.catalog_type === "custom").length,
-    ready: providers.filter((provider) => provider.readiness?.is_ready).length,
+    ready: providers.filter(isProviderReady).length,
   };
   const catalogEntries = [...providers]
     .filter((entry) => {
       if (segment === "configured") return isProviderInitiated(entry);
       if (segment === "available") return entry.is_active && !isProviderInitiated(entry);
       if (segment === "custom") return entry.catalog_type === "custom";
-      if (segment === "ready") return Boolean(entry.readiness?.is_ready);
+      if (segment === "ready") return isProviderReady(entry);
       return true;
     })
     .filter((entry) =>
@@ -154,7 +161,7 @@ export function ProvidersPage() {
     <>
       <PageHeader
         title="Providers"
-        description="Default and custom OpenAI-compatible upstream providers."
+        description="Default and custom upstream providers for routing, credentials, and model catalogs."
         actions={
           canManageProviders ? (
             <CreateProviderSheet
@@ -182,45 +189,45 @@ export function ProvidersPage() {
         <div className="space-y-4">
           <div className="rounded-md border bg-muted/20 p-3">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="relative flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                className="bg-background pl-9 pr-9"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search by provider, slug, or endpoint..."
-              />
-              {search ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="absolute right-1 top-1/2 -translate-y-1/2"
-                  onClick={() => setSearch("")}
-                  aria-label="Clear provider search"
-                >
-                  <X />
-                </Button>
-              ) : null}
-            </div>
-            <div className="flex flex-wrap items-center gap-1 rounded-md border bg-background p-0.5">
-              {(["all", "configured", "available", "custom", "ready"] as const).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setSegment(value)}
-                  className={cn(
-                    "rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors",
-                    segment === value
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {value === "configured" ? "Configured" : value}
-                  <span className="ml-1.5 text-muted-foreground">{segmentCounts[value]}</span>
-                </button>
-              ))}
-            </div>
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  className="bg-background pl-9 pr-9"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search by provider, slug, or endpoint..."
+                />
+                {search ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="absolute right-1 top-1/2 -translate-y-1/2"
+                    onClick={() => setSearch("")}
+                    aria-label="Clear provider search"
+                  >
+                    <X />
+                  </Button>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap items-center gap-1 rounded-md border bg-background p-0.5">
+                {(["all", "configured", "available", "custom", "ready"] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setSegment(value)}
+                    className={cn(
+                      "rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors",
+                      segment === value
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {value === "configured" ? "Configured" : value}
+                    <span className="ml-1.5 text-muted-foreground">{segmentCounts[value]}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           {catalogEntries.length === 0 ? (
@@ -295,7 +302,10 @@ export function ProvidersPage() {
               {disabledEntries.length > 0 ? (
                 <Collapsible open={disabledOpen} onOpenChange={setDisabledOpen}>
                   <CollapsibleTrigger asChild>
-                    <Button variant="ghost" className="w-full justify-between text-muted-foreground">
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-between text-muted-foreground"
+                    >
                       Disabled providers ({disabledEntries.length})
                       <ChevronDown
                         className={cn("transition-transform", disabledOpen && "rotate-180")}
@@ -370,7 +380,8 @@ export function ProvidersPage() {
                 {deactivateImpact.active_model_count ?? 0} models.
               </p>
               <p className="mt-1 text-muted-foreground">
-                Last 30 days: {(deactivateImpact.recent_request_count ?? 0).toLocaleString()} requests.
+                Last 30 days: {(deactivateImpact.recent_request_count ?? 0).toLocaleString()}{" "}
+                requests.
               </p>
             </div>
           ) : null}
@@ -561,7 +572,8 @@ function ProviderFact({ label, value }: { label: string; value: string }) {
 }
 
 function formatProviderReadiness(provider: ProviderResponse) {
-  const status = provider.readiness?.status ?? (provider.is_active ? "needs_credential" : "disabled");
+  const status =
+    provider.readiness?.status ?? (provider.is_active ? "needs_credential" : "disabled");
   const states: Record<
     string,
     { label: string; variant: "active" | "inactive" | "error" | "expired" }
@@ -587,6 +599,10 @@ function isProviderInitiated(provider: ProviderResponse) {
     (provider.credential_summary?.active ?? 0) > 0 ||
     (provider.readiness?.active_model_count ?? 0) > 0
   );
+}
+
+function isProviderReady(provider: ProviderResponse) {
+  return provider.readiness?.status === "ready";
 }
 
 function AddProviderCredentialDialog({
@@ -652,6 +668,9 @@ function AddProviderCredentialDialog({
           <div className="space-y-1.5">
             <Label htmlFor="provider-key-name">Name</Label>
             <Input id="provider-key-name" autoFocus {...form.register("name")} />
+            {form.formState.errors.name ? (
+              <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
+            ) : null}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="provider-key-secret">API key</Label>
@@ -661,6 +680,9 @@ function AddProviderCredentialDialog({
               autoComplete="new-password"
               {...form.register("api_key")}
             />
+            {form.formState.errors.api_key ? (
+              <p className="text-xs text-destructive">{form.formState.errors.api_key.message}</p>
+            ) : null}
           </div>
           {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
         </form>

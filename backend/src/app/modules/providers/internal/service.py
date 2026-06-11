@@ -19,6 +19,7 @@ from app.modules.providers.errors import (
     ProviderCredentialRequiredError,
     ProviderInactiveError,
     ProviderNotFoundError,
+    ProviderResourceConflictError,
     ProviderSlugConflictError,
     ProviderUpstreamError,
 )
@@ -92,6 +93,8 @@ logger = structlog.get_logger(__name__)
 _provider_semaphores: dict[UUID, tuple[int, asyncio.Semaphore]] = {}
 _provider_circuit_events: dict[UUID, deque[tuple[datetime, bool]]] = defaultdict(deque)
 _provider_circuit_open_until: dict[UUID, datetime] = {}
+
+
 async def create_provider(
     *,
     payload: CreateProviderRequest,
@@ -367,6 +370,16 @@ async def add_credential_pool_credential(
             scope=scope,
             db=db,
         )
+        existing_memberships = await repository.list_pool_credentials(
+            org_id=scope.org_id,
+            pool_id=pool_id,
+            db=db,
+        )
+        if any(
+            membership.provider_credential_id == payload.provider_credential_id
+            for membership, _credential in existing_memberships
+        ):
+            raise ProviderResourceConflictError
         membership = await repository.create_pool_credential(
             org_id=scope.org_id,
             pool_id=pool_id,
@@ -735,6 +748,13 @@ async def create_model_offering(
 ) -> ModelOfferingResponse:
     async with transaction(db):
         await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
+        await _ensure_model_offering_unique(
+            org_id=scope.org_id,
+            provider_id=provider_id,
+            provider_model_name=payload.provider_model_name,
+            alias=payload.alias,
+            db=db,
+        )
         model_offering = await repository.create_model_offering(
             org_id=scope.org_id,
             provider_id=provider_id,
@@ -763,6 +783,35 @@ async def create_model_offering(
             db=db,
         )
     return _model_offering_response(model_offering)
+
+
+async def _ensure_model_offering_unique(
+    *,
+    org_id: UUID,
+    provider_id: UUID,
+    provider_model_name: str | None,
+    alias: str | None,
+    db: AsyncSession,
+    current_model_offering_id: UUID | None = None,
+) -> None:
+    if provider_model_name is not None:
+        existing = await repository.get_model_offering_by_name(
+            org_id=org_id,
+            provider_id=provider_id,
+            provider_model_name=provider_model_name,
+            db=db,
+        )
+        if existing is not None and existing.id != current_model_offering_id:
+            raise ProviderResourceConflictError
+    if alias is not None:
+        existing = await repository.get_model_offering_by_alias(
+            org_id=org_id,
+            provider_id=provider_id,
+            alias=alias,
+            db=db,
+        )
+        if existing is not None and existing.id != current_model_offering_id:
+            raise ProviderResourceConflictError
 
 
 async def sync_model_offerings(
@@ -1109,8 +1158,24 @@ async def update_model_offering(
             db=db,
         )
         if payload.provider_model_name is not None:
+            await _ensure_model_offering_unique(
+                org_id=scope.org_id,
+                provider_id=provider_id,
+                provider_model_name=payload.provider_model_name,
+                alias=None,
+                current_model_offering_id=model_offering.id,
+                db=db,
+            )
             model_offering.provider_model_name = payload.provider_model_name
         if "alias" in payload.model_fields_set:
+            await _ensure_model_offering_unique(
+                org_id=scope.org_id,
+                provider_id=provider_id,
+                provider_model_name=None,
+                alias=payload.alias,
+                current_model_offering_id=model_offering.id,
+                db=db,
+            )
             model_offering.alias = payload.alias
         if "version" in payload.model_fields_set:
             model_offering.version = payload.version
@@ -1807,6 +1872,7 @@ def _provider_integration_capabilities(provider: Provider) -> dict[str, bool]:
         "openai_compatible",
         "openai_compatible_default",
     }
+    anthropic_messages = provider.supported_integration == "anthropic_messages"
     return {
         "openai_compatible_chat": openai_compatible,
         "openai_compatible_models_list": openai_compatible,
@@ -1814,7 +1880,8 @@ def _provider_integration_capabilities(provider: Provider) -> dict[str, bool]:
         "openai_compatible_completions": openai_compatible,
         "streaming": openai_compatible,
         "embeddings": False,
-        "native_anthropic_messages": provider.supported_integration == "anthropic_messages",
+        "native_anthropic_messages": anthropic_messages,
+        "native_anthropic_models_list": anthropic_messages,
     }
 
 
@@ -1845,7 +1912,11 @@ async def _attach_provider_readiness_data(
 
 
 def _provider_catalog_type(provider: Provider) -> str:
-    return "default" if provider.supported_integration == "openai_compatible_default" else "custom"
+    return (
+        "default"
+        if provider.supported_integration in {"openai_compatible_default", "anthropic_messages"}
+        else "custom"
+    )
 
 
 def _aggregate_provider_capabilities(provider: Provider) -> dict:
@@ -1886,15 +1957,7 @@ def _provider_readiness(
         has_active_pool_credential=active_pool_credential_count > 0,
         has_active_model=active_model_count > 0,
         active_model_count=active_model_count,
-        is_ready=all(
-            [
-                provider.is_active,
-                credential_summary.active > 0,
-                active_pool_count > 0,
-                active_pool_credential_count > 0,
-                active_model_count > 0,
-            ]
-        ),
+        is_ready=status == "ready",
     )
 
 

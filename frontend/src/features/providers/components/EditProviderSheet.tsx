@@ -190,6 +190,7 @@ export function EditProviderSheet({
                     form.setValue("max_body_mode", value, { shouldDirty: true })
                   }
                   inheritedValue={`${Math.round((settings?.default_max_body_bytes ?? 0) / 1024).toLocaleString()} KB`}
+                  error={form.formState.errors.max_body_bytes_kb?.message}
                 >
                   <Input
                     id="edit-provider-body"
@@ -327,11 +328,15 @@ export function EditProviderSheet({
                     })}
                   />
                 </FormField>
-                <FormField label="Min requests" htmlFor="edit-cb-min">
+                <FormField
+                  label="Min requests"
+                  htmlFor="edit-cb-min"
+                  error={form.formState.errors.circuit_breaker_policy?.min_request_count?.message}
+                >
                   <Input
                     id="edit-cb-min"
                     type="number"
-                    min={0}
+                    min={1}
                     {...form.register("circuit_breaker_policy.min_request_count", {
                       valueAsNumber: true,
                     })}

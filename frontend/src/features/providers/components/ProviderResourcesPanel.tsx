@@ -309,10 +309,12 @@ function ProviderResourcesContent({
   });
   const hasActiveCredential = credentials.some((credential) => credential.is_active);
   const supportsModelSync =
-    provider.integration_capabilities?.openai_compatible_models_list === true;
+    provider.integration_capabilities?.openai_compatible_models_list === true ||
+    provider.integration_capabilities?.native_anthropic_models_list === true;
   const supportsModelTest =
     provider.integration_capabilities?.openai_compatible_chat === true ||
     provider.integration_capabilities?.native_anthropic_messages === true;
+  const providerReady = provider.readiness?.status === "ready";
   const [bulkTestProgress, setBulkTestProgress] = useState<{
     index: number;
     total: number;
@@ -454,8 +456,8 @@ function ProviderResourcesContent({
           />
           <SetupStep
             label="Test request"
-            complete={Boolean(provider.readiness?.is_ready)}
-            action={provider.readiness?.is_ready ? "Playground" : undefined}
+            complete={providerReady}
+            action={providerReady ? "Playground" : undefined}
             href="/playground"
           />
         </CardContent>
@@ -523,13 +525,41 @@ function ProviderResourcesContent({
                     },
                   })
                 }
-                onRotate={(credential, apiKey) =>
-                  updateCredential.mutate({
-                    providerId,
-                    providerCredentialId: credential.id,
-                    data: { api_key: apiKey },
-                  })
-                }
+                onRotate={async (credential, apiKey) => {
+                  try {
+                    const updateResponse = await updateCredential.mutateAsync({
+                      providerId,
+                      providerCredentialId: credential.id,
+                      data: { api_key: apiKey },
+                    });
+                    if (updateResponse.status !== 200) {
+                      toast.error("Credential secret was not replaced.");
+                      return false;
+                    }
+                    const testResponse = await testCredential.mutateAsync({
+                      providerId,
+                      providerCredentialId: credential.id,
+                    });
+                    if (
+                      testResponse.status === 200 &&
+                      testResponse.data.health_status === "valid"
+                    ) {
+                      toast.success(`${credential.name}: secret replaced and validated.`);
+                      return true;
+                    }
+                    const message =
+                      sanitizeCredentialValidationMessage(
+                        testResponse.status === 200
+                          ? testResponse.data.last_validation_error
+                          : null,
+                      ) ?? "Secret was replaced, but validation failed.";
+                    toast.error(`${credential.name}: ${message}`);
+                    return false;
+                  } catch {
+                    toast.error(`${credential.name}: secret replacement failed.`);
+                    return false;
+                  }
+                }}
                 onDeactivate={setDeactivateCredentialTarget}
                 onReactivate={(credential) =>
                   updateCredential.mutate({
@@ -894,6 +924,10 @@ function formatMetadataSource(value: string) {
   return value;
 }
 
+function formatCredentialCreator(createdBy: string | null | undefined) {
+  return createdBy ? `User ${createdBy.slice(0, 8)}` : "System";
+}
+
 function toRoutingPolicyValue(value: string): CredentialPoolValues["selection_policy"] {
   return routingPolicyOptions.some((option) => option.value === value)
     ? (value as CredentialPoolValues["selection_policy"])
@@ -922,6 +956,7 @@ function CredentialPoolTable({
   canManage: boolean;
 }) {
   const [editPool, setEditPool] = useState<CredentialPoolResponse | null>(null);
+  const colSpan = canManage ? 6 : 5;
 
   return (
     <>
@@ -940,21 +975,27 @@ function CredentialPoolTable({
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
+                <TableCell
+                  colSpan={colSpan}
+                  className="py-8 text-center text-sm text-muted-foreground"
+                >
                   Loading pools...
                 </TableCell>
               </TableRow>
             ) : null}
             {isError ? (
               <TableRow>
-                <TableCell colSpan={5} className="py-8 text-center text-sm text-destructive">
+                <TableCell colSpan={colSpan} className="py-8 text-center text-sm text-destructive">
                   Pools could not be loaded.
                 </TableCell>
               </TableRow>
             ) : null}
             {!isLoading && !isError && pools.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
+                <TableCell
+                  colSpan={colSpan}
+                  className="py-8 text-center text-sm text-muted-foreground"
+                >
                   No pools added yet.
                 </TableCell>
               </TableRow>
@@ -969,7 +1010,15 @@ function CredentialPoolTable({
                     !pool.is_active && "opacity-60",
                     isSelected && "bg-muted/40",
                   )}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => onSelect(pool.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onSelect(pool.id);
+                    }
+                  }}
                 >
                   <TableCell>
                     <div className="font-medium">{pool.name}</div>
@@ -1094,13 +1143,14 @@ function CredentialPoolMembersPanel({
   canManage: boolean;
 }) {
   const [editMember, setEditMember] = useState<CredentialPoolCredentialResponse | null>(null);
+  const [deleteMember, setDeleteMember] = useState<CredentialPoolCredentialResponse | null>(null);
   const form = useForm<PoolMembershipInput, unknown, PoolMembershipValues>({
     resolver: zodResolver(poolMembershipSchema),
     defaultValues: { provider_credential_id: "", priority: 100, weight: 1 },
   });
   const memberCredentialIds = new Set(members.map((member) => member.provider_credential_id));
   const availableCredentials = credentials.filter(
-    (credential) => !memberCredentialIds.has(credential.id),
+    (credential) => credential.is_active && !memberCredentialIds.has(credential.id),
   );
   const firstAvailableCredentialId = availableCredentials[0]?.id ?? "";
   const selectedCredentialId = useWatch({ control: form.control, name: "provider_credential_id" });
@@ -1274,7 +1324,7 @@ function CredentialPoolMembersPanel({
                         <Button
                           size="icon-sm"
                           variant="ghost"
-                          onClick={() => onDelete(pool, member)}
+                          onClick={() => setDeleteMember(member)}
                           title="Remove from pool"
                           aria-label="Remove from pool"
                         >
@@ -1297,6 +1347,34 @@ function CredentialPoolMembersPanel({
           setEditMember(null);
         }}
       />
+      <Dialog open={Boolean(deleteMember)} onOpenChange={(open) => !open && setDeleteMember(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove credential from pool?</DialogTitle>
+            <DialogDescription>
+              {deleteMember
+                ? `${deleteMember.credential.name} will stop being selected by ${pool.name}. The credential itself remains available.`
+                : "This credential will stop being selected by the pool."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="destructive"
+              disabled={!deleteMember}
+              onClick={() => {
+                if (!deleteMember) return;
+                onDelete(pool, deleteMember);
+                setDeleteMember(null);
+              }}
+            >
+              Remove
+            </Button>
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1491,7 +1569,7 @@ function ResourceKeyTable({
   isError: boolean;
   isTesting: boolean;
   onUpdate: (credential: ProviderCredentialResponse, values: { name: string }) => void;
-  onRotate: (credential: ProviderCredentialResponse, apiKey: string) => void;
+  onRotate: (credential: ProviderCredentialResponse, apiKey: string) => Promise<boolean>;
   onDeactivate: (credential: ProviderCredentialResponse) => void;
   onReactivate: (credential: ProviderCredentialResponse) => void;
   onTest: (credential: ProviderCredentialResponse) => void;
@@ -1506,6 +1584,7 @@ function ResourceKeyTable({
   const [editCredential, setEditCredential] = useState<ProviderCredentialResponse | null>(null);
   const [rotateCredential, setRotateCredential] = useState<ProviderCredentialResponse | null>(null);
   const [apiKey, setApiKey] = useState("");
+  const [isRotating, setIsRotating] = useState(false);
 
   return (
     <>
@@ -1553,7 +1632,7 @@ function ResourceKeyTable({
                   <TableCell className="font-medium">
                     <div>{credential.name}</div>
                     <p className="text-xs text-muted-foreground">
-                      Created by {credential.created_by ?? "system"}
+                      Created by {formatCredentialCreator(credential.created_by)}
                     </p>
                     {syncCredential?.id === credential.id ? (
                       <p className="text-xs text-muted-foreground">Used first for model sync</p>
@@ -1702,14 +1781,19 @@ function ResourceKeyTable({
           <DialogFooter>
             <Button
               variant="destructive"
-              disabled={!rotateCredential || !apiKey}
-              onClick={() => {
-                if (rotateCredential) onRotate(rotateCredential, apiKey);
-                setRotateCredential(null);
-                setApiKey("");
+              disabled={!rotateCredential || !apiKey || isRotating}
+              onClick={async () => {
+                if (!rotateCredential) return;
+                setIsRotating(true);
+                const succeeded = await onRotate(rotateCredential, apiKey);
+                setIsRotating(false);
+                if (succeeded) {
+                  setRotateCredential(null);
+                  setApiKey("");
+                }
               }}
             >
-              Rotate
+              {isRotating ? "Replacing..." : "Replace and test"}
             </Button>
             <DialogClose asChild>
               <Button variant="outline">Cancel</Button>
@@ -1764,6 +1848,9 @@ function EditProviderCredentialSheet({
           <div className="space-y-1.5">
             <Label htmlFor="edit-provider-key-name">Name</Label>
             <Input id="edit-provider-key-name" autoFocus {...form.register("name")} />
+            {form.formState.errors.name ? (
+              <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
+            ) : null}
           </div>
         </form>
         <SheetFooter>
@@ -1820,6 +1907,9 @@ function CreateProviderCredentialSheet({
           <div className="space-y-1.5">
             <Label htmlFor="detail-provider-key-name">Name</Label>
             <Input id="detail-provider-key-name" autoFocus {...form.register("name")} />
+            {form.formState.errors.name ? (
+              <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
+            ) : null}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="detail-provider-key-secret">API key</Label>
@@ -1829,6 +1919,9 @@ function CreateProviderCredentialSheet({
               autoComplete="new-password"
               {...form.register("api_key")}
             />
+            {form.formState.errors.api_key ? (
+              <p className="text-xs text-destructive">{form.formState.errors.api_key.message}</p>
+            ) : null}
           </div>
         </form>
         <SheetFooter>
@@ -1914,6 +2007,11 @@ function CreateModelOfferingSheet({
               placeholder="gpt-5.4-mini"
               {...form.register("provider_model_name")}
             />
+            {form.formState.errors.provider_model_name ? (
+              <p className="text-xs text-destructive">
+                {form.formState.errors.provider_model_name.message}
+              </p>
+            ) : null}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="detail-provider-model-alias">Alias</Label>
@@ -1950,6 +2048,11 @@ function CreateModelOfferingSheet({
               placeholder="128000"
               {...form.register("context_window")}
             />
+            {form.formState.errors.context_window ? (
+              <p className="text-xs text-destructive">
+                {form.formState.errors.context_window.message}
+              </p>
+            ) : null}
           </div>
           <PricingFields register={form.register} prefix="detail" />
           <CapabilityCheckboxGroup
@@ -2326,7 +2429,7 @@ function ResourceModelTable({
                                 ? "Add an active credential before testing models."
                                 : !supportsModelTest
                                   ? "Model testing is unavailable for this provider integration."
-                                : "Test model"
+                                  : "Test model"
                             }
                             aria-label="Test model"
                           >
@@ -2436,6 +2539,11 @@ function ResourceModelTable({
             <div className="space-y-1.5">
               <Label htmlFor="edit-provider-model-name">Provider model name</Label>
               <Input id="edit-provider-model-name" {...editForm.register("provider_model_name")} />
+              {editForm.formState.errors.provider_model_name ? (
+                <p className="text-xs text-destructive">
+                  {editForm.formState.errors.provider_model_name.message}
+                </p>
+              ) : null}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="edit-provider-model-alias">Alias</Label>
@@ -2463,6 +2571,11 @@ function ResourceModelTable({
                 min={1}
                 {...editForm.register("context_window")}
               />
+              {editForm.formState.errors.context_window ? (
+                <p className="text-xs text-destructive">
+                  {editForm.formState.errors.context_window.message}
+                </p>
+              ) : null}
             </div>
             <PricingFields register={editForm.register} prefix="edit" />
             <CapabilityCheckboxGroup
