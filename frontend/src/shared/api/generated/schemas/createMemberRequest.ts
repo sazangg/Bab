@@ -8,11 +8,17 @@
 export interface CreateMemberRequest {
   email: string;
   /**
-     * @minLength 8
-     * @maxLength 72
-     */
+   * @minLength 8
+   * @maxLength 72
+   */
   password: string;
   name?: string | null;
   /** @pattern ^(org_owner|org_admin|org_viewer|org_member)$ */
   role?: string;
+  team_id?: string | null;
+  /** @pattern ^(team_admin|team_member)$ */
+  team_role?: string | null;
+  project_id?: string | null;
+  /** @pattern ^(project_admin)$ */
+  project_role?: string | null;
 }

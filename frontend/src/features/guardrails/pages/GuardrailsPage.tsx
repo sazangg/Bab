@@ -95,7 +95,7 @@ const emptyPolicyForm = {
 
 const emptyAssignmentForm = {
   policy_id: "",
-  scope_type: "org",
+  scope_type: "none",
   scope_id: "",
   enforcement_mode: "enforce",
 };
@@ -149,7 +149,9 @@ async function confirmGuardrailImpact(
     toast.error("Impact preview could not be loaded.");
     return false;
   }
-  return window.confirm(formatGuardrailImpactPreview(title, response.data as GuardrailImpactResponse));
+  return window.confirm(
+    formatGuardrailImpactPreview(title, response.data as GuardrailImpactResponse),
+  );
 }
 
 function formatGuardrailImpactPreview(title: string, impact: GuardrailImpactResponse) {
@@ -299,9 +301,11 @@ export function GuardrailsPage() {
     (policy) => policy.id === assignmentForm.policy_id,
   );
   const selectedAssignmentScope =
-    assignmentForm.scope_type === "org"
-      ? "Organization"
-      : scopeLabels[assignmentForm.scope_id] || "No target selected";
+    assignmentForm.scope_type === "none"
+      ? "Unassigned"
+      : assignmentForm.scope_type === "org"
+        ? "Organization"
+        : scopeLabels[assignmentForm.scope_id] || "No target selected";
   const selectedAssignmentScopeOptions =
     assignmentScopeOptions[assignmentForm.scope_type as ScopeType] ?? [];
   const eventScopeOptions = eventScopeType === "all" ? [] : scopeOptions[eventScopeType];
@@ -314,13 +318,6 @@ export function GuardrailsPage() {
 
   const createPolicy = useCreatePolicyApiV1GuardrailsPoliciesPost({
     mutation: {
-      onSuccess: async (response) => {
-        if (response.status === 201) {
-          await invalidateGuardrails();
-          setPolicySheetOpen(false);
-          toast.success("Guardrail policy created.");
-        }
-      },
       onError: () => toast.error("Policy could not be saved."),
     },
   });
@@ -380,8 +377,9 @@ export function GuardrailsPage() {
     },
   });
   const handleDeletePolicy = async (policy: GuardrailPolicyResponse) => {
-    const confirmed = await confirmGuardrailImpact(`Delete guardrail policy "${policy.name}"?`, () =>
-      getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet(policy.id),
+    const confirmed = await confirmGuardrailImpact(
+      `Delete guardrail policy "${policy.name}"?`,
+      () => getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet(policy.id),
     );
     if (confirmed) deletePolicy.mutate({ policyId: policy.id });
   };
@@ -415,6 +413,10 @@ export function GuardrailsPage() {
   const openCreatePolicy = () => {
     setEditingPolicy(null);
     setPolicyForm(emptyPolicyForm);
+    setAssignmentForm({
+      ...emptyAssignmentForm,
+      scope_type: "none",
+    });
     setPolicySheetOpen(true);
   };
 
@@ -432,11 +434,7 @@ export function GuardrailsPage() {
     setAssignmentForm({
       policy_id: assignment.policy_id,
       scope_type: assignment.scope_type,
-      scope_id:
-        assignment.team_id ??
-        assignment.project_id ??
-        assignment.virtual_key_id ??
-        "",
+      scope_id: assignment.team_id ?? assignment.project_id ?? assignment.virtual_key_id ?? "",
       enforcement_mode: assignment.enforcement_mode,
     });
     setAssignmentSheetOpen(true);
@@ -506,7 +504,37 @@ export function GuardrailsPage() {
       }
       updatePolicy.mutate({ policyId: editingPolicy.id, data: payload });
     } else {
-      createPolicy.mutate({ data: payload });
+      try {
+        const response = await createPolicy.mutateAsync({ data: payload });
+        if (response.status !== 201) return;
+        const scopeType = assignmentForm.scope_type as ScopeType | "none";
+        if (scopeType !== "none") {
+          if (scopeType !== "org" && !assignmentForm.scope_id.trim()) {
+            toast.error("Choose a scope.");
+            return;
+          }
+          await createAssignment.mutateAsync({
+            data: {
+              policy_id: response.data.id,
+              scope_type: scopeType,
+              team_id: scopeType === "team" ? assignmentForm.scope_id : null,
+              project_id: scopeType === "project" ? assignmentForm.scope_id : null,
+              virtual_key_id: scopeType === "virtual_key" ? assignmentForm.scope_id : null,
+              enforcement_mode: assignmentForm.enforcement_mode,
+              is_active: true,
+            },
+          });
+        }
+        await invalidateGuardrails();
+        setPolicySheetOpen(false);
+        toast.success(
+          scopeType === "none"
+            ? "Guardrail policy created."
+            : "Guardrail policy created and assigned.",
+        );
+      } catch {
+        toast.error("Policy could not be saved.");
+      }
     }
   };
 
@@ -542,9 +570,8 @@ export function GuardrailsPage() {
 
   const toggleAssignmentActive = async (assignment: GuardrailAssignmentResponse) => {
     if (assignment.is_active) {
-      const confirmed = await confirmGuardrailImpact(
-        "Deactivate this guardrail assignment?",
-        () => getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet(assignment.id),
+      const confirmed = await confirmGuardrailImpact("Deactivate this guardrail assignment?", () =>
+        getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet(assignment.id),
       );
       if (!confirmed) return;
     }
@@ -734,59 +761,60 @@ export function GuardrailsPage() {
                 {policyRows.map((policy) => {
                   const status = guardrailPolicyStatus(policy);
                   return (
-                  <TableRow key={policy.id}>
-                    <TableCell>
-                      <div className="font-medium">{policy.name}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {policy.description ?? "No description"}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={policy.enforcement_mode === "enforce" ? "default" : "outline"}
-                      >
-                        {policy.enforcement_mode}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="max-w-xl">
-                      <span className="line-clamp-2 text-sm text-muted-foreground">
-                        {policy.summary || "No rules"}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <StatusBadge variant={status.variant}>{status.label}</StatusBadge>
-                    </TableCell>
-                    {canManageGuardrails ? (
-                      <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              aria-label={`Actions for ${policy.name}`}
-                            >
-                              <MoreHorizontal />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onSelect={() => openEditPolicy(policy)}>
-                              <Pencil />
-                              Edit policy
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              variant="destructive"
-                              onSelect={() => void handleDeletePolicy(policy)}
-                              disabled={deletePolicy.isPending}
-                            >
-                              <Trash2 />
-                              Delete policy
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                    <TableRow key={policy.id}>
+                      <TableCell>
+                        <div className="font-medium">{policy.name}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {policy.description ?? "No description"}
+                        </div>
                       </TableCell>
-                    ) : null}
-                  </TableRow>
-                )})}
+                      <TableCell>
+                        <Badge
+                          variant={policy.enforcement_mode === "enforce" ? "default" : "outline"}
+                        >
+                          {policy.enforcement_mode}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="max-w-xl">
+                        <span className="line-clamp-2 text-sm text-muted-foreground">
+                          {policy.summary || "No rules"}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge variant={status.variant}>{status.label}</StatusBadge>
+                      </TableCell>
+                      {canManageGuardrails ? (
+                        <TableCell className="text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                aria-label={`Actions for ${policy.name}`}
+                              >
+                                <MoreHorizontal />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onSelect={() => openEditPolicy(policy)}>
+                                <Pencil />
+                                Edit policy
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                variant="destructive"
+                                onSelect={() => void handleDeletePolicy(policy)}
+                                disabled={deletePolicy.isPending}
+                              >
+                                <Trash2 />
+                                Delete policy
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      ) : null}
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </CardContent>
@@ -825,61 +853,66 @@ export function GuardrailsPage() {
                   {assignments.map((assignment) => {
                     const status = guardrailAssignmentStatus(assignment);
                     return (
-                    <TableRow key={assignment.id}>
-                      <TableCell className="font-medium">{assignment.policy_name}</TableCell>
-                      <TableCell>
-                        <div>{assignment.scope_type}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {labelAssignmentScope(assignment, scopeLabels)}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={assignment.enforcement_mode === "dry_run" ? "outline" : "secondary"}>
-                          {assignment.enforcement_mode === "dry_run" ? "Dry run" : "Enforce"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <StatusBadge variant={status.variant}>{status.label}</StatusBadge>
-                      </TableCell>
-                      {canAssignGuardrails ? (
-                        <TableCell className="text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                aria-label={`Actions for ${assignment.policy_name}`}
-                              >
-                                <MoreHorizontal />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onSelect={() => openEditAssignment(assignment)}>
-                                <Pencil />
-                                Edit assignment
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onSelect={() => void toggleAssignmentActive(assignment)}
-                                disabled={updateAssignment.isPending}
-                              >
-                                {assignment.is_active
-                                  ? "Deactivate assignment"
-                                  : "Activate assignment"}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                variant="destructive"
-                                onSelect={() => void handleDeleteAssignment(assignment)}
-                                disabled={deleteAssignment.isPending}
-                              >
-                                <Trash2 />
-                                Remove assignment
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                      <TableRow key={assignment.id}>
+                        <TableCell className="font-medium">{assignment.policy_name}</TableCell>
+                        <TableCell>
+                          <div>{assignment.scope_type}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {labelAssignmentScope(assignment, scopeLabels)}
+                          </div>
                         </TableCell>
-                      ) : null}
-                    </TableRow>
-                  )})}
+                        <TableCell>
+                          <Badge
+                            variant={
+                              assignment.enforcement_mode === "dry_run" ? "outline" : "secondary"
+                            }
+                          >
+                            {assignment.enforcement_mode === "dry_run" ? "Dry run" : "Enforce"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <StatusBadge variant={status.variant}>{status.label}</StatusBadge>
+                        </TableCell>
+                        {canAssignGuardrails ? (
+                          <TableCell className="text-right">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  aria-label={`Actions for ${assignment.policy_name}`}
+                                >
+                                  <MoreHorizontal />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onSelect={() => openEditAssignment(assignment)}>
+                                  <Pencil />
+                                  Edit assignment
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onSelect={() => void toggleAssignmentActive(assignment)}
+                                  disabled={updateAssignment.isPending}
+                                >
+                                  {assignment.is_active
+                                    ? "Deactivate assignment"
+                                    : "Activate assignment"}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  variant="destructive"
+                                  onSelect={() => void handleDeleteAssignment(assignment)}
+                                  disabled={deleteAssignment.isPending}
+                                >
+                                  <Trash2 />
+                                  Remove assignment
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        ) : null}
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             )}
@@ -1064,6 +1097,65 @@ export function GuardrailsPage() {
                 </div>
               </section>
 
+              {!editingPolicy ? (
+                <section className="grid gap-4">
+                  <div>
+                    <h3 className="text-sm font-medium">Initial assignment</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Assign this guardrail now, or leave it reusable and unassigned.
+                    </p>
+                  </div>
+                  <SelectField
+                    label="Scope"
+                    value={assignmentForm.scope_type}
+                    onValueChange={(value) =>
+                      setAssignmentForm({
+                        ...assignmentForm,
+                        scope_type: value,
+                        scope_id: "",
+                      })
+                    }
+                    options={["none", ...assignmentScopeTypes(assignmentScopeOptions)]}
+                    labels={{
+                      none: "Unassigned",
+                      org: "Organization",
+                      team: "Team",
+                      project: "Project",
+                      virtual_key: "Virtual key",
+                    }}
+                  />
+                  {assignmentForm.scope_type !== "none" && assignmentForm.scope_type !== "org" ? (
+                    <SelectField
+                      label="Target"
+                      value={assignmentForm.scope_id}
+                      onValueChange={(value) =>
+                        setAssignmentForm({ ...assignmentForm, scope_id: value })
+                      }
+                      options={assignmentScopeOptions[assignmentForm.scope_type as ScopeType].map(
+                        (option) => option.id,
+                      )}
+                      labels={Object.fromEntries(
+                        assignmentScopeOptions[assignmentForm.scope_type as ScopeType].map(
+                          (option) => [option.id, option.label],
+                        ),
+                      )}
+                      placeholder="Choose target"
+                    />
+                  ) : null}
+                  {assignmentForm.scope_type !== "none" ? (
+                    <SelectField
+                      label="Assignment mode"
+                      value={assignmentForm.enforcement_mode}
+                      onValueChange={(value) =>
+                        setAssignmentForm({ ...assignmentForm, enforcement_mode: value })
+                      }
+                      options={["enforce", "dry_run"]}
+                      labels={{ enforce: "Enforce", dry_run: "Dry run / log only" }}
+                    />
+                  ) : null}
+                </section>
+              ) : null}
+
               <section className="grid gap-4">
                 <div>
                   <h3 className="text-sm font-medium">Rules</h3>
@@ -1188,10 +1280,9 @@ export function GuardrailsPage() {
                       (option) => option.id,
                     )}
                     labels={Object.fromEntries(
-                      assignmentScopeOptions[assignmentForm.scope_type as ScopeType].map((option) => [
-                        option.id,
-                        option.label,
-                      ]),
+                      assignmentScopeOptions[assignmentForm.scope_type as ScopeType].map(
+                        (option) => [option.id, option.label],
+                      ),
                     )}
                     placeholder="Choose target"
                   />
@@ -1585,10 +1676,7 @@ function labelAssignmentScope(
   assignment: GuardrailAssignmentResponse,
   scopeLabels: Record<string, string>,
 ) {
-  const scopeId =
-    assignment.team_id ??
-    assignment.project_id ??
-    assignment.virtual_key_id;
+  const scopeId = assignment.team_id ?? assignment.project_id ?? assignment.virtual_key_id;
   if (!scopeId) return "Organization";
   return scopeLabels[scopeId] ?? scopeId;
 }

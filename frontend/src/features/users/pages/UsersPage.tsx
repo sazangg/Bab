@@ -86,6 +86,11 @@ export function UsersPage() {
   const [createName, setCreateName] = useState("");
   const [createPassword, setCreatePassword] = useState("");
   const [createRole, setCreateRole] = useState("org_viewer");
+  const [createTeamId, setCreateTeamId] = useState(NO_SCOPE);
+  const [createTeamRole, setCreateTeamRole] = useState(NO_SCOPE);
+  const [createProjectId, setCreateProjectId] = useState(NO_SCOPE);
+  const [createProjectRole, setCreateProjectRole] = useState(NO_SCOPE);
+  const [latestInviteUrl, setLatestInviteUrl] = useState("");
   const [memberSearch, setMemberSearch] = useState("");
   const [memberRoleFilter, setMemberRoleFilter] = useState(ALL_ROLES);
   const [memberStatusFilter, setMemberStatusFilter] = useState(ALL_STATUSES);
@@ -132,6 +137,13 @@ export function UsersPage() {
     () => manageableProjects.filter((project) => teamId === NO_SCOPE || project.team_id === teamId),
     [manageableProjects, teamId],
   );
+  const visibleCreateProjects = useMemo(
+    () =>
+      manageableProjects.filter(
+        (project) => createTeamId === NO_SCOPE || project.team_id === createTeamId,
+      ),
+    [createTeamId, manageableProjects],
+  );
   const assignableOrgRoles = getAssignableOrgRoles(currentUser);
   const filteredMembers = useMemo(
     () =>
@@ -161,8 +173,9 @@ export function UsersPage() {
       onSuccess: async (response) => {
         await queryClient.invalidateQueries();
         if (response.status === 201 && response.data.invite_url) {
+          setLatestInviteUrl(response.data.invite_url);
           await navigator.clipboard?.writeText(response.data.invite_url);
-          toast.success("Invite created and link copied.");
+          toast.success("Invite created. Link is shown below and copied.");
         } else {
           toast.success("Invite created.");
         }
@@ -179,6 +192,10 @@ export function UsersPage() {
           setCreateName("");
           setCreatePassword("");
           setCreateRole("org_viewer");
+          setCreateTeamId(NO_SCOPE);
+          setCreateTeamRole(NO_SCOPE);
+          setCreateProjectId(NO_SCOPE);
+          setCreateProjectRole(NO_SCOPE);
           toast.success("User created.");
         }
       },
@@ -224,7 +241,11 @@ export function UsersPage() {
   const scopedInviteHasTarget =
     teamId !== NO_SCOPE || (projectId !== NO_SCOPE && projectRole !== NO_SCOPE);
   const createUserDisabled =
-    isPending || !canManageOrgMembers || !createEmail.trim() || createPassword.trim().length < 8;
+    isPending ||
+    !canManageOrgMembers ||
+    !createEmail.trim() ||
+    createPassword.trim().length < 8 ||
+    (createProjectId !== NO_SCOPE && createProjectRole === NO_SCOPE);
   const inviteDisabled =
     isPending ||
     !canInvite ||
@@ -264,10 +285,10 @@ export function UsersPage() {
           <CardHeader>
             <CardTitle>Create local user</CardTitle>
             <CardDescription>
-              Add a local account immediately and assign its organization role.
+              Add a local account immediately and optionally assign scoped access.
             </CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px_180px_auto]">
+          <CardContent className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px_180px]">
             <Field id="users-create-email" label="Email">
               <Input
                 id="users-create-email"
@@ -301,7 +322,60 @@ export function UsersPage() {
                 roles={assignableOrgRoles}
               />
             </Field>
-            <div className="flex items-end">
+            <Field label="Team">
+              <ScopeSelect
+                value={createTeamId}
+                onValueChange={(value) => {
+                  setCreateTeamId(value);
+                  if (value === NO_SCOPE) setCreateTeamRole(NO_SCOPE);
+                  if (value !== NO_SCOPE && createProjectId !== NO_SCOPE) {
+                    const project = projectById[createProjectId];
+                    if (project?.team_id !== value) setCreateProjectId(NO_SCOPE);
+                  }
+                }}
+                placeholder="No team"
+                options={manageableTeams.map((team) => ({ value: team.id, label: team.name }))}
+              />
+            </Field>
+            <Field label="Team role">
+              <ScopeSelect
+                value={createTeamRole}
+                onValueChange={setCreateTeamRole}
+                placeholder="No role"
+                disabled={createTeamId === NO_SCOPE}
+                options={[
+                  { value: "team_member", label: "Member" },
+                  { value: "team_admin", label: "Admin" },
+                ]}
+              />
+            </Field>
+            <Field label="Project">
+              <ScopeSelect
+                value={createProjectId}
+                onValueChange={(value) => {
+                  setCreateProjectId(value);
+                  if (value === NO_SCOPE) setCreateProjectRole(NO_SCOPE);
+                  if (value !== NO_SCOPE && createProjectRole === NO_SCOPE) {
+                    setCreateProjectRole("project_admin");
+                  }
+                }}
+                placeholder="No project"
+                options={visibleCreateProjects.map((project) => ({
+                  value: project.id,
+                  label: project.name,
+                }))}
+              />
+            </Field>
+            <Field label="Project role">
+              <ScopeSelect
+                value={createProjectRole}
+                onValueChange={setCreateProjectRole}
+                placeholder="No role"
+                disabled={createProjectId === NO_SCOPE}
+                options={[{ value: "project_admin", label: "Admin" }]}
+              />
+            </Field>
+            <div className="flex items-end lg:col-start-4">
               <Button
                 type="button"
                 disabled={createUserDisabled}
@@ -312,6 +386,10 @@ export function UsersPage() {
                       name: createName.trim() || null,
                       password: createPassword,
                       role: createRole,
+                      team_id: createTeamId === NO_SCOPE ? null : createTeamId,
+                      team_role: createTeamRole === NO_SCOPE ? null : createTeamRole,
+                      project_id: createProjectId === NO_SCOPE ? null : createProjectId,
+                      project_role: createProjectRole === NO_SCOPE ? null : createProjectRole,
                     },
                   })
                 }
@@ -328,7 +406,7 @@ export function UsersPage() {
         <CardHeader>
           <CardTitle>Invite user</CardTitle>
           <CardDescription>
-            Invite links are copied when created and are not shown again after creation.
+            Invite links are shown after creation and can be copied again while this page is open.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_160px_180px_170px_180px_170px]">
@@ -396,6 +474,27 @@ export function UsersPage() {
             />
           </Field>
         </CardContent>
+        {latestInviteUrl ? (
+          <CardContent className="border-t pt-4">
+            <div className="grid gap-2">
+              <Label>Latest invite link</Label>
+              <div className="flex gap-2">
+                <Input readOnly value={latestInviteUrl} className="font-mono text-xs" />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(latestInviteUrl);
+                    toast.success("Invite link copied.");
+                  }}
+                >
+                  <Copy data-icon="inline-start" />
+                  Copy
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        ) : null}
       </Card>
 
       {canManageOrgMembers ? (
@@ -691,7 +790,9 @@ function InvitesCard({
     <Card>
       <CardHeader>
         <CardTitle>Invites</CardTitle>
-        <CardDescription>Invite links are one-time display at creation.</CardDescription>
+        <CardDescription>
+          Pending invite links are shown when the token is available.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="max-w-48">

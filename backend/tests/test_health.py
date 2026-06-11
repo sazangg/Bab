@@ -86,5 +86,7 @@ async def test_runtime_info_returns_safe_runtime_summary() -> None:
     assert body["app_version"]
     assert body["environment"] in {"development", "test", "production"}
     assert "migrations" in body
+    assert "current_revision" in body["migrations"]
+    assert "head_revision" in body["migrations"]
     assert "database_url" not in body
     assert "secret_key" not in body

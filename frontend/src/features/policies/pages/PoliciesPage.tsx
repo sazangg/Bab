@@ -69,7 +69,11 @@ import {
   useUpdateAccessPolicyRouteApiV1PoliciesAccessRoutesRouteIdPatch,
   useUpdateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatch,
 } from "@/shared/api/generated/policies/policies";
-import { hasAnyProjectAdminMembership, hasAnyTeamAdminMembership, hasPermission } from "@/features/auth/lib/permissions";
+import {
+  hasAnyProjectAdminMembership,
+  hasAnyTeamAdminMembership,
+  hasPermission,
+} from "@/features/auth/lib/permissions";
 import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
 import {
   useListCredentialPoolsApiV1ProvidersProviderIdPoolsGet,
@@ -79,6 +83,7 @@ import {
 import type {
   AccessPolicyResponse,
   AccessPolicyProviderOption,
+  AccessPolicyRouteInput,
   AccessPolicyRouteResponse,
   LimitPolicyResponse,
   LimitPolicyRuleResponse,
@@ -110,6 +115,14 @@ type DraftLimitRule = {
   limitValue: string;
   intervalUnit: string;
   intervalCount: string;
+};
+type DraftAccessRoute = {
+  id: string;
+  providerId: string;
+  providerLabel: string;
+  poolId: string;
+  poolLabel: string;
+  modelIds: string[];
 };
 
 const limitTypeOptions = [
@@ -384,7 +397,9 @@ export function AccessPolicyDetailPage() {
     return <p className="text-sm text-muted-foreground">Loading access policy...</p>;
   }
   if (!policy) {
-    return <EmptyState title="Access policy not found" description="The policy may have been removed." />;
+    return (
+      <EmptyState title="Access policy not found" description="The policy may have been removed." />
+    );
   }
 
   const routeCount = policy.routes?.length ?? 0;
@@ -404,7 +419,10 @@ export function AccessPolicyDetailPage() {
               </Link>
             </Button>
             {canAssignPolicies ? (
-              <Button variant="outline" onClick={() => setAssignmentSheet({ policyType: "access", policyId })}>
+              <Button
+                variant="outline"
+                onClick={() => setAssignmentSheet({ policyType: "access", policyId })}
+              >
                 <Plus />
                 Assign
               </Button>
@@ -426,7 +444,11 @@ export function AccessPolicyDetailPage() {
         <MetricCard label="Status" value={policy.is_active ? "Active" : "Inactive"} />
       </div>
 
-      <PolicyCard title="Access routes" description="Routes decide which provider pool can serve selected models." icon={Route}>
+      <PolicyCard
+        title="Access routes"
+        description="Routes decide which provider pool can serve selected models."
+        icon={Route}
+      >
         <AccessRoutesDetailTable routes={policy.routes ?? []} />
       </PolicyCard>
 
@@ -480,7 +502,9 @@ export function LimitPolicyDetailPage() {
     return <p className="text-sm text-muted-foreground">Loading limit policy...</p>;
   }
   if (!policy) {
-    return <EmptyState title="Limit policy not found" description="The policy may have been removed." />;
+    return (
+      <EmptyState title="Limit policy not found" description="The policy may have been removed." />
+    );
   }
 
   const rules = policy.rules ?? [];
@@ -499,7 +523,10 @@ export function LimitPolicyDetailPage() {
               </Link>
             </Button>
             {canAssignPolicies ? (
-              <Button variant="outline" onClick={() => setAssignmentSheet({ policyType: "limit", policyId })}>
+              <Button
+                variant="outline"
+                onClick={() => setAssignmentSheet({ policyType: "limit", policyId })}
+              >
                 <Plus />
                 Assign
               </Button>
@@ -521,7 +548,11 @@ export function LimitPolicyDetailPage() {
         <MetricCard label="Status" value={policy.is_active ? "Active" : "Inactive"} />
       </div>
 
-      <PolicyCard title="Limit rules" description="Rules compose across matching scopes and dimensions." icon={SlidersHorizontal}>
+      <PolicyCard
+        title="Limit rules"
+        description="Rules compose across matching scopes and dimensions."
+        icon={SlidersHorizontal}
+      >
         <LimitRulesDetailTable rules={rules} />
       </PolicyCard>
 
@@ -777,7 +808,10 @@ function PolicyAssignmentsSection({
         </Select>
       </div>
       {filteredAssignments.length === 0 ? (
-        <EmptyState title="No assignments" description="This policy is not assigned to this scope." />
+        <EmptyState
+          title="No assignments"
+          description="This policy is not assigned to this scope."
+        />
       ) : (
         <div className="overflow-hidden rounded-md border">
           <Table>
@@ -877,49 +911,53 @@ function AccessPoliciesTable({
           {policies.map((policy) => {
             const status = accessPolicyStatus(policy, assignmentCount(policy.id, "access"));
             return (
-            <TableRow key={policy.id}>
-              <TableCell>
-                <Link to={`/policies/access/${policy.id}`} className="font-medium hover:underline">
-                  {policy.name}
-                </Link>
-                <div className="text-xs text-muted-foreground">{policy.description}</div>
-              </TableCell>
-              <TableCell>
-                <div>{policy.routes?.length ?? 0} routes</div>
-                <div className="text-xs text-muted-foreground">
-                  {countRouteModels(policy)} models
-                </div>
-              </TableCell>
-              <TableCell>{assignmentCount(policy.id, "access")}</TableCell>
-              <TableCell>
-                <StatusBadge variant={status.variant}>{status.label}</StatusBadge>
-              </TableCell>
-              <TableCell>
-                <div className="flex justify-end gap-1">
-                  {canManageDefinitions ? (
-                    <Button variant="ghost" size="icon" onClick={() => onConfigureRoutes(policy)}>
-                      <Route />
-                    </Button>
-                  ) : null}
-                  {canAssign ? (
-                    <Button variant="ghost" size="icon" onClick={() => onAssign(policy)}>
-                      <Plus />
-                    </Button>
-                  ) : null}
-                  {canManageDefinitions ? (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Delete ${policy.name}`}
-                      onClick={() => void handleDeletePolicy(policy)}
-                    >
-                      <Trash2 />
-                    </Button>
-                  ) : null}
-                </div>
-              </TableCell>
-            </TableRow>
-          )})}
+              <TableRow key={policy.id}>
+                <TableCell>
+                  <Link
+                    to={`/policies/access/${policy.id}`}
+                    className="font-medium hover:underline"
+                  >
+                    {policy.name}
+                  </Link>
+                  <div className="text-xs text-muted-foreground">{policy.description}</div>
+                </TableCell>
+                <TableCell>
+                  <div>{policy.routes?.length ?? 0} routes</div>
+                  <div className="text-xs text-muted-foreground">
+                    {countRouteModels(policy)} models
+                  </div>
+                </TableCell>
+                <TableCell>{assignmentCount(policy.id, "access")}</TableCell>
+                <TableCell>
+                  <StatusBadge variant={status.variant}>{status.label}</StatusBadge>
+                </TableCell>
+                <TableCell>
+                  <div className="flex justify-end gap-1">
+                    {canManageDefinitions ? (
+                      <Button variant="ghost" size="icon" onClick={() => onConfigureRoutes(policy)}>
+                        <Route />
+                      </Button>
+                    ) : null}
+                    {canAssign ? (
+                      <Button variant="ghost" size="icon" onClick={() => onAssign(policy)}>
+                        <Plus />
+                      </Button>
+                    ) : null}
+                    {canManageDefinitions ? (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Delete ${policy.name}`}
+                        onClick={() => void handleDeletePolicy(policy)}
+                      >
+                        <Trash2 />
+                      </Button>
+                    ) : null}
+                  </div>
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </div>
@@ -979,49 +1017,53 @@ function LimitPoliciesTable({
           {policies.map((policy) => {
             const status = limitPolicyStatus(policy, assignmentCount(policy.id, "limit"));
             return (
-            <TableRow key={policy.id}>
-              <TableCell>
-                <Link to={`/policies/limits/${policy.id}`} className="font-medium hover:underline">
-                  {policy.name}
-                </Link>
-                <div className="text-xs text-muted-foreground">{policy.description}</div>
-              </TableCell>
-              <TableCell className="text-xs text-muted-foreground">
-                {(policy.rules ?? []).length} rules
-                {(policy.rules ?? []).slice(0, 2).map((rule) => (
-                  <div key={rule.id}>{formatRuleSummary(rule)}</div>
-                ))}
-              </TableCell>
-              <TableCell>{assignmentCount(policy.id, "limit")}</TableCell>
-              <TableCell>
-                <StatusBadge variant={status.variant}>{status.label}</StatusBadge>
-              </TableCell>
-              <TableCell>
-                <div className="flex justify-end gap-1">
-                  {canManageDefinitions ? (
-                    <Button variant="ghost" size="icon" onClick={() => onConfigureRules(policy)}>
-                      <SlidersHorizontal />
-                    </Button>
-                  ) : null}
-                  {canAssign ? (
-                    <Button variant="ghost" size="icon" onClick={() => onAssign(policy)}>
-                      <Plus />
-                    </Button>
-                  ) : null}
-                  {canManageDefinitions ? (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Delete ${policy.name}`}
-                      onClick={() => void handleDeletePolicy(policy)}
-                    >
-                      <Trash2 />
-                    </Button>
-                  ) : null}
-                </div>
-              </TableCell>
-            </TableRow>
-          )})}
+              <TableRow key={policy.id}>
+                <TableCell>
+                  <Link
+                    to={`/policies/limits/${policy.id}`}
+                    className="font-medium hover:underline"
+                  >
+                    {policy.name}
+                  </Link>
+                  <div className="text-xs text-muted-foreground">{policy.description}</div>
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {(policy.rules ?? []).length} rules
+                  {(policy.rules ?? []).slice(0, 2).map((rule) => (
+                    <div key={rule.id}>{formatRuleSummary(rule)}</div>
+                  ))}
+                </TableCell>
+                <TableCell>{assignmentCount(policy.id, "limit")}</TableCell>
+                <TableCell>
+                  <StatusBadge variant={status.variant}>{status.label}</StatusBadge>
+                </TableCell>
+                <TableCell>
+                  <div className="flex justify-end gap-1">
+                    {canManageDefinitions ? (
+                      <Button variant="ghost" size="icon" onClick={() => onConfigureRules(policy)}>
+                        <SlidersHorizontal />
+                      </Button>
+                    ) : null}
+                    {canAssign ? (
+                      <Button variant="ghost" size="icon" onClick={() => onAssign(policy)}>
+                        <Plus />
+                      </Button>
+                    ) : null}
+                    {canManageDefinitions ? (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Delete ${policy.name}`}
+                        onClick={() => void handleDeletePolicy(policy)}
+                      >
+                        <Trash2 />
+                      </Button>
+                    ) : null}
+                  </div>
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </div>
@@ -1052,21 +1094,37 @@ function CreatePolicySheet({
   const [poolId, setPoolId] = useState("");
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [modelSearch, setModelSearch] = useState("");
+  const [draftRoutes, setDraftRoutes] = useState<DraftAccessRoute[]>([]);
   const teamsQuery = useListTeamsApiV1TeamsGet();
   const projectsQuery = useListProjectsApiV1ProjectsGet();
-  const virtualKeysQuery = useListVirtualKeysApiV1ProjectsProjectIdKeysGet(
-    assignmentProjectId,
-    { query: { enabled: assignmentScope === "virtual_key" && Boolean(assignmentProjectId) } },
-  );
+  const virtualKeysQuery = useListVirtualKeysApiV1ProjectsProjectIdKeysGet(assignmentProjectId, {
+    query: { enabled: assignmentScope === "virtual_key" && Boolean(assignmentProjectId) },
+  });
   const teams = teamsQuery.data?.status === 200 ? teamsQuery.data.data : [];
   const projects = projectsQuery.data?.status === 200 ? projectsQuery.data.data : [];
   const virtualKeys = virtualKeysQuery.data?.status === 200 ? virtualKeysQuery.data.data : [];
   const accessOptionsQuery = useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet(
-    createAccessOptionsParams(assignmentScope, assignmentTeamId, assignmentProjectId, assignmentVirtualKeyId),
-    { query: { enabled: kind === "access" && assignmentTargetReady(assignmentScope, assignmentTeamId, assignmentProjectId, assignmentVirtualKeyId) } },
+    createAccessOptionsParams(
+      assignmentScope,
+      assignmentTeamId,
+      assignmentProjectId,
+      assignmentVirtualKeyId,
+    ),
+    {
+      query: {
+        enabled:
+          kind === "access" &&
+          assignmentTargetReady(
+            assignmentScope,
+            assignmentTeamId,
+            assignmentProjectId,
+            assignmentVirtualKeyId,
+          ),
+      },
+    },
   );
   const accessOptions =
-    accessOptionsQuery.data?.status === 200 ? accessOptionsQuery.data.data.providers ?? [] : [];
+    accessOptionsQuery.data?.status === 200 ? (accessOptionsQuery.data.data.providers ?? []) : [];
   const pools = accessOptions.find((provider) => provider.id === providerId)?.pools ?? [];
   const models = pools.find((pool) => pool.id === poolId)?.models ?? [];
   const filteredModels = models.filter((model) => {
@@ -1100,6 +1158,7 @@ function CreatePolicySheet({
     setPoolId("");
     setSelectedModels([]);
     setModelSearch("");
+    setDraftRoutes([]);
   };
   const currentRuleHasLimits = Boolean(limitValue.trim());
   const currentDraftRule = (): DraftLimitRule => ({
@@ -1131,6 +1190,23 @@ function CreatePolicySheet({
     if (currentRuleHasLimits) rules.push(currentDraftRule());
     return rules;
   };
+  const currentAccessRoute = (): DraftAccessRoute | null => {
+    const provider = accessOptions.find((option) => option.id === providerId);
+    const pool = pools.find((option) => option.id === poolId);
+    if (!provider || !pool || selectedModels.length === 0) return null;
+    return {
+      id: crypto.randomUUID(),
+      providerId,
+      providerLabel: provider.display_name,
+      poolId,
+      poolLabel: pool.name,
+      modelIds: selectedModels,
+    };
+  };
+  const accessRoutesForSubmit = () => {
+    const currentRoute = currentAccessRoute();
+    return currentRoute ? [...draftRoutes, currentRoute] : draftRoutes;
+  };
   const assignmentPayload = (policyId: string) => {
     if (assignmentScope === "none") return null;
     return {
@@ -1161,18 +1237,13 @@ function CreatePolicySheet({
         if (response.status !== 201) return;
         policyId = response.data.id;
       } else {
-        if (!providerId || !poolId || selectedModels.length === 0) return;
+        const routes = accessRoutesForSubmit();
+        if (routes.length === 0) return;
         const response = await createAccess.mutateAsync({
           data: {
             name,
             description: description || null,
-            routes: [
-              {
-                provider_id: providerId,
-                credential_pool_id: poolId,
-                model_offering_ids: selectedModels,
-              },
-            ],
+            routes: routes.map(toAccessRouteInput),
           },
         });
         if (response.status !== 201) return;
@@ -1191,9 +1262,24 @@ function CreatePolicySheet({
   };
   const canSubmit =
     Boolean(name.trim()) &&
-    assignmentTargetReady(assignmentScope, assignmentTeamId, assignmentProjectId, assignmentVirtualKeyId) &&
+    assignmentTargetReady(
+      assignmentScope,
+      assignmentTeamId,
+      assignmentProjectId,
+      assignmentVirtualKeyId,
+    ) &&
     ((isLimit && (draftRules.length > 0 || currentRuleHasLimits)) ||
-      (!isLimit && providerId && poolId && selectedModels.length > 0));
+      (!isLimit &&
+        (draftRoutes.length > 0 || (providerId && poolId && selectedModels.length > 0))));
+  const addDraftRoute = () => {
+    const route = currentAccessRoute();
+    if (!route) return;
+    setDraftRoutes((current) => [...current, route]);
+    setProviderId("");
+    setPoolId("");
+    setSelectedModels([]);
+    setModelSearch("");
+  };
   return (
     <Sheet
       open={Boolean(kind)}
@@ -1298,9 +1384,41 @@ function CreatePolicySheet({
               <div>
                 <div className="text-sm font-medium">Initial route</div>
                 <p className="text-xs text-muted-foreground">
-                  Choose the provider pool and models this policy can route to.
+                  Add one or more provider pool and model routes.
                 </p>
               </div>
+              {draftRoutes.length > 0 ? (
+                <div className="grid gap-2">
+                  {draftRoutes.map((route) => (
+                    <div
+                      key={route.id}
+                      className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm"
+                    >
+                      <div>
+                        <div className="font-medium">
+                          {route.providerLabel} / {route.poolLabel}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {route.modelIds.length} model
+                          {route.modelIds.length === 1 ? "" : "s"}
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() =>
+                          setDraftRoutes((current) =>
+                            current.filter((candidate) => candidate.id !== route.id),
+                          )
+                        }
+                      >
+                        <Trash2 />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               <SelectField
                 label="Provider"
                 value={providerId}
@@ -1314,9 +1432,7 @@ function CreatePolicySheet({
                 }}
                 options={accessOptions.map((provider) => provider.id)}
                 labels={providerOptionLabels(accessOptions)}
-                placeholder={
-                  accessOptionsQuery.isLoading ? "Loading providers" : "Choose provider"
-                }
+                placeholder={accessOptionsQuery.isLoading ? "Loading providers" : "Choose provider"}
               />
               <SelectField
                 label="Credential pool"
@@ -1402,6 +1518,15 @@ function CreatePolicySheet({
                   )}
                 </div>
               </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={addDraftRoute}
+                disabled={!providerId || !poolId || selectedModels.length === 0}
+              >
+                <Plus />
+                Add route
+              </Button>
             </div>
           ) : null}
           {isLimit ? (
@@ -1441,9 +1566,18 @@ function CreatePolicySheet({
                   ))}
                 </div>
               ) : null}
-              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8rem]">
+              <div className="grid gap-3 sm:grid-cols-[8rem_minmax(0,1fr)]">
+                <Field label="Every">
+                  <Input
+                    type="number"
+                    min={1}
+                    value={intervalCount}
+                    disabled={intervalUnit === "lifetime"}
+                    onChange={(event) => setIntervalCount(event.target.value)}
+                  />
+                </Field>
                 <SelectField
-                  label="Interval unit"
+                  label="Interval"
                   value={intervalUnit}
                   onValueChange={setIntervalUnit}
                   options={["minute", "hour", "day", "week", "month", "lifetime"]}
@@ -1456,15 +1590,6 @@ function CreatePolicySheet({
                     lifetime: "Lifetime",
                   }}
                 />
-                <Field label="Every">
-                  <Input
-                    type="number"
-                    min={1}
-                    value={intervalCount}
-                    disabled={intervalUnit === "lifetime"}
-                    onChange={(event) => setIntervalCount(event.target.value)}
-                  />
-                </Field>
               </div>
               <SelectField
                 label="Limit type"
@@ -1537,7 +1662,7 @@ function RouteSheet({
     { query: { enabled: Boolean(state) } },
   );
   const accessOptions =
-    accessOptionsQuery.data?.status === 200 ? accessOptionsQuery.data.data.providers ?? [] : [];
+    accessOptionsQuery.data?.status === 200 ? (accessOptionsQuery.data.data.providers ?? []) : [];
   const pools = accessOptions.find((provider) => provider.id === providerId)?.pools ?? [];
   const models = pools.find((pool) => pool.id === poolId)?.models ?? [];
   const filteredModels = models.filter((model) => {
@@ -1646,7 +1771,8 @@ function RouteSheet({
         <SheetHeader>
           <SheetTitle>Configure access routes</SheetTitle>
           <SheetDescription>
-            Routes choose a provider, one credential pool, and the model offerings this policy can serve.
+            Routes choose a provider, one credential pool, and the model offerings this policy can
+            serve.
           </SheetDescription>
         </SheetHeader>
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
@@ -1678,11 +1804,7 @@ function RouteSheet({
                         <TableCell>{route.priority}</TableCell>
                         <TableCell>{route.weight}</TableCell>
                         <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => startEditRoute(route)}
-                          >
+                          <Button variant="ghost" size="icon" onClick={() => startEditRoute(route)}>
                             <SlidersHorizontal />
                           </Button>
                           <Button
@@ -1701,9 +1823,7 @@ function RouteSheet({
 
               <div className="grid gap-4 rounded-md border bg-muted/20 p-3">
                 <div>
-                  <div className="font-medium">
-                    {editingRoute ? "Edit route" : "Add route"}
-                  </div>
+                  <div className="font-medium">{editingRoute ? "Edit route" : "Add route"}</div>
                   <p className="text-sm text-muted-foreground">
                     Routes can be reused anywhere this access policy is assigned.
                   </p>
@@ -1750,8 +1870,14 @@ function RouteSheet({
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={allVisibleModelsSelected ? clearVisibleModels : selectVisibleModels}
-                        disabled={!providerId || filteredModelIds.length === 0 || accessOptionsQuery.isLoading}
+                        onClick={
+                          allVisibleModelsSelected ? clearVisibleModels : selectVisibleModels
+                        }
+                        disabled={
+                          !providerId ||
+                          filteredModelIds.length === 0 ||
+                          accessOptionsQuery.isLoading
+                        }
                       >
                         {allVisibleModelsSelected ? "Clear visible" : "Select all visible"}
                       </Button>
@@ -1909,7 +2035,9 @@ function LimitRulesSheet({
     setName(rule.name);
     setLimitType(rule.limit_type);
     setLimitValue(
-      rule.limit_type === "budget_cents" ? String(rule.limit_value / 100) : String(rule.limit_value),
+      rule.limit_type === "budget_cents"
+        ? String(rule.limit_value / 100)
+        : String(rule.limit_value),
     );
     setIntervalUnit(rule.interval_unit);
     setIntervalCount(String(rule.interval_count));
@@ -1950,7 +2078,8 @@ function LimitRulesSheet({
         <SheetHeader>
           <SheetTitle>Configure limit rules</SheetTitle>
           <SheetDescription>
-            Limit policies are reusable. Rules define the concrete budgets, request caps, and token caps.
+            Limit policies are reusable. Rules define the concrete budgets, request caps, and token
+            caps.
           </SheetDescription>
         </SheetHeader>
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
@@ -1970,7 +2099,9 @@ function LimitRulesSheet({
                     {(state.policy.rules ?? []).map((rule) => (
                       <TableRow key={rule.id}>
                         <TableCell className="font-medium">{rule.name}</TableCell>
-                        <TableCell>{formatInterval(rule.interval_unit, rule.interval_count)}</TableCell>
+                        <TableCell>
+                          {formatInterval(rule.interval_unit, rule.interval_count)}
+                        </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
                           {formatRuleSummary(rule)}
                         </TableCell>
@@ -2003,9 +2134,18 @@ function LimitRulesSheet({
                 <Field label="Rule name">
                   <Input value={name} onChange={(event) => setName(event.target.value)} />
                 </Field>
-                <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8rem]">
+                <div className="grid gap-3 sm:grid-cols-[8rem_minmax(0,1fr)]">
+                  <Field label="Every">
+                    <Input
+                      type="number"
+                      min={1}
+                      value={intervalCount}
+                      disabled={intervalUnit === "lifetime"}
+                      onChange={(event) => setIntervalCount(event.target.value)}
+                    />
+                  </Field>
                   <SelectField
-                    label="Interval unit"
+                    label="Interval"
                     value={intervalUnit}
                     onValueChange={setIntervalUnit}
                     options={["minute", "hour", "day", "week", "month", "lifetime"]}
@@ -2018,15 +2158,6 @@ function LimitRulesSheet({
                       lifetime: "Lifetime",
                     }}
                   />
-                  <Field label="Every">
-                    <Input
-                      type="number"
-                      min={1}
-                      value={intervalCount}
-                      disabled={intervalUnit === "lifetime"}
-                      onChange={(event) => setIntervalCount(event.target.value)}
-                    />
-                  </Field>
                 </div>
                 <SelectField
                   label="Limit type"
@@ -2052,12 +2183,7 @@ function LimitRulesSheet({
         <SheetFooter>
           <Button
             onClick={submit}
-            disabled={
-              !name.trim() ||
-              !hasAnyLimit ||
-              createRule.isPending ||
-              updateRule.isPending
-            }
+            disabled={!name.trim() || !hasAnyLimit || createRule.isPending || updateRule.isPending}
           >
             {editingRule ? "Save rule" : "Add rule"}
           </Button>
@@ -2104,9 +2230,7 @@ function AssignmentSheet({
       .filter((membership) => membership.role === "project_admin")
       .map((membership) => membership.project_id),
   );
-  const assignableTeams = canAssignOrg
-    ? teams
-    : teams.filter((team) => teamAdminIds.has(team.id));
+  const assignableTeams = canAssignOrg ? teams : teams.filter((team) => teamAdminIds.has(team.id));
   const assignableProjects = canAssignOrg
     ? projects
     : projects.filter(
@@ -2170,7 +2294,12 @@ function AssignmentSheet({
               setScopeId("");
             }}
             options={scopeOptions}
-            labels={{ org: "Organization", team: "Team", project: "Project", virtual_key: "Virtual key" }}
+            labels={{
+              org: "Organization",
+              team: "Team",
+              project: "Project",
+              virtual_key: "Virtual key",
+            }}
           />
           {scopeType === "team" ? (
             <SelectField
@@ -2273,6 +2402,14 @@ function formatDraftRuleSummary(rule: DraftLimitRule) {
       ? `$${Number(rule.limitValue).toLocaleString()}`
       : Number(rule.limitValue).toLocaleString();
   return `${typeLabel}: ${value} ${formatInterval(rule.intervalUnit, rule.intervalCount)}`;
+}
+
+function toAccessRouteInput(route: DraftAccessRoute): AccessPolicyRouteInput {
+  return {
+    provider_id: route.providerId,
+    credential_pool_id: route.poolId,
+    model_offering_ids: route.modelIds,
+  };
 }
 
 function formatRuleFilters(rule: LimitPolicyRuleResponse) {

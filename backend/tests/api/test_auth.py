@@ -16,6 +16,8 @@ from app.modules.auth.internal.models import (
     OrganizationMembership,
     ProjectMembership,
     RefreshSession,
+    Team,
+    TeamMembership,
     User,
 )
 
@@ -167,6 +169,29 @@ async def test_mock_logout_clears_cookie(
     assert audit_event.metadata_["user_id"] == str(refresh_session.user_id)
     assert "token" not in audit_event.metadata_
     assert "token_hash" not in audit_event.metadata_
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_does_not_create_default_team_or_membership(
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "admin@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+
+    await bootstrap.sync_default_workspace(db_session)
+
+    teams = list(await db_session.scalars(select(Team)))
+    team_memberships = list(await db_session.scalars(select(TeamMembership)))
+    admin_membership = await db_session.scalar(
+        select(OrganizationMembership).where(
+            OrganizationMembership.user_id == bootstrap.DEFAULT_ADMIN_USER_ID
+        )
+    )
+    assert teams == []
+    assert team_memberships == []
+    assert admin_membership is not None
+    assert admin_membership.role == "org_owner"
 
 
 @pytest.mark.asyncio
@@ -791,6 +816,59 @@ async def test_admin_can_create_and_soft_deactivate_local_user(
     assert inactive_login_response.status_code == 401
     assert reactivate_response.status_code == 200
     assert reactivate_response.json()["status"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_admin_can_create_local_user_with_initial_scoped_assignment(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "admin@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    await bootstrap.sync_default_workspace(db_session)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        login_response = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "admin@example.com", "password": "correct-password"},
+        )
+        admin_headers = {"Authorization": f"Bearer {login_response.json()['access_token']}"}
+        team_response = await client.post(
+            "/api/v1/teams",
+            json={"name": "Initial Scope Team"},
+            headers=admin_headers,
+        )
+        project_response = await client.post(
+            f"/api/v1/teams/{team_response.json()['id']}/projects",
+            json={"name": "Initial Scope Project"},
+            headers=admin_headers,
+        )
+        create_response = await client.post(
+            "/api/v1/auth/members",
+            json={
+                "email": "scoped-local@example.com",
+                "password": "scoped-password",
+                "role": "org_member",
+                "team_id": team_response.json()["id"],
+                "team_role": "team_member",
+                "project_id": project_response.json()["id"],
+                "project_role": "project_admin",
+            },
+            headers=admin_headers,
+        )
+
+    assert create_response.status_code == 201
+    body = create_response.json()
+    assert body["team_memberships"] == [
+        {"team_id": team_response.json()["id"], "role": "team_member"}
+    ]
+    assert body["project_memberships"] == [
+        {"project_id": project_response.json()["id"], "role": "project_admin"}
+    ]
 
 
 @pytest.mark.asyncio

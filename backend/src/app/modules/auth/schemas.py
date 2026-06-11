@@ -65,6 +65,10 @@ class CreateMemberRequest(BaseModel):
         default="org_viewer",
         pattern="^(org_owner|org_admin|org_viewer|org_member)$",
     )
+    team_id: UUID | None = None
+    team_role: str | None = Field(default=None, pattern="^(team_admin|team_member)$")
+    project_id: UUID | None = None
+    project_role: str | None = Field(default=None, pattern="^(project_admin)$")
 
 
 class InviteResponse(BaseModel):

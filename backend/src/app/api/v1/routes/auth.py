@@ -137,6 +137,8 @@ async def create_member(
 ) -> MemberResponse:
     try:
         return await facade.create_member(payload=payload, actor=actor, scope=scope, db=db)
+    except InvalidInviteTargetError as exc:
+        raise HTTPException(status_code=400, detail="invalid member target") from exc
     except PermissionDeniedError as exc:
         raise HTTPException(status_code=403, detail="insufficient permissions") from exc
 

@@ -11,8 +11,6 @@ from app.modules.auth.internal.models import (  # noqa: F401
     IdentityAccount,
     Organization,
     OrganizationMembership,
-    Team,
-    TeamMembership,
     User,
 )
 from app.modules.providers.internal.models import (
@@ -52,23 +50,6 @@ async def sync_default_workspace(db) -> None:
                     default_max_body_bytes=settings.proxy_max_body_bytes,
                 )
             )
-
-        team_slug = _slugify(settings.default_team_name)
-        team = await db.scalar(
-            select(Team).where(
-                Team.org_id == org.id,
-                Team.slug == team_slug,
-            )
-        )
-        if team is None:
-            team = Team(
-                org_id=org.id,
-                name=settings.default_team_name,
-                slug=team_slug,
-                description=None,
-            )
-            db.add(team)
-            await db.flush()
 
         admin_email = settings.default_admin_email.lower()
         admin_user = await db.scalar(select(User).where(User.email == admin_email))
@@ -110,22 +91,6 @@ async def sync_default_workspace(db) -> None:
         else:
             org_membership.role = "org_owner"
             org_membership.status = "active"
-
-        team_membership = await db.scalar(
-            select(TeamMembership).where(
-                TeamMembership.team_id == team.id,
-                TeamMembership.user_id == admin_user.id,
-            )
-        )
-        if team_membership is None:
-            db.add(
-                TeamMembership(
-                    org_id=org.id,
-                    team_id=team.id,
-                    user_id=admin_user.id,
-                    role="team_admin",
-                )
-            )
 
         for entry in _provider_catalog_entries():
             provider = await db.scalar(

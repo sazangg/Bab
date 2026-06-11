@@ -221,6 +221,7 @@ async def create_member(
 ) -> MemberResponse:
     email = str(payload.email).lower()
     async with transaction(db):
+        team, project = await _validate_scoped_target(payload=payload, scope=scope, db=db)
         _ensure_actor_can_manage_org_role(actor=actor, current_role=None, new_role=payload.role)
         user = await db.scalar(select(User).where(User.email == email))
         if user is None:
@@ -268,6 +269,44 @@ async def create_member(
             )
             membership.role = payload.role
             membership.status = "active"
+        if team and payload.team_role:
+            team_membership = await db.scalar(
+                select(TeamMembership).where(
+                    TeamMembership.org_id == scope.org_id,
+                    TeamMembership.team_id == team.id,
+                    TeamMembership.user_id == user.id,
+                )
+            )
+            if team_membership is None:
+                db.add(
+                    TeamMembership(
+                        org_id=scope.org_id,
+                        team_id=team.id,
+                        user_id=user.id,
+                        role=payload.team_role,
+                    )
+                )
+            else:
+                team_membership.role = payload.team_role
+        if project and payload.project_role:
+            project_membership = await db.scalar(
+                select(ProjectMembership).where(
+                    ProjectMembership.org_id == scope.org_id,
+                    ProjectMembership.project_id == project.id,
+                    ProjectMembership.user_id == user.id,
+                )
+            )
+            if project_membership is None:
+                db.add(
+                    ProjectMembership(
+                        org_id=scope.org_id,
+                        project_id=project.id,
+                        user_id=user.id,
+                        role=payload.project_role,
+                    )
+                )
+            else:
+                project_membership.role = payload.project_role
         await db.flush()
         await record_audit_event(
             actor=actor,
@@ -280,6 +319,10 @@ async def create_member(
                 "role": payload.role,
                 "previous_status": previous_status,
                 "status": "active",
+                "team_id": str(team.id) if team else None,
+                "team_role": payload.team_role,
+                "project_id": str(project.id) if project else None,
+                "project_role": payload.project_role,
             },
             db=db,
         )
@@ -839,6 +882,15 @@ async def list_invites(
 async def _validate_invite_target(
     *,
     payload: CreateInviteRequest,
+    scope: Scope,
+    db: AsyncSession,
+) -> tuple[Team | None, Project | None]:
+    return await _validate_scoped_target(payload=payload, scope=scope, db=db)
+
+
+async def _validate_scoped_target(
+    *,
+    payload: CreateInviteRequest | CreateMemberRequest,
     scope: Scope,
     db: AsyncSession,
 ) -> tuple[Team | None, Project | None]:

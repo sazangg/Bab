@@ -89,7 +89,7 @@ def _read_migration_state(connection) -> dict[str, str | bool | None]:
     head = ScriptDirectory.from_config(config).get_current_head()
     inspector = inspect(connection)
     if "alembic_version" not in inspector.get_table_names():
-        return {"current": None, "head": head, "is_current": False}
+        return {"current_revision": None, "head_revision": head, "is_current": False}
 
     current = connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
-    return {"current": current, "head": head, "is_current": current == head}
+    return {"current_revision": current, "head_revision": head, "is_current": current == head}
