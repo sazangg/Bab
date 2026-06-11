@@ -1,5 +1,13 @@
 import { useState } from "react";
-import { Activity, CheckCircle2, ChevronsUpDown, Circle, Pencil } from "lucide-react";
+import {
+  Activity,
+  CheckCircle2,
+  ChevronsUpDown,
+  Circle,
+  KeyRound,
+  Layers3,
+  Pencil,
+} from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -201,7 +209,7 @@ export function ProviderDetailPage() {
         title={provider.name}
         description={provider.description ?? "Manage credentials, models, and routing policies."}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {otherProviders.length > 0 ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -264,6 +272,44 @@ export function ProviderDetailPage() {
         }
       />
 
+      <div
+        className={cn(
+          "flex flex-col gap-4 rounded-md border p-4 md:flex-row md:items-center md:justify-between",
+          provider.readiness?.status === "ready"
+            ? "border-emerald-500/30 bg-emerald-500/5"
+            : "border-amber-500/30 bg-amber-500/5",
+        )}
+      >
+        <div className="flex items-start gap-3">
+          {provider.readiness?.status === "ready" ? (
+            <CheckCircle2 className="mt-0.5 size-5 text-emerald-600" />
+          ) : (
+            <Circle className="mt-0.5 size-5 text-amber-600" />
+          )}
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="font-medium">{readinessBadge(provider.readiness?.status).label}</p>
+              <StatusBadge variant={provider.is_active ? "active" : "inactive"}>
+                {provider.is_active ? "Enabled" : "Disabled"}
+              </StatusBadge>
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">{provider.readiness?.message}</p>
+          </div>
+        </div>
+        {canManageProviders ? (
+          <ProviderNextAction
+            provider={provider}
+            onAddCredential={() =>
+              navigate(`/providers/${provider.id}?tab=credentials&action=add-credential`)
+            }
+            onOpenPools={() => navigate(`/providers/${provider.id}?tab=pools`)}
+            onOpenModels={() => navigate(`/providers/${provider.id}?tab=models`)}
+          />
+        ) : null}
+      </div>
+
+      <ProviderResourcesPanel provider={provider} canManage={canManageProviders} />
+
       <Card>
         <CardHeader>
           <CardTitle>Provider metadata</CardTitle>
@@ -275,7 +321,10 @@ export function ProviderDetailPage() {
           </CardAction>
         </CardHeader>
         <CardContent className="grid gap-x-6 gap-y-4 md:grid-cols-4">
-          <Fact label="Integration" value={provider.supported_integration} />
+          <Fact
+            label="Integration"
+            value={formatIntegrationLabel(provider.supported_integration)}
+          />
           <Fact label="Adapter" value={formatAdapterLabel(provider)} />
           <Fact label="Active credentials" value={`${activeCredentials.length}`} />
           <Fact
@@ -497,8 +546,6 @@ export function ProviderDetailPage() {
         filters={{ provider_id: provider.id }}
       />
 
-      <ProviderResourcesPanel provider={provider} canManage={canManageProviders} />
-
       <Dialog open={isDeactivateOpen} onOpenChange={setIsDeactivateOpen}>
         <DialogContent>
           <DialogHeader>
@@ -524,6 +571,56 @@ export function ProviderDetailPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function ProviderNextAction({
+  provider,
+  onAddCredential,
+  onOpenPools,
+  onOpenModels,
+}: {
+  provider: {
+    readiness?: {
+      status?: string;
+      has_active_credential?: boolean;
+      has_active_pool?: boolean;
+      has_active_pool_credential?: boolean;
+      has_active_model?: boolean;
+    };
+  };
+  onAddCredential: () => void;
+  onOpenPools: () => void;
+  onOpenModels: () => void;
+}) {
+  if (!provider.readiness?.has_active_credential) {
+    return (
+      <Button onClick={onAddCredential}>
+        <KeyRound />
+        Add credential
+      </Button>
+    );
+  }
+  if (!provider.readiness?.has_active_pool || !provider.readiness?.has_active_pool_credential) {
+    return (
+      <Button onClick={onOpenPools}>
+        <Layers3 />
+        Configure pool
+      </Button>
+    );
+  }
+  if (!provider.readiness?.has_active_model) {
+    return (
+      <Button onClick={onOpenModels}>
+        <Layers3 />
+        Add or sync models
+      </Button>
+    );
+  }
+  return (
+    <Button asChild>
+      <Link to="/playground">Open playground</Link>
+    </Button>
   );
 }
 
@@ -639,6 +736,13 @@ function formatAdapterLabel(provider: { adapter_type: string; supported_integrat
     return "OpenAI-compatible";
   }
   return provider.adapter_type;
+}
+
+function formatIntegrationLabel(value: string) {
+  if (value === "openai_compatible_default") return "Built-in OpenAI-compatible";
+  if (value === "openai_compatible") return "Custom OpenAI-compatible";
+  if (value === "anthropic_messages") return "Native Anthropic Messages";
+  return value.replaceAll("_", " ");
 }
 
 function countByHealth(credentials: { health_status: string }[]) {

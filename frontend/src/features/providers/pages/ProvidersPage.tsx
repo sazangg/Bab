@@ -1,6 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  ArrowRight,
   ChevronDown,
   MoreHorizontal,
   Pencil,
@@ -37,6 +38,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   Sheet,
   SheetClose,
@@ -431,20 +440,34 @@ function ProviderGroup({
   return (
     <section className="space-y-2">
       {title ? <h2 className="text-sm font-medium text-muted-foreground">{title}</h2> : null}
-      <div className="grid gap-3 xl:grid-cols-2">
-        {providers.map((entry) => (
-          <ProviderCatalogRow
-            key={entry.id}
-            provider={entry}
-            onAddKey={() => onAddKey(entry)}
-            onEdit={() => onEdit(entry)}
-            onDeactivate={() => onDeactivate(entry)}
-            onReactivate={() => onReactivate(entry)}
-            onToggleFavorite={() => onToggleFavorite(entry)}
-            isUpdating={isUpdating}
-            canManage={canManage}
-          />
-        ))}
+      <div className="overflow-x-auto rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Provider</TableHead>
+              <TableHead>Readiness</TableHead>
+              <TableHead className="text-right">Credentials</TableHead>
+              <TableHead className="text-right">Models</TableHead>
+              <TableHead>Health signal</TableHead>
+              <TableHead className="w-[1%]" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {providers.map((entry) => (
+              <ProviderCatalogRow
+                key={entry.id}
+                provider={entry}
+                onAddKey={() => onAddKey(entry)}
+                onEdit={() => onEdit(entry)}
+                onDeactivate={() => onDeactivate(entry)}
+                onReactivate={() => onReactivate(entry)}
+                onToggleFavorite={() => onToggleFavorite(entry)}
+                isUpdating={isUpdating}
+                canManage={canManage}
+              />
+            ))}
+          </TableBody>
+        </Table>
       </div>
     </section>
   );
@@ -472,103 +495,95 @@ function ProviderCatalogRow({
   const activeCredentialCount = provider.credential_summary?.active ?? 0;
   const activeModelCount = provider.readiness?.active_model_count ?? 0;
   const readiness = formatProviderReadiness(provider);
+  const primaryAction = providerPrimaryAction(provider);
 
   return (
-    <article
-      className={cn(
-        "flex flex-col rounded-md border p-3 transition-colors hover:bg-muted/30",
-        !provider.is_active && "border-dashed bg-muted/20 opacity-70",
-      )}
-    >
-      <div className="flex flex-1 flex-col gap-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-2">
-            {canManage ? (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={provider.is_favorite ? "Remove favorite" : "Mark as favorite"}
-                aria-pressed={provider.is_favorite}
-                disabled={isUpdating}
-                onClick={onToggleFavorite}
-                className={cn("mt-0.5 shrink-0", provider.is_favorite && "text-primary")}
-              >
-                <Star className={cn(provider.is_favorite && "fill-current")} />
-              </Button>
-            ) : null}
-            <ProviderLogo iconSlug={provider.slug ?? undefined} name={provider.name} />
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2 pr-8">
-                <Link className="font-medium hover:underline" to={`/providers/${provider.id}`}>
-                  {provider.name}
-                </Link>
-                {provider.catalog_type === "custom" ? (
-                  <StatusBadge variant="muted">Custom</StatusBadge>
-                ) : null}
-                <StatusBadge variant={readiness.variant}>{readiness.label}</StatusBadge>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                {provider.description ?? "Custom OpenAI-compatible upstream provider."}
-              </p>
+    <TableRow className={cn("group", !provider.is_active && "bg-muted/20 opacity-70")}>
+      <TableCell className="min-w-[260px]">
+        <div className="flex items-center gap-3">
+          <ProviderLogo iconSlug={provider.slug ?? undefined} name={provider.name} />
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <Link className="font-medium hover:underline" to={`/providers/${provider.id}`}>
+                {provider.name}
+              </Link>
+              {provider.catalog_type === "custom" ? (
+                <StatusBadge variant="muted">Custom</StatusBadge>
+              ) : null}
+              {provider.is_favorite ? (
+                <Star className="size-3.5 fill-current text-primary" />
+              ) : null}
             </div>
+            <p className="max-w-md truncate text-xs text-muted-foreground">
+              {provider.description ?? "Custom OpenAI-compatible upstream provider."}
+            </p>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {canManage ? (
-              <Button size="sm" onClick={onAddKey}>
-                <Plus />
-                Add credential
-              </Button>
-            ) : null}
-            <Button asChild size="sm" variant="outline">
-              <Link to={`/providers/${provider.id}`}>Open</Link>
+        </div>
+      </TableCell>
+      <TableCell>
+        <StatusBadge variant={readiness.variant}>{readiness.label}</StatusBadge>
+      </TableCell>
+      <TableCell className="text-right tabular-nums">{activeCredentialCount}</TableCell>
+      <TableCell className="text-right tabular-nums">{activeModelCount}</TableCell>
+      <TableCell className="text-xs text-muted-foreground">
+        {provider.credential_summary?.valid
+          ? provider.operational_state?.circuit_state === "open"
+            ? "Circuit open"
+            : "Credential valid"
+          : "Never"}
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center justify-end gap-1">
+          {canManage && primaryAction === "credential" ? (
+            <Button size="sm" onClick={onAddKey}>
+              <Plus />
+              Add credential
             </Button>
-            {canManage ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon-sm" aria-label="Provider actions">
-                    <MoreHorizontal />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onSelect={onEdit}>
-                    <Pencil className="mr-2 size-4" />
-                    Edit provider
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={onDeactivate}
-                    disabled={!provider.is_active}
-                    variant="destructive"
-                  >
-                    <Power className="mr-2 size-4" />
-                    Deactivate
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={onReactivate}
-                    disabled={provider.is_active || isUpdating}
-                  >
-                    <RotateCcw className="mr-2 size-4" />
-                    Reactivate
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : null}
-          </div>
+          ) : (
+            <Button asChild size="sm" variant={primaryAction === "open" ? "outline" : "default"}>
+              <Link to={`/providers/${provider.id}`}>
+                {primaryAction === "open" ? "Open" : "Complete setup"}
+                <ArrowRight />
+              </Link>
+            </Button>
+          )}
+          {canManage ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon-sm" aria-label={`${provider.name} actions`}>
+                  <MoreHorizontal />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={onToggleFavorite} disabled={isUpdating}>
+                  <Star className={cn("mr-2 size-4", provider.is_favorite && "fill-current")} />
+                  {provider.is_favorite ? "Remove favorite" : "Mark as favorite"}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={onEdit}>
+                  <Pencil className="mr-2 size-4" />
+                  Edit provider
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={onDeactivate}
+                  disabled={!provider.is_active}
+                  variant="destructive"
+                >
+                  <Power className="mr-2 size-4" />
+                  Deactivate
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={onReactivate}
+                  disabled={provider.is_active || isUpdating}
+                >
+                  <RotateCcw className="mr-2 size-4" />
+                  Reactivate
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
         </div>
-        <div className="grid grid-cols-2 gap-2 text-xs">
-          <ProviderFact label="Active credentials" value={activeCredentialCount.toLocaleString()} />
-          <ProviderFact label="Synced models" value={activeModelCount.toLocaleString()} />
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function ProviderFact({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md bg-muted/40 px-2.5 py-2">
-      <div className="font-medium tabular-nums">{value}</div>
-      <div className="text-muted-foreground">{label}</div>
-    </div>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -604,6 +619,12 @@ function isProviderInitiated(provider: ProviderResponse) {
 
 function isProviderReady(provider: ProviderResponse) {
   return provider.readiness?.status === "ready";
+}
+
+function providerPrimaryAction(provider: ProviderResponse) {
+  if ((provider.credential_summary?.active ?? 0) === 0) return "credential";
+  if (!isProviderReady(provider)) return "setup";
+  return "open";
 }
 
 function formatSegmentLabel(segment: CatalogSegment) {

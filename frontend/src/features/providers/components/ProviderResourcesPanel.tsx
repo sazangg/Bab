@@ -150,6 +150,7 @@ function ProviderResourcesContent({
   const queryClient = useQueryClient();
   const providerId = provider.id;
   const [tab, setTab] = useQueryState("tab", { defaultValue: "credentials" });
+  const [resourceAction, setResourceAction] = useQueryState("action", { defaultValue: "" });
   const activeTab = tab === "models" || tab === "pools" ? tab : "credentials";
   const [modelSearch, setModelSearch] = useQueryState("modelSearch", { defaultValue: "" });
   const [modelModality, setModelModality] = useQueryState("modality", { defaultValue: "all" });
@@ -178,6 +179,9 @@ function ProviderResourcesContent({
   const [deactivateModelTarget, setDeactivateModelTarget] = useState<ModelOfferingResponse | null>(
     null,
   );
+  const credentialSheetOpen =
+    createCredentialOpen || (canManage && resourceAction === "add-credential");
+
   const poolsQuery = useListCredentialPoolsApiV1ProvidersProviderIdPoolsGet(providerId, {
     query: { enabled: Boolean(providerId) },
   });
@@ -319,6 +323,7 @@ function ProviderResourcesContent({
     index: number;
     total: number;
   } | null>(null);
+  const [showCompletedChecklist, setShowCompletedChecklist] = useState(false);
 
   async function handleTestAllCredentials() {
     const active = credentials.filter((credential) => credential.is_active);
@@ -412,56 +417,85 @@ function ProviderResourcesContent({
 
   return (
     <>
-      <Card>
-        <CardHeader>
-          <CardTitle>Setup checklist</CardTitle>
-          <CardDescription>Complete each routing prerequisite, then test a model.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <SetupStep
-            label="Add credential"
-            complete={credentials.length > 0}
-            action={canManage ? "Add" : undefined}
-            onAction={() => {
-              void setTab("credentials");
-              setCreateCredentialOpen(true);
-            }}
-          />
-          <SetupStep
-            label="Validate credential"
-            complete={credentials.some((item) => item.is_active && item.health_status === "valid")}
-            action={hasActiveCredential ? "Test all" : undefined}
-            onAction={handleTestAllCredentials}
-          />
-          <SetupStep
-            label="Create active pool"
-            complete={pools.some((item) => item.is_active)}
-            action={canManage ? "Create" : undefined}
-            onAction={() => {
-              void setTab("pools");
-              setCreatePoolOpen(true);
-            }}
-          />
-          <SetupStep
-            label="Attach credential"
-            complete={pools.some((item) => (item.active_credential_count ?? 0) > 0)}
-            action={pools.length > 0 ? "Open pools" : undefined}
-            onAction={() => void setTab("pools")}
-          />
-          <SetupStep
-            label="Sync or add models"
-            complete={(provider.readiness?.active_model_count ?? 0) > 0}
-            action="Open models"
-            onAction={() => void setTab("models")}
-          />
-          <SetupStep
-            label="Test request"
-            complete={providerReady}
-            action={providerReady ? "Playground" : undefined}
-            href="/playground"
-          />
-        </CardContent>
-      </Card>
+      <div className="rounded-md border bg-muted/15">
+        <div className="flex items-center justify-between gap-3 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <CheckCircle2
+              className={cn("size-4", providerReady ? "text-emerald-600" : "text-muted-foreground")}
+            />
+            <div>
+              <p className="text-sm font-medium">
+                {providerReady ? "Setup complete" : "Setup checklist"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {providerReady
+                  ? "Credentials, routing pool, and models are ready."
+                  : "Complete each routing prerequisite, then test a model."}
+              </p>
+            </div>
+          </div>
+          {providerReady ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setShowCompletedChecklist((current) => !current)}
+            >
+              {showCompletedChecklist ? "Hide steps" : "View steps"}
+              <ChevronDown
+                className={cn("transition-transform", showCompletedChecklist && "rotate-180")}
+              />
+            </Button>
+          ) : null}
+        </div>
+        {!providerReady || showCompletedChecklist ? (
+          <div className="grid gap-3 border-t p-4 md:grid-cols-2 xl:grid-cols-3">
+            <SetupStep
+              label="Add credential"
+              complete={credentials.length > 0}
+              action={canManage ? "Add" : undefined}
+              onAction={() => {
+                void setTab("credentials");
+                setCreateCredentialOpen(true);
+              }}
+            />
+            <SetupStep
+              label="Validate credential"
+              complete={credentials.some(
+                (item) => item.is_active && item.health_status === "valid",
+              )}
+              action={hasActiveCredential ? "Test all" : undefined}
+              onAction={handleTestAllCredentials}
+            />
+            <SetupStep
+              label="Create active pool"
+              complete={pools.some((item) => item.is_active)}
+              action={canManage ? "Create" : undefined}
+              onAction={() => {
+                void setTab("pools");
+                setCreatePoolOpen(true);
+              }}
+            />
+            <SetupStep
+              label="Attach credential"
+              complete={pools.some((item) => (item.active_credential_count ?? 0) > 0)}
+              action={pools.length > 0 ? "Open pools" : undefined}
+              onAction={() => void setTab("pools")}
+            />
+            <SetupStep
+              label="Sync or add models"
+              complete={(provider.readiness?.active_model_count ?? 0) > 0}
+              action="Open models"
+              onAction={() => void setTab("models")}
+            />
+            <SetupStep
+              label="Test request"
+              complete={providerReady}
+              action={providerReady ? "Playground" : undefined}
+              href="/playground"
+            />
+          </div>
+        ) : null}
+      </div>
 
       <Card>
         <CardHeader>
@@ -655,7 +689,9 @@ function ProviderResourcesContent({
                 <div>
                   <h3 className="text-base font-medium">Models</h3>
                   <p className="text-sm text-muted-foreground">
-                    Alias is optional and scoped to this provider.
+                    {modelsPage.total.toLocaleString()} models · sync mode{" "}
+                    {provider.model_sync_mode ?? "inherited"}
+                    {lastSync ? " · synced just now" : ""}
                   </p>
                 </div>
                 {canManage ? (
@@ -831,8 +867,11 @@ function ProviderResourcesContent({
       />
       {canManage ? (
         <CreateProviderCredentialSheet
-          open={createCredentialOpen}
-          onOpenChange={setCreateCredentialOpen}
+          open={credentialSheetOpen}
+          onOpenChange={(open) => {
+            setCreateCredentialOpen(open);
+            if (!open && resourceAction) void setResourceAction(null);
+          }}
           providerName={provider.name}
           onSubmit={(values) =>
             createCredential.mutate({
@@ -924,10 +963,6 @@ function formatMetadataSource(value: string) {
   return value;
 }
 
-function formatCredentialCreator(createdBy: string | null | undefined) {
-  return createdBy ? `User ${createdBy.slice(0, 8)}` : "System";
-}
-
 function toRoutingPolicyValue(value: string): CredentialPoolValues["selection_policy"] {
   return routingPolicyOptions.some((option) => option.value === value)
     ? (value as CredentialPoolValues["selection_policy"])
@@ -960,7 +995,7 @@ function CredentialPoolTable({
 
   return (
     <>
-      <div className="overflow-hidden rounded-md border">
+      <div className="overflow-x-auto rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
@@ -1588,39 +1623,44 @@ function ResourceKeyTable({
 
   return (
     <>
-      <div className="overflow-hidden rounded-md border">
+      <div className="overflow-x-auto rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Credential</TableHead>
-              <TableHead>Prefix</TableHead>
               <TableHead>Health</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Created</TableHead>
-              <TableHead>Last validation</TableHead>
-              <TableHead>Last success</TableHead>
-              <TableHead>Last failure</TableHead>
+              <TableHead>Last activity</TableHead>
               {canManage ? <TableHead className="w-[1%]" /> : null}
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={9} className="py-8 text-center text-sm text-muted-foreground">
+                <TableCell
+                  colSpan={canManage ? 5 : 4}
+                  className="py-8 text-center text-sm text-muted-foreground"
+                >
                   Loading credentials...
                 </TableCell>
               </TableRow>
             ) : null}
             {isError ? (
               <TableRow>
-                <TableCell colSpan={9} className="py-8 text-center text-sm text-destructive">
+                <TableCell
+                  colSpan={canManage ? 5 : 4}
+                  className="py-8 text-center text-sm text-destructive"
+                >
                   Credentials could not be loaded.
                 </TableCell>
               </TableRow>
             ) : null}
             {!isLoading && !isError && sortedCredentials.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="py-8 text-center text-sm text-muted-foreground">
+                <TableCell
+                  colSpan={canManage ? 5 : 4}
+                  className="py-8 text-center text-sm text-muted-foreground"
+                >
                   No credentials added yet.
                 </TableCell>
               </TableRow>
@@ -1631,8 +1671,8 @@ function ResourceKeyTable({
                 <TableRow key={credential.id}>
                   <TableCell className="font-medium">
                     <div>{credential.name}</div>
-                    <p className="text-xs text-muted-foreground">
-                      Created by {formatCredentialCreator(credential.created_by)}
+                    <p className="font-mono text-xs text-muted-foreground">
+                      {credential.key_prefix}
                     </p>
                     {syncCredential?.id === credential.id ? (
                       <p className="text-xs text-muted-foreground">Used first for model sync</p>
@@ -1648,7 +1688,6 @@ function ResourceKeyTable({
                       </p>
                     ) : null}
                   </TableCell>
-                  <TableCell className="font-mono text-xs">{credential.key_prefix}</TableCell>
                   <TableCell>
                     <StatusBadge variant={health.variant}>{health.label}</StatusBadge>
                   </TableCell>
@@ -1658,22 +1697,11 @@ function ResourceKeyTable({
                     </StatusBadge>
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
-                    {formatDateTime(credential.created_at)}
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {credential.last_validation_at
-                      ? formatDateTime(credential.last_validation_at)
-                      : "Never"}
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {credential.last_successful_request_at
-                      ? formatDateTime(credential.last_successful_request_at)
-                      : "Never"}
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {credential.last_failure_at
-                      ? formatDateTime(credential.last_failure_at)
-                      : "Never"}
+                    {credential.last_used_at
+                      ? formatRelativeFromNow(credential.last_used_at)
+                      : credential.last_validation_at
+                        ? `Validated ${formatRelativeFromNow(credential.last_validation_at)}`
+                        : "Never used"}
                   </TableCell>
                   {canManage ? (
                     <TableCell className="flex justify-end gap-1">
@@ -1687,47 +1715,42 @@ function ResourceKeyTable({
                       >
                         <Activity />
                       </Button>
-                      <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        onClick={() => setEditCredential(credential)}
-                        title="Edit credential"
-                        aria-label="Edit credential"
-                      >
-                        <Pencil />
-                      </Button>
-                      <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        onClick={() => setRotateCredential(credential)}
-                        title="Rotate credential secret"
-                        aria-label="Rotate credential secret"
-                      >
-                        <RefreshCw />
-                      </Button>
-                      {credential.is_active ? (
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
-                          disabled={!providerId}
-                          onClick={() => onDeactivate(credential)}
-                          title="Disable credential"
-                          aria-label="Disable credential"
-                        >
-                          <Power />
-                        </Button>
-                      ) : (
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
-                          disabled={!providerId}
-                          onClick={() => onReactivate(credential)}
-                          title="Reactivate credential"
-                          aria-label="Reactivate credential"
-                        >
-                          <RotateCcw />
-                        </Button>
-                      )}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            size="icon-sm"
+                            variant="ghost"
+                            aria-label={`${credential.name} actions`}
+                          >
+                            <ChevronDown />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onSelect={() => setEditCredential(credential)}>
+                            <Pencil />
+                            Rename
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => setRotateCredential(credential)}>
+                            <RefreshCw />
+                            Replace secret
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          {credential.is_active ? (
+                            <DropdownMenuItem
+                              variant="destructive"
+                              onSelect={() => onDeactivate(credential)}
+                            >
+                              <Power />
+                              Disable
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem onSelect={() => onReactivate(credential)}>
+                              <RotateCcw />
+                              Reactivate
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </TableCell>
                   ) : null}
                 </TableRow>
@@ -2313,7 +2336,7 @@ function ResourceModelTable({
         ) : null}
 
         {models.length > 0 ? (
-          <div className="overflow-hidden rounded-md border">
+          <div className="overflow-x-auto rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -2435,38 +2458,47 @@ function ResourceModelTable({
                           >
                             <Activity />
                           </Button>
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            onClick={() => setEditModel(model)}
-                            title="Edit model"
-                            aria-label="Edit model"
-                          >
-                            <Pencil />
-                          </Button>
-                          {model.is_active ? (
-                            <Button
-                              size="icon-sm"
-                              variant="ghost"
-                              disabled={!providerId}
-                              onClick={() => onDeactivate(model)}
-                              title="Disable model"
-                              aria-label="Disable model"
-                            >
-                              <Power />
-                            </Button>
-                          ) : (
-                            <Button
-                              size="icon-sm"
-                              variant="ghost"
-                              disabled={!providerId}
-                              onClick={() => onReactivate(model)}
-                              title="Reactivate model"
-                              aria-label="Reactivate model"
-                            >
-                              <RotateCcw />
-                            </Button>
-                          )}
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                size="icon-sm"
+                                variant="ghost"
+                                aria-label={`${model.provider_model_name} actions`}
+                              >
+                                <ChevronDown />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onSelect={() => setEditModel(model)}>
+                                <Pencil />
+                                Edit metadata
+                              </DropdownMenuItem>
+                              <DropdownMenuItem asChild>
+                                <Link
+                                  to={`/playground?model=${encodeURIComponent(
+                                    model.alias || model.provider_model_name,
+                                  )}`}
+                                >
+                                  Test in playground
+                                </Link>
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              {model.is_active ? (
+                                <DropdownMenuItem
+                                  variant="destructive"
+                                  onSelect={() => onDeactivate(model)}
+                                >
+                                  <Power />
+                                  Disable
+                                </DropdownMenuItem>
+                              ) : (
+                                <DropdownMenuItem onSelect={() => onReactivate(model)}>
+                                  <RotateCcw />
+                                  Reactivate
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </TableCell>
                       ) : null}
                     </TableRow>
