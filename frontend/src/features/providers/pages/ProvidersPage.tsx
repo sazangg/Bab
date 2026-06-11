@@ -215,6 +215,7 @@ export function ProvidersPage() {
                   <button
                     key={value}
                     type="button"
+                    aria-label={`${formatSegmentLabel(value)} providers (${segmentCounts[value]})`}
                     onClick={() => setSegment(value)}
                     className={cn(
                       "rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors",
@@ -223,7 +224,7 @@ export function ProvidersPage() {
                         : "text-muted-foreground hover:text-foreground",
                     )}
                   >
-                    {value === "configured" ? "Configured" : value}
+                    {formatSegmentLabel(value)}
                     <span className="ml-1.5 text-muted-foreground">{segmentCounts[value]}</span>
                   </button>
                 ))}
@@ -603,6 +604,14 @@ function isProviderInitiated(provider: ProviderResponse) {
 
 function isProviderReady(provider: ProviderResponse) {
   return provider.readiness?.status === "ready";
+}
+
+function formatSegmentLabel(segment: CatalogSegment) {
+  if (segment === "all") return "All";
+  if (segment === "configured") return "Configured";
+  if (segment === "available") return "Available";
+  if (segment === "custom") return "Custom";
+  return "Ready";
 }
 
 function AddProviderCredentialDialog({
