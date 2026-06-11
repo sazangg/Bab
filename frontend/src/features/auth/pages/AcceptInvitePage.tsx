@@ -9,11 +9,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuthStore } from "@/features/auth/model/auth-store";
+import { isWithinBcryptByteLimit } from "@/features/auth/lib/password";
 import { useAcceptInviteApiV1AuthInvitesAcceptPost } from "@/shared/api/generated/auth/auth";
 
 const acceptInviteSchema = z.object({
   name: z.string().max(255).optional(),
-  password: z.string().min(8).max(72),
+  password: z
+    .string()
+    .min(8)
+    .refine(isWithinBcryptByteLimit, "Password must be at most 72 UTF-8 bytes"),
 });
 
 type AcceptInviteValues = z.infer<typeof acceptInviteSchema>;

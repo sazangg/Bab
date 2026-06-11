@@ -25,7 +25,7 @@ import {
   useRemoveProjectMemberApiV1ProjectsProjectIdMembersUserIdDelete,
   useUpdateProjectApiV1ProjectsProjectIdPatch,
 } from "@/shared/api/generated/projects/projects";
-import { useListMembersApiV1AuthMembersGet, useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
+import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
 import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -69,13 +69,10 @@ import { EditProjectDialog } from "@/features/projects/components/EditProjectDia
 import { EntityUsageCard } from "@/features/usage/components/EntityUsageCard";
 import { UsageRecordsDrilldown } from "@/features/usage/components/UsageRecordsDrilldown";
 import { hasPermission, isProjectAdmin, isTeamAdmin } from "@/features/auth/lib/permissions";
+import { type MemberOption, useProjectMemberOptions } from "@/features/auth/lib/member-options";
 import { ForbiddenPage } from "@/features/auth/components/ProtectedRoute";
 import { RecentGuardrailEventsCard } from "@/features/guardrails/components/RecentGuardrailEventsCard";
-import type {
-  EffectiveAccessSummary,
-  MemberResponse,
-  ProjectMemberResponse,
-} from "@/shared/api/generated/schemas";
+import type { EffectiveAccessSummary, ProjectMemberResponse } from "@/shared/api/generated/schemas";
 
 export function ProjectDetailPage() {
   const { projectId = "" } = useParams<{ projectId: string }>();
@@ -90,9 +87,16 @@ export function ProjectDetailPage() {
   });
   const currentUserQuery = useMeApiV1AuthMeGet();
   const teamsQuery = useListTeamsApiV1TeamsGet();
-  const orgMembersQuery = useListMembersApiV1AuthMembersGet();
+  const project = projectQuery.data?.status === 200 ? projectQuery.data.data : undefined;
+  const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
+  const canManageProject = project
+    ? hasPermission(currentUser, "projects.manage") ||
+      isTeamAdmin(currentUser, project.team_id) ||
+      isProjectAdmin(currentUser, project.id)
+    : false;
+  const memberOptionsQuery = useProjectMemberOptions(projectId, canManageProject);
   const projectMembersQuery = useListProjectMembersApiV1ProjectsProjectIdMembersGet(projectId, {
-    query: { enabled: Boolean(projectId) },
+    query: { enabled: Boolean(projectId) && canManageProject },
   });
   const keysQuery = useListVirtualKeysApiV1ProjectsProjectIdKeysGet(projectId, {
     query: { enabled: Boolean(projectId) },
@@ -109,10 +113,8 @@ export function ProjectDetailPage() {
     { query: { enabled: Boolean(projectId) } },
   );
 
-  const project = projectQuery.data?.status === 200 ? projectQuery.data.data : undefined;
-  const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
   const teams = teamsQuery.data?.status === 200 ? teamsQuery.data.data : [];
-  const orgMembers = orgMembersQuery.data?.status === 200 ? orgMembersQuery.data.data : [];
+  const orgMembers = memberOptionsQuery.data ?? [];
   const projectMembers =
     projectMembersQuery.data?.status === 200 ? projectMembersQuery.data.data : [];
   const team = project ? teams.find((item) => item.id === project.team_id) : undefined;
@@ -122,14 +124,7 @@ export function ProjectDetailPage() {
     archiveImpactQuery.data?.status === 200 ? archiveImpactQuery.data.data : null;
   const effectiveAccess =
     effectiveAccessQuery.data?.status === 200 ? effectiveAccessQuery.data.data : undefined;
-  const canManageProject = project
-    ? hasPermission(currentUser, "projects.manage") ||
-      isTeamAdmin(currentUser, project.team_id) ||
-      isProjectAdmin(currentUser, project.id)
-    : false;
-  const canArchiveProject = project
-    ? hasPermission(currentUser, "projects.manage") || isTeamAdmin(currentUser, project.team_id)
-    : false;
+  const canArchiveProject = canManageProject;
 
   const updateMutation = useUpdateProjectApiV1ProjectsProjectIdPatch({
     mutation: {
@@ -266,7 +261,10 @@ export function ProjectDetailPage() {
         isLoading={effectiveAccessQuery.isPending || usageQuery.isPending}
       />
       <UsageRecordsDrilldown title="Project usage records" filters={{ project_id: project.id }} />
-      <RecentGuardrailEventsCard filters={{ project_id: project.id }} />
+      <RecentGuardrailEventsCard
+        filters={{ project_id: project.id }}
+        enabled={canManageProject || hasPermission(currentUser, "guardrails.view")}
+      />
 
       <Tabs defaultValue="keys" className="space-y-4">
         <TabsList>
@@ -302,7 +300,7 @@ export function ProjectDetailPage() {
             selectedUserId={selectedProjectAdminId}
             onSelectedUserChange={setSelectedProjectAdminId}
             canManage={canManageProject}
-            isLoading={projectMembersQuery.isPending}
+            isLoading={memberOptionsQuery.isPending || projectMembersQuery.isPending}
             isPending={addProjectMemberMutation.isPending || removeProjectMemberMutation.isPending}
             onAdd={(userId) =>
               addProjectMemberMutation.mutate({
@@ -353,8 +351,7 @@ export function ProjectDetailPage() {
                 />
               </div>
               <p className="text-sm text-muted-foreground">
-                Effective access:{" "}
-                {effectiveAccessPolicyNames(archiveImpact.effective_access)} ·{" "}
+                Effective access: {effectiveAccessPolicyNames(archiveImpact.effective_access)} ·{" "}
                 {archiveImpact.effective_access.routes.length} routable routes.
               </p>
             </div>
@@ -392,7 +389,7 @@ function ProjectAdminsCard({
   onAdd,
   onRemove,
 }: {
-  orgMembers: MemberResponse[];
+  orgMembers: MemberOption[];
   projectMembers: ProjectMemberResponse[];
   selectedUserId: string;
   onSelectedUserChange: (userId: string) => void;
@@ -403,16 +400,14 @@ function ProjectAdminsCard({
   onRemove: (member: ProjectMemberResponse) => void;
 }) {
   const assignedIds = new Set(projectMembers.map((member) => member.user_id));
-  const assignableMembers = orgMembers.filter(
-    (member) => member.status === "active" && !assignedIds.has(member.user_id),
-  );
+  const assignableMembers = orgMembers.filter((member) => !assignedIds.has(member.user_id));
   return (
     <Card>
       <CardHeader>
         <CardTitle>Project admins</CardTitle>
         <CardDescription>
-          Project admins can edit this project and manage its virtual keys without gaining
-          team-wide access.
+          Project admins can edit this project and manage its virtual keys without gaining team-wide
+          access.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">
@@ -583,8 +578,12 @@ function formatCents(value: number | null | undefined) {
 
 function effectiveAccessPolicyNames(summary: EffectiveAccessSummary) {
   const policies =
-    (summary as EffectiveAccessSummary & {
-      access_policies?: NonNullable<EffectiveAccessSummary["access_policy"]>[];
-    }).access_policies ?? (summary.access_policy ? [summary.access_policy] : []);
-  return policies.length ? policies.map((policy) => policy.name).join(", ") : "No active access policy";
+    (
+      summary as EffectiveAccessSummary & {
+        access_policies?: NonNullable<EffectiveAccessSummary["access_policy"]>[];
+      }
+    ).access_policies ?? (summary.access_policy ? [summary.access_policy] : []);
+  return policies.length
+    ? policies.map((policy) => policy.name).join(", ")
+    : "No active access policy";
 }

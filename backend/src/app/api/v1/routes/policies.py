@@ -5,7 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_current_user, get_scope, require_permission
+from app.api.v1.deps import (
+    get_current_user,
+    get_scope,
+    require_permission,
+    require_permission_or_scoped_admin,
+)
 from app.core.database import Scope, get_db
 from app.modules.auth.internal.models import Team
 from app.modules.auth.schemas import AuthenticatedUser
@@ -42,13 +47,17 @@ router = APIRouter(prefix="/policies", tags=["policies"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RequestScope = Annotated[Scope, Depends(get_scope)]
 PolicyViewer = Annotated[AuthenticatedUser, Depends(require_permission("policies.view"))]
+ScopedPolicyViewer = Annotated[
+    AuthenticatedUser,
+    Depends(require_permission_or_scoped_admin("policies.view")),
+]
 PolicyAdmin = Annotated[AuthenticatedUser, Depends(require_permission("policies.manage"))]
 AssignmentActor = Annotated[AuthenticatedUser, Depends(get_current_user)]
 
 
 @router.get("/access")
 async def list_access_policies(
-    _user: PolicyViewer,
+    _user: ScopedPolicyViewer,
     scope: RequestScope,
     db: DatabaseSession,
 ) -> list[AccessPolicyResponse]:
@@ -187,7 +196,7 @@ async def get_access_policy_route_impact(
 
 @router.get("/access-options")
 async def get_access_policy_options(
-    _user: PolicyViewer,
+    _user: ScopedPolicyViewer,
     scope: RequestScope,
     db: DatabaseSession,
     scope_type: str,
@@ -199,6 +208,15 @@ async def get_access_policy_options(
     if scope_type not in {"org", "team", "project", "virtual_key"}:
         raise HTTPException(status_code=422, detail="invalid scope type")
     try:
+        await _require_assignment_admin(
+            user=_user,
+            scope_type=scope_type,
+            team_id=team_id,
+            project_id=project_id,
+            virtual_key_id=virtual_key_id,
+            scope=scope,
+            db=db,
+        )
         return await facade.get_access_policy_options(
             scope_type=scope_type,
             team_id=team_id,
@@ -214,7 +232,7 @@ async def get_access_policy_options(
 
 @router.get("/limits")
 async def list_limit_policies(
-    _user: PolicyViewer,
+    _user: ScopedPolicyViewer,
     scope: RequestScope,
     db: DatabaseSession,
 ) -> list[LimitPolicyResponse]:
@@ -532,9 +550,7 @@ async def _scoped_assignment_admin(
     scope: Scope,
     db: AsyncSession,
 ) -> bool:
-    team_admin_ids = {
-        item.team_id for item in user.team_memberships if item.role == "team_admin"
-    }
+    team_admin_ids = {item.team_id for item in user.team_memberships if item.role == "team_admin"}
     project_admin_ids = {
         item.project_id for item in user.project_memberships if item.role == "project_admin"
     }

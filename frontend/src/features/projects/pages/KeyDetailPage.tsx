@@ -16,7 +16,10 @@ import {
   useRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete,
   useUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch,
 } from "@/shared/api/generated/projects/projects";
-import { useListMembersApiV1AuthMembersGet, useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
+import {
+  useListMembersApiV1AuthMembersGet,
+  useMeApiV1AuthMeGet,
+} from "@/shared/api/generated/auth/auth";
 import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
 import { Button } from "@/components/ui/button";
 import {
@@ -56,7 +59,11 @@ import {
 } from "@/components/ui/sheet";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
-import type { MemberResponse, UsageBreakdownRow, UsageRecentError } from "@/shared/api/generated/schemas";
+import type {
+  MemberResponse,
+  UsageBreakdownRow,
+  UsageRecentError,
+} from "@/shared/api/generated/schemas";
 import { hasPermission, isProjectAdmin, isTeamAdmin } from "@/features/auth/lib/permissions";
 import { ForbiddenPage } from "@/features/auth/components/ProtectedRoute";
 import { UsageRecordsDrilldown } from "@/features/usage/components/UsageRecordsDrilldown";
@@ -87,7 +94,10 @@ export function KeyDetailPage() {
       ? projectsQuery.data.data.find((p) => p.id === projectId)
       : undefined;
   const currentUserQuery = useMeApiV1AuthMeGet();
-  const orgMembersQuery = useListMembersApiV1AuthMembersGet();
+  const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
+  const orgMembersQuery = useListMembersApiV1AuthMembersGet({
+    query: { enabled: hasPermission(currentUser, "members.manage") },
+  });
   const teamsQuery = useListTeamsApiV1TeamsGet();
   const keyQuery = useGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet(projectId, keyId, {
     query: { enabled: Boolean(projectId && keyId) },
@@ -104,19 +114,15 @@ export function KeyDetailPage() {
       { query: { enabled: Boolean(projectId && keyId) } },
     );
   const revokeImpactQuery =
-    useGetVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet(
-      projectId,
-      keyId,
-      { query: { enabled: revokeOpen && Boolean(projectId && keyId) } },
-    );
+    useGetVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet(projectId, keyId, {
+      query: { enabled: revokeOpen && Boolean(projectId && keyId) },
+    });
 
-  const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
   const orgMembers = orgMembersQuery.data?.status === 200 ? orgMembersQuery.data.data : [];
   const teams = teamsQuery.data?.status === 200 ? teamsQuery.data.data : [];
   const key = keyQuery.data?.status === 200 ? keyQuery.data.data : undefined;
   const usage = usageQuery.data?.status === 200 ? usageQuery.data.data : undefined;
-  const revokeImpact =
-    revokeImpactQuery.data?.status === 200 ? revokeImpactQuery.data.data : null;
+  const revokeImpact = revokeImpactQuery.data?.status === 200 ? revokeImpactQuery.data.data : null;
   const canManageKey = project
     ? hasPermission(currentUser, "keys.manage") ||
       isTeamAdmin(currentUser, project.team_id) ||
@@ -246,13 +252,18 @@ export function KeyDetailPage() {
       <Card>
         <CardHeader>
           <CardTitle>Ownership</CardTitle>
-          <CardDescription>Application ownership and lifecycle actors for this key.</CardDescription>
+          <CardDescription>
+            Application ownership and lifecycle actors for this key.
+          </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-4">
           <Fact label="Project" value={project.name} />
           <Fact label="Team" value={team?.name ?? "Unknown"} />
           <Fact label="Created by" value={formatMember(creator, key.created_by)} />
-          <Fact label="Revoked by" value={key.revoked_by ? formatMember(revoker, key.revoked_by) : "Not revoked"} />
+          <Fact
+            label="Revoked by"
+            value={key.revoked_by ? formatMember(revoker, key.revoked_by) : "Not revoked"}
+          />
         </CardContent>
       </Card>
 
@@ -288,6 +299,7 @@ export function KeyDetailPage() {
       <RecentGuardrailEventsCard
         title="Key guardrail events"
         filters={{ virtual_key_id: key.id }}
+        enabled={canManageKey || hasPermission(currentUser, "guardrails.view")}
       />
 
       {canManageKey ? (
@@ -469,7 +481,9 @@ function KeyUsageCard({
           <Fact label="Errors" value={(totals?.failed_requests ?? 0).toLocaleString()} />
           <Fact
             label="Last request"
-            value={totals?.last_request_at ? new Date(totals.last_request_at).toLocaleString() : "-"}
+            value={
+              totals?.last_request_at ? new Date(totals.last_request_at).toLocaleString() : "-"
+            }
           />
         </div>
         <RecentErrors rows={usage?.recent_errors ?? []} />

@@ -10,14 +10,12 @@ export async function loginAs(
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/$/);
+  await page.waitForURL((url) => url.pathname !== "/login");
   if (target !== "/") {
     await page.evaluate((nextPath) => {
       window.history.pushState(null, "", nextPath);
       window.dispatchEvent(new PopStateEvent("popstate"));
     }, target);
-    await expect(page).toHaveURL(
-      new RegExp(`${target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`),
-    );
+    await expect(page).toHaveURL(new RegExp(`${target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));
   }
 }

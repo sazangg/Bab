@@ -1,4 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
+import { isAxiosError } from "axios";
 import {
   ChevronDown,
   Copy,
@@ -40,6 +41,7 @@ import {
   isProjectAdmin,
   isTeamAdmin,
 } from "@/features/auth/lib/permissions";
+import { isWithinBcryptByteLimit } from "@/features/auth/lib/password";
 import {
   useCreateInviteApiV1AuthInvitesPost,
   useCreateMemberApiV1AuthMembersPost,
@@ -199,7 +201,13 @@ export function UsersPage() {
           toast.success("User created.");
         }
       },
-      onError: () => toast.error("User could not be created."),
+      onError: (error) => {
+        if (isAxiosError(error) && error.response?.status === 409) {
+          toast.error("A user with this email already exists.");
+          return;
+        }
+        toast.error("User could not be created.");
+      },
     },
   });
   const updateMemberMutation = useUpdateMemberApiV1AuthMembersUserIdPatch({
@@ -245,6 +253,7 @@ export function UsersPage() {
     !canManageOrgMembers ||
     !createEmail.trim() ||
     createPassword.trim().length < 8 ||
+    !isWithinBcryptByteLimit(createPassword) ||
     (createProjectId !== NO_SCOPE && createProjectRole === NO_SCOPE);
   const inviteDisabled =
     isPending ||
@@ -312,7 +321,7 @@ export function UsersPage() {
                 type="password"
                 value={createPassword}
                 onChange={(event) => setCreatePassword(event.target.value)}
-                placeholder="8+ characters"
+                placeholder="8+ characters, 72 bytes max"
               />
             </Field>
             <Field label="Org role">

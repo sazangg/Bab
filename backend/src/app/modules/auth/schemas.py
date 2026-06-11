@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class LoginRequest(BaseModel):
@@ -70,6 +70,13 @@ class CreateMemberRequest(BaseModel):
     project_id: UUID | None = None
     project_role: str | None = Field(default=None, pattern="^(project_admin)$")
 
+    @field_validator("password")
+    @classmethod
+    def validate_password_bytes(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("password must be at most 72 UTF-8 bytes")
+        return value
+
 
 class InviteResponse(BaseModel):
     id: UUID
@@ -97,6 +104,12 @@ class MemberResponse(BaseModel):
     team_memberships: list[MemberTeamMembershipResponse] = []
     project_memberships: list[MemberProjectMembershipResponse] = []
     effective_permissions: list[str] = []
+
+
+class MemberOptionResponse(BaseModel):
+    user_id: UUID
+    email: EmailStr
+    name: str | None
 
 
 class UpdateMemberRequest(BaseModel):
@@ -147,6 +160,13 @@ class AcceptInviteRequest(BaseModel):
     token: str = Field(min_length=1)
     name: str | None = Field(default=None, max_length=255)
     password: str = Field(min_length=8, max_length=72)
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_bytes(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("password must be at most 72 UTF-8 bytes")
+        return value
 
 
 class AuditEventResponse(BaseModel):

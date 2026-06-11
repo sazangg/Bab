@@ -113,7 +113,7 @@ export function AppRoutes() {
           <Route element={<ProtectedRoute requireKeyManager />}>
             <Route path="/api-docs" element={<ApiDocsPage />} />
           </Route>
-          <Route element={<ProtectedRoute permission="guardrails.view" />}>
+          <Route element={<ProtectedRoute permission="guardrails.view" requireScopedAdmin />}>
             <Route path="/guardrails" element={<GuardrailsPage />} />
           </Route>
           {!isProductionBuild ? (

@@ -21,6 +21,7 @@ from app.modules.auth.errors import (
     InviteLifecycleError,
     InviteNotFoundError,
     LastOwnerError,
+    MemberAlreadyExistsError,
     MemberNotFoundError,
     PermissionDeniedError,
 )
@@ -139,6 +140,8 @@ async def create_member(
         return await facade.create_member(payload=payload, actor=actor, scope=scope, db=db)
     except InvalidInviteTargetError as exc:
         raise HTTPException(status_code=400, detail="invalid member target") from exc
+    except MemberAlreadyExistsError as exc:
+        raise HTTPException(status_code=409, detail="member already exists") from exc
     except PermissionDeniedError as exc:
         raise HTTPException(status_code=403, detail="insufficient permissions") from exc
 

@@ -34,7 +34,9 @@ export function hasAnyTeamAdminMembership(user: AuthenticatedUser | null | undef
 }
 
 export function hasAnyProjectAdminMembership(user: AuthenticatedUser | null | undefined) {
-  return (user?.project_memberships ?? []).some((membership) => membership.role === "project_admin");
+  return (user?.project_memberships ?? []).some(
+    (membership) => membership.role === "project_admin",
+  );
 }
 
 export function canViewWorkspace(user: AuthenticatedUser | null | undefined) {
@@ -75,4 +77,14 @@ export function canViewDashboardHome(user: AuthenticatedUser | null | undefined)
 
 export function canViewOrgAdminSurface(user: AuthenticatedUser | null | undefined) {
   return user?.role === "org_owner" || user?.role === "org_admin";
+}
+
+export function workspaceLandingPath(user: AuthenticatedUser | null | undefined) {
+  if (canViewDashboardHome(user)) return "/";
+  if (hasAnyDirectTeamMembership(user)) return "/teams";
+  if (hasAnyProjectMembership(user)) return "/projects";
+  if (canManageKeys(user)) return "/virtual-keys";
+  if (canViewUsage(user)) return "/usage";
+  if (canViewActivity(user)) return "/activity";
+  return null;
 }

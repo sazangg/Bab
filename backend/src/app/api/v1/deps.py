@@ -59,6 +59,24 @@ def require_permission(permission: str) -> Callable:
     return check
 
 
+def require_permission_or_scoped_admin(permission: str) -> Callable:
+    async def check(
+        user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    ) -> AuthenticatedUser:
+        if (
+            auth_facade.has_permission(user, permission)
+            or any(item.role == "team_admin" for item in user.team_memberships)
+            or any(item.role == "project_admin" for item in user.project_memberships)
+        ):
+            return user
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="insufficient permissions",
+        )
+
+    return check
+
+
 def require_team_admin_or_permission(permission: str) -> Callable:
     async def check(
         team_id: str,

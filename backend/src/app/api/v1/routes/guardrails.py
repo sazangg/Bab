@@ -5,7 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_current_user, get_scope, require_permission
+from app.api.v1.deps import (
+    get_current_user,
+    get_scope,
+    require_permission,
+    require_permission_or_scoped_admin,
+)
 from app.core.database import Scope, get_db
 from app.modules.auth.internal.models import Team
 from app.modules.auth.schemas import AuthenticatedUser
@@ -22,6 +27,7 @@ from app.modules.guardrails.schemas import (
     GuardrailAssignmentResponse,
     GuardrailEventResponse,
     GuardrailImpactResponse,
+    GuardrailPolicyOptionResponse,
     GuardrailPolicyResponse,
     GuardrailSimulationRequest,
     GuardrailSimulationResponse,
@@ -33,7 +39,10 @@ from app.modules.keys.internal.models import Project, VirtualKey
 router = APIRouter(prefix="/guardrails", tags=["guardrails"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RequestScope = Annotated[Scope, Depends(get_scope)]
-GuardrailViewer = Annotated[AuthenticatedUser, Depends(require_permission("guardrails.view"))]
+GuardrailViewer = Annotated[
+    AuthenticatedUser,
+    Depends(require_permission_or_scoped_admin("guardrails.view")),
+]
 GuardrailAdmin = Annotated[AuthenticatedUser, Depends(require_permission("guardrails.manage"))]
 AssignmentActor = Annotated[AuthenticatedUser, Depends(get_current_user)]
 
@@ -42,9 +51,18 @@ AssignmentActor = Annotated[AuthenticatedUser, Depends(get_current_user)]
 async def list_policies(
     scope: RequestScope,
     db: DatabaseSession,
-    _: GuardrailViewer,
+    actor: GuardrailViewer,
 ) -> list[GuardrailPolicyResponse]:
-    return await facade.list_policies(scope=scope, db=db)
+    return await facade.list_policies(scope=scope, db=db, actor=actor)
+
+
+@router.get("/policy-options")
+async def list_policy_options(
+    scope: RequestScope,
+    db: DatabaseSession,
+    _: GuardrailViewer,
+) -> list[GuardrailPolicyOptionResponse]:
+    return await facade.list_policy_options(scope=scope, db=db)
 
 
 @router.post("/policies", status_code=status.HTTP_201_CREATED)
@@ -95,10 +113,15 @@ async def get_policy_impact(
     policy_id: UUID,
     scope: RequestScope,
     db: DatabaseSession,
-    _: GuardrailViewer,
+    actor: GuardrailViewer,
 ) -> GuardrailImpactResponse:
     try:
-        return await facade.get_policy_impact(policy_id=policy_id, scope=scope, db=db)
+        return await facade.get_policy_impact(
+            policy_id=policy_id,
+            scope=scope,
+            db=db,
+            actor=actor,
+        )
     except GuardrailPolicyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="guardrail policy not found") from exc
 
@@ -107,9 +130,9 @@ async def get_policy_impact(
 async def list_assignments(
     scope: RequestScope,
     db: DatabaseSession,
-    _: GuardrailViewer,
+    actor: GuardrailViewer,
 ) -> list[GuardrailAssignmentResponse]:
-    return await facade.list_assignments(scope=scope, db=db)
+    return await facade.list_assignments(scope=scope, db=db, actor=actor)
 
 
 @router.post("/assignments", status_code=status.HTTP_201_CREATED)
@@ -150,7 +173,11 @@ async def update_assignment(
     db: DatabaseSession,
 ) -> GuardrailAssignmentResponse:
     try:
-        existing = await _get_assignment_or_404(assignment_id=assignment_id, scope=scope, db=db)
+        existing = await _get_assignment_or_404(
+            assignment_id=assignment_id,
+            scope=scope,
+            db=db,
+        )
         await _require_assignment_admin(
             user=actor,
             scope_type=existing.scope_type,
@@ -202,7 +229,11 @@ async def delete_assignment(
     db: DatabaseSession,
 ) -> None:
     try:
-        existing = await _get_assignment_or_404(assignment_id=assignment_id, scope=scope, db=db)
+        existing = await _get_assignment_or_404(
+            assignment_id=assignment_id,
+            scope=scope,
+            db=db,
+        )
         await _require_assignment_admin(
             user=actor,
             scope_type=existing.scope_type,
@@ -227,10 +258,15 @@ async def get_assignment_impact(
     assignment_id: UUID,
     scope: RequestScope,
     db: DatabaseSession,
-    _: GuardrailViewer,
+    actor: GuardrailViewer,
 ) -> GuardrailImpactResponse:
     try:
-        return await facade.get_assignment_impact(assignment_id=assignment_id, scope=scope, db=db)
+        return await facade.get_assignment_impact(
+            assignment_id=assignment_id,
+            scope=scope,
+            db=db,
+            actor=actor,
+        )
     except GuardrailAssignmentNotFoundError as exc:
         raise HTTPException(status_code=404, detail="guardrail assignment not found") from exc
 
@@ -239,7 +275,7 @@ async def get_assignment_impact(
 async def list_events(
     scope: RequestScope,
     db: DatabaseSession,
-    _: GuardrailViewer,
+    actor: GuardrailViewer,
     decision: str | None = None,
     phase: str | None = None,
     policy_id: UUID | None = None,
@@ -265,6 +301,7 @@ async def list_events(
         pool_id=pool_id,
         model=model,
         limit=min(max(limit, 1), 200),
+        actor=actor,
         db=db,
     )
 
@@ -274,16 +311,19 @@ async def simulate_guardrails(
     payload: GuardrailSimulationRequest,
     scope: RequestScope,
     db: DatabaseSession,
-    _: GuardrailViewer,
+    actor: GuardrailViewer,
 ) -> GuardrailSimulationResponse:
     try:
-        return await facade.simulate(payload=payload, scope=scope, db=db)
+        return await facade.simulate(payload=payload, scope=scope, db=db, actor=actor)
     except GuardrailPolicyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="guardrail policy not found") from exc
 
 
 async def _get_assignment_or_404(
-    *, assignment_id: UUID, scope: Scope, db: AsyncSession
+    *,
+    assignment_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
 ) -> GuardrailAssignmentResponse:
     assignments = await facade.list_assignments(scope=scope, db=db)
     for assignment in assignments:
@@ -359,9 +399,7 @@ async def _scoped_assignment_admin(
     scope: Scope,
     db: AsyncSession,
 ) -> bool:
-    team_admin_ids = {
-        item.team_id for item in user.team_memberships if item.role == "team_admin"
-    }
+    team_admin_ids = {item.team_id for item in user.team_memberships if item.role == "team_admin"}
     project_admin_ids = {
         item.project_id for item in user.project_memberships if item.role == "project_admin"
     }

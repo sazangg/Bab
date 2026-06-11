@@ -214,9 +214,7 @@ async def test_refresh_rejects_expired_token(
         )
         refresh_cookie = client.cookies["bab_refresh_token"]
         refresh_session = await db_session.scalar(
-            select(RefreshSession).where(
-                RefreshSession.token_hash == hash_token(refresh_cookie)
-            )
+            select(RefreshSession).where(RefreshSession.token_hash == hash_token(refresh_cookie))
         )
         assert refresh_session is not None
         refresh_session.expires_at = datetime.now(UTC) - timedelta(seconds=1)
@@ -671,9 +669,9 @@ async def test_invite_lifecycle_and_target_validation(
             json={"email": "accepted-once@example.com", "role": "org_member"},
             headers=admin_headers,
         )
-        accepted_token = parse_qs(
-            urlparse(accepted_invite_response.json()["invite_url"]).query
-        )["token"][0]
+        accepted_token = parse_qs(urlparse(accepted_invite_response.json()["invite_url"]).query)[
+            "token"
+        ][0]
         first_accept_response = await client.post(
             "/api/v1/auth/invites/accept",
             json={
@@ -695,9 +693,9 @@ async def test_invite_lifecycle_and_target_validation(
             json={"email": "revoked@example.com", "role": "org_member"},
             headers=admin_headers,
         )
-        revoked_token = parse_qs(
-            urlparse(revoked_invite_response.json()["invite_url"]).query
-        )["token"][0]
+        revoked_token = parse_qs(urlparse(revoked_invite_response.json()["invite_url"]).query)[
+            "token"
+        ][0]
         revoke_response = await client.delete(
             f"/api/v1/auth/invites/{revoked_invite_response.json()['id']}",
             headers=admin_headers,
@@ -719,9 +717,9 @@ async def test_invite_lifecycle_and_target_validation(
             json={"email": "expired@example.com", "role": "org_member"},
             headers=admin_headers,
         )
-        expired_token = parse_qs(
-            urlparse(expired_invite_response.json()["invite_url"]).query
-        )["token"][0]
+        expired_token = parse_qs(urlparse(expired_invite_response.json()["invite_url"]).query)[
+            "token"
+        ][0]
         expired_invite = await db_session.scalar(
             select(Invite).where(Invite.id == UUID(expired_invite_response.json()["id"]))
         )
@@ -966,6 +964,22 @@ async def test_org_member_access_is_scoped_to_team_memberships(
             json={"name": "Still Denied Project"},
             headers=team_admin_headers,
         )
+        cross_scope_team_response = await client.get(
+            f"/api/v1/teams/{other_team_response.json()['id']}",
+            headers=team_admin_headers,
+        )
+        cross_scope_project_response = await client.get(
+            f"/api/v1/projects/{other_project_response.json()['id']}",
+            headers=team_admin_headers,
+        )
+        own_member_options_response = await client.get(
+            f"/api/v1/teams/{team_response.json()['id']}/member-options",
+            headers=team_admin_headers,
+        )
+        other_member_options_response = await client.get(
+            f"/api/v1/teams/{other_team_response.json()['id']}/member-options",
+            headers=team_admin_headers,
+        )
 
     assert create_member_response.status_code == 201
     assert create_member_response.json()["role"] == "org_member"
@@ -980,6 +994,106 @@ async def test_org_member_access_is_scoped_to_team_memberships(
     assert create_project_response.status_code == 403
     assert scoped_create_response.status_code == 201
     assert other_create_response.status_code == 403
+    assert cross_scope_team_response.status_code == 403
+    assert cross_scope_project_response.status_code == 403
+    assert own_member_options_response.status_code == 200
+    assert all(
+        set(member) == {"user_id", "email", "name"} for member in own_member_options_response.json()
+    )
+    assert other_member_options_response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_org_viewer_cannot_access_audit(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "owner@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    await bootstrap.sync_default_workspace(db_session)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        owner_login = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "owner@example.com", "password": "correct-password"},
+        )
+        owner_headers = {"Authorization": f"Bearer {owner_login.json()['access_token']}"}
+        await client.post(
+            "/api/v1/auth/members",
+            json={
+                "email": "viewer@example.com",
+                "password": "viewer-password",
+                "role": "org_viewer",
+            },
+            headers=owner_headers,
+        )
+        viewer_login = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "viewer@example.com", "password": "viewer-password"},
+        )
+        viewer_headers = {"Authorization": f"Bearer {viewer_login.json()['access_token']}"}
+        viewer_me_response = await client.get("/api/v1/auth/me", headers=viewer_headers)
+        audit_response = await client.get("/api/v1/auth/audit", headers=viewer_headers)
+
+    assert viewer_login.status_code == 200
+    assert "audit.view" not in viewer_me_response.json()["permissions"]
+    assert audit_response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_create_existing_member_does_not_reset_password(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "owner@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    await bootstrap.sync_default_workspace(db_session)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        owner_login = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "owner@example.com", "password": "correct-password"},
+        )
+        owner_headers = {"Authorization": f"Bearer {owner_login.json()['access_token']}"}
+        first_create = await client.post(
+            "/api/v1/auth/members",
+            json={
+                "email": "member@example.com",
+                "password": "original-password",
+                "role": "org_member",
+            },
+            headers=owner_headers,
+        )
+        duplicate_create = await client.post(
+            "/api/v1/auth/members",
+            json={
+                "email": "member@example.com",
+                "password": "replacement-password",
+                "role": "org_admin",
+            },
+            headers=owner_headers,
+        )
+        original_login = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "member@example.com", "password": "original-password"},
+        )
+        replacement_login = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "member@example.com", "password": "replacement-password"},
+        )
+
+    assert first_create.status_code == 201
+    assert duplicate_create.status_code == 409
+    assert original_login.status_code == 200
+    assert replacement_login.status_code == 401
 
 
 @pytest.mark.asyncio
@@ -1200,9 +1314,7 @@ async def test_scoped_membership_management_is_enforced(
             "/api/v1/auth/login",
             json={"email": "team-admin@example.com", "password": "team-admin-password"},
         )
-        team_admin_headers = {
-            "Authorization": f"Bearer {team_admin_login.json()['access_token']}"
-        }
+        team_admin_headers = {"Authorization": f"Bearer {team_admin_login.json()['access_token']}"}
         team_admin_add_team_response = await client.post(
             f"/api/v1/teams/{team_response.json()['id']}/members",
             json={"user_id": target_response.json()["user_id"], "role": "team_member"},
@@ -1342,9 +1454,7 @@ async def test_scoped_invite_permissions_are_enforced(
             "/api/v1/auth/login",
             json={"email": "invite-team-admin@example.com", "password": "team-admin-password"},
         )
-        team_admin_headers = {
-            "Authorization": f"Bearer {team_admin_login.json()['access_token']}"
-        }
+        team_admin_headers = {"Authorization": f"Bearer {team_admin_login.json()['access_token']}"}
         team_invite_response = await client.post(
             "/api/v1/auth/invites",
             json={

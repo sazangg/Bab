@@ -22,6 +22,10 @@ class MemberNotFoundError(AuthError):
     pass
 
 
+class MemberAlreadyExistsError(AuthError):
+    pass
+
+
 class PermissionDeniedError(AuthError):
     pass
 

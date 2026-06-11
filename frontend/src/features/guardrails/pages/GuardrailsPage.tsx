@@ -1,4 +1,4 @@
-import { useQueries, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MoreHorizontal, Pencil, Plus, ShieldCheck, ShieldX, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
@@ -84,6 +84,7 @@ import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
+import { httpClient } from "@/shared/api/http-client";
 
 const emptyPolicyForm = {
   name: "",
@@ -113,6 +114,7 @@ const ruleTypeLabels: Record<string, string> = {
 type ScopeType = "org" | "team" | "project" | "virtual_key";
 type EventScopeType = "all" | ScopeType;
 type ScopeOption = { id: string; label: string };
+type GuardrailPolicyOption = { id: string; name: string; is_active: boolean };
 type ScopeOptions = Record<ScopeType, ScopeOption[]>;
 type ScopedVirtualKey = VirtualKeyResponse & { project_name: string };
 type PolicyRuleForm = {
@@ -213,6 +215,16 @@ export function GuardrailsPage() {
     hasAnyTeamAdminMembership(currentUser) ||
     hasAnyProjectAdminMembership(currentUser);
   const policiesQuery = useListPoliciesApiV1GuardrailsPoliciesGet();
+  const policyOptionsQuery = useQuery({
+    queryKey: ["guardrail-policy-options"],
+    queryFn: async () => {
+      const response = await httpClient.get<GuardrailPolicyOption[]>(
+        "/api/v1/guardrails/policy-options",
+      );
+      return response.data;
+    },
+    enabled: canAssignGuardrails,
+  });
   const assignmentsQuery = useListAssignmentsApiV1GuardrailsAssignmentsGet();
   const eventsQuery = useListEventsApiV1GuardrailsEventsGet({
     decision: eventDecision === "all" ? undefined : eventDecision,
@@ -226,8 +238,11 @@ export function GuardrailsPage() {
   });
   const teamsQuery = useListTeamsApiV1TeamsGet();
   const projectsQuery = useListProjectsApiV1ProjectsGet();
-  const providersQuery = useListProvidersApiV1ProvidersGet();
+  const providersQuery = useListProvidersApiV1ProvidersGet({
+    query: { enabled: canManageGuardrails },
+  });
   const policies = policiesQuery.data?.status === 200 ? policiesQuery.data.data : [];
+  const policyOptions = policyOptionsQuery.data ?? [];
   const assignments = assignmentsQuery.data?.status === 200 ? assignmentsQuery.data.data : [];
   const events = eventsQuery.data?.status === 200 ? eventsQuery.data.data : [];
   const teams = teamsQuery.data?.status === 200 ? teamsQuery.data.data : [];
@@ -255,7 +270,7 @@ export function GuardrailsPage() {
           { limit: 500, is_active: true },
           { signal },
         ),
-      enabled: providers.length > 0,
+      enabled: canManageGuardrails && providers.length > 0,
     })),
   });
   const modelOptions = uniqueModelOptions(
@@ -293,11 +308,14 @@ export function GuardrailsPage() {
   });
   const scopeOptions = buildScopeOptions({ teams, projects, virtualKeys, includeOrg: true });
   const scopeLabels = buildScopeLabels(scopeOptions);
-  const policyLabels = Object.fromEntries(policies.map((policy) => [policy.id, policy.name]));
+  const policyLabels = Object.fromEntries(policyOptions.map((policy) => [policy.id, policy.name]));
   const activePolicies = policies.filter((policy) => policy.is_active);
   const enforcedPolicies = policies.filter((policy) => policy.enforcement_mode === "enforce");
   const blockedEvents = events.filter((event) => event.decision === "blocked");
   const selectedAssignmentPolicy = policies.find(
+    (policy) => policy.id === assignmentForm.policy_id,
+  );
+  const selectedAssignmentPolicyOption = policyOptions.find(
     (policy) => policy.id === assignmentForm.policy_id,
   );
   const selectedAssignmentScope =
@@ -1253,8 +1271,10 @@ export function GuardrailsPage() {
                 onValueChange={(value) =>
                   setAssignmentForm({ ...assignmentForm, policy_id: value })
                 }
-                options={policies.map((policy) => policy.id)}
-                labels={Object.fromEntries(policies.map((policy) => [policy.id, policy.name]))}
+                options={policyOptions
+                  .filter((policy) => policy.is_active || policy.id === assignmentForm.policy_id)
+                  .map((policy) => policy.id)}
+                labels={policyLabels}
               />
               <SelectField
                 label="Scope"
@@ -1311,7 +1331,7 @@ export function GuardrailsPage() {
                   <div>
                     Policy:{" "}
                     <span className="text-foreground">
-                      {selectedAssignmentPolicy?.name ?? "No policy selected"}
+                      {selectedAssignmentPolicyOption?.name ?? "No policy selected"}
                     </span>
                   </div>
                   <div>
@@ -1322,7 +1342,9 @@ export function GuardrailsPage() {
                     <span className="text-foreground">
                       {selectedAssignmentPolicy
                         ? `${selectedAssignmentPolicy.rules.filter((rule) => rule.is_active).length} active`
-                        : "-"}
+                        : selectedAssignmentPolicyOption
+                          ? "Managed by organization admin"
+                          : "-"}
                     </span>
                   </div>
                   <div>

@@ -21,6 +21,7 @@ from app.modules.auth.errors import (
 )
 from app.modules.auth.schemas import (
     AuthenticatedUser,
+    MemberOptionResponse,
     ProjectMemberResponse,
     UpdateProjectMemberRequest,
     UpsertProjectMemberRequest,
@@ -256,6 +257,16 @@ async def list_project_members(
         raise HTTPException(status_code=404, detail="project not found") from exc
 
 
+@router.get("/{project_id}/member-options")
+async def list_project_member_options(
+    project_id: UUID,
+    _: ProjectAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> list[MemberOptionResponse]:
+    return await auth_facade.list_member_options(scope=scope, db=db)
+
+
 @router.post("/{project_id}/members", status_code=status.HTTP_201_CREATED)
 async def add_project_member(
     project_id: UUID,
@@ -369,9 +380,7 @@ async def get_project_effective_access(
         project_id=str(project_id), permission="projects.view", user=user, db=db
     )
     try:
-        return await facade.get_project_effective_access(
-            project_id=project_id, scope=scope, db=db
-        )
+        return await facade.get_project_effective_access(project_id=project_id, scope=scope, db=db)
     except ProjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail="project not found") from exc
 

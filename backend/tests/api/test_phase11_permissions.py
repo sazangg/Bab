@@ -22,6 +22,7 @@ from app.modules.auth.schemas import (
     AuthenticatedUser,
 )
 from app.modules.guardrails import facade as guardrails_facade
+from app.modules.guardrails.internal import repository as guardrails_repository
 from app.modules.guardrails.schemas import (
     CreateGuardrailAssignmentRequest,
     CreateGuardrailPolicyRequest,
@@ -207,9 +208,16 @@ async def test_org_admin_can_manage_any_policy_assignment_scope(
     db_session: AsyncSession,
     guard,
 ) -> None:
-    org, _team, _project, _other_team, _other_project, _cross_org_project, _key, _other_key = (
-        await _workspace(db_session)
-    )
+    (
+        org,
+        _team,
+        _project,
+        _other_team,
+        _other_project,
+        _cross_org_project,
+        _key,
+        _other_key,
+    ) = await _workspace(db_session)
     user = _user(org_id=org.id, role="org_admin")
 
     await guard(
@@ -228,9 +236,16 @@ async def test_team_admin_can_manage_team_projects_and_keys(
     db_session: AsyncSession,
     guard,
 ) -> None:
-    org, team, project, _other_team, _other_project, _cross_org_project, key, _other_key = (
-        await _workspace(db_session)
-    )
+    (
+        org,
+        team,
+        project,
+        _other_team,
+        _other_project,
+        _cross_org_project,
+        key,
+        _other_key,
+    ) = await _workspace(db_session)
     user = _user(
         org_id=org.id,
         team_memberships=[AuthenticatedTeamMembership(team_id=team.id, role="team_admin")],
@@ -257,9 +272,16 @@ async def test_project_admin_can_manage_project_and_keys_but_not_team_or_org(
     db_session: AsyncSession,
     guard,
 ) -> None:
-    org, team, project, _other_team, _other_project, _cross_org_project, key, _other_key = (
-        await _workspace(db_session)
-    )
+    (
+        org,
+        team,
+        project,
+        _other_team,
+        _other_project,
+        _cross_org_project,
+        key,
+        _other_key,
+    ) = await _workspace(db_session)
     user = _user(
         org_id=org.id,
         project_memberships=[
@@ -303,9 +325,16 @@ async def test_unrelated_scoped_admin_cannot_manage_assignment_targets(
     db_session: AsyncSession,
     guard,
 ) -> None:
-    org, _team, project, other_team, _other_project, _cross_org_project, key, _other_key = (
-        await _workspace(db_session)
-    )
+    (
+        org,
+        _team,
+        project,
+        other_team,
+        _other_project,
+        _cross_org_project,
+        key,
+        _other_key,
+    ) = await _workspace(db_session)
     user = _user(
         org_id=org.id,
         team_memberships=[AuthenticatedTeamMembership(team_id=other_team.id, role="team_admin")],
@@ -502,3 +531,73 @@ async def test_global_guardrail_manager_can_update_any_assignment(
     )
 
     assert updated.is_active is False
+
+
+async def test_project_admin_guardrail_reads_are_limited_to_own_project(
+    db_session: AsyncSession,
+) -> None:
+    org, _team, project, _other_team, other_project, _cross_org, key, other_key = await _workspace(
+        db_session
+    )
+    own_policy, own_assignment = await _guardrail_assignment(
+        db_session=db_session,
+        org_id=org.id,
+        scope_type="project",
+        project_id=project.id,
+    )
+    other_policy, _other_assignment = await _guardrail_assignment(
+        db_session=db_session,
+        org_id=org.id,
+        scope_type="project",
+        project_id=other_project.id,
+    )
+    for policy, target_project, target_key in (
+        (own_policy, project, key),
+        (other_policy, other_project, other_key),
+    ):
+        await guardrails_repository.create_event(
+            org_id=org.id,
+            policy_id=policy.id,
+            rule_id=None,
+            decision="blocked",
+            phase="request",
+            reason="test",
+            team_id=target_project.team_id,
+            project_id=target_project.id,
+            virtual_key_id=target_key.id,
+            provider_id=uuid4(),
+            pool_id=uuid4(),
+            request_id=None,
+            requested_model="test-model",
+            provider_model="test-model",
+            metadata={},
+            db=db_session,
+        )
+    await db_session.commit()
+    actor = _user(
+        org_id=org.id,
+        project_memberships=[
+            AuthenticatedProjectMembership(project_id=project.id, role="project_admin")
+        ],
+    )
+    scope = Scope(org_id=org.id)
+
+    assignments = await guardrails_facade.list_assignments(
+        scope=scope,
+        db=db_session,
+        actor=actor,
+    )
+    policies = await guardrails_facade.list_policies(
+        scope=scope,
+        db=db_session,
+        actor=actor,
+    )
+    events = await guardrails_facade.list_events(
+        scope=scope,
+        db=db_session,
+        actor=actor,
+    )
+
+    assert [assignment.id for assignment in assignments] == [own_assignment.id]
+    assert [policy.id for policy in policies] == [own_policy.id]
+    assert [event.project_id for event in events] == [project.id]

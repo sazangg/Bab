@@ -1,6 +1,7 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios";
 
-import { getAccessToken, setAccessToken } from "@/shared/auth/access-token-store";
+import { useAuthStore } from "@/features/auth/model/auth-store";
+import { getAccessToken } from "@/shared/auth/access-token-store";
 
 type RetriableRequestConfig = InternalAxiosRequestConfig & {
   _retry?: boolean;
@@ -10,9 +11,35 @@ export const httpClient = axios.create({
   withCredentials: true,
 });
 
-const refreshClient = axios.create({
+export const refreshClient = axios.create({
   withCredentials: true,
 });
+
+let refreshPromise: Promise<string> | null = null;
+
+export function refreshAccessToken() {
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = refreshClient
+    .post("/api/v1/auth/refresh")
+    .then((response) => {
+      const accessToken = response.data?.access_token;
+      if (typeof accessToken !== "string") {
+        throw new Error("refresh response did not include an access token");
+      }
+      useAuthStore.getState().setSession(accessToken);
+      return accessToken;
+    })
+    .catch((error) => {
+      useAuthStore.getState().clearSession();
+      throw error;
+    })
+    .finally(() => {
+      refreshPromise = null;
+    });
+
+  return refreshPromise;
+}
 
 httpClient.interceptors.request.use((config) => {
   const accessToken = getAccessToken();
@@ -41,20 +68,8 @@ httpClient.interceptors.response.use(
     }
 
     originalRequest._retry = true;
-
-    try {
-      const refreshResponse = await refreshClient.post("/api/v1/auth/refresh");
-      const accessToken = refreshResponse.data?.access_token;
-      if (typeof accessToken !== "string") {
-        throw error;
-      }
-
-      setAccessToken(accessToken);
-      originalRequest.headers.set("Authorization", `Bearer ${accessToken}`);
-      return httpClient(originalRequest);
-    } catch (refreshError) {
-      setAccessToken(null);
-      throw refreshError;
-    }
+    const accessToken = await refreshAccessToken();
+    originalRequest.headers.set("Authorization", `Bearer ${accessToken}`);
+    return httpClient(originalRequest);
   },
 );

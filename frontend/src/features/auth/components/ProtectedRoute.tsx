@@ -1,5 +1,5 @@
 import { ShieldAlert } from "lucide-react";
-import { Outlet } from "react-router-dom";
+import { Navigate, Outlet } from "react-router-dom";
 
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -13,6 +13,7 @@ import {
   hasAnyProjectAdminMembership,
   hasAnyTeamAdminMembership,
   hasPermission,
+  workspaceLandingPath,
 } from "@/features/auth/lib/permissions";
 import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
 
@@ -75,7 +76,11 @@ export function ProtectedRoute({
       !requireOrgAdminSurface);
 
   if (!allowed) {
-    if (!canViewDashboardHome(currentUser)) {
+    const landingPath = workspaceLandingPath(currentUser);
+    if (allowDashboardHome && landingPath && landingPath !== "/") {
+      return <Navigate to={landingPath} replace />;
+    }
+    if (!landingPath) {
       return <NoAccessPage />;
     }
     return <ForbiddenPage />;

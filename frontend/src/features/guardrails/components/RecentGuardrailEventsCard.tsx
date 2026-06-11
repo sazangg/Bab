@@ -11,16 +11,23 @@ import { EmptyState } from "@/shared/components/EmptyState";
 export function RecentGuardrailEventsCard({
   title = "Guardrail events",
   filters,
+  enabled = true,
 }: {
   title?: string;
+  enabled?: boolean;
   filters: {
     project_id?: string;
     virtual_key_id?: string;
   };
 }) {
-  const eventsQuery = useListEventsApiV1GuardrailsEventsGet({ ...filters, limit: 5 });
+  const eventsQuery = useListEventsApiV1GuardrailsEventsGet(
+    { ...filters, limit: 5 },
+    { query: { enabled } },
+  );
   const events = eventsQuery.data?.status === 200 ? eventsQuery.data.data : [];
   const activityHref = buildActivityHref(filters);
+
+  if (!enabled) return null;
 
   return (
     <Card>
@@ -60,12 +67,12 @@ function GuardrailEventRow({ event }: { event: GuardrailEventResponse }) {
         <div className="min-w-0">
           <div className="font-medium">{event.reason.replaceAll("_", " ")}</div>
           <div className="mt-1 text-xs text-muted-foreground">{event.phase}</div>
-      <div className="mt-1 truncate text-xs text-muted-foreground">
-        {event.requested_model ?? "-"} · {event.provider_model ?? "-"}
-      </div>
-      <div className="mt-1 font-mono text-xs text-muted-foreground">
-        request {shortId(event.request_id)}
-      </div>
+          <div className="mt-1 truncate text-xs text-muted-foreground">
+            {event.requested_model ?? "-"} · {event.provider_model ?? "-"}
+          </div>
+          <div className="mt-1 font-mono text-xs text-muted-foreground">
+            request {shortId(event.request_id)}
+          </div>
         </div>
         <Badge variant={event.decision === "blocked" ? "destructive" : "outline"}>
           {event.decision === "dry_run" ? "Dry run" : event.decision}

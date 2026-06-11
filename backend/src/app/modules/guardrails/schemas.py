@@ -80,6 +80,12 @@ class GuardrailPolicyResponse(BaseModel):
     updated_at: datetime
 
 
+class GuardrailPolicyOptionResponse(BaseModel):
+    id: UUID
+    name: str
+    is_active: bool
+
+
 class CreateGuardrailAssignmentRequest(BaseModel):
     policy_id: UUID
     scope_type: str = Field(pattern="^(org|team|project|virtual_key)$")

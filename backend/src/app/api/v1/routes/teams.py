@@ -21,6 +21,7 @@ from app.modules.auth.errors import (
 )
 from app.modules.auth.schemas import (
     AuthenticatedUser,
+    MemberOptionResponse,
     TeamMemberResponse,
     UpdateTeamMemberRequest,
     UpsertTeamMemberRequest,
@@ -193,6 +194,16 @@ async def list_team_members(
         return await auth_facade.list_team_members(team_id=team_id, scope=scope, db=db)
     except InvalidAccessTokenError as exc:
         raise HTTPException(status_code=404, detail="team not found") from exc
+
+
+@router.get("/{team_id}/member-options")
+async def list_team_member_options(
+    team_id: UUID,
+    _: ScopedTeamAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> list[MemberOptionResponse]:
+    return await auth_facade.list_member_options(scope=scope, db=db)
 
 
 @router.post("/{team_id}/members", status_code=status.HTTP_201_CREATED)

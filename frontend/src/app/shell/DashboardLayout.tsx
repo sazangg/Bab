@@ -111,7 +111,13 @@ const workspaceNav = [
     scoped: true,
   },
   { to: "/playground", label: "Playground", icon: TerminalSquare, keyManager: true },
-  { to: "/guardrails", label: "Guardrails", icon: ShieldCheck, permission: "guardrails.view" },
+  {
+    to: "/guardrails",
+    label: "Guardrails",
+    icon: ShieldCheck,
+    permission: "guardrails.view",
+    scopedAdmin: true,
+  },
 ];
 
 const internalNav = [{ to: "/design-system", label: "Design system", icon: Palette }];
@@ -185,6 +191,13 @@ export function DashboardLayout() {
   const canViewWorkspaceItem = (item: (typeof workspaceNav)[number]) => {
     if (item.orgAdmin) return canViewOrgAdminSurface(currentUser);
     if (item.keyManager) return canManageKeys(currentUser);
+    if (item.scopedAdmin) {
+      return (
+        canView(item.permission) ||
+        hasAnyTeamAdminMembership(currentUser) ||
+        hasAnyProjectAdminMembership(currentUser)
+      );
+    }
     if (item.teamScoped) {
       return canView(item.permission) || hasAnyDirectTeamMembership(currentUser);
     }
@@ -398,11 +411,7 @@ export function DashboardLayout() {
         role="contentinfo"
         className="fixed inset-x-0 bottom-0 z-30 flex h-7 items-center justify-between border-t bg-sidebar px-3 text-xs text-muted-foreground"
       >
-        <div
-          role="status"
-          aria-live="polite"
-          aria-label={`System status: ${gatewayStatus.label}`}
-        >
+        <div role="status" aria-live="polite" aria-label={`System status: ${gatewayStatus.label}`}>
           <Popover>
             <PopoverTrigger asChild>
               <button
@@ -427,16 +436,14 @@ export function DashboardLayout() {
                   </div>
                 </div>
                 <div className="grid gap-2">
-                  {Object.entries(readinessQuery.data?.data?.checks ?? {}).map(
-                    ([name, check]) => (
-                      <div key={name} className="flex items-center justify-between gap-3">
-                        <span className="capitalize">{name.replace(/_/g, " ")}</span>
-                        <span className={check.ok ? "text-emerald-600" : "text-amber-600"}>
-                          {check.ok ? "OK" : "Needs attention"}
-                        </span>
-                      </div>
-                    ),
-                  )}
+                  {Object.entries(readinessQuery.data?.data?.checks ?? {}).map(([name, check]) => (
+                    <div key={name} className="flex items-center justify-between gap-3">
+                      <span className="capitalize">{name.replace(/_/g, " ")}</span>
+                      <span className={check.ok ? "text-emerald-600" : "text-amber-600"}>
+                        {check.ok ? "OK" : "Needs attention"}
+                      </span>
+                    </div>
+                  ))}
                   {!readinessQuery.data?.data?.checks ? (
                     <div className="text-muted-foreground">No readiness details available.</div>
                   ) : null}

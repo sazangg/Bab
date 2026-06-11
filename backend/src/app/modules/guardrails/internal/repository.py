@@ -337,8 +337,19 @@ async def list_events(
     model: str | None,
     limit: int,
     db: AsyncSession,
+    allowed_team_ids: set[UUID] | None = None,
+    allowed_project_ids: set[UUID] | None = None,
 ) -> list[GuardrailEvent]:
     filters = [GuardrailEvent.org_id == org_id]
+    if allowed_team_ids is not None or allowed_project_ids is not None:
+        scope_filters = []
+        if allowed_team_ids:
+            scope_filters.append(GuardrailEvent.team_id.in_(allowed_team_ids))
+        if allowed_project_ids:
+            scope_filters.append(GuardrailEvent.project_id.in_(allowed_project_ids))
+        if not scope_filters:
+            return []
+        filters.append(or_(*scope_filters))
     if decision is not None:
         filters.append(GuardrailEvent.decision == decision)
     if phase is not None:

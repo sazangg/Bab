@@ -12,6 +12,7 @@ from app.modules.auth.schemas import (
     CreateMemberRequest,
     InviteResponse,
     LoginRequest,
+    MemberOptionResponse,
     MemberResponse,
     ProjectMemberResponse,
     TeamMemberResponse,
@@ -47,6 +48,10 @@ def has_permission(user: AuthenticatedUser, permission: str) -> bool:
 
 async def list_members(*, scope: Scope, db: AsyncSession) -> list[MemberResponse]:
     return await service.list_members(scope=scope, db=db)
+
+
+async def list_member_options(*, scope: Scope, db: AsyncSession) -> list[MemberOptionResponse]:
+    return await service.list_member_options(scope=scope, db=db)
 
 
 async def create_member(

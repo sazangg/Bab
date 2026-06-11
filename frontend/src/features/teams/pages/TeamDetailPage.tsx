@@ -63,10 +63,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
-import {
-  useListMembersApiV1AuthMembersGet,
-  useMeApiV1AuthMeGet,
-} from "@/shared/api/generated/auth/auth";
+import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
 import {
   useAddTeamMemberApiV1TeamsTeamIdMembersPost,
   useCreateTeamProjectApiV1TeamsTeamIdProjectsPost,
@@ -81,7 +78,6 @@ import {
   useUpdateTeamApiV1TeamsTeamIdPatch,
 } from "@/shared/api/generated/teams/teams";
 import type {
-  MemberResponse,
   ProjectResponse,
   TeamMemberResponse,
   UpdateTeamRequest,
@@ -90,6 +86,7 @@ import type {
 import { formatDateTime, formatRelativeFromNow } from "@/features/providers/lib/format";
 import { PolicyScopeSection } from "@/features/policies/components/PolicyScopeSection";
 import { hasPermission, isTeamAdmin } from "@/features/auth/lib/permissions";
+import { type MemberOption, useTeamMemberOptions } from "@/features/auth/lib/member-options";
 import { ForbiddenPage } from "@/features/auth/components/ProtectedRoute";
 import { slugify } from "@/features/teams/lib/slug";
 import { EntityUsageCard } from "@/features/usage/components/EntityUsageCard";
@@ -130,9 +127,6 @@ export function TeamDetailPage() {
   const projectsQuery = useListTeamProjectsApiV1TeamsTeamIdProjectsGet(teamId, {
     query: { enabled: Boolean(teamId) },
   });
-  const orgMembersQuery = useListMembersApiV1AuthMembersGet({
-    query: { enabled: Boolean(teamId) },
-  });
   const teamMembersQuery = useListTeamMembersApiV1TeamsTeamIdMembersGet(teamId, {
     query: { enabled: Boolean(teamId) },
   });
@@ -144,7 +138,6 @@ export function TeamDetailPage() {
   });
   const team = teamQuery.data?.status === 200 ? teamQuery.data.data : undefined;
   const projects = projectsQuery.data?.status === 200 ? projectsQuery.data.data : [];
-  const orgMembers = orgMembersQuery.data?.status === 200 ? orgMembersQuery.data.data : [];
   const teamMembers = teamMembersQuery.data?.status === 200 ? teamMembersQuery.data.data : [];
   const usage = usageQuery.data?.status === 200 ? usageQuery.data.data : null;
   const archiveImpact =
@@ -153,7 +146,9 @@ export function TeamDetailPage() {
   const canManageTeam =
     team !== undefined &&
     (hasPermission(currentUser, "teams.manage") || isTeamAdmin(currentUser, team.id));
-  const canManageTeamPolicies = team !== undefined && hasPermission(currentUser, "teams.manage");
+  const canManageTeamPolicies = canManageTeam;
+  const memberOptionsQuery = useTeamMemberOptions(teamId, canManageTeam);
+  const orgMembers = memberOptionsQuery.data ?? [];
 
   const projectForm = useForm<ProjectFormValues>({
     resolver: zodResolver(projectSchema),
@@ -350,7 +345,7 @@ export function TeamDetailPage() {
         teamMembers={teamMembers}
         currentUserId={currentUser?.id}
         canManage={canManageTeam}
-        isLoading={orgMembersQuery.isPending || teamMembersQuery.isPending}
+        isLoading={memberOptionsQuery.isPending || teamMembersQuery.isPending}
         isPending={
           addTeamMember.isPending || updateTeamMember.isPending || removeTeamMember.isPending
         }
@@ -650,7 +645,7 @@ function TeamMembersCard({
   onRoleChange,
   onRemove,
 }: {
-  orgMembers: MemberResponse[];
+  orgMembers: MemberOption[];
   teamMembers: TeamMemberResponse[];
   currentUserId?: string;
   canManage: boolean;
@@ -663,9 +658,7 @@ function TeamMembersCard({
   const [selectedUserId, setSelectedUserId] = useState("");
   const [role, setRole] = useState("team_member");
   const assignedIds = new Set(teamMembers.map((member) => member.user_id));
-  const assignableMembers = orgMembers.filter(
-    (member) => member.status === "active" && !assignedIds.has(member.user_id),
-  );
+  const assignableMembers = orgMembers.filter((member) => !assignedIds.has(member.user_id));
   return (
     <Card>
       <CardHeader>

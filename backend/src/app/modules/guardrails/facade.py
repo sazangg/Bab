@@ -25,6 +25,7 @@ from app.modules.guardrails.schemas import (
     GuardrailImpactResponse,
     GuardrailImpactTarget,
     GuardrailImpactVirtualKey,
+    GuardrailPolicyOptionResponse,
     GuardrailPolicyResponse,
     GuardrailRuleResponse,
     GuardrailSimulationMatch,
@@ -35,8 +36,17 @@ from app.modules.guardrails.schemas import (
 )
 
 
-async def list_policies(*, scope: Scope, db: AsyncSession) -> list[GuardrailPolicyResponse]:
+async def list_policies(
+    *,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
+) -> list[GuardrailPolicyResponse]:
     policies = await repository.list_policies(org_id=scope.org_id, db=db)
+    if actor is not None and not _is_org_guardrail_viewer(actor):
+        assignments = await _visible_assignments(actor=actor, scope=scope, db=db)
+        visible_policy_ids = {assignment.policy_id for assignment in assignments}
+        policies = [policy for policy in policies if policy.id in visible_policy_ids]
     rules = await repository.list_policy_rules(
         org_id=scope.org_id,
         policy_ids=[policy.id for policy in policies],
@@ -44,6 +54,16 @@ async def list_policies(*, scope: Scope, db: AsyncSession) -> list[GuardrailPoli
     )
     rules_by_policy = _rules_by_policy(rules)
     return [_to_policy_response(policy, rules_by_policy.get(policy.id, [])) for policy in policies]
+
+
+async def list_policy_options(
+    *, scope: Scope, db: AsyncSession
+) -> list[GuardrailPolicyOptionResponse]:
+    policies = await repository.list_policies(org_id=scope.org_id, db=db)
+    return [
+        GuardrailPolicyOptionResponse(id=policy.id, name=policy.name, is_active=policy.is_active)
+        for policy in policies
+    ]
 
 
 async def create_policy(
@@ -143,7 +163,11 @@ async def delete_policy(
 
 
 async def get_policy_impact(
-    *, policy_id: UUID, scope: Scope, db: AsyncSession
+    *,
+    policy_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
 ) -> GuardrailImpactResponse:
     policy = await repository.get_policy(policy_id=policy_id, org_id=scope.org_id, db=db)
     if policy is None:
@@ -154,11 +178,24 @@ async def get_policy_impact(
         active_only=True,
         db=db,
     )
+    if actor is not None and not _is_org_guardrail_viewer(actor):
+        visible_ids = {
+            assignment.id
+            for assignment in await _visible_assignments(actor=actor, scope=scope, db=db)
+        }
+        assignments = [assignment for assignment in assignments if assignment.id in visible_ids]
+        if not assignments:
+            raise GuardrailPolicyNotFoundError
     return await _impact_from_assignments(org_id=scope.org_id, assignments=assignments, db=db)
 
 
-async def list_assignments(*, scope: Scope, db: AsyncSession) -> list[GuardrailAssignmentResponse]:
-    assignments = await repository.list_assignments(org_id=scope.org_id, db=db)
+async def list_assignments(
+    *,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
+) -> list[GuardrailAssignmentResponse]:
+    assignments = await _visible_assignments(actor=actor, scope=scope, db=db)
     policies = await repository.list_policies(org_id=scope.org_id, db=db)
     policy_names = {policy.id: policy.name for policy in policies}
     return [
@@ -346,7 +383,11 @@ async def delete_assignment(
 
 
 async def get_assignment_impact(
-    *, assignment_id: UUID, scope: Scope, db: AsyncSession
+    *,
+    assignment_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
 ) -> GuardrailImpactResponse:
     assignment = await repository.get_assignment(
         assignment_id=assignment_id,
@@ -355,6 +396,12 @@ async def get_assignment_impact(
     )
     if assignment is None:
         raise GuardrailAssignmentNotFoundError
+    if actor is not None and not _is_org_guardrail_viewer(actor):
+        visible_ids = {
+            item.id for item in await _visible_assignments(actor=actor, scope=scope, db=db)
+        }
+        if assignment.id not in visible_ids:
+            raise GuardrailAssignmentNotFoundError
     return await _impact_from_assignments(
         org_id=scope.org_id,
         assignments=[assignment] if assignment.is_active else [],
@@ -509,8 +556,15 @@ async def list_events(
     pool_id: UUID | None = None,
     model: str | None = None,
     limit: int = 50,
+    actor: AuthenticatedUser | None = None,
     db: AsyncSession,
 ) -> list[GuardrailEventResponse]:
+    allowed_team_ids: set[UUID] | None = None
+    allowed_project_ids: set[UUID] | None = None
+    if actor is not None and not _is_org_guardrail_viewer(actor):
+        allowed_team_ids, allowed_project_ids = _managed_scope_ids(actor)
+        if not allowed_team_ids and not allowed_project_ids:
+            return []
     events = await repository.list_events(
         org_id=scope.org_id,
         decision=decision,
@@ -524,6 +578,8 @@ async def list_events(
         pool_id=pool_id,
         model=model,
         limit=limit,
+        allowed_team_ids=allowed_team_ids,
+        allowed_project_ids=allowed_project_ids,
         db=db,
     )
     return [_to_event_response(event) for event in events]
@@ -533,6 +589,7 @@ async def simulate(
     *,
     payload: GuardrailSimulationRequest,
     scope: Scope,
+    actor: AuthenticatedUser | None = None,
     db: AsyncSession,
 ) -> GuardrailSimulationResponse:
     if payload.policy_id is not None:
@@ -543,6 +600,12 @@ async def simulate(
         )
         if policy is None:
             raise GuardrailPolicyNotFoundError
+        if actor is not None and not _is_org_guardrail_viewer(actor):
+            visible_policy_ids = {
+                item.id for item in await list_policies(scope=scope, db=db, actor=actor)
+            }
+            if policy.id not in visible_policy_ids:
+                raise GuardrailPolicyNotFoundError
         rules = await repository.list_policy_rules(
             org_id=scope.org_id,
             policy_ids=[policy.id],
@@ -820,6 +883,74 @@ async def _validate_assignment_target(
         return
     else:
         raise GuardrailAssignmentTargetNotFoundError
+
+
+def _is_org_guardrail_viewer(actor: AuthenticatedUser) -> bool:
+    return (
+        "*" in actor.permissions
+        or "guardrails.view" in actor.permissions
+        or "guardrails.manage" in actor.permissions
+        or actor.role in {"org_owner", "org_admin", "org_viewer"}
+    )
+
+
+def _managed_scope_ids(actor: AuthenticatedUser) -> tuple[set[UUID], set[UUID]]:
+    team_ids = {
+        membership.team_id
+        for membership in actor.team_memberships
+        if membership.role == "team_admin"
+    }
+    project_ids = {
+        membership.project_id
+        for membership in actor.project_memberships
+        if membership.role == "project_admin"
+    }
+    return team_ids, project_ids
+
+
+async def _visible_assignments(
+    *,
+    actor: AuthenticatedUser | None,
+    scope: Scope,
+    db: AsyncSession,
+) -> list[GuardrailAssignment]:
+    assignments = await repository.list_assignments(org_id=scope.org_id, db=db)
+    if actor is None or _is_org_guardrail_viewer(actor):
+        return assignments
+
+    team_ids, project_ids = _managed_scope_ids(actor)
+    visible: list[GuardrailAssignment] = []
+    for assignment in assignments:
+        if assignment.scope_type == "org":
+            continue
+        if assignment.team_id in team_ids:
+            visible.append(assignment)
+            continue
+        if assignment.project_id is not None:
+            project = await repository.get_project(
+                org_id=scope.org_id,
+                project_id=assignment.project_id,
+                db=db,
+            )
+            if project is not None and (project.id in project_ids or project.team_id in team_ids):
+                visible.append(assignment)
+            continue
+        if assignment.virtual_key_id is not None:
+            virtual_key = await repository.get_virtual_key(
+                org_id=scope.org_id,
+                virtual_key_id=assignment.virtual_key_id,
+                db=db,
+            )
+            if virtual_key is None:
+                continue
+            project = await repository.get_project(
+                org_id=scope.org_id,
+                project_id=virtual_key.project_id,
+                db=db,
+            )
+            if project is not None and (project.id in project_ids or project.team_id in team_ids):
+                visible.append(assignment)
+    return visible
 
 
 async def _impact_from_assignments(

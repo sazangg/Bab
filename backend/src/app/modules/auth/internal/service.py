@@ -28,6 +28,7 @@ from app.modules.auth.errors import (
     InviteLifecycleError,
     InviteNotFoundError,
     LastOwnerError,
+    MemberAlreadyExistsError,
     MemberNotFoundError,
     PermissionDeniedError,
 )
@@ -58,6 +59,7 @@ from app.modules.auth.schemas import (
     CreateMemberRequest,
     InviteResponse,
     LoginRequest,
+    MemberOptionResponse,
     MemberProjectMembershipResponse,
     MemberResponse,
     MemberTeamMembershipResponse,
@@ -106,7 +108,6 @@ ROLE_PERMISSIONS = {
         "activity.view",
         "settings.view",
         "guardrails.view",
-        "audit.view",
     },
     "org_member": set(),
 }
@@ -212,6 +213,22 @@ async def list_members(*, scope: Scope, db: AsyncSession) -> list[MemberResponse
     return members
 
 
+async def list_member_options(*, scope: Scope, db: AsyncSession) -> list[MemberOptionResponse]:
+    users = await db.scalars(
+        select(User)
+        .join(OrganizationMembership, OrganizationMembership.user_id == User.id)
+        .where(
+            OrganizationMembership.org_id == scope.org_id,
+            OrganizationMembership.status == "active",
+            User.is_active.is_(True),
+        )
+        .order_by(User.email)
+    )
+    return [
+        MemberOptionResponse(user_id=user.id, email=user.email, name=user.name) for user in users
+    ]
+
+
 async def create_member(
     *,
     payload: CreateMemberRequest,
@@ -224,27 +241,24 @@ async def create_member(
         team, project = await _validate_scoped_target(payload=payload, scope=scope, db=db)
         _ensure_actor_can_manage_org_role(actor=actor, current_role=None, new_role=payload.role)
         user = await db.scalar(select(User).where(User.email == email))
-        if user is None:
-            user = User(
-                email=email,
-                name=payload.name,
-                password_hash=hash_password(payload.password),
-                is_active=True,
+        if user is not None:
+            raise MemberAlreadyExistsError
+        user = User(
+            email=email,
+            name=payload.name,
+            password_hash=hash_password(payload.password),
+            is_active=True,
+        )
+        db.add(user)
+        await db.flush()
+        db.add(
+            IdentityAccount(
+                user_id=user.id,
+                provider="local",
+                provider_subject=user.email,
+                email=user.email,
             )
-            db.add(user)
-            await db.flush()
-            db.add(
-                IdentityAccount(
-                    user_id=user.id,
-                    provider="local",
-                    provider_subject=user.email,
-                    email=user.email,
-                )
-            )
-        else:
-            user.name = payload.name or user.name
-            user.password_hash = hash_password(payload.password)
-            user.is_active = True
+        )
         membership = await db.scalar(
             select(OrganizationMembership).where(
                 OrganizationMembership.org_id == scope.org_id,
@@ -482,9 +496,7 @@ async def _scoped_memberships_by_user(
         await db.scalars(select(TeamMembership).where(TeamMembership.org_id == scope.org_id))
     )
     project_rows = list(
-        await db.scalars(
-            select(ProjectMembership).where(ProjectMembership.org_id == scope.org_id)
-        )
+        await db.scalars(select(ProjectMembership).where(ProjectMembership.org_id == scope.org_id))
     )
     memberships: dict[UUID, tuple[list[TeamMembership], list[ProjectMembership]]] = {}
     for item in team_rows:
@@ -988,8 +1000,7 @@ def _ensure_actor_can_create_invite(
 
 def _is_team_admin_actor(*, actor: AuthenticatedUser, team_id: UUID) -> bool:
     return any(
-        item.team_id == team_id and item.role == "team_admin"
-        for item in actor.team_memberships
+        item.team_id == team_id and item.role == "team_admin" for item in actor.team_memberships
     )
 
 
@@ -1208,8 +1219,7 @@ def _ensure_actor_can_manage_team_members(
     if has_permission(actor, "teams.manage"):
         return
     if any(
-        item.team_id == team_id and item.role == "team_admin"
-        for item in actor.team_memberships
+        item.team_id == team_id and item.role == "team_admin" for item in actor.team_memberships
     ):
         return
     raise PermissionDeniedError
@@ -1394,9 +1404,7 @@ async def _audit_ledger_state(*, org_id: UUID, db: AsyncSession) -> AuditLedgerS
     )
     await db.scalar(select(Organization).where(Organization.id == org_id).with_for_update())
     state = await db.scalar(
-        select(AuditLedgerState)
-        .where(AuditLedgerState.org_id == org_id)
-        .with_for_update()
+        select(AuditLedgerState).where(AuditLedgerState.org_id == org_id).with_for_update()
     )
     if state is not None:
         return state
@@ -1489,11 +1497,7 @@ async def _principal_for_user(user_id: UUID, db: AsyncSession) -> AuthenticatedU
     )
     team_membership_rows = list(team_memberships)
     project_membership_rows = list(project_memberships)
-    permissions = _effective_permissions_for_memberships(
-        org_role=membership.role,
-        team_memberships=team_membership_rows,
-        project_memberships=project_membership_rows,
-    )
+    permissions = sorted(ROLE_PERMISSIONS.get(membership.role, set()))
     return AuthenticatedUser(
         id=user.id,
         org_id=membership.org_id,
