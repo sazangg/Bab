@@ -75,6 +75,16 @@ async def _create_provider_fixture(db_session: AsyncSession, *, name: str):
     return provider, pool, model
 
 
+async def _create_team_fixture(db_session: AsyncSession, *, name: str) -> Team:
+    org = await db_session.scalar(select(Organization))
+    assert org is not None
+    team = Team(org_id=org.id, name=name, slug=name.lower().replace(" ", "-"))
+    db_session.add(team)
+    await db_session.commit()
+    await db_session.refresh(team)
+    return team
+
+
 @pytest.mark.asyncio
 async def test_limit_policy_can_be_created_and_assigned_to_org(
     app_client,
@@ -186,7 +196,7 @@ async def test_scoped_admin_can_create_owned_policy_only_for_current_scope(
     monkeypatch.setattr(bootstrap.settings, "default_admin_email", "admin@example.com")
     monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
     await bootstrap.sync_default_workspace(db_session)
-    default_team = await db_session.scalar(select(Team).where(Team.name == "Default Team"))
+    default_team = await _create_team_fixture(db_session, name="Policy Team")
     other_team = Team(org_id=default_team.org_id, name="Other Team", slug="other-team")
     db_session.add(other_team)
     await db_session.commit()
@@ -299,7 +309,7 @@ async def test_scoped_admin_can_list_and_assign_org_created_policy(
     monkeypatch.setattr(bootstrap.settings, "default_admin_email", "admin@example.com")
     monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
     await bootstrap.sync_default_workspace(db_session)
-    default_team = await db_session.scalar(select(Team).where(Team.name == "Default Team"))
+    default_team = await _create_team_fixture(db_session, name="Reusable Policy Team")
 
     async with AsyncClient(
         transport=ASGITransport(app=app_client),
@@ -367,7 +377,7 @@ async def test_scoped_access_policy_creation_cannot_widen_inherited_access(
     monkeypatch.setattr(bootstrap.settings, "default_admin_email", "admin@example.com")
     monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
     await bootstrap.sync_default_workspace(db_session)
-    default_team = await db_session.scalar(select(Team).where(Team.name == "Default Team"))
+    default_team = await _create_team_fixture(db_session, name="Access Narrowing Team")
     allowed_provider, allowed_pool, allowed_model = await _create_provider_fixture(
         db_session, name="allowed"
     )
@@ -464,3 +474,186 @@ async def test_scoped_access_policy_creation_cannot_widen_inherited_access(
     assert parent_policy.status_code == 201
     assert wider_response.status_code == 400
     assert narrowed_response.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_access_policy_creation_payload_accepts_multiple_routes(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "admin@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    await bootstrap.sync_default_workspace(db_session)
+    first_provider, first_pool, first_model = await _create_provider_fixture(
+        db_session, name="route-a"
+    )
+    second_provider, second_pool, second_model = await _create_provider_fixture(
+        db_session, name="route-b"
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        headers = await _login(client)
+        response = await client.post(
+            "/api/v1/policies/access",
+            headers=headers,
+            json={
+                "name": "Multi-route access",
+                "routes": [
+                    {
+                        "provider_id": str(first_provider.id),
+                        "credential_pool_id": str(first_pool.id),
+                        "model_offering_ids": [str(first_model.id)],
+                        "priority": 10,
+                    },
+                    {
+                        "provider_id": str(second_provider.id),
+                        "credential_pool_id": str(second_pool.id),
+                        "model_offering_ids": [str(second_model.id)],
+                        "priority": 20,
+                    },
+                ],
+            },
+        )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["name"] == "Multi-route access"
+    assert [route["priority"] for route in body["routes"]] == [10, 20]
+    assert {route["provider_id"] for route in body["routes"]} == {
+        str(first_provider.id),
+        str(second_provider.id),
+    }
+
+
+@pytest.mark.asyncio
+async def test_scoped_access_policy_creation_supports_multiple_narrowed_routes(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "admin@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    await bootstrap.sync_default_workspace(db_session)
+    team = await _create_team_fixture(db_session, name="Scoped Multi Route Team")
+    first_provider, first_pool, first_model = await _create_provider_fixture(
+        db_session, name="scoped-route-a"
+    )
+    second_provider, second_pool, second_model = await _create_provider_fixture(
+        db_session, name="scoped-route-b"
+    )
+    wider_provider, wider_pool, wider_model = await _create_provider_fixture(
+        db_session, name="scoped-route-c"
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        admin_headers = await _login(client)
+        parent_policy = await client.post(
+            "/api/v1/policies/access",
+            headers=admin_headers,
+            json={
+                "name": "Org multi-route parent",
+                "routes": [
+                    {
+                        "provider_id": str(first_provider.id),
+                        "credential_pool_id": str(first_pool.id),
+                        "model_offering_ids": [str(first_model.id)],
+                    },
+                    {
+                        "provider_id": str(second_provider.id),
+                        "credential_pool_id": str(second_pool.id),
+                        "model_offering_ids": [str(second_model.id)],
+                    },
+                ],
+            },
+        )
+        await client.post(
+            "/api/v1/policies/assignments",
+            headers=admin_headers,
+            json={
+                "policy_type": "access",
+                "access_policy_id": parent_policy.json()["id"],
+                "scope_type": "org",
+            },
+        )
+        member_response = await client.post(
+            "/api/v1/auth/members",
+            headers=admin_headers,
+            json={
+                "email": "multi-route-team-admin@example.com",
+                "password": "team-admin-password",
+                "role": "org_member",
+            },
+        )
+        await client.post(
+            f"/api/v1/teams/{team.id}/members",
+            headers=admin_headers,
+            json={"user_id": member_response.json()["user_id"], "role": "team_admin"},
+        )
+        scoped_login = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "multi-route-team-admin@example.com",
+                "password": "team-admin-password",
+            },
+        )
+        scoped_headers = {"Authorization": f"Bearer {scoped_login.json()['access_token']}"}
+        narrowed_response = await client.post(
+            "/api/v1/policies/assignments/scoped-policy",
+            headers=scoped_headers,
+            json={
+                "policy_type": "access",
+                "scope_type": "team",
+                "team_id": str(team.id),
+                "access_policy": {
+                    "name": "Team multi-route child",
+                    "routes": [
+                        {
+                            "provider_id": str(first_provider.id),
+                            "credential_pool_id": str(first_pool.id),
+                            "model_offering_ids": [str(first_model.id)],
+                        },
+                        {
+                            "provider_id": str(second_provider.id),
+                            "credential_pool_id": str(second_pool.id),
+                            "model_offering_ids": [str(second_model.id)],
+                        },
+                    ],
+                },
+            },
+        )
+        wider_response = await client.post(
+            "/api/v1/policies/assignments/scoped-policy",
+            headers=scoped_headers,
+            json={
+                "policy_type": "access",
+                "scope_type": "team",
+                "team_id": str(team.id),
+                "access_policy": {
+                    "name": "Team widened child",
+                    "routes": [
+                        {
+                            "provider_id": str(first_provider.id),
+                            "credential_pool_id": str(first_pool.id),
+                            "model_offering_ids": [str(first_model.id)],
+                        },
+                        {
+                            "provider_id": str(wider_provider.id),
+                            "credential_pool_id": str(wider_pool.id),
+                            "model_offering_ids": [str(wider_model.id)],
+                        },
+                    ],
+                },
+            },
+        )
+
+    assert parent_policy.status_code == 201
+    assert narrowed_response.status_code == 201
+    assert len(narrowed_response.json()["access_policy"]["routes"]) == 2
+    assert wider_response.status_code == 400

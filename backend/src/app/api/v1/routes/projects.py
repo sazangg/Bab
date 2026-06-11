@@ -75,7 +75,7 @@ async def list_projects(
     user: CurrentUser,
 ) -> list[ProjectResponse]:
     projects = await facade.list_projects(scope=scope, db=db)
-    if auth_facade.has_permission(user, "projects.view"):
+    if user.role in {"org_owner", "org_admin", "org_viewer"} or "*" in user.permissions:
         return projects
     allowed_ids = accessible_team_ids(user)
     allowed_project_ids = accessible_project_ids(user)
@@ -161,12 +161,13 @@ async def get_project(
         project = await facade.get_project(project_id=project_id, scope=scope, db=db)
     except ProjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail="project not found") from exc
-    await require_project_view_or_permission(
-        project_id=str(project_id),
-        permission="projects.view",
-        user=user,
-        db=db,
-    )
+    if not (user.role in {"org_owner", "org_admin", "org_viewer"} or "*" in user.permissions):
+        await require_project_view_or_permission(
+            project_id=str(project_id),
+            permission="",
+            user=user,
+            db=db,
+        )
     return project
 
 

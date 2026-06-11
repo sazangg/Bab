@@ -65,7 +65,7 @@ async def list_teams(
     user: CurrentUser,
 ) -> list[TeamResponse]:
     teams = await facade.list_teams(scope=scope, db=db)
-    if auth_facade.has_permission(user, "teams.view"):
+    if user.role in {"org_owner", "org_admin", "org_viewer"} or "*" in user.permissions:
         return teams
     allowed_ids = accessible_team_ids(user)
     return [team for team in teams if team.id in allowed_ids]
@@ -95,12 +95,13 @@ async def get_team(
         team = await facade.get_team(team_id=team_id, scope=scope, db=db)
     except TeamNotFoundError as exc:
         raise HTTPException(status_code=404, detail="team not found") from exc
-    await require_team_view_or_permission(
-        team_id=str(team_id),
-        permission="teams.view",
-        user=user,
-        db=db,
-    )
+    if not (user.role in {"org_owner", "org_admin", "org_viewer"} or "*" in user.permissions):
+        await require_team_view_or_permission(
+            team_id=str(team_id),
+            permission="",
+            user=user,
+            db=db,
+        )
     return team
 
 

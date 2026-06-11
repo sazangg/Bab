@@ -1268,7 +1268,7 @@ export function GuardrailsPage() {
                 }
                 options={assignmentScopeTypes(assignmentScopeOptions)}
               />
-              {assignmentForm.scope_type !== "org" ? (
+              {assignmentForm.scope_type !== "none" && assignmentForm.scope_type !== "org" ? (
                 <div className="grid gap-2">
                   <SelectField
                     label="Target"
@@ -1276,11 +1276,11 @@ export function GuardrailsPage() {
                     onValueChange={(value) =>
                       setAssignmentForm({ ...assignmentForm, scope_id: value })
                     }
-                    options={assignmentScopeOptions[assignmentForm.scope_type as ScopeType].map(
-                      (option) => option.id,
-                    )}
+                    options={(
+                      assignmentScopeOptions[assignmentForm.scope_type as ScopeType] ?? []
+                    ).map((option) => option.id)}
                     labels={Object.fromEntries(
-                      assignmentScopeOptions[assignmentForm.scope_type as ScopeType].map(
+                      (assignmentScopeOptions[assignmentForm.scope_type as ScopeType] ?? []).map(
                         (option) => [option.id, option.label],
                       ),
                     )}

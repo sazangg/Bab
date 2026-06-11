@@ -13,12 +13,13 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://localhost:8000",
-      "/v1": "http://localhost:8000",
+      "/api": process.env.VITE_API_PROXY_TARGET ?? "http://localhost:8000",
+      "/v1": process.env.VITE_API_PROXY_TARGET ?? "http://localhost:8000",
     },
   },
   test: {
     environment: "jsdom",
+    exclude: ["tests/e2e/**", "node_modules/**", "dist/**"],
     globals: true,
     setupFiles: "./src/test/setup.ts",
   },
