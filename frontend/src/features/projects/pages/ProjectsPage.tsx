@@ -1,13 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  Building2,
-  FolderKanban,
-  MoreHorizontal,
-  Pencil,
-  Plus,
-  Search,
-} from "lucide-react";
+import { Building2, FolderKanban, MoreHorizontal, Pencil, Plus, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { Link, useNavigate } from "react-router-dom";
@@ -51,6 +44,7 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
@@ -88,6 +82,7 @@ type NewProjectValues = z.infer<typeof newProjectSchema>;
 
 export function ProjectsPage() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const queryClient = useQueryClient();
   const projectsQuery = useListProjectsApiV1ProjectsGet();
   const teamsQuery = useListTeamsApiV1TeamsGet();
@@ -151,12 +146,12 @@ export function ProjectsPage() {
           <div className="flex items-center gap-2">
             {hasPermission(currentUser, "teams.manage") ||
             hasAnyTeamAdminMembership(currentUser) ? (
-            <Button asChild variant="outline">
-              <Link to="/teams">
-                <Building2 />
-                Manage teams
-              </Link>
-            </Button>
+              <Button asChild variant="outline">
+                <Link to="/teams">
+                  <Building2 />
+                  Manage teams
+                </Link>
+              </Button>
             ) : null}
             {canCreateProject ? (
               <NewProjectSheet
@@ -266,45 +261,77 @@ export function ProjectsPage() {
                 </p>
               </div>
             ) : (
-              <div className="overflow-hidden rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Team</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Created</TableHead>
-                      <TableHead className="w-[1%]" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filtered.map((project) => (
-                      <ProjectRow
-                        key={project.id}
-                        project={project}
-                        team={
-                          teamById[project.team_id] ??
-                          (project.team_name
-                            ? {
-                                id: project.team_id,
-                                name: project.team_name,
-                              }
-                            : undefined)
-                        }
-                        onOpen={() => navigate(`/projects/${project.id}`)}
-                        onEdit={() => setEditingProject(project)}
-                        canManage={
-                          canManageAllProjects ||
-                          isTeamAdmin(currentUser, project.team_id) ||
-                          isProjectAdmin(currentUser, project.id)
-                        }
-                        canOpenTeam={canViewTeam(currentUser, project.team_id)}
-                      />
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+              <>
+                {isMobile ? (
+                  <div className="grid gap-3">
+                    {filtered.map((project) => {
+                      const team =
+                        teamById[project.team_id] ??
+                        (project.team_name
+                          ? {
+                              id: project.team_id,
+                              name: project.team_name,
+                            }
+                          : undefined);
+                      const canManage =
+                        canManageAllProjects ||
+                        isTeamAdmin(currentUser, project.team_id) ||
+                        isProjectAdmin(currentUser, project.id);
+                      return (
+                        <ProjectCard
+                          key={project.id}
+                          project={project}
+                          team={team}
+                          onOpen={() => navigate(`/projects/${project.id}`)}
+                          onEdit={() => setEditingProject(project)}
+                          canManage={canManage}
+                          canOpenTeam={canViewTeam(currentUser, project.team_id)}
+                        />
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="overflow-hidden rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Team</TableHead>
+                          <TableHead>Description</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Created</TableHead>
+                          <TableHead className="w-[1%]" />
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filtered.map((project) => (
+                          <ProjectRow
+                            key={project.id}
+                            project={project}
+                            team={
+                              teamById[project.team_id] ??
+                              (project.team_name
+                                ? {
+                                    id: project.team_id,
+                                    name: project.team_name,
+                                  }
+                                : undefined)
+                            }
+                            onOpen={() => navigate(`/projects/${project.id}`)}
+                            onEdit={() => setEditingProject(project)}
+                            canManage={
+                              canManageAllProjects ||
+                              isTeamAdmin(currentUser, project.team_id) ||
+                              isProjectAdmin(currentUser, project.id)
+                            }
+                            canOpenTeam={canViewTeam(currentUser, project.team_id)}
+                          />
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </>
             )}
           </CardContent>
         </Card>
@@ -319,6 +346,95 @@ export function ProjectsPage() {
         }}
       />
     </>
+  );
+}
+
+function ProjectCard({
+  project,
+  team,
+  onOpen,
+  onEdit,
+  canManage,
+  canOpenTeam,
+}: {
+  project: ProjectResponse;
+  team: Pick<TeamResponse, "id" | "name"> | undefined;
+  onOpen: () => void;
+  onEdit: () => void;
+  canManage: boolean;
+  canOpenTeam: boolean;
+}) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      className={cn(
+        "rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-muted/30",
+        !project.is_active && "opacity-70",
+      )}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <Link
+            to={`/projects/${project.id}`}
+            onClick={(event) => event.stopPropagation()}
+            className="font-medium underline-offset-4 hover:underline"
+          >
+            {project.name}
+          </Link>
+          <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+            {project.description || "No description."}
+          </p>
+        </div>
+        {canManage ? (
+          <div onClick={(event) => event.stopPropagation()}>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon-sm" aria-label="Project actions">
+                  <MoreHorizontal />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={onEdit}>
+                  <Pencil data-icon="inline-start" />
+                  Edit project
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        ) : null}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        {team && canOpenTeam ? (
+          <Link
+            to={`/teams/${team.id}`}
+            onClick={(event) => event.stopPropagation()}
+            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 hover:text-foreground"
+          >
+            <Building2 className="size-3" />
+            {team.name}
+          </Link>
+        ) : team ? (
+          <span className="inline-flex items-center gap-1 rounded-md border px-2 py-1">
+            <Building2 className="size-3" />
+            {team.name}
+          </span>
+        ) : null}
+        <StatusBadge variant={project.is_active ? "active" : "inactive"}>
+          {project.is_active ? "Active" : "Archived"}
+        </StatusBadge>
+        <span title={formatDateTime(project.created_at)}>
+          Created {formatRelativeFromNow(project.created_at)}
+        </span>
+      </div>
+    </div>
   );
 }
 

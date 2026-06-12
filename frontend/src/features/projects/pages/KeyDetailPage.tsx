@@ -133,8 +133,8 @@ export function KeyDetailPage() {
       isProjectAdmin(currentUser, project.id)
     : false;
   const team = project
-    ? teams.find((item) => item.id === project.team_id) ??
-      (project.team_name ? { id: project.team_id, name: project.team_name } : undefined)
+    ? (teams.find((item) => item.id === project.team_id) ??
+      (project.team_name ? { id: project.team_id, name: project.team_name } : undefined))
     : undefined;
   const status = key ? keyStatusPresentation(key.status) : null;
   const overlapActive = Boolean(
@@ -225,6 +225,17 @@ export function KeyDetailPage() {
                 <Pencil />
                 Edit key
               </Button>
+              {!key.revoked_at && !key.deprecated_at ? (
+                <Button
+                  onClick={() => {
+                    setRotationName(`${key.name} replacement`);
+                    setRotateOpen(true);
+                  }}
+                >
+                  <RotateCw />
+                  Rotate key
+                </Button>
+              ) : null}
               {!key.revoked_at ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -233,17 +244,6 @@ export function KeyDetailPage() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    {!key.deprecated_at ? (
-                      <DropdownMenuItem
-                        onSelect={() => {
-                          setRotationName(`${key.name} replacement`);
-                          setRotateOpen(true);
-                        }}
-                      >
-                        <RotateCw className="mr-2 size-4" />
-                        Rotate key
-                      </DropdownMenuItem>
-                    ) : null}
                     <DropdownMenuItem onSelect={() => setRevokeOpen(true)} variant="destructive">
                       <Trash2 className="mr-2 size-4" />
                       Revoke key
@@ -258,20 +258,31 @@ export function KeyDetailPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Key summary</CardTitle>
-          <CardDescription className="font-mono text-xs">{key.key_prefix}</CardDescription>
+          <CardTitle>Credential lifecycle</CardTitle>
+          <CardDescription>
+            <span className="font-mono text-xs">{key.key_prefix}</span>
+            <span className="block pt-1">
+              Status, expiration, rotation overlap, and usage freshness for this key.
+            </span>
+          </CardDescription>
           <CardAction>
-            <StatusBadge variant={status?.variant ?? "inactive"}>
-              {status?.label}
-            </StatusBadge>
+            <StatusBadge variant={status?.variant ?? "inactive"}>{status?.label}</StatusBadge>
           </CardAction>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-4">
+        <CardContent className="grid gap-4 md:grid-cols-5">
           <Fact
             label="Expires"
             value={key.expires_at ? new Date(key.expires_at).toLocaleString() : "Never"}
           />
           <Fact label={status?.categoryLabel ?? "Status"} value={status?.reason ?? "Unavailable"} />
+          <Fact
+            label="Rotation overlap"
+            value={
+              key.deprecated_at
+                ? new Date(key.deprecated_at).toLocaleString()
+                : "No overlap scheduled"
+            }
+          />
           <Fact label="Last used" value={keyUsageLabel(key.last_used_at)} />
           <Fact label="Created" value={new Date(key.created_at).toLocaleString()} />
         </CardContent>
@@ -302,9 +313,7 @@ export function KeyDetailPage() {
             <Fact
               label="Overlap ends"
               value={
-                key.deprecated_at
-                  ? new Date(key.deprecated_at).toLocaleString()
-                  : "Not scheduled"
+                key.deprecated_at ? new Date(key.deprecated_at).toLocaleString() : "Not scheduled"
               }
             />
           </CardContent>
@@ -329,7 +338,7 @@ export function KeyDetailPage() {
             label="Revoked by"
             value={
               key.revoked_by
-                ? key.revoker_name ?? key.revoker_email ?? shortActorId(key.revoked_by)
+                ? (key.revoker_name ?? key.revoker_email ?? shortActorId(key.revoked_by))
                 : "Not revoked"
             }
           />
@@ -438,7 +447,9 @@ export function KeyDetailPage() {
             </DialogHeader>
             {rotatedKey ? (
               <div className="space-y-3">
-                <p className="text-sm font-medium">Copy this secret now. It will not be shown again.</p>
+                <p className="text-sm font-medium">
+                  Copy this secret now. It will not be shown again.
+                </p>
                 <div className="flex items-center gap-2 rounded-md border bg-muted/30 p-3">
                   <code className="min-w-0 flex-1 break-all text-xs">{rotatedKey.key}</code>
                   <Button
@@ -455,9 +466,7 @@ export function KeyDetailPage() {
                 </div>
                 <Button
                   className="w-full"
-                  onClick={() =>
-                    navigate(`/projects/${projectId}/keys/${rotatedKey.id}`)
-                  }
+                  onClick={() => navigate(`/projects/${projectId}/keys/${rotatedKey.id}`)}
                 >
                   View replacement key
                 </Button>
@@ -732,7 +741,7 @@ function Fact({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="truncate text-sm font-medium">{value}</p>
+      <p className="break-words text-sm font-medium">{value}</p>
     </div>
   );
 }

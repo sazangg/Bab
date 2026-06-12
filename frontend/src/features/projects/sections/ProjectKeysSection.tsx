@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, KeyRound, Plus } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { z } from "zod";
 
@@ -21,6 +22,7 @@ import type {
   VirtualKeyResponse,
 } from "@/shared/api/generated/schemas";
 import { Button } from "@/components/ui/button";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   Card,
   CardAction,
@@ -91,6 +93,7 @@ export function ProjectKeysSection({
   canManage: boolean;
 }) {
   const queryClient = useQueryClient();
+  const isMobile = useIsMobile();
   const [createOpen, setCreateOpen] = useState(false);
   const [createdKey, setCreatedKey] = useState<CreatedVirtualKeyResponse | null>(null);
   const [revokeId, setRevokeId] = useState<string | null>(null);
@@ -118,13 +121,13 @@ export function ProjectKeysSection({
   const canCreateKey = Boolean(
     project.is_active && preflight?.is_usable && !secretDeliveryDisabled,
   );
-  const revokeImpactQuery = useGetVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet(
-    projectId,
-    revokeId ?? "",
-    { query: { enabled: Boolean(revokeId) } },
-  );
-  const revokeImpact =
-    revokeImpactQuery.data?.status === 200 ? revokeImpactQuery.data.data : null;
+  const revokeImpactQuery =
+    useGetVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet(
+      projectId,
+      revokeId ?? "",
+      { query: { enabled: Boolean(revokeId) } },
+    );
+  const revokeImpact = revokeImpactQuery.data?.status === 200 ? revokeImpactQuery.data.data : null;
 
   const createMutation = useCreateVirtualKeyApiV1ProjectsProjectIdKeysPost({
     mutation: {
@@ -202,8 +205,8 @@ export function ProjectKeysSection({
                     ) : null}
                     {secretDeliveryDisabled ? (
                       <p className="mt-3 text-sm text-destructive">
-                        Virtual key creation is disabled because plaintext secret delivery is
-                        turned off in organization settings.
+                        Virtual key creation is disabled because plaintext secret delivery is turned
+                        off in organization settings.
                       </p>
                     ) : null}
                   </div>
@@ -259,58 +262,87 @@ export function ProjectKeysSection({
               description="Create a key to issue this project's first credential."
             />
           ) : (
-            <div className="overflow-hidden rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Label</TableHead>
-                    <TableHead>Prefix</TableHead>
-                    <TableHead>Policy</TableHead>
-                    <TableHead>Usage</TableHead>
-                    <TableHead>Expires</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="w-[1%]" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+            <>
+              {isMobile ? (
+                <div className="grid gap-3">
                   {keys.map((key) => (
-                    <TableRow
+                    <KeyCard
                       key={key.id}
-                      className="cursor-pointer"
-                      onClick={() => onView(key.id)}
-                    >
-                      <TableCell className="font-medium">{key.name}</TableCell>
-                      <TableCell className="font-mono text-xs">{key.key_prefix}</TableCell>
-                      <TableCell className="text-muted-foreground">
-                        <div className="flex flex-col gap-1">
-                          <span>Policy governed</span>
-                          <span className="text-xs">Access and limits resolve at request time</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        <KeyUsageInline lastUsedAt={key.last_used_at} />
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {key.expires_at ? new Date(key.expires_at).toLocaleDateString() : "Never"}
-                      </TableCell>
-                      <TableCell>
-                        <KeyStatusBadge virtualKey={key} />
-                      </TableCell>
-                      <TableCell
-                        className="text-right"
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        {canManage && !key.revoked_at ? (
-                          <Button variant="ghost" size="sm" onClick={() => setRevokeId(key.id)}>
-                            Revoke
-                          </Button>
-                        ) : null}
-                      </TableCell>
-                    </TableRow>
+                      projectId={projectId}
+                      virtualKey={key}
+                      canManage={canManage}
+                      onOpen={() => onView(key.id)}
+                      onRevoke={() => setRevokeId(key.id)}
+                    />
                   ))}
-                </TableBody>
-              </Table>
-            </div>
+                </div>
+              ) : (
+                <div className="overflow-hidden rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Label</TableHead>
+                        <TableHead>Prefix</TableHead>
+                        <TableHead>Policy</TableHead>
+                        <TableHead>Usage</TableHead>
+                        <TableHead>Expires</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="w-[1%]" />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {keys.map((key) => (
+                        <TableRow
+                          key={key.id}
+                          className="cursor-pointer"
+                          onClick={() => onView(key.id)}
+                        >
+                          <TableCell className="font-medium">
+                            <Link
+                              to={`/projects/${projectId}/keys/${key.id}`}
+                              onClick={(event) => event.stopPropagation()}
+                              className="underline-offset-4 hover:underline"
+                            >
+                              {key.name}
+                            </Link>
+                          </TableCell>
+                          <TableCell className="font-mono text-xs">{key.key_prefix}</TableCell>
+                          <TableCell className="text-muted-foreground">
+                            <div className="flex flex-col gap-1">
+                              <span>Policy governed</span>
+                              <span className="text-xs">
+                                Access and limits resolve at request time
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            <KeyUsageInline lastUsedAt={key.last_used_at} />
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {key.expires_at
+                              ? new Date(key.expires_at).toLocaleDateString()
+                              : "Never"}
+                          </TableCell>
+                          <TableCell>
+                            <KeyStatusBadge virtualKey={key} />
+                          </TableCell>
+                          <TableCell
+                            className="text-right"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            {canManage && !key.revoked_at ? (
+                              <Button variant="ghost" size="sm" onClick={() => setRevokeId(key.id)}>
+                                Revoke
+                              </Button>
+                            ) : null}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
@@ -479,6 +511,79 @@ export function ProjectKeysSection({
   );
 }
 
+function KeyCard({
+  projectId,
+  virtualKey,
+  canManage,
+  onOpen,
+  onRevoke,
+}: {
+  projectId: string;
+  virtualKey: VirtualKeyResponse;
+  canManage: boolean;
+  onOpen: () => void;
+  onRevoke: () => void;
+}) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      className="rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-muted/30"
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <Link
+            to={`/projects/${projectId}/keys/${virtualKey.id}`}
+            onClick={(event) => event.stopPropagation()}
+            className="font-medium underline-offset-4 hover:underline"
+          >
+            {virtualKey.name}
+          </Link>
+          <p className="mt-1 font-mono text-xs text-muted-foreground">{virtualKey.key_prefix}</p>
+        </div>
+        <KeyStatusBadge virtualKey={virtualKey} />
+      </div>
+      <div className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
+        <div>
+          <p className="text-xs text-muted-foreground">Usage</p>
+          <KeyUsageInline lastUsedAt={virtualKey.last_used_at} />
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">Expires</p>
+          <p className="text-sm font-medium">
+            {virtualKey.expires_at ? new Date(virtualKey.expires_at).toLocaleDateString() : "Never"}
+          </p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">Policy</p>
+          <p className="text-sm font-medium">Policy governed</p>
+        </div>
+      </div>
+      {canManage && !virtualKey.revoked_at ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="mt-4 w-full"
+          onClick={(event) => {
+            event.stopPropagation();
+            onRevoke();
+          }}
+        >
+          Revoke
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 function KeyStatusBadge({ virtualKey }: { virtualKey: VirtualKeyResponse }) {
   const status = keyStatusPresentation(virtualKey.status);
   return (
@@ -491,11 +596,7 @@ function KeyStatusBadge({ virtualKey }: { virtualKey: VirtualKeyResponse }) {
   );
 }
 
-function KeyUsageInline({
-  lastUsedAt,
-}: {
-  lastUsedAt: string | null | undefined;
-}) {
+function KeyUsageInline({ lastUsedAt }: { lastUsedAt: string | null | undefined }) {
   return (
     <div className="flex flex-col gap-1 text-xs">
       <span className="font-medium text-foreground">{lastUsedAt ? "Observed" : "No usage"}</span>

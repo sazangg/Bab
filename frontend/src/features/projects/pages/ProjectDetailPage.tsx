@@ -11,7 +11,7 @@ import {
   UserPlus,
 } from "lucide-react";
 import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import {
@@ -85,6 +85,7 @@ import { getProblemDetail } from "@/shared/api/problem-detail";
 export function ProjectDetailPage() {
   const { projectId = "" } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const [editOpen, setEditOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
@@ -127,10 +128,10 @@ export function ProjectDetailPage() {
   const projectMembers =
     projectMembersQuery.data?.status === 200 ? projectMembersQuery.data.data : [];
   const team = project
-    ? teams.find((item) => item.id === project.team_id) ??
+    ? (teams.find((item) => item.id === project.team_id) ??
       (project.team_name
         ? { id: project.team_id, name: project.team_name, is_active: true }
-        : undefined)
+        : undefined))
     : undefined;
   const keys = keysQuery.data?.status === 200 ? keysQuery.data.data : [];
   const usage = usageQuery.data?.status === 200 ? usageQuery.data.data : null;
@@ -139,6 +140,11 @@ export function ProjectDetailPage() {
   const effectiveAccess =
     effectiveAccessQuery.data?.status === 200 ? effectiveAccessQuery.data.data : undefined;
   const canArchiveProject = canManageProject;
+  const requestedTab = searchParams.get("tab");
+  const activeTab =
+    requestedTab === "keys" || requestedTab === "access" || requestedTab === "members"
+      ? requestedTab
+      : "overview";
 
   const updateMutation = useUpdateProjectApiV1ProjectsProjectIdPatch({
     mutation: {
@@ -270,39 +276,18 @@ export function ProjectDetailPage() {
         }
       />
 
-      <EntityUsageCard
-        usage={usage}
-        isLoading={usageQuery.isPending}
-        description="Aggregate project usage across all virtual keys, including inherited team policies."
-      />
-      <Card>
-        <CardHeader>
-          <CardTitle>Ownership</CardTitle>
-          <CardDescription>Application owner context for this project.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-4">
-          <Fact label="Owning team" value={team?.name ?? "Unknown"} />
-          <Fact label="Project members" value={`${projectMembers.length}`} />
-          <Fact label="Active keys" value={`${keys.filter((key) => key.is_usable).length}`} />
-          <Fact label="Status" value={project.is_active ? "Active" : "Archived"} />
-        </CardContent>
-      </Card>
-      <ProjectSetupChecklist
-        ownershipActive={Boolean(project.is_active && (team?.is_active ?? true))}
-        effectiveAccessPolicy={Boolean(effectiveAccess?.access_policy)}
-        routableRoute={Boolean(effectiveAccess?.routes.length)}
-        keyCreated={keys.length > 0}
-        firstRequestObserved={(usage?.totals.requests ?? 0) > 0}
-        isLoading={effectiveAccessQuery.isPending || usageQuery.isPending}
-      />
-      <UsageRecordsDrilldown title="Project usage records" filters={{ project_id: project.id }} />
-      <RecentGuardrailEventsCard
-        filters={{ project_id: project.id }}
-        enabled={canManageProject || hasPermission(currentUser, "guardrails.view")}
-      />
-
-      <Tabs defaultValue={canManageProject ? "access" : "keys"} className="space-y-4">
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => {
+          const next = new URLSearchParams(searchParams);
+          if (value === "overview") next.delete("tab");
+          else next.set("tab", value);
+          setSearchParams(next, { replace: true });
+        }}
+        className="space-y-4"
+      >
         <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="keys">
             <KeyRound className="size-3.5" />
             Keys ({keys.length})
@@ -310,6 +295,43 @@ export function ProjectDetailPage() {
           <TabsTrigger value="access">Access</TabsTrigger>
           <TabsTrigger value="members">Members</TabsTrigger>
         </TabsList>
+        <TabsContent value="overview" className="space-y-4">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(22rem,0.8fr)]">
+            <EntityUsageCard
+              usage={usage}
+              isLoading={usageQuery.isPending}
+              description="Aggregate project usage across all virtual keys, including inherited team policies."
+            />
+            <Card>
+              <CardHeader>
+                <CardTitle>Ownership</CardTitle>
+                <CardDescription>Application owner context for this project.</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4 sm:grid-cols-2">
+                <Fact label="Owning team" value={team?.name ?? "Unknown"} />
+                <Fact label="Project members" value={`${projectMembers.length}`} />
+                <Fact label="Active keys" value={`${keys.filter((key) => key.is_usable).length}`} />
+                <Fact label="Status" value={project.is_active ? "Active" : "Archived"} />
+              </CardContent>
+            </Card>
+          </div>
+          <ProjectSetupChecklist
+            ownershipActive={Boolean(project.is_active && (team?.is_active ?? true))}
+            effectiveAccessPolicy={Boolean(effectiveAccess?.access_policy)}
+            routableRoute={Boolean(effectiveAccess?.routes.length)}
+            keyCreated={keys.length > 0}
+            firstRequestObserved={(usage?.totals.requests ?? 0) > 0}
+            isLoading={effectiveAccessQuery.isPending || usageQuery.isPending}
+          />
+          <UsageRecordsDrilldown
+            title="Project usage records"
+            filters={{ project_id: project.id }}
+          />
+          <RecentGuardrailEventsCard
+            filters={{ project_id: project.id }}
+            enabled={canManageProject || hasPermission(currentUser, "guardrails.view")}
+          />
+        </TabsContent>
         <TabsContent value="keys" className="space-y-4">
           <ProjectKeysSection
             projectId={projectId}

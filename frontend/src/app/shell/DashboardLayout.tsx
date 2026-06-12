@@ -255,15 +255,18 @@ export function DashboardLayout() {
       >
         Skip to main content
       </a>
-      <header className="fixed inset-x-0 top-0 z-30 flex h-12 items-center border-b bg-sidebar px-4">
+      <header className="fixed inset-x-0 top-0 z-30 flex h-12 items-center border-b bg-sidebar px-3 sm:px-4">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <LogoSidebarTrigger logoUrl={settings?.organization_logo_url} />
-          <span className="font-semibold">Bab</span>
-          <span className="hidden max-w-48 truncate text-sm text-muted-foreground sm:inline">
+          <span className="shrink-0 font-semibold">Bab</span>
+          <span className="hidden max-w-48 truncate text-sm text-muted-foreground md:inline">
             {organizationName}
           </span>
-          <span className="hidden text-muted-foreground sm:inline">/</span>
-          <Breadcrumb className="min-w-0">
+          <span className="hidden text-muted-foreground md:inline">/</span>
+          <span className="min-w-0 truncate text-sm text-muted-foreground md:hidden">
+            {breadcrumbs.at(-1)?.label}
+          </span>
+          <Breadcrumb className="hidden min-w-0 md:block">
             <BreadcrumbList>
               {breadcrumbs.map((crumb, index) => {
                 const isLast = index === breadcrumbs.length - 1;
@@ -287,12 +290,12 @@ export function DashboardLayout() {
         </div>
         <div className="flex items-center gap-2">
           {canViewDashboardHome(currentUser) ? (
-            <Button asChild variant="ghost" size="sm">
+            <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
               <Link to="/">Dashboard</Link>
             </Button>
           ) : null}
           {showApiDocs ? (
-            <Button asChild variant="ghost" size="sm">
+            <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
               <Link to="/api-docs">API Docs</Link>
             </Button>
           ) : null}
@@ -327,6 +330,19 @@ export function DashboardLayout() {
                 </span>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
+              {canViewDashboardHome(currentUser) ? (
+                <DropdownMenuItem asChild className="sm:hidden">
+                  <Link to="/">Dashboard</Link>
+                </DropdownMenuItem>
+              ) : null}
+              {showApiDocs ? (
+                <DropdownMenuItem asChild className="sm:hidden">
+                  <Link to="/api-docs">API Docs</Link>
+                </DropdownMenuItem>
+              ) : null}
+              {canViewDashboardHome(currentUser) || showApiDocs ? (
+                <DropdownMenuSeparator className="sm:hidden" />
+              ) : null}
               <DropdownMenuItem
                 onSelect={() => logoutMutation.mutate()}
                 disabled={logoutMutation.isPending}
@@ -406,7 +422,7 @@ export function DashboardLayout() {
         className="mt-12 mb-7 min-h-[calc(100svh-4.75rem)] overflow-hidden bg-background focus:outline-none"
       >
         <div className="flex min-h-0 flex-1 flex-col overflow-auto">
-          <div className="px-6 py-6">
+          <div className="px-4 py-5 sm:px-6 sm:py-6">
             <Outlet />
           </div>
         </div>
@@ -509,11 +525,17 @@ function formatScopedAccess(user: AuthenticatedUser | null | undefined) {
   const teamMemberCount = (user?.team_memberships ?? []).filter(
     (membership) => membership.role === "team_member",
   ).length;
-  const projectAdminCount = (user?.project_memberships ?? []).length;
+  const projectAdminCount = (user?.project_memberships ?? []).filter(
+    (membership) => membership.role === "project_admin",
+  ).length;
+  const projectMemberCount = (user?.project_memberships ?? []).filter(
+    (membership) => membership.role === "project_member",
+  ).length;
   const parts = [
     teamAdminCount ? `${teamAdminCount} team admin` : null,
     teamMemberCount ? `${teamMemberCount} team member` : null,
     projectAdminCount ? `${projectAdminCount} project admin` : null,
+    projectMemberCount ? `${projectMemberCount} project member` : null,
   ].filter(Boolean);
   return parts.length ? parts.join(" · ") : "No scoped roles";
 }

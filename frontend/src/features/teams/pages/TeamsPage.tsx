@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
@@ -69,6 +70,7 @@ type TeamSegment = "all" | "active" | "archived";
 
 export function TeamsPage() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [editingTeam, setEditingTeam] = useState<TeamResponse | null>(null);
@@ -192,22 +194,11 @@ export function TeamsPage() {
                 </p>
               </div>
             ) : (
-              <div className="overflow-hidden rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Slug</TableHead>
-                      <TableHead className="text-right">Projects</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Updated</TableHead>
-                      <TableHead className="w-[1%]" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+              <>
+                {isMobile ? (
+                  <div className="grid gap-3">
                     {filtered.map((team) => (
-                      <TeamRow
+                      <TeamCard
                         key={team.id}
                         team={team}
                         projectCount={projectCountByTeam[team.id] ?? 0}
@@ -219,9 +210,40 @@ export function TeamsPage() {
                         }
                       />
                     ))}
-                  </TableBody>
-                </Table>
-              </div>
+                  </div>
+                ) : (
+                  <div className="overflow-hidden rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Slug</TableHead>
+                          <TableHead className="text-right">Projects</TableHead>
+                          <TableHead>Description</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Updated</TableHead>
+                          <TableHead className="w-[1%]" />
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filtered.map((team) => (
+                          <TeamRow
+                            key={team.id}
+                            team={team}
+                            projectCount={projectCountByTeam[team.id] ?? 0}
+                            onOpen={() => navigate(`/teams/${team.id}`)}
+                            onEdit={() => setEditingTeam(team)}
+                            canEdit={
+                              hasPermission(currentUser, "teams.manage") ||
+                              isTeamAdmin(currentUser, team.id)
+                            }
+                          />
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </>
             )}
           </CardContent>
         </Card>
@@ -236,6 +258,80 @@ export function TeamsPage() {
         }}
       />
     </>
+  );
+}
+
+function TeamCard({
+  team,
+  projectCount,
+  onOpen,
+  onEdit,
+  canEdit,
+}: {
+  team: TeamResponse;
+  projectCount: number;
+  onOpen: () => void;
+  onEdit: () => void;
+  canEdit: boolean;
+}) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      className={cn(
+        "rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-muted/30",
+        !team.is_active && "opacity-70",
+      )}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <Link
+            to={`/teams/${team.id}`}
+            onClick={(event) => event.stopPropagation()}
+            className="font-medium underline-offset-4 hover:underline"
+          >
+            {team.name}
+          </Link>
+          <p className="mt-1 font-mono text-xs text-muted-foreground">{team.slug}</p>
+          <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
+            {team.description || "No description."}
+          </p>
+        </div>
+        {canEdit ? (
+          <div onClick={(event) => event.stopPropagation()}>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon-sm" aria-label="Team actions">
+                  <MoreHorizontal />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={onEdit}>
+                  <Pencil data-icon="inline-start" />
+                  Edit team
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        ) : null}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <StatusBadge variant={team.is_active ? "active" : "inactive"}>
+          {team.is_active ? "Active" : "Archived"}
+        </StatusBadge>
+        <span>{projectCount} projects</span>
+        <span title={formatDateTime(team.updated_at)}>
+          Updated {formatRelativeFromNow(team.updated_at)}
+        </span>
+      </div>
+    </div>
   );
 }
 

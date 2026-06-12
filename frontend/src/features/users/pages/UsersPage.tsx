@@ -340,97 +340,112 @@ export function UsersPage() {
                   Add an account immediately. You are setting the initial password for this user.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px_180px]">
-                <Field id="users-create-email" label="Email">
-                  <Input
-                    id="users-create-email"
-                    type="email"
-                    value={createEmail}
-                    onChange={(event) => setCreateEmail(event.target.value)}
-                    placeholder="teammate@example.com"
-                  />
-                </Field>
-                <Field id="users-create-name" label="Name">
-                  <Input
-                    id="users-create-name"
-                    value={createName}
-                    onChange={(event) => setCreateName(event.target.value)}
-                    placeholder="Optional"
-                  />
-                </Field>
-                <Field id="users-create-password" label="Password">
-                  <Input
-                    id="users-create-password"
-                    type="password"
-                    value={createPassword}
-                    onChange={(event) => setCreatePassword(event.target.value)}
-                    placeholder="8+ characters, 72 bytes max"
-                  />
-                </Field>
-                <Field label="Org role">
-                  <RoleSelect
-                    value={createRole}
-                    onValueChange={setCreateRole}
-                    roles={assignableOrgRoles}
-                  />
-                </Field>
-                <Field label="Team">
-                  <ScopeSelect
-                    value={createTeamId}
-                    onValueChange={(value) => {
-                      setCreateTeamId(value);
-                      if (value === NO_SCOPE) setCreateTeamRole(NO_SCOPE);
-                      if (value !== NO_SCOPE && createProjectId !== NO_SCOPE) {
-                        const project = projectById[createProjectId];
-                        if (project?.team_id !== value) setCreateProjectId(NO_SCOPE);
-                      }
-                    }}
-                    placeholder="No team"
-                    options={manageableTeams.map((team) => ({ value: team.id, label: team.name }))}
-                  />
-                </Field>
-                <Field label="Team role">
-                  <ScopeSelect
-                    value={createTeamRole}
-                    onValueChange={setCreateTeamRole}
-                    placeholder="No role"
-                    disabled={createTeamId === NO_SCOPE}
-                    options={[
-                      { value: "team_member", label: "Team member" },
-                      { value: "team_admin", label: "Team admin" },
-                    ]}
-                  />
-                </Field>
-                <Field label="Project">
-                  <ScopeSelect
-                    value={createProjectId}
-                    onValueChange={(value) => {
-                      setCreateProjectId(value);
-                      if (value === NO_SCOPE) setCreateProjectRole(NO_SCOPE);
-                      if (value !== NO_SCOPE && createProjectRole === NO_SCOPE) {
-                        setCreateProjectRole("project_admin");
-                      }
-                    }}
-                    placeholder="No project"
-                    options={visibleCreateProjects.map((project) => ({
-                      value: project.id,
-                      label: project.name,
-                    }))}
-                  />
-                </Field>
-                <Field label="Project role">
-                  <ScopeSelect
-                    value={createProjectRole}
-                    onValueChange={setCreateProjectRole}
-                    placeholder="No role"
-                    disabled={createProjectId === NO_SCOPE}
-                    options={[
-                      { value: "project_member", label: "Project member" },
-                      { value: "project_admin", label: "Project admin" },
-                    ]}
-                  />
-                </Field>
-                <div className="flex items-end lg:col-start-4">
+              <CardContent className="grid gap-5">
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_220px_220px]">
+                  <Field id="users-create-email" label="Email">
+                    <Input
+                      id="users-create-email"
+                      type="email"
+                      value={createEmail}
+                      onChange={(event) => setCreateEmail(event.target.value)}
+                      placeholder="teammate@example.com"
+                    />
+                  </Field>
+                  <Field id="users-create-name" label="Name">
+                    <Input
+                      id="users-create-name"
+                      value={createName}
+                      onChange={(event) => setCreateName(event.target.value)}
+                      placeholder="Optional"
+                    />
+                  </Field>
+                  <Field id="users-create-password" label="Password">
+                    <Input
+                      id="users-create-password"
+                      type="password"
+                      value={createPassword}
+                      onChange={(event) => setCreatePassword(event.target.value)}
+                      placeholder="8+ characters, 72 bytes max"
+                    />
+                  </Field>
+                  <Field label="Org role">
+                    <RoleSelect
+                      value={createRole}
+                      onValueChange={setCreateRole}
+                      roles={assignableOrgRoles}
+                    />
+                  </Field>
+                </div>
+                <div className="rounded-md border bg-muted/20 p-3">
+                  <div className="mb-3">
+                    <p className="text-sm font-medium">Scoped access</p>
+                    <p className="text-xs text-muted-foreground">
+                      Optional team or project access granted when the user is created.
+                    </p>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <Field label="Team">
+                      <ScopeSelect
+                        value={createTeamId}
+                        onValueChange={(value) => {
+                          setCreateTeamId(value);
+                          if (value === NO_SCOPE) setCreateTeamRole(NO_SCOPE);
+                          if (value !== NO_SCOPE && createProjectId !== NO_SCOPE) {
+                            const project = projectById[createProjectId];
+                            if (project?.team_id !== value) setCreateProjectId(NO_SCOPE);
+                          }
+                        }}
+                        placeholder="No team"
+                        options={manageableTeams.map((team) => ({
+                          value: team.id,
+                          label: team.name,
+                        }))}
+                      />
+                    </Field>
+                    <Field label="Team role">
+                      <ScopeSelect
+                        value={createTeamRole}
+                        onValueChange={setCreateTeamRole}
+                        placeholder="No role"
+                        disabled={createTeamId === NO_SCOPE}
+                        options={[
+                          { value: "team_member", label: "Team member" },
+                          { value: "team_admin", label: "Team admin" },
+                        ]}
+                      />
+                    </Field>
+                    <Field label="Project">
+                      <ScopeSelect
+                        value={createProjectId}
+                        onValueChange={(value) => {
+                          setCreateProjectId(value);
+                          if (value === NO_SCOPE) setCreateProjectRole(NO_SCOPE);
+                          if (value !== NO_SCOPE && createProjectRole === NO_SCOPE) {
+                            setCreateProjectRole("project_admin");
+                          }
+                        }}
+                        placeholder="No project"
+                        options={visibleCreateProjects.map((project) => ({
+                          value: project.id,
+                          label: project.name,
+                        }))}
+                      />
+                    </Field>
+                    <Field label="Project role">
+                      <ScopeSelect
+                        value={createProjectRole}
+                        onValueChange={setCreateProjectRole}
+                        placeholder="No role"
+                        disabled={createProjectId === NO_SCOPE}
+                        options={[
+                          { value: "project_member", label: "Project member" },
+                          { value: "project_admin", label: "Project admin" },
+                        ]}
+                      />
+                    </Field>
+                  </div>
+                </div>
+                <div className="flex justify-end">
                   <Button
                     type="button"
                     disabled={createUserDisabled}
@@ -814,62 +829,74 @@ function InviteUserCard({
           access.
         </CardDescription>
       </CardHeader>
-      <CardContent className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_160px_180px_170px_180px_170px]">
-        <Field id="users-invite-email" label="Email">
-          <Input
-            id="users-invite-email"
-            type="email"
-            value={email}
-            onChange={(event) => onEmail(event.target.value)}
-            placeholder="teammate@example.com"
-          />
-        </Field>
-        <Field label="Org role">
-          <RoleSelect value={role} onValueChange={onRole} roles={assignableOrgRoles} />
-        </Field>
-        <Field label="Team">
-          <ScopeSelect
-            value={teamId}
-            onValueChange={onTeam}
-            placeholder="No team"
-            options={manageableTeams.map((team) => ({ value: team.id, label: team.name }))}
-          />
-        </Field>
-        <Field label="Team role">
-          <ScopeSelect
-            value={teamRole}
-            onValueChange={onTeamRole}
-            placeholder="No role"
-            disabled={teamId === NO_SCOPE}
-            options={[
-              { value: "team_member", label: "Team member" },
-              { value: "team_admin", label: "Team admin" },
-            ]}
-          />
-        </Field>
-        <Field label="Project">
-          <ScopeSelect
-            value={projectId}
-            onValueChange={onProject}
-            placeholder="No project"
-            options={visibleProjects.map((project) => ({
-              value: project.id,
-              label: project.name,
-            }))}
-          />
-        </Field>
-        <Field label="Project role">
-          <ScopeSelect
-            value={projectRole}
-            onValueChange={onProjectRole}
-            placeholder="No role"
-            disabled={projectId === NO_SCOPE}
-            options={[
-              { value: "project_member", label: "Project member" },
-              { value: "project_admin", label: "Project admin" },
-            ]}
-          />
-        </Field>
+      <CardContent className="grid gap-5">
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+          <Field id="users-invite-email" label="Email">
+            <Input
+              id="users-invite-email"
+              type="email"
+              value={email}
+              onChange={(event) => onEmail(event.target.value)}
+              placeholder="teammate@example.com"
+            />
+          </Field>
+          <Field label="Org role">
+            <RoleSelect value={role} onValueChange={onRole} roles={assignableOrgRoles} />
+          </Field>
+        </div>
+        <div className="rounded-md border bg-muted/20 p-3">
+          <div className="mb-3">
+            <p className="text-sm font-medium">Scoped access</p>
+            <p className="text-xs text-muted-foreground">
+              Optional team or project role included with this invite.
+            </p>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <Field label="Team">
+              <ScopeSelect
+                value={teamId}
+                onValueChange={onTeam}
+                placeholder="No team"
+                options={manageableTeams.map((team) => ({ value: team.id, label: team.name }))}
+              />
+            </Field>
+            <Field label="Team role">
+              <ScopeSelect
+                value={teamRole}
+                onValueChange={onTeamRole}
+                placeholder="No role"
+                disabled={teamId === NO_SCOPE}
+                options={[
+                  { value: "team_member", label: "Team member" },
+                  { value: "team_admin", label: "Team admin" },
+                ]}
+              />
+            </Field>
+            <Field label="Project">
+              <ScopeSelect
+                value={projectId}
+                onValueChange={onProject}
+                placeholder="No project"
+                options={visibleProjects.map((project) => ({
+                  value: project.id,
+                  label: project.name,
+                }))}
+              />
+            </Field>
+            <Field label="Project role">
+              <ScopeSelect
+                value={projectRole}
+                onValueChange={onProjectRole}
+                placeholder="No role"
+                disabled={projectId === NO_SCOPE}
+                options={[
+                  { value: "project_member", label: "Project member" },
+                  { value: "project_admin", label: "Project admin" },
+                ]}
+              />
+            </Field>
+          </div>
+        </div>
       </CardContent>
       <CardContent className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">

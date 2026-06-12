@@ -34,6 +34,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   useGetVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet,
   useListProjectsApiV1ProjectsGet,
@@ -67,6 +68,7 @@ type InventoryUsage = "all" | "used" | "never";
 
 export function VirtualKeysPage() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search.trim());
@@ -100,8 +102,7 @@ export function VirtualKeysPage() {
       revokeKey?.id ?? "",
       { query: { enabled: Boolean(revokeKey) } },
     );
-  const revokeImpact =
-    revokeImpactQuery.data?.status === 200 ? revokeImpactQuery.data.data : null;
+  const revokeImpact = revokeImpactQuery.data?.status === 200 ? revokeImpactQuery.data.data : null;
 
   const revokeMutation = useRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete({
     mutation: {
@@ -200,81 +201,103 @@ export function VirtualKeysPage() {
           ) : !page?.items.length ? (
             <EmptyState icon={KeyRound} title="No keys match" description="Try another filter." />
           ) : (
-            <div className="overflow-hidden rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Project</TableHead>
-                    <TableHead>Team</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Creator</TableHead>
-                    <TableHead>Last used</TableHead>
-                    <TableHead className="w-12">
-                      <span className="sr-only">Actions</span>
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+            <>
+              {isMobile ? (
+                <div className="grid gap-3">
                   {page.items.map((key) => (
-                    <TableRow
+                    <InventoryKeyCard
                       key={key.id}
-                      className="cursor-pointer"
-                      onClick={() => navigate(`/projects/${key.project_id}/keys/${key.id}`)}
-                    >
-                      <TableCell>
-                        <div className="font-medium">{key.name}</div>
-                        <div className="font-mono text-xs text-muted-foreground">
-                          {key.key_prefix}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {canViewTeam(currentUser, key.team_id) ? <Link
-                          to={`/projects/${key.project_id}`}
-                          onClick={(event) => event.stopPropagation()}
-                          className="hover:underline"
-                        >
-                          {key.project_name}
-                        </Link> : <span>{key.team_name}</span>}
-                      </TableCell>
-                      <TableCell>
-                        <Link
-                          to={`/teams/${key.team_id}`}
-                          onClick={(event) => event.stopPropagation()}
-                          className="hover:underline"
-                        >
-                          {key.team_name}
-                        </Link>
-                      </TableCell>
-                      <TableCell>
-                        <KeyOperationalStatus status={key.status} />
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {key.creator_name ?? key.creator_email ?? "Legacy"}
-                      </TableCell>
-                      <TableCell
-                        className="text-muted-foreground"
-                        title={key.last_used_at ? formatDateTime(key.last_used_at) : undefined}
-                      >
-                        {keyUsageLabel(key.last_used_at)}
-                      </TableCell>
-                      <TableCell onClick={(event) => event.stopPropagation()}>
-                        {key.can_manage && !key.revoked_at ? (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label={`Revoke ${key.name}`}
-                            onClick={() => setRevokeKey(key)}
-                          >
-                            <Trash2 />
-                          </Button>
-                        ) : null}
-                      </TableCell>
-                    </TableRow>
+                      virtualKey={key}
+                      canOpenTeam={canViewTeam(currentUser, key.team_id)}
+                      onOpen={() => navigate(`/projects/${key.project_id}/keys/${key.id}`)}
+                      onRevoke={() => setRevokeKey(key)}
+                    />
                   ))}
-                </TableBody>
-              </Table>
-            </div>
+                </div>
+              ) : (
+                <div className="overflow-hidden rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Project</TableHead>
+                        <TableHead>Team</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Creator</TableHead>
+                        <TableHead>Last used</TableHead>
+                        <TableHead className="w-12">
+                          <span className="sr-only">Actions</span>
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {page.items.map((key) => (
+                        <TableRow
+                          key={key.id}
+                          className="cursor-pointer"
+                          onClick={() => navigate(`/projects/${key.project_id}/keys/${key.id}`)}
+                        >
+                          <TableCell>
+                            <Link
+                              to={`/projects/${key.project_id}/keys/${key.id}`}
+                              onClick={(event) => event.stopPropagation()}
+                              className="font-medium underline-offset-4 hover:underline"
+                            >
+                              {key.name}
+                            </Link>
+                            <div className="font-mono text-xs text-muted-foreground">
+                              {key.key_prefix}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Link
+                              to={`/projects/${key.project_id}`}
+                              onClick={(event) => event.stopPropagation()}
+                              className="hover:underline"
+                            >
+                              {key.project_name}
+                            </Link>
+                          </TableCell>
+                          <TableCell>
+                            <Link
+                              to={`/teams/${key.team_id}`}
+                              onClick={(event) => event.stopPropagation()}
+                              className="hover:underline"
+                            >
+                              {key.team_name}
+                            </Link>
+                          </TableCell>
+                          <TableCell>
+                            <KeyOperationalStatus status={key.status} />
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {key.creator_name ?? key.creator_email ?? "Legacy"}
+                          </TableCell>
+                          <TableCell
+                            className="text-muted-foreground"
+                            title={key.last_used_at ? formatDateTime(key.last_used_at) : undefined}
+                          >
+                            {keyUsageLabel(key.last_used_at)}
+                          </TableCell>
+                          <TableCell onClick={(event) => event.stopPropagation()}>
+                            {key.can_manage && !key.revoked_at ? (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label={`Revoke ${key.name}`}
+                                onClick={() => setRevokeKey(key)}
+                              >
+                                <Trash2 />
+                              </Button>
+                            ) : null}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </>
           )}
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">
@@ -374,6 +397,98 @@ export function VirtualKeysPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function InventoryKeyCard({
+  virtualKey,
+  canOpenTeam,
+  onOpen,
+  onRevoke,
+}: {
+  virtualKey: VirtualKeyInventoryItem;
+  canOpenTeam: boolean;
+  onOpen: () => void;
+  onRevoke: () => void;
+}) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      className="rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-muted/30"
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <Link
+            to={`/projects/${virtualKey.project_id}/keys/${virtualKey.id}`}
+            onClick={(event) => event.stopPropagation()}
+            className="font-medium underline-offset-4 hover:underline"
+          >
+            {virtualKey.name}
+          </Link>
+          <p className="mt-1 font-mono text-xs text-muted-foreground">{virtualKey.key_prefix}</p>
+        </div>
+        <KeyOperationalStatus status={virtualKey.status} />
+      </div>
+      <div className="mt-3 grid gap-3 text-sm">
+        <div className="flex flex-wrap gap-2">
+          <Link
+            to={`/projects/${virtualKey.project_id}`}
+            onClick={(event) => event.stopPropagation()}
+            className="rounded-md border px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            {virtualKey.project_name}
+          </Link>
+          {canOpenTeam ? (
+            <Link
+              to={`/teams/${virtualKey.team_id}`}
+              onClick={(event) => event.stopPropagation()}
+              className="rounded-md border px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+            >
+              {virtualKey.team_name}
+            </Link>
+          ) : (
+            <span className="rounded-md border px-2 py-1 text-xs text-muted-foreground">
+              {virtualKey.team_name}
+            </span>
+          )}
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <p className="text-xs text-muted-foreground">Creator</p>
+            <p className="text-sm font-medium">
+              {virtualKey.creator_name ?? virtualKey.creator_email ?? "Legacy"}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Last used</p>
+            <p className="text-sm font-medium">{keyUsageLabel(virtualKey.last_used_at)}</p>
+          </div>
+        </div>
+      </div>
+      {virtualKey.can_manage && !virtualKey.revoked_at ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="mt-4 w-full"
+          onClick={(event) => {
+            event.stopPropagation();
+            onRevoke();
+          }}
+        >
+          <Trash2 />
+          Revoke
+        </Button>
+      ) : null}
     </div>
   );
 }
