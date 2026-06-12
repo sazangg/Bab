@@ -3,12 +3,12 @@ import { Copy, ExternalLink, LinkIcon, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/shared/components/PageHeader";
-import { useGetSettingsApiV1SettingsGet } from "@/shared/api/generated/settings/settings";
+import { resolveGatewayBaseUrl, useGatewayMetadata } from "@/shared/api/gateway-metadata";
 
 export function ApiDocsPage() {
-  const settingsQuery = useGetSettingsApiV1SettingsGet();
-  const settings = settingsQuery.data?.status === 200 ? settingsQuery.data.data : undefined;
-  const baseUrl = resolveGatewayBaseUrl(settings?.public_base_url);
+  const metadataQuery = useGatewayMetadata();
+  const metadata = metadataQuery.data?.status === 200 ? metadataQuery.data.data : undefined;
+  const baseUrl = resolveGatewayBaseUrl(metadata?.public_base_url);
 
   return (
     <div className="space-y-6">
@@ -25,6 +25,7 @@ export function ApiDocsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
+          {baseUrl ? (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/20 p-3">
             <div className="flex min-w-0 items-center gap-2 text-sm">
               <LinkIcon className="size-4 text-muted-foreground" />
@@ -40,6 +41,14 @@ export function ApiDocsPage() {
               Copy base URL
             </Button>
           </div>
+          ) : (
+            <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
+              Public gateway URL is not configured. Set it in organization settings before sharing
+              integration examples.
+            </div>
+          )}
+          {baseUrl ? (
+          <>
           <CommandBlock
             title="List key-visible models"
             command={`curl ${baseUrl}/v1/models \\
@@ -110,6 +119,7 @@ response = client.chat.completions.create(
     max_completion_tokens=32,
 )`}
           />
+          {baseUrl ? (
           <div className="rounded-md border bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
             <div className="font-medium text-foreground">Embeddings unavailable</div>
             <p>
@@ -117,6 +127,9 @@ response = client.chat.completions.create(
               not a supported V1 endpoint yet.
             </p>
           </div>
+          ) : null}
+          </>
+          ) : null}
           <div className="rounded-md border bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
             <div className="font-medium text-foreground">Postman setup</div>
             <p>Method: POST</p>
@@ -148,22 +161,16 @@ response = client.chat.completions.create(
             Embeddings currently return <code>501 Not Implemented</code>. The route exists so client
             integrations fail explicitly until provider adapter coverage is added.
           </p>
-          <Button asChild variant="outline" className="w-fit">
+          {baseUrl ? <Button asChild variant="outline" className="w-fit">
             <a href={`${baseUrl}/openapi.json`} target="_blank" rel="noreferrer">
               <ExternalLink />
               Open raw OpenAPI
             </a>
-          </Button>
+          </Button> : null}
         </CardContent>
       </Card>
     </div>
   );
-}
-
-function resolveGatewayBaseUrl(publicBaseUrl?: string | null) {
-  if (publicBaseUrl?.trim()) return publicBaseUrl.replace(/\/+$/, "");
-  const envBaseUrl = import.meta.env.VITE_BAB_API_URL as string | undefined;
-  return envBaseUrl?.replace(/\/+$/, "") ?? "http://localhost:8000";
 }
 
 function CommandBlock({ title, command }: { title: string; command: string }) {

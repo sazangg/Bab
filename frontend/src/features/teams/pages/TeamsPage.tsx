@@ -4,7 +4,7 @@ import { isAxiosError } from "axios";
 import { Building2, MoreHorizontal, Pencil, Plus, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { z } from "zod";
 
@@ -264,7 +264,15 @@ function TeamRow({
         }
       }}
     >
-      <TableCell className="font-medium">{team.name}</TableCell>
+      <TableCell className="font-medium">
+        <Link
+          to={`/teams/${team.id}`}
+          onClick={(event) => event.stopPropagation()}
+          className="hover:underline"
+        >
+          {team.name}
+        </Link>
+      </TableCell>
       <TableCell className="font-mono text-xs text-muted-foreground">{team.slug}</TableCell>
       <TableCell className="text-right tabular-nums text-muted-foreground">
         {projectCount}
@@ -472,7 +480,11 @@ function CreateTeamSheet({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="team-slug">Slug</Label>
-            <Input id="team-slug" placeholder="Leave blank to auto-generate" {...form.register("slug")} />
+            <Input
+              id="team-slug"
+              placeholder="Leave blank to auto-generate"
+              {...form.register("slug")}
+            />
             {form.formState.errors.slug ? (
               <p className="text-xs text-destructive">{form.formState.errors.slug.message}</p>
             ) : slugPreview ? (

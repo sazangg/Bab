@@ -14,6 +14,7 @@ from app.modules.keys.schemas import (
     ProjectArchiveImpactResponse,
     ProjectResponse,
     ResolveAccessRequest,
+    RotateVirtualKeyRequest,
     ResolvedAccess,
     TeamArchiveImpactResponse,
     UpdateProjectRequest,
@@ -165,6 +166,25 @@ async def get_virtual_key(
     return await service.get_virtual_key(project_id=project_id, key_id=key_id, scope=scope, db=db)
 
 
+async def rotate_virtual_key(
+    *,
+    project_id: UUID,
+    key_id: UUID,
+    payload: RotateVirtualKeyRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> CreatedVirtualKeyResponse:
+    return await service.rotate_virtual_key(
+        project_id=project_id,
+        key_id=key_id,
+        payload=payload,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
 async def get_project_archive_impact(
     *,
     project_id: UUID,
@@ -216,11 +236,13 @@ async def revoke_virtual_key(
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
+    force: bool = False,
 ) -> None:
     await service.revoke_virtual_key(
         project_id=project_id,
         key_id=key_id,
         reason=reason,
+        force=force,
         actor=actor,
         scope=scope,
         db=db,

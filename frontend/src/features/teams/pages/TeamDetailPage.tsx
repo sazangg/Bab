@@ -64,6 +64,7 @@ import { cn } from "@/lib/utils";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
+import { getProblemDetail } from "@/shared/api/problem-detail";
 import {
   useAddTeamMemberApiV1TeamsTeamIdMembersPost,
   useCreateTeamProjectApiV1TeamsTeamIdProjectsPost,
@@ -179,7 +180,7 @@ export function TeamDetailPage() {
           toast.success(`Project "${response.data.name}" created.`);
         }
       },
-      onError: () => toast.error("Project could not be created."),
+      onError: (error) => toast.error(getProblemDetail(error, "Project could not be created.")),
     },
   });
   const updateTeam = useUpdateTeamApiV1TeamsTeamIdPatch({
@@ -218,7 +219,7 @@ export function TeamDetailPage() {
         await queryClient.invalidateQueries();
         toast.success("Team archived.");
       },
-      onError: () => toast.error("Archive failed."),
+      onError: (error) => toast.error(getProblemDetail(error, "Team could not be archived.")),
     },
   });
   const addTeamMember = useAddTeamMemberApiV1TeamsTeamIdMembersPost({
@@ -227,7 +228,8 @@ export function TeamDetailPage() {
         await queryClient.invalidateQueries();
         toast.success("Team member added.");
       },
-      onError: () => toast.error("Team member could not be added."),
+      onError: (error) =>
+        toast.error(getProblemDetail(error, "Team member could not be added.")),
     },
   });
   const updateTeamMember = useUpdateTeamMemberApiV1TeamsTeamIdMembersUserIdPatch({
@@ -236,7 +238,8 @@ export function TeamDetailPage() {
         await queryClient.invalidateQueries();
         toast.success("Team role updated.");
       },
-      onError: () => toast.error("Team role could not be updated."),
+      onError: (error) =>
+        toast.error(getProblemDetail(error, "Team role could not be updated.")),
     },
   });
   const removeTeamMember = useRemoveTeamMemberApiV1TeamsTeamIdMembersUserIdDelete({
@@ -245,7 +248,8 @@ export function TeamDetailPage() {
         await queryClient.invalidateQueries();
         toast.success("Team member removed.");
       },
-      onError: () => toast.error("Team member could not be removed."),
+      onError: (error) =>
+        toast.error(getProblemDetail(error, "Team member could not be removed.")),
     },
   });
 
@@ -582,14 +586,17 @@ export function TeamDetailPage() {
               <Fact label="Team members" value={`${archiveImpact.team_member_count}`} />
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">
-              Impact could not be loaded. You can retry by reopening this dialog.
-            </p>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm text-destructive">Impact could not be loaded.</p>
+              <Button variant="outline" size="sm" onClick={() => archiveImpactQuery.refetch()}>
+                Retry
+              </Button>
+            </div>
           )}
           <DialogFooter>
             <Button
               variant="destructive"
-              disabled={deactivateTeam.isPending}
+              disabled={deactivateTeam.isPending || !archiveImpact}
               onClick={() => deactivateTeam.mutate({ teamId: team.id })}
             >
               {deactivateTeam.isPending ? "Archiving..." : "Archive team"}
@@ -699,8 +706,8 @@ function TeamMembersCard({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="team_admin">Admin</SelectItem>
-                  <SelectItem value="team_member">Member</SelectItem>
+                  <SelectItem value="team_admin">Team admin</SelectItem>
+                  <SelectItem value="team_member">Team member</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -763,8 +770,8 @@ function TeamMembersCard({
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="team_admin">Admin</SelectItem>
-                            <SelectItem value="team_member">Member</SelectItem>
+                            <SelectItem value="team_admin">Team admin</SelectItem>
+                            <SelectItem value="team_member">Team member</SelectItem>
                           </SelectContent>
                         </Select>
                       ) : (
@@ -821,14 +828,15 @@ function ProjectTableRow({ project, onOpen }: { project: ProjectResponse; onOpen
 }
 
 function formatOrgRole(value: string) {
-  if (value === "org_owner") return "Owner";
-  if (value === "org_admin") return "Admin";
-  return "Viewer";
+  if (value === "org_owner") return "Org owner";
+  if (value === "org_admin") return "Org admin";
+  if (value === "org_member") return "Org member";
+  return "Org viewer";
 }
 
 function formatTeamRole(value: string) {
-  if (value === "team_admin") return "Admin";
-  return "Member";
+  if (value === "team_admin") return "Team admin";
+  return "Team member";
 }
 
 function Fact({ label, value }: { label: string; value: string }) {

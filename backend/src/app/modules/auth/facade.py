@@ -10,6 +10,7 @@ from app.modules.auth.schemas import (
     AuthenticatedUser,
     CreateInviteRequest,
     CreateMemberRequest,
+    InvitePreviewResponse,
     InviteResponse,
     LoginRequest,
     MemberOptionResponse,
@@ -240,6 +241,10 @@ async def list_invites(
     db: AsyncSession,
 ) -> list[InviteResponse]:
     return await service.list_invites(actor=actor, scope=scope, db=db)
+
+
+async def preview_invite(*, token: str, db: AsyncSession) -> InvitePreviewResponse:
+    return await service.preview_invite(token=token, db=db)
 
 
 async def revoke_invite(

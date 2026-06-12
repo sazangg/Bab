@@ -6,8 +6,8 @@ import {
   siOllama,
   siOpenrouter,
   siPerplexity,
-} from "simple-icons/icons";
-import type { SimpleIcon } from "simple-icons";
+  type SimpleIcon,
+} from "simple-icons";
 
 import { cn } from "@/lib/utils";
 

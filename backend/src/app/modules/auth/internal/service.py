@@ -57,6 +57,7 @@ from app.modules.auth.schemas import (
     AuthenticatedUser,
     CreateInviteRequest,
     CreateMemberRequest,
+    InvitePreviewResponse,
     InviteResponse,
     LoginRequest,
     MemberOptionResponse,
@@ -891,6 +892,39 @@ async def list_invites(
     ]
 
 
+async def preview_invite(*, token: str, db: AsyncSession) -> InvitePreviewResponse:
+    invite = await db.scalar(select(Invite).where(Invite.token_hash == hash_token(token)))
+    if invite is None:
+        raise InviteNotFoundError
+    organization = await db.scalar(select(Organization).where(Organization.id == invite.org_id))
+    team = (
+        await db.scalar(select(Team).where(Team.id == invite.team_id))
+        if invite.team_id
+        else None
+    )
+    project = (
+        await db.scalar(select(Project).where(Project.id == invite.project_id))
+        if invite.project_id
+        else None
+    )
+    status = (
+        "expired"
+        if invite.status == "pending" and _is_past(invite.expires_at)
+        else invite.status
+    )
+    return InvitePreviewResponse(
+        email=invite.email,
+        organization_name=organization.name if organization else "Organization",
+        role=invite.role,
+        team_name=team.name if team else None,
+        team_role=invite.team_role,
+        project_name=project.name if project else None,
+        project_role=invite.project_role,
+        status=status,
+        expires_at=invite.expires_at,
+    )
+
+
 async def _validate_invite_target(
     *,
     payload: CreateInviteRequest,
@@ -991,7 +1025,7 @@ def _ensure_actor_can_create_invite(
     if project and _is_project_admin_actor(actor=actor, project_id=project.id):
         if team_id or team_role:
             raise PermissionDeniedError
-        if project_role != "project_admin":
+        if project_role not in {"project_admin", "project_member"}:
             raise PermissionDeniedError
         return
 

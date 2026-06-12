@@ -7,6 +7,7 @@ from app.modules.auth.internal.models import Organization
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.settings.internal import repository
 from app.modules.settings.schemas import (
+    GatewayMetadataResponse,
     OrganizationSettingsResponse,
     UpdateOrganizationSettingsRequest,
 )
@@ -66,6 +67,19 @@ async def update_organization_settings(
             metadata=metadata,
         )
     return _to_response(settings)
+
+
+async def get_gateway_metadata(
+    *,
+    scope: Scope,
+    db: AsyncSession,
+) -> GatewayMetadataResponse:
+    settings = await get_organization_settings(scope=scope, db=db)
+    return GatewayMetadataResponse(
+        public_base_url=settings.public_base_url,
+        virtual_key_prefix=settings.virtual_key_prefix,
+        default_virtual_key_expiration_days=settings.default_virtual_key_expiration_days,
+    )
 
 
 def _to_response(settings) -> OrganizationSettingsResponse:

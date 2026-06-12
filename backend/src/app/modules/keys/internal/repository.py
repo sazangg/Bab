@@ -1,3 +1,4 @@
+from datetime import timedelta
 from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select
@@ -85,10 +86,12 @@ async def create_virtual_key(
     created_by: UUID,
     expires_at,
     db: AsyncSession,
+    supersedes_key_id: UUID | None = None,
 ) -> VirtualKey:
     virtual_key = VirtualKey(
         org_id=org_id,
         project_id=project_id,
+        supersedes_key_id=supersedes_key_id,
         name=name,
         key_hash=key_hash,
         key_prefix=key_prefix,
@@ -244,7 +247,7 @@ async def list_virtual_key_inventory(
     status: str | None,
     search: str | None,
     usage: str | None,
-    limit: int,
+    limit: int | None,
     offset: int,
     db: AsyncSession,
 ) -> tuple[list[tuple[VirtualKey, Project, Team, User | None]], int]:
@@ -305,7 +308,32 @@ async def list_virtual_key_inventory(
                 Team.is_active.is_(False),
             ]
         )
-    elif status in {"no_effective_access", "expiring_soon", "unused"}:
+    elif status == "expiring_soon":
+        filters.extend(
+            [
+                VirtualKey.revoked_at.is_(None),
+                VirtualKey.expires_at.is_not(None),
+                VirtualKey.expires_at > now,
+                VirtualKey.expires_at <= now + timedelta(days=7),
+                Project.is_active.is_(True),
+                Team.is_active.is_(True),
+            ]
+        )
+    elif status == "unused":
+        filters.extend(
+            [
+                VirtualKey.revoked_at.is_(None),
+                or_(VirtualKey.expires_at.is_(None), VirtualKey.expires_at > now),
+                or_(
+                    VirtualKey.expires_at.is_(None),
+                    VirtualKey.expires_at > now + timedelta(days=7),
+                ),
+                VirtualKey.last_used_at.is_(None),
+                Project.is_active.is_(True),
+                Team.is_active.is_(True),
+            ]
+        )
+    elif status == "no_effective_access":
         filters.extend(
             [
                 VirtualKey.revoked_at.is_(None),
@@ -319,6 +347,11 @@ async def list_virtual_key_inventory(
             [
                 VirtualKey.revoked_at.is_(None),
                 or_(VirtualKey.expires_at.is_(None), VirtualKey.expires_at > now),
+                or_(
+                    VirtualKey.expires_at.is_(None),
+                    VirtualKey.expires_at > now + timedelta(days=7),
+                ),
+                VirtualKey.last_used_at.is_not(None),
                 Project.is_active.is_(True),
                 Team.is_active.is_(True),
             ]
@@ -330,14 +363,13 @@ async def list_virtual_key_inventory(
         .outerjoin(User, User.id == VirtualKey.created_by)
     )
     total = await db.scalar(select(func.count()).select_from(joins).where(and_(*filters)))
-    rows = (
-        await db.execute(
-            select(VirtualKey, Project, Team, User)
-            .select_from(joins)
-            .where(and_(*filters))
-            .order_by(VirtualKey.created_at.desc(), VirtualKey.id.desc())
-            .limit(limit)
-            .offset(offset)
-        )
-    ).all()
+    query = (
+        select(VirtualKey, Project, Team, User)
+        .select_from(joins)
+        .where(and_(*filters))
+        .order_by(VirtualKey.created_at.desc(), VirtualKey.id.desc())
+    )
+    if limit is not None:
+        query = query.limit(limit).offset(offset)
+    rows = (await db.execute(query)).all()
     return list(rows), int(total or 0)

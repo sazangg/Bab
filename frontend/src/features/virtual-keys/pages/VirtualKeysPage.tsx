@@ -3,6 +3,7 @@ import { KeyRound, Search, Trash2 } from "lucide-react";
 import { useDeferredValue, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,6 +46,10 @@ import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { formatDateTime, formatRelativeFromNow } from "@/features/providers/lib/format";
+import { getProblemDetail } from "@/shared/api/problem-detail";
+import { keyStatusPresentation } from "@/features/projects/lib/key-status";
+import { canViewTeam } from "@/features/auth/lib/permissions";
+import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
 
 const PAGE_SIZE = 25;
 const STALE_KEY_DAYS = 30;
@@ -84,6 +89,8 @@ export function VirtualKeysPage() {
   });
   const projectsQuery = useListProjectsApiV1ProjectsGet();
   const teamsQuery = useListTeamsApiV1TeamsGet();
+  const currentUserQuery = useMeApiV1AuthMeGet();
+  const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
   const page = inventoryQuery.data?.status === 200 ? inventoryQuery.data.data : undefined;
   const projects = projectsQuery.data?.status === 200 ? projectsQuery.data.data : [];
   const teams = teamsQuery.data?.status === 200 ? teamsQuery.data.data : [];
@@ -103,6 +110,7 @@ export function VirtualKeysPage() {
         setRevokeReason("");
         await queryClient.invalidateQueries();
       },
+      onError: (error) => toast.error(getProblemDetail(error, "Virtual key could not be revoked.")),
     },
   });
 
@@ -221,13 +229,13 @@ export function VirtualKeysPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Link
+                        {canViewTeam(currentUser, key.team_id) ? <Link
                           to={`/projects/${key.project_id}`}
                           onClick={(event) => event.stopPropagation()}
                           className="hover:underline"
                         >
                           {key.project_name}
-                        </Link>
+                        </Link> : <span>{key.team_name}</span>}
                       </TableCell>
                       <TableCell>
                         <Link
@@ -239,9 +247,7 @@ export function VirtualKeysPage() {
                         </Link>
                       </TableCell>
                       <TableCell>
-                        <StatusBadge variant={keyStatusVariant(key.status)}>
-                          {key.status.replaceAll("_", " ")}
-                        </StatusBadge>
+                        <KeyOperationalStatus status={key.status} />
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {key.creator_name ?? key.creator_email ?? "Legacy"}
@@ -331,9 +337,12 @@ export function VirtualKeysPage() {
               ) : null}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">
-              Impact could not be loaded. You can retry by reopening this dialog.
-            </p>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm text-destructive">Impact could not be loaded.</p>
+              <Button variant="outline" size="sm" onClick={() => revokeImpactQuery.refetch()}>
+                Retry
+              </Button>
+            </div>
           )}
           <div className="space-y-1.5">
             <Label htmlFor="inventory-revoke-reason">Reason</Label>
@@ -347,7 +356,7 @@ export function VirtualKeysPage() {
           <DialogFooter>
             <Button
               variant="destructive"
-              disabled={!revokeReason.trim() || revokeMutation.isPending}
+              disabled={!revokeReason.trim() || revokeMutation.isPending || !revokeImpact}
               onClick={() =>
                 revokeKey &&
                 revokeMutation.mutate({
@@ -369,11 +378,16 @@ export function VirtualKeysPage() {
   );
 }
 
-function keyStatusVariant(status: string) {
-  if (status === "active" || status === "unused") return "active";
-  if (status === "revoked") return "revoked";
-  if (status === "expired" || status === "expiring_soon") return "expired";
-  return "inactive";
+function KeyOperationalStatus({ status }: { status: string }) {
+  const presentation = keyStatusPresentation(status);
+  return (
+    <div className="flex max-w-64 flex-col gap-1">
+      <StatusBadge variant={presentation.variant}>{presentation.label}</StatusBadge>
+      {presentation.category !== "credential" || status !== "active" ? (
+        <span className="text-xs text-muted-foreground">{presentation.reason}</span>
+      ) : null}
+    </div>
+  );
 }
 
 function InventorySelect({

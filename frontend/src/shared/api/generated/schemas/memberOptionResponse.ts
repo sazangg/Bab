@@ -5,8 +5,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface UpsertProjectMemberRequest {
+export interface MemberOptionResponse {
   user_id: string;
-  /** @pattern ^(project_admin|project_member)$ */
-  role?: string;
+  email: string;
+  name: string | null;
 }

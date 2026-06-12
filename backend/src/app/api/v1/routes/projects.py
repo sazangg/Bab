@@ -35,8 +35,10 @@ from app.modules.keys.errors import (
     ProjectInactiveError,
     ProjectNotFoundError,
     ProjectSlugAlreadyExistsError,
+    SecretDeliveryDisabledError,
     VirtualKeyAlreadyRevokedError,
     VirtualKeyNotFoundError,
+    VirtualKeyOverlapActiveError,
 )
 from app.modules.keys.schemas import (
     AccessibleModel,
@@ -46,6 +48,7 @@ from app.modules.keys.schemas import (
     ProjectArchiveImpactResponse,
     ProjectResponse,
     RevokeVirtualKeyRequest,
+    RotateVirtualKeyRequest,
     UpdateProjectRequest,
     UpdateVirtualKeyRequest,
     VirtualKeyResponse,
@@ -216,6 +219,17 @@ async def create_virtual_key(
                 "effective_access": exc.summary.model_dump(mode="json"),
             },
         ) from exc
+    except SecretDeliveryDisabledError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "secret_delivery_disabled",
+                "message": (
+                    "Virtual key creation is disabled because plaintext secret delivery "
+                    "is turned off."
+                ),
+            },
+        ) from exc
     except ProjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail="project not found") from exc
     except ProjectInactiveError as exc:
@@ -247,11 +261,17 @@ async def create_virtual_key(
 @router.get("/{project_id}/members")
 async def list_project_members(
     project_id: UUID,
-    actor: ProjectAdmin,
     scope: RequestScope,
     db: DatabaseSession,
+    user: CurrentUser,
 ) -> list[ProjectMemberResponse]:
     try:
+        await require_project_view_or_permission(
+            project_id=str(project_id),
+            permission="projects.view",
+            user=user,
+            db=db,
+        )
         return await auth_facade.list_project_members(project_id=project_id, scope=scope, db=db)
     except InvalidAccessTokenError as exc:
         raise HTTPException(status_code=404, detail="project not found") from exc
@@ -475,6 +495,37 @@ async def update_virtual_key(
         ) from exc
 
 
+@router.post(
+    "/{project_id}/keys/{key_id}/rotate",
+    status_code=status.HTTP_201_CREATED,
+)
+async def rotate_virtual_key(
+    project_id: UUID,
+    key_id: UUID,
+    payload: RotateVirtualKeyRequest,
+    actor: VirtualKeyAdmin,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> CreatedVirtualKeyResponse:
+    try:
+        return await facade.rotate_virtual_key(
+            project_id=project_id,
+            key_id=key_id,
+            payload=payload,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+    except VirtualKeyNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="virtual key not found") from exc
+    except VirtualKeyAlreadyRevokedError as exc:
+        raise HTTPException(status_code=409, detail="virtual key is already revoked") from exc
+    except SecretDeliveryDisabledError as exc:
+        raise HTTPException(status_code=409, detail="secret delivery is disabled") from exc
+
+
 @router.get("/{project_id}/keys/{key_id}/revoke-impact")
 async def get_virtual_key_revoke_impact(
     project_id: UUID,
@@ -510,6 +561,7 @@ async def revoke_virtual_key(
             project_id=project_id,
             key_id=key_id,
             reason=payload.reason.strip(),
+            force=payload.force,
             actor=actor,
             scope=scope,
             db=db,
@@ -520,6 +572,15 @@ async def revoke_virtual_key(
         raise HTTPException(status_code=404, detail="virtual key not found") from exc
     except VirtualKeyAlreadyRevokedError as exc:
         raise HTTPException(status_code=409, detail="virtual key is already revoked") from exc
+    except VirtualKeyOverlapActiveError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "rotation_overlap_active",
+                "message": "rotation overlap is still active; confirm early revocation",
+                "deprecated_at": exc.deprecated_at.isoformat(),
+            },
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

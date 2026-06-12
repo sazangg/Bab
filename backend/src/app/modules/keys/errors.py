@@ -24,12 +24,22 @@ class PolicyNotConfiguredError(ProjectAccessUnavailableError):
     pass
 
 
+class SecretDeliveryDisabledError(Exception):
+    pass
+
+
 class VirtualKeyNotFoundError(Exception):
     pass
 
 
 class VirtualKeyAlreadyRevokedError(Exception):
     pass
+
+
+class VirtualKeyOverlapActiveError(Exception):
+    def __init__(self, deprecated_at):
+        self.deprecated_at = deprecated_at
+        super().__init__("virtual key rotation overlap is still active")
 
 
 class InvalidVirtualKeyError(Exception):

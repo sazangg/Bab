@@ -1,35 +1,125 @@
+import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { AuthLayout } from "@/app/shell/AuthLayout";
 import { DashboardLayout } from "@/app/shell/DashboardLayout";
 import { AuthGate } from "@/features/auth/components/AuthGate";
 import { ProtectedRoute } from "@/features/auth/components/ProtectedRoute";
-import { ApiDocsPage } from "@/features/api-docs/pages/ApiDocsPage";
-import { AuditPage } from "@/features/audit/pages/AuditPage";
-import { AcceptInvitePage } from "@/features/auth/pages/AcceptInvitePage";
-import { LoginPage } from "@/features/auth/pages/LoginPage";
-import { DesignSystemPage } from "@/features/design-system/pages/DesignSystemPage";
-import { GuardrailsPage } from "@/features/guardrails/pages/GuardrailsPage";
-import { DashboardHomePage } from "@/features/home/pages/DashboardHomePage";
-import { KeyDetailPage } from "@/features/projects/pages/KeyDetailPage";
-import {
-  AccessPolicyDetailPage,
-  LimitPolicyDetailPage,
-  PoliciesPage,
-} from "@/features/policies/pages/PoliciesPage";
-import { PlaygroundPage } from "@/features/playground/pages/PlaygroundPage";
-import { ProjectDetailPage } from "@/features/projects/pages/ProjectDetailPage";
-import { ProjectsPage } from "@/features/projects/pages/ProjectsPage";
-import { ProviderDetailPage } from "@/features/providers/pages/ProviderDetailPage";
-import { ProvidersPage } from "@/features/providers/pages/ProvidersPage";
-import { SettingsPage } from "@/features/settings/pages/SettingsPage";
-import { TeamDetailPage } from "@/features/teams/pages/TeamDetailPage";
-import { TeamsPage } from "@/features/teams/pages/TeamsPage";
-import { VirtualKeysPage } from "@/features/virtual-keys/pages/VirtualKeysPage";
-
-import { ActivityPage } from "@/features/activity/pages/ActivityPage";
-import { UsagePage } from "@/features/usage/pages/UsagePage";
-import { UsersPage } from "@/features/users/pages/UsersPage";
+const AcceptInvitePage = lazy(() =>
+  import("@/features/auth/pages/AcceptInvitePage").then((module) => ({
+    default: module.AcceptInvitePage,
+  })),
+);
+const AccessPolicyDetailPage = lazy(() =>
+  import("@/features/policies/pages/PoliciesPage").then((module) => ({
+    default: module.AccessPolicyDetailPage,
+  })),
+);
+const ActivityPage = lazy(() =>
+  import("@/features/activity/pages/ActivityPage").then((module) => ({
+    default: module.ActivityPage,
+  })),
+);
+const ApiDocsPage = lazy(() =>
+  import("@/features/api-docs/pages/ApiDocsPage").then((module) => ({
+    default: module.ApiDocsPage,
+  })),
+);
+const AuditPage = lazy(() =>
+  import("@/features/audit/pages/AuditPage").then((module) => ({
+    default: module.AuditPage,
+  })),
+);
+const DashboardHomePage = lazy(() =>
+  import("@/features/home/pages/DashboardHomePage").then((module) => ({
+    default: module.DashboardHomePage,
+  })),
+);
+const DesignSystemPage = lazy(() =>
+  import("@/features/design-system/pages/DesignSystemPage").then((module) => ({
+    default: module.DesignSystemPage,
+  })),
+);
+const GuardrailsPage = lazy(() =>
+  import("@/features/guardrails/pages/GuardrailsPage").then((module) => ({
+    default: module.GuardrailsPage,
+  })),
+);
+const KeyDetailPage = lazy(() =>
+  import("@/features/projects/pages/KeyDetailPage").then((module) => ({
+    default: module.KeyDetailPage,
+  })),
+);
+const LimitPolicyDetailPage = lazy(() =>
+  import("@/features/policies/pages/PoliciesPage").then((module) => ({
+    default: module.LimitPolicyDetailPage,
+  })),
+);
+const LoginPage = lazy(() =>
+  import("@/features/auth/pages/LoginPage").then((module) => ({
+    default: module.LoginPage,
+  })),
+);
+const PlaygroundPage = lazy(() =>
+  import("@/features/playground/pages/PlaygroundPage").then((module) => ({
+    default: module.PlaygroundPage,
+  })),
+);
+const PoliciesPage = lazy(() =>
+  import("@/features/policies/pages/PoliciesPage").then((module) => ({
+    default: module.PoliciesPage,
+  })),
+);
+const ProjectDetailPage = lazy(() =>
+  import("@/features/projects/pages/ProjectDetailPage").then((module) => ({
+    default: module.ProjectDetailPage,
+  })),
+);
+const ProjectsPage = lazy(() =>
+  import("@/features/projects/pages/ProjectsPage").then((module) => ({
+    default: module.ProjectsPage,
+  })),
+);
+const ProviderDetailPage = lazy(() =>
+  import("@/features/providers/pages/ProviderDetailPage").then((module) => ({
+    default: module.ProviderDetailPage,
+  })),
+);
+const ProvidersPage = lazy(() =>
+  import("@/features/providers/pages/ProvidersPage").then((module) => ({
+    default: module.ProvidersPage,
+  })),
+);
+const SettingsPage = lazy(() =>
+  import("@/features/settings/pages/SettingsPage").then((module) => ({
+    default: module.SettingsPage,
+  })),
+);
+const TeamDetailPage = lazy(() =>
+  import("@/features/teams/pages/TeamDetailPage").then((module) => ({
+    default: module.TeamDetailPage,
+  })),
+);
+const TeamsPage = lazy(() =>
+  import("@/features/teams/pages/TeamsPage").then((module) => ({
+    default: module.TeamsPage,
+  })),
+);
+const UsagePage = lazy(() =>
+  import("@/features/usage/pages/UsagePage").then((module) => ({
+    default: module.UsagePage,
+  })),
+);
+const UsersPage = lazy(() =>
+  import("@/features/users/pages/UsersPage").then((module) => ({
+    default: module.UsersPage,
+  })),
+);
+const VirtualKeysPage = lazy(() =>
+  import("@/features/virtual-keys/pages/VirtualKeysPage").then((module) => ({
+    default: module.VirtualKeysPage,
+  })),
+);
 
 const isProductionBuild = import.meta.env.PROD;
 
@@ -59,15 +149,16 @@ function ProbePage({ kind }: { kind: "health" | "readyz" }) {
 
 export function AppRoutes() {
   return (
-    <Routes>
-      <Route path="/health" element={<ProbePage kind="health" />} />
-      <Route path="/readyz" element={<ProbePage kind="readyz" />} />
-      <Route element={<AuthLayout />}>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/accept-invite" element={<AcceptInvitePage />} />
-      </Route>
-      <Route element={<AuthGate />}>
-        <Route element={<DashboardLayout />}>
+    <Suspense fallback={<RouteLoading />}>
+      <Routes>
+        <Route path="/health" element={<ProbePage kind="health" />} />
+        <Route path="/readyz" element={<ProbePage kind="readyz" />} />
+        <Route element={<AuthLayout />}>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/accept-invite" element={<AcceptInvitePage />} />
+        </Route>
+        <Route element={<AuthGate />}>
+          <Route element={<DashboardLayout />}>
           <Route element={<ProtectedRoute allowDashboardHome />}>
             <Route path="/" element={<DashboardHomePage />} />
           </Route>
@@ -119,9 +210,18 @@ export function AppRoutes() {
           {!isProductionBuild ? (
             <Route path="/design-system" element={<DesignSystemPage />} />
           ) : null}
+          </Route>
         </Route>
-      </Route>
-      <Route path="*" element={<Navigate to="/login" replace />} />
-    </Routes>
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    </Suspense>
+  );
+}
+
+function RouteLoading() {
+  return (
+    <main className="grid min-h-40 place-items-center p-6">
+      <p className="text-sm text-muted-foreground">Loading...</p>
+    </main>
   );
 }

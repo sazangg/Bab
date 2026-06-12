@@ -4,12 +4,13 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_scope, require_permission
+from app.api.v1.deps import get_scope, require_permission, require_permission_or_scoped_admin
 from app.core.config import settings
 from app.core.database import Scope, get_db
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.settings import facade
 from app.modules.settings.schemas import (
+    GatewayMetadataResponse,
     OrganizationSettingsResponse,
     UpdateOrganizationSettingsRequest,
 )
@@ -19,6 +20,10 @@ DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RequestScope = Annotated[Scope, Depends(get_scope)]
 SettingsViewer = Annotated[AuthenticatedUser, Depends(require_permission("settings.view"))]
 SettingsAdmin = Annotated[AuthenticatedUser, Depends(require_permission("settings.manage"))]
+KeyManager = Annotated[
+    AuthenticatedUser,
+    Depends(require_permission_or_scoped_admin("keys.manage")),
+]
 
 
 @router.get("")
@@ -28,6 +33,15 @@ async def get_settings(
     _: SettingsViewer,
 ) -> OrganizationSettingsResponse:
     return await facade.get_organization_settings(scope=scope, db=db)
+
+
+@router.get("/gateway-metadata")
+async def get_gateway_metadata(
+    scope: RequestScope,
+    db: DatabaseSession,
+    _: KeyManager,
+) -> GatewayMetadataResponse:
+    return await facade.get_gateway_metadata(scope=scope, db=db)
 
 
 @router.patch("")

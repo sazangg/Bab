@@ -38,6 +38,16 @@ describe("workspaceLandingPath", () => {
     ).toBe("/projects");
   });
 
+  it("routes project members to projects", () => {
+    expect(
+      workspaceLandingPath(
+        user({
+          project_memberships: [{ project_id: crypto.randomUUID(), role: "project_member" }],
+        }),
+      ),
+    ).toBe("/projects");
+  });
+
   it("returns no landing path for an unscoped organization member", () => {
     expect(workspaceLandingPath(user({}))).toBeNull();
   });

@@ -362,7 +362,6 @@ async def _resolve_usage_scope(
     allowed_project_ids = {
         membership.project_id
         for membership in user.project_memberships
-        if membership.role == "project_admin"
     }
     if not allowed_team_ids and not allowed_project_ids:
         raise HTTPException(

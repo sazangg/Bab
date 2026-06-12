@@ -51,6 +51,11 @@ class VirtualKey(Base):
         ForeignKey("projects.id", ondelete="CASCADE"),
         index=True,
     )
+    supersedes_key_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("virtual_keys.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     name: Mapped[str] = mapped_column(String(255))
     key_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     key_prefix: Mapped[str] = mapped_column(String(32), index=True)
@@ -59,6 +64,9 @@ class VirtualKey(Base):
         DateTime(timezone=True), nullable=True, index=True
     )
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deprecated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_by: Mapped[UUID | None] = mapped_column(nullable=True)
     revoked_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)

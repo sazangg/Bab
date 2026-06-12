@@ -907,7 +907,6 @@ function buildUsageScopes({
     });
   }
   for (const membership of currentUser?.project_memberships ?? []) {
-    if (membership.role !== "project_admin") continue;
     const project = projectById[membership.project_id];
     const team = project ? teamById[project.team_id] : null;
     options.push({

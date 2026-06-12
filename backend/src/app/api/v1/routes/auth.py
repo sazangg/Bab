@@ -3,9 +3,10 @@ import json
 from datetime import datetime
 from io import StringIO
 from typing import Annotated
+from urllib.parse import urlparse
 from uuid import UUID
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.responses import Response as FastApiResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +33,7 @@ from app.modules.auth.schemas import (
     AuthenticatedUser,
     CreateInviteRequest,
     CreateMemberRequest,
+    InvitePreviewResponse,
     InviteResponse,
     LoginRequest,
     MemberResponse,
@@ -120,6 +122,14 @@ async def me(user: CurrentUser) -> AuthenticatedUser:
     return user
 
 
+@router.get("/invites/preview")
+async def preview_invite(token: str, db: DatabaseSession) -> InvitePreviewResponse:
+    try:
+        return await facade.preview_invite(token=token, db=db)
+    except InviteNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="invite not found") from exc
+
+
 @router.get("/members")
 async def list_members(
     scope: RequestScope,
@@ -206,6 +216,7 @@ async def list_invites(
 @router.post("/invites", status_code=status.HTTP_201_CREATED)
 async def create_invite(
     payload: CreateInviteRequest,
+    request: Request,
     scope: RequestScope,
     db: DatabaseSession,
     actor: CurrentUser,
@@ -216,7 +227,7 @@ async def create_invite(
             payload=payload,
             actor=actor,
             scope=scope,
-            public_base_url=org_settings.public_app_url,
+            public_base_url=org_settings.public_app_url or _request_origin(request),
             db=db,
         )
     except InvalidInviteTargetError as exc:
@@ -350,6 +361,16 @@ def _csv_response(*, filename: str, header: list[str], rows: list[list[object]])
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+def _request_origin(request: Request) -> str | None:
+    for value in (request.headers.get("origin"), request.headers.get("referer")):
+        if not value:
+            continue
+        parsed = urlparse(value)
+        if parsed.scheme in {"http", "https"} and parsed.netloc:
+            return f"{parsed.scheme}://{parsed.netloc}"
+    return None
 
 
 def _set_refresh_cookie(response: Response, value: str) -> None:

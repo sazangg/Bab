@@ -40,23 +40,25 @@ describe("AppRoutes", () => {
     protectedRouteMock.mockClear();
   });
 
-  it("renders the login route", () => {
+  it("renders the login route", async () => {
     renderRoute("/login");
 
-    expect(screen.getByLabelText("Email")).toBeInTheDocument();
-    expect(screen.getByLabelText("Password")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Email")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Password")).toBeInTheDocument();
   });
 
-  it("renders the dashboard home route", () => {
+  it("renders the dashboard home route", async () => {
     renderRoute("/");
 
-    expect(screen.getByRole("heading", { name: "Gateway home" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Gateway home" }),
+    ).toBeInTheDocument();
   });
 
-  it("redirects unknown routes to login", () => {
+  it("redirects unknown routes to login", async () => {
     renderRoute("/missing");
 
-    expect(screen.getByLabelText("Email")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Email")).toBeInTheDocument();
   });
 
   it("guards API Docs with key-manager access", () => {

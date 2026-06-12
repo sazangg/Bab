@@ -7,7 +7,6 @@ import {
   Pencil,
   Plus,
   Search,
-  Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
@@ -58,12 +57,14 @@ import { StatusBadge } from "@/shared/components/StatusBadge";
 import {
   hasAnyTeamAdminMembership,
   hasPermission,
+  isProjectAdmin,
   isTeamAdmin,
+  canViewTeam,
 } from "@/features/auth/lib/permissions";
 import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
+import { getProblemDetail } from "@/shared/api/problem-detail";
 
 import {
-  useDeactivateProjectApiV1ProjectsProjectIdDelete,
   useListProjectsApiV1ProjectsGet,
   useUpdateProjectApiV1ProjectsProjectIdPatch,
 } from "@/shared/api/generated/projects/projects";
@@ -133,7 +134,7 @@ export function ProjectsPage() {
     .filter((project) => {
       const term = search.toLowerCase().trim();
       if (!term) return true;
-      const teamName = teamById[project.team_id]?.name ?? "";
+      const teamName = teamById[project.team_id]?.name ?? project.team_name ?? "";
       return `${project.name} ${project.description ?? ""} ${teamName}`
         .toLowerCase()
         .includes(term);
@@ -148,12 +149,15 @@ export function ProjectsPage() {
         description="Projects live inside teams and receive access and limit policies plus virtual keys."
         actions={
           <div className="flex items-center gap-2">
+            {hasPermission(currentUser, "teams.manage") ||
+            hasAnyTeamAdminMembership(currentUser) ? (
             <Button asChild variant="outline">
               <Link to="/teams">
                 <Building2 />
                 Manage teams
               </Link>
             </Button>
+            ) : null}
             {canCreateProject ? (
               <NewProjectSheet
                 open={newOpen}
@@ -279,12 +283,23 @@ export function ProjectsPage() {
                       <ProjectRow
                         key={project.id}
                         project={project}
-                        team={teamById[project.team_id]}
+                        team={
+                          teamById[project.team_id] ??
+                          (project.team_name
+                            ? {
+                                id: project.team_id,
+                                name: project.team_name,
+                              }
+                            : undefined)
+                        }
                         onOpen={() => navigate(`/projects/${project.id}`)}
                         onEdit={() => setEditingProject(project)}
                         canManage={
-                          canManageAllProjects || isTeamAdmin(currentUser, project.team_id)
+                          canManageAllProjects ||
+                          isTeamAdmin(currentUser, project.team_id) ||
+                          isProjectAdmin(currentUser, project.id)
                         }
+                        canOpenTeam={canViewTeam(currentUser, project.team_id)}
                       />
                     ))}
                   </TableBody>
@@ -313,23 +328,15 @@ function ProjectRow({
   onOpen,
   onEdit,
   canManage,
+  canOpenTeam,
 }: {
   project: ProjectResponse;
-  team: TeamResponse | undefined;
+  team: Pick<TeamResponse, "id" | "name"> | undefined;
   onOpen: () => void;
   onEdit: () => void;
   canManage: boolean;
+  canOpenTeam: boolean;
 }) {
-  const queryClient = useQueryClient();
-  const deactivateProject = useDeactivateProjectApiV1ProjectsProjectIdDelete({
-    mutation: {
-      onSuccess: async () => {
-        await queryClient.invalidateQueries();
-        toast.success("Project archived.");
-      },
-      onError: () => toast.error("Project could not be archived."),
-    },
-  });
   return (
     <TableRow
       className={cn("cursor-pointer", !project.is_active && "opacity-60")}
@@ -342,9 +349,17 @@ function ProjectRow({
         }
       }}
     >
-      <TableCell className="font-medium">{project.name}</TableCell>
+      <TableCell className="font-medium">
+        <Link
+          to={`/projects/${project.id}`}
+          onClick={(event) => event.stopPropagation()}
+          className="hover:underline"
+        >
+          {project.name}
+        </Link>
+      </TableCell>
       <TableCell>
-        {team ? (
+        {team && canOpenTeam ? (
           <Link
             to={`/teams/${team.id}`}
             onClick={(event) => event.stopPropagation()}
@@ -352,6 +367,8 @@ function ProjectRow({
           >
             {team.name}
           </Link>
+        ) : team ? (
+          <span className="text-muted-foreground">{team.name}</span>
         ) : (
           <span className="text-muted-foreground">—</span>
         )}
@@ -380,14 +397,6 @@ function ProjectRow({
                 <Pencil data-icon="inline-start" />
                 Edit project
               </DropdownMenuItem>
-              <DropdownMenuItem
-                variant="destructive"
-                disabled={!project.is_active || deactivateProject.isPending}
-                onSelect={() => deactivateProject.mutate({ projectId: project.id })}
-              >
-                <Trash2 data-icon="inline-start" />
-                Archive project
-              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         ) : null}
@@ -414,7 +423,7 @@ function EditProjectSheet({
       onSuccess: async (response) => {
         if (response.status === 200) await onUpdated();
       },
-      onError: () => toast.error("Project could not be updated."),
+      onError: (error) => toast.error(getProblemDetail(error, "Project could not be updated.")),
     },
   });
 
@@ -496,7 +505,7 @@ function NewProjectSheet({
           await onCreated(response.data);
         }
       },
-      onError: () => toast.error("Project could not be created."),
+      onError: (error) => toast.error(getProblemDetail(error, "Project could not be created.")),
     },
   });
 

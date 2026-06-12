@@ -10,6 +10,7 @@ export interface VirtualKeyInventoryItem {
   name: string;
   key_prefix: string;
   project_id: string;
+  supersedes_key_id: string | null;
   project_name: string;
   project_is_active: boolean;
   team_id: string;
@@ -23,6 +24,7 @@ export interface VirtualKeyInventoryItem {
   creator_email: string | null;
   created_at: string;
   expires_at: string | null;
+  deprecated_at: string | null;
   last_used_at: string | null;
   revoked_at: string | null;
   revoked_by: string | null;

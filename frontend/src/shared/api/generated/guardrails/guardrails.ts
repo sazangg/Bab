@@ -29,6 +29,7 @@ import type {
   GuardrailAssignmentResponse,
   GuardrailEventResponse,
   GuardrailImpactResponse,
+  GuardrailPolicyOptionResponse,
   GuardrailPolicyResponse,
   GuardrailSimulationRequest,
   GuardrailSimulationResponse,
@@ -244,7 +245,119 @@ export const useCreatePolicyApiV1GuardrailsPoliciesPost = <TError = HTTPValidati
       > => {
       return useMutation(getCreatePolicyApiV1GuardrailsPoliciesPostMutationOptions(options), queryClient);
     }
-    export type updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponse200 = {
+    export type listPolicyOptionsApiV1GuardrailsPolicyOptionsGetResponse200 = {
+  data: GuardrailPolicyOptionResponse[]
+  status: 200
+}
+
+export type listPolicyOptionsApiV1GuardrailsPolicyOptionsGetResponseSuccess = (listPolicyOptionsApiV1GuardrailsPolicyOptionsGetResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listPolicyOptionsApiV1GuardrailsPolicyOptionsGetResponse = (listPolicyOptionsApiV1GuardrailsPolicyOptionsGetResponseSuccess)
+
+export const getListPolicyOptionsApiV1GuardrailsPolicyOptionsGetUrl = () => {
+
+
+
+
+  return `/api/v1/guardrails/policy-options`
+}
+
+/**
+ * @summary List Policy Options
+ */
+export const listPolicyOptionsApiV1GuardrailsPolicyOptionsGet = async ( options?: RequestInit): Promise<listPolicyOptionsApiV1GuardrailsPolicyOptionsGetResponse> => {
+
+  return apiMutator<listPolicyOptionsApiV1GuardrailsPolicyOptionsGetResponse>(getListPolicyOptionsApiV1GuardrailsPolicyOptionsGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListPolicyOptionsApiV1GuardrailsPolicyOptionsGetQueryKey = () => {
+    return [
+    `/api/v1/guardrails/policy-options`
+    ] as const;
+    }
+
+
+export const getListPolicyOptionsApiV1GuardrailsPolicyOptionsGetQueryOptions = <TData = Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPolicyOptionsApiV1GuardrailsPolicyOptionsGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>> = ({ signal }) => listPolicyOptionsApiV1GuardrailsPolicyOptionsGet({ signal });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListPolicyOptionsApiV1GuardrailsPolicyOptionsGetQueryResult = NonNullable<Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>>
+export type ListPolicyOptionsApiV1GuardrailsPolicyOptionsGetQueryError = unknown
+
+
+export function useListPolicyOptionsApiV1GuardrailsPolicyOptionsGet<TData = Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>,
+          TError,
+          Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListPolicyOptionsApiV1GuardrailsPolicyOptionsGet<TData = Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>,
+          TError,
+          Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListPolicyOptionsApiV1GuardrailsPolicyOptionsGet<TData = Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List Policy Options
+ */
+
+export function useListPolicyOptionsApiV1GuardrailsPolicyOptionsGet<TData = Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListPolicyOptionsApiV1GuardrailsPolicyOptionsGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export type updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponse200 = {
   data: GuardrailPolicyResponse
   status: 200
 }

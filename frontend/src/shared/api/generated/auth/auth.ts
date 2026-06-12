@@ -32,10 +32,12 @@ import type {
   CreateMemberRequest,
   ExportAuditEventsApiV1AuthAuditExportGetParams,
   HTTPValidationError,
+  InvitePreviewResponse,
   InviteResponse,
   ListAuditEventsApiV1AuthAuditGetParams,
   LoginRequest,
   MemberResponse,
+  PreviewInviteApiV1AuthInvitesPreviewGetParams,
   TokenResponse,
   UpdateMemberRequest,
   UpdateMemberStatusRequest
@@ -501,6 +503,132 @@ export function useMeApiV1AuthMeGet<TData = Awaited<ReturnType<typeof meApiV1Aut
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getMeApiV1AuthMeGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export type previewInviteApiV1AuthInvitesPreviewGetResponse200 = {
+  data: InvitePreviewResponse
+  status: 200
+}
+
+export type previewInviteApiV1AuthInvitesPreviewGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type previewInviteApiV1AuthInvitesPreviewGetResponseSuccess = (previewInviteApiV1AuthInvitesPreviewGetResponse200) & {
+  headers: Headers;
+};
+export type previewInviteApiV1AuthInvitesPreviewGetResponseError = (previewInviteApiV1AuthInvitesPreviewGetResponse422) & {
+  headers: Headers;
+};
+
+export type previewInviteApiV1AuthInvitesPreviewGetResponse = (previewInviteApiV1AuthInvitesPreviewGetResponseSuccess | previewInviteApiV1AuthInvitesPreviewGetResponseError)
+
+export const getPreviewInviteApiV1AuthInvitesPreviewGetUrl = (params: PreviewInviteApiV1AuthInvitesPreviewGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/auth/invites/preview?${stringifiedParams}` : `/api/v1/auth/invites/preview`
+}
+
+/**
+ * @summary Preview Invite
+ */
+export const previewInviteApiV1AuthInvitesPreviewGet = async (params: PreviewInviteApiV1AuthInvitesPreviewGetParams, options?: RequestInit): Promise<previewInviteApiV1AuthInvitesPreviewGetResponse> => {
+
+  return apiMutator<previewInviteApiV1AuthInvitesPreviewGetResponse>(getPreviewInviteApiV1AuthInvitesPreviewGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getPreviewInviteApiV1AuthInvitesPreviewGetQueryKey = (params?: PreviewInviteApiV1AuthInvitesPreviewGetParams,) => {
+    return [
+    `/api/v1/auth/invites/preview`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getPreviewInviteApiV1AuthInvitesPreviewGetQueryOptions = <TData = Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>, TError = HTTPValidationError>(params: PreviewInviteApiV1AuthInvitesPreviewGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getPreviewInviteApiV1AuthInvitesPreviewGetQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>> = ({ signal }) => previewInviteApiV1AuthInvitesPreviewGet(params, { signal });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type PreviewInviteApiV1AuthInvitesPreviewGetQueryResult = NonNullable<Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>>
+export type PreviewInviteApiV1AuthInvitesPreviewGetQueryError = HTTPValidationError
+
+
+export function usePreviewInviteApiV1AuthInvitesPreviewGet<TData = Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>, TError = HTTPValidationError>(
+ params: PreviewInviteApiV1AuthInvitesPreviewGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>,
+          TError,
+          Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function usePreviewInviteApiV1AuthInvitesPreviewGet<TData = Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>, TError = HTTPValidationError>(
+ params: PreviewInviteApiV1AuthInvitesPreviewGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>,
+          TError,
+          Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function usePreviewInviteApiV1AuthInvitesPreviewGet<TData = Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>, TError = HTTPValidationError>(
+ params: PreviewInviteApiV1AuthInvitesPreviewGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Preview Invite
+ */
+
+export function usePreviewInviteApiV1AuthInvitesPreviewGet<TData = Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>, TError = HTTPValidationError>(
+ params: PreviewInviteApiV1AuthInvitesPreviewGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getPreviewInviteApiV1AuthInvitesPreviewGetQueryOptions(params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

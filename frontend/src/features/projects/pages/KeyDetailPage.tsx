@@ -1,10 +1,12 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import { ArrowLeft, Gauge, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { ArrowLeft, Copy, Gauge, MoreHorizontal, Pencil, RotateCw, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { useForm } from "react-hook-form";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { toast } from "sonner";
 import { z } from "zod";
 
 import {
@@ -14,12 +16,10 @@ import {
   useGetVirtualKeyUsageApiV1ProjectsProjectIdKeysKeyIdUsageGet,
   useListProjectsApiV1ProjectsGet,
   useRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete,
+  useRotateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdRotatePost,
   useUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch,
 } from "@/shared/api/generated/projects/projects";
-import {
-  useListMembersApiV1AuthMembersGet,
-  useMeApiV1AuthMeGet,
-} from "@/shared/api/generated/auth/auth";
+import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
 import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
 import { Button } from "@/components/ui/button";
 import {
@@ -60,7 +60,7 @@ import {
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import type {
-  MemberResponse,
+  CreatedVirtualKeyResponse,
   UsageBreakdownRow,
   UsageRecentError,
 } from "@/shared/api/generated/schemas";
@@ -70,6 +70,8 @@ import { UsageRecordsDrilldown } from "@/features/usage/components/UsageRecordsD
 import { RecentGuardrailEventsCard } from "@/features/guardrails/components/RecentGuardrailEventsCard";
 import { PolicyScopeSection } from "@/features/policies/components/PolicyScopeSection";
 import { EffectiveAccessSummaryCard } from "@/features/projects/components/EffectiveAccessSummaryCard";
+import { getProblemDetail } from "@/shared/api/problem-detail";
+import { keyStatusPresentation } from "@/features/projects/lib/key-status";
 
 const STALE_KEY_DAYS = 30;
 
@@ -87,6 +89,12 @@ export function KeyDetailPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [revokeOpen, setRevokeOpen] = useState(false);
   const [revokeReason, setRevokeReason] = useState("");
+  const [forceRevoke, setForceRevoke] = useState(false);
+  const [rotateOpen, setRotateOpen] = useState(false);
+  const [rotationName, setRotationName] = useState("");
+  const [overlapDays, setOverlapDays] = useState("7");
+  const [rotatedKey, setRotatedKey] = useState<CreatedVirtualKeyResponse | null>(null);
+  const [loadedAt] = useState(() => Date.now());
 
   const projectsQuery = useListProjectsApiV1ProjectsGet();
   const project =
@@ -95,9 +103,6 @@ export function KeyDetailPage() {
       : undefined;
   const currentUserQuery = useMeApiV1AuthMeGet();
   const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
-  const orgMembersQuery = useListMembersApiV1AuthMembersGet({
-    query: { enabled: hasPermission(currentUser, "members.manage") },
-  });
   const teamsQuery = useListTeamsApiV1TeamsGet();
   const keyQuery = useGetVirtualKeyApiV1ProjectsProjectIdKeysKeyIdGet(projectId, keyId, {
     query: { enabled: Boolean(projectId && keyId) },
@@ -118,7 +123,6 @@ export function KeyDetailPage() {
       query: { enabled: revokeOpen && Boolean(projectId && keyId) },
     });
 
-  const orgMembers = orgMembersQuery.data?.status === 200 ? orgMembersQuery.data.data : [];
   const teams = teamsQuery.data?.status === 200 ? teamsQuery.data.data : [];
   const key = keyQuery.data?.status === 200 ? keyQuery.data.data : undefined;
   const usage = usageQuery.data?.status === 200 ? usageQuery.data.data : undefined;
@@ -128,13 +132,14 @@ export function KeyDetailPage() {
       isTeamAdmin(currentUser, project.team_id) ||
       isProjectAdmin(currentUser, project.id)
     : false;
-  const team = project ? teams.find((item) => item.id === project.team_id) : undefined;
-  const creator = key?.created_by
-    ? orgMembers.find((member) => member.user_id === key.created_by)
+  const team = project
+    ? teams.find((item) => item.id === project.team_id) ??
+      (project.team_name ? { id: project.team_id, name: project.team_name } : undefined)
     : undefined;
-  const revoker = key?.revoked_by
-    ? orgMembers.find((member) => member.user_id === key.revoked_by)
-    : undefined;
+  const status = key ? keyStatusPresentation(key.status) : null;
+  const overlapActive = Boolean(
+    key?.deprecated_at && new Date(key.deprecated_at).getTime() > loadedAt,
+  );
 
   const updateMutation = useUpdateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdPatch({
     mutation: {
@@ -142,6 +147,7 @@ export function KeyDetailPage() {
         setEditOpen(false);
         await queryClient.invalidateQueries();
       },
+      onError: (error) => toast.error(getProblemDetail(error, "Virtual key could not be updated.")),
     },
   });
   const revokeMutation = useRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete({
@@ -149,9 +155,20 @@ export function KeyDetailPage() {
       onSuccess: async () => {
         setRevokeOpen(false);
         setRevokeReason("");
+        setForceRevoke(false);
         await queryClient.invalidateQueries();
         navigate(`/projects/${projectId}`);
       },
+      onError: (error) => toast.error(getProblemDetail(error, "Virtual key could not be revoked.")),
+    },
+  });
+  const rotateMutation = useRotateVirtualKeyApiV1ProjectsProjectIdKeysKeyIdRotatePost({
+    mutation: {
+      onSuccess: async (response) => {
+        if (response.status === 201) setRotatedKey(response.data);
+        await queryClient.invalidateQueries();
+      },
+      onError: (error) => toast.error(getProblemDetail(error, "Virtual key could not be rotated.")),
     },
   });
 
@@ -216,6 +233,17 @@ export function KeyDetailPage() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
+                    {!key.deprecated_at ? (
+                      <DropdownMenuItem
+                        onSelect={() => {
+                          setRotationName(`${key.name} replacement`);
+                          setRotateOpen(true);
+                        }}
+                      >
+                        <RotateCw className="mr-2 size-4" />
+                        Rotate key
+                      </DropdownMenuItem>
+                    ) : null}
                     <DropdownMenuItem onSelect={() => setRevokeOpen(true)} variant="destructive">
                       <Trash2 className="mr-2 size-4" />
                       Revoke key
@@ -233,8 +261,8 @@ export function KeyDetailPage() {
           <CardTitle>Key summary</CardTitle>
           <CardDescription className="font-mono text-xs">{key.key_prefix}</CardDescription>
           <CardAction>
-            <StatusBadge variant={keyStatusVariant(key.status)}>
-              {key.status.replaceAll("_", " ")}
+            <StatusBadge variant={status?.variant ?? "inactive"}>
+              {status?.label}
             </StatusBadge>
           </CardAction>
         </CardHeader>
@@ -243,11 +271,45 @@ export function KeyDetailPage() {
             label="Expires"
             value={key.expires_at ? new Date(key.expires_at).toLocaleString() : "Never"}
           />
-          <Fact label="Policy" value="Resolved at request time" />
+          <Fact label={status?.categoryLabel ?? "Status"} value={status?.reason ?? "Unavailable"} />
           <Fact label="Last used" value={keyUsageLabel(key.last_used_at)} />
           <Fact label="Created" value={new Date(key.created_at).toLocaleString()} />
         </CardContent>
       </Card>
+
+      {key.supersedes_key_id || key.deprecated_at ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Rotation</CardTitle>
+            <CardDescription>Linked key lifecycle and overlap status.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-2">
+            <Fact
+              label="Replaces"
+              value={
+                key.supersedes_key_id ? (
+                  <Link
+                    className="text-primary underline-offset-4 hover:underline"
+                    to={`/projects/${projectId}/keys/${key.supersedes_key_id}`}
+                  >
+                    View previous key
+                  </Link>
+                ) : (
+                  "Original key"
+                )
+              }
+            />
+            <Fact
+              label="Overlap ends"
+              value={
+                key.deprecated_at
+                  ? new Date(key.deprecated_at).toLocaleString()
+                  : "Not scheduled"
+              }
+            />
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>
@@ -259,10 +321,17 @@ export function KeyDetailPage() {
         <CardContent className="grid gap-4 md:grid-cols-4">
           <Fact label="Project" value={project.name} />
           <Fact label="Team" value={team?.name ?? "Unknown"} />
-          <Fact label="Created by" value={formatMember(creator, key.created_by)} />
+          <Fact
+            label="Created by"
+            value={key.creator_name ?? key.creator_email ?? shortActorId(key.created_by)}
+          />
           <Fact
             label="Revoked by"
-            value={key.revoked_by ? formatMember(revoker, key.revoked_by) : "Not revoked"}
+            value={
+              key.revoked_by
+                ? key.revoker_name ?? key.revoker_email ?? shortActorId(key.revoked_by)
+                : "Not revoked"
+            }
           />
         </CardContent>
       </Card>
@@ -353,6 +422,100 @@ export function KeyDetailPage() {
       ) : null}
 
       {canManageKey ? (
+        <Dialog
+          open={rotateOpen}
+          onOpenChange={(open) => {
+            setRotateOpen(open);
+            if (!open) setRotatedKey(null);
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Rotate this key</DialogTitle>
+              <DialogDescription>
+                Create a replacement now. The current key remains active through the overlap period.
+              </DialogDescription>
+            </DialogHeader>
+            {rotatedKey ? (
+              <div className="space-y-3">
+                <p className="text-sm font-medium">Copy this secret now. It will not be shown again.</p>
+                <div className="flex items-center gap-2 rounded-md border bg-muted/30 p-3">
+                  <code className="min-w-0 flex-1 break-all text-xs">{rotatedKey.key}</code>
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    aria-label="Copy replacement key"
+                    onClick={async () => {
+                      if (rotatedKey.key) await navigator.clipboard.writeText(rotatedKey.key);
+                      toast.success("Replacement key copied.");
+                    }}
+                  >
+                    <Copy />
+                  </Button>
+                </div>
+                <Button
+                  className="w-full"
+                  onClick={() =>
+                    navigate(`/projects/${projectId}/keys/${rotatedKey.id}`)
+                  }
+                >
+                  View replacement key
+                </Button>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-1.5">
+                  <Label htmlFor="rotate-key-name">Replacement label</Label>
+                  <Input
+                    id="rotate-key-name"
+                    value={rotationName}
+                    maxLength={255}
+                    onChange={(event) => setRotationName(event.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="rotate-overlap-days">Overlap days</Label>
+                  <Input
+                    id="rotate-overlap-days"
+                    type="number"
+                    min={1}
+                    max={90}
+                    value={overlapDays}
+                    onChange={(event) => setOverlapDays(event.target.value)}
+                  />
+                </div>
+                <DialogFooter>
+                  <Button
+                    disabled={
+                      rotateMutation.isPending ||
+                      !rotationName.trim() ||
+                      Number(overlapDays) < 1 ||
+                      Number(overlapDays) > 90
+                    }
+                    onClick={() =>
+                      rotateMutation.mutate({
+                        projectId,
+                        keyId,
+                        data: {
+                          name: rotationName.trim(),
+                          overlap_days: Number(overlapDays),
+                        },
+                      })
+                    }
+                  >
+                    {rotateMutation.isPending ? "Rotating..." : "Create replacement"}
+                  </Button>
+                  <DialogClose asChild>
+                    <Button variant="outline">Cancel</Button>
+                  </DialogClose>
+                </DialogFooter>
+              </>
+            )}
+          </DialogContent>
+        </Dialog>
+      ) : null}
+
+      {canManageKey ? (
         <Dialog open={revokeOpen} onOpenChange={setRevokeOpen}>
           <DialogContent>
             <DialogHeader>
@@ -390,9 +553,12 @@ export function KeyDetailPage() {
                 ) : null}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">
-                Impact could not be loaded. You can retry by reopening this dialog.
-              </p>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm text-destructive">Impact could not be loaded.</p>
+                <Button variant="outline" size="sm" onClick={() => revokeImpactQuery.refetch()}>
+                  Retry
+                </Button>
+              </div>
             )}
             <div className="space-y-1.5">
               <Label htmlFor="revoke-key-reason">Reason</Label>
@@ -404,15 +570,34 @@ export function KeyDetailPage() {
                 placeholder="Why is this key being revoked?"
               />
             </div>
+            {overlapActive ? (
+              <label className="flex items-start gap-2 rounded-md border border-destructive/40 p-3 text-sm">
+                <input
+                  className="mt-1"
+                  type="checkbox"
+                  checked={forceRevoke}
+                  onChange={(event) => setForceRevoke(event.target.checked)}
+                />
+                <span>
+                  Revoke before the rotation overlap ends on{" "}
+                  {new Date(key.deprecated_at!).toLocaleString()}.
+                </span>
+              </label>
+            ) : null}
             <DialogFooter>
               <Button
                 variant="destructive"
-                disabled={revokeMutation.isPending || !revokeReason.trim()}
+                disabled={
+                  revokeMutation.isPending ||
+                  !revokeReason.trim() ||
+                  !revokeImpact ||
+                  (overlapActive && !forceRevoke)
+                }
                 onClick={() =>
                   revokeMutation.mutate({
                     projectId,
                     keyId,
-                    data: { reason: revokeReason.trim() },
+                    data: { reason: revokeReason.trim(), force: forceRevoke },
                   })
                 }
               >
@@ -427,13 +612,6 @@ export function KeyDetailPage() {
       ) : null}
     </div>
   );
-}
-
-function keyStatusVariant(status: string) {
-  if (status === "active" || status === "unused") return "active";
-  if (status === "revoked") return "revoked";
-  if (status === "expired" || status === "expiring_soon") return "expired";
-  return "inactive";
 }
 
 function KeyUsageCard({
@@ -550,7 +728,7 @@ function BreakdownList({ title, rows }: { title: string; rows: UsageBreakdownRow
   );
 }
 
-function Fact({ label, value }: { label: string; value: string }) {
+function Fact({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <p className="text-xs text-muted-foreground">{label}</p>
@@ -577,8 +755,6 @@ function keyUsageLabel(lastUsedAt: string | null | undefined) {
   return `Last used ${ageDays === 0 ? "today" : `${ageDays}d ago`}`;
 }
 
-function formatMember(member: MemberResponse | undefined, fallbackId: string | null | undefined) {
-  if (member?.name) return member.name;
-  if (member?.email) return member.email;
-  return fallbackId ? fallbackId.slice(0, 8) : "Unknown";
+function shortActorId(actorId: string | null | undefined) {
+  return actorId ? actorId.slice(0, 8) : "Unknown";
 }

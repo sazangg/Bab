@@ -27,6 +27,12 @@ class OrganizationSettingsResponse(BaseModel):
     updated_at: datetime
 
 
+class GatewayMetadataResponse(BaseModel):
+    public_base_url: str | None
+    virtual_key_prefix: str
+    default_virtual_key_expiration_days: int | None
+
+
 class UpdateOrganizationSettingsRequest(BaseModel):
     organization_name: str | None = Field(default=None, min_length=1, max_length=255)
     organization_logo_url: str | None = Field(default=None, max_length=500)

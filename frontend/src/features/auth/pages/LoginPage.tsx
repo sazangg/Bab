@@ -1,5 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
+import { Eye, EyeOff } from "lucide-react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { z } from "zod";
@@ -22,6 +24,7 @@ export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
+  const [showPassword, setShowPassword] = useState(false);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const setSession = useAuthStore((state) => state.setSession);
   const form = useForm<LoginFormValues>({
@@ -53,6 +56,9 @@ export function LoginPage() {
       <CardHeader>
         <CardDescription>Bab</CardDescription>
         <CardTitle className="text-2xl">Sign in</CardTitle>
+        <CardDescription>
+          Use the email and password for your Bab organization account.
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <form
@@ -74,12 +80,23 @@ export function LoginPage() {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="login-password">Password</Label>
-            <Input
-              id="login-password"
-              type="password"
-              autoComplete="current-password"
-              {...form.register("password")}
-            />
+            <div className="flex gap-2">
+              <Input
+                id="login-password"
+                type={showPassword ? "text" : "password"}
+                autoComplete="current-password"
+                {...form.register("password")}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                aria-label={showPassword ? "Hide secret" : "Show secret"}
+                onClick={() => setShowPassword((value) => !value)}
+              >
+                {showPassword ? <EyeOff /> : <Eye />}
+              </Button>
+            </div>
           </div>
           {loginMutation.isError ? (
             <p className="text-sm text-destructive">Invalid email or password.</p>

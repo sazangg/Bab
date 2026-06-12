@@ -25,6 +25,7 @@ import type {
 
 import type {
   BodyUploadOrganizationLogoApiV1SettingsOrganizationLogoPost,
+  GatewayMetadataResponse,
   HTTPValidationError,
   OrganizationSettingsResponse,
   UpdateOrganizationSettingsRequest
@@ -236,7 +237,119 @@ export const useUpdateSettingsApiV1SettingsPatch = <TError = HTTPValidationError
       > => {
       return useMutation(getUpdateSettingsApiV1SettingsPatchMutationOptions(options), queryClient);
     }
-    export type uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponse200 = {
+    export type getGatewayMetadataApiV1SettingsGatewayMetadataGetResponse200 = {
+  data: GatewayMetadataResponse
+  status: 200
+}
+
+export type getGatewayMetadataApiV1SettingsGatewayMetadataGetResponseSuccess = (getGatewayMetadataApiV1SettingsGatewayMetadataGetResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getGatewayMetadataApiV1SettingsGatewayMetadataGetResponse = (getGatewayMetadataApiV1SettingsGatewayMetadataGetResponseSuccess)
+
+export const getGetGatewayMetadataApiV1SettingsGatewayMetadataGetUrl = () => {
+
+
+
+
+  return `/api/v1/settings/gateway-metadata`
+}
+
+/**
+ * @summary Get Gateway Metadata
+ */
+export const getGatewayMetadataApiV1SettingsGatewayMetadataGet = async ( options?: RequestInit): Promise<getGatewayMetadataApiV1SettingsGatewayMetadataGetResponse> => {
+
+  return apiMutator<getGatewayMetadataApiV1SettingsGatewayMetadataGetResponse>(getGetGatewayMetadataApiV1SettingsGatewayMetadataGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetGatewayMetadataApiV1SettingsGatewayMetadataGetQueryKey = () => {
+    return [
+    `/api/v1/settings/gateway-metadata`
+    ] as const;
+    }
+
+
+export const getGetGatewayMetadataApiV1SettingsGatewayMetadataGetQueryOptions = <TData = Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetGatewayMetadataApiV1SettingsGatewayMetadataGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>> = ({ signal }) => getGatewayMetadataApiV1SettingsGatewayMetadataGet({ signal });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetGatewayMetadataApiV1SettingsGatewayMetadataGetQueryResult = NonNullable<Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>>
+export type GetGatewayMetadataApiV1SettingsGatewayMetadataGetQueryError = unknown
+
+
+export function useGetGatewayMetadataApiV1SettingsGatewayMetadataGet<TData = Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>,
+          TError,
+          Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetGatewayMetadataApiV1SettingsGatewayMetadataGet<TData = Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>,
+          TError,
+          Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetGatewayMetadataApiV1SettingsGatewayMetadataGet<TData = Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get Gateway Metadata
+ */
+
+export function useGetGatewayMetadataApiV1SettingsGatewayMetadataGet<TData = Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetGatewayMetadataApiV1SettingsGatewayMetadataGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export type uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponse200 = {
   data: OrganizationSettingsResponse
   status: 200
 }

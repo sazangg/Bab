@@ -17,6 +17,13 @@ export function isProjectAdmin(user: AuthenticatedUser | null | undefined, proje
   );
 }
 
+export function canViewTeam(user: AuthenticatedUser | null | undefined, teamId: string) {
+  return (
+    hasPermission(user, "teams.view") ||
+    (user?.team_memberships ?? []).some((membership) => membership.team_id === teamId)
+  );
+}
+
 export function hasAnyTeamMembership(user: AuthenticatedUser | null | undefined) {
   return (user?.team_memberships ?? []).length > 0 || (user?.project_memberships ?? []).length > 0;
 }
@@ -51,7 +58,7 @@ export function canViewUsage(user: AuthenticatedUser | null | undefined) {
   return (
     hasPermission(user, "usage.view") ||
     hasAnyDirectTeamMembership(user) ||
-    hasAnyProjectAdminMembership(user)
+    hasAnyProjectMembership(user)
   );
 }
 
@@ -59,7 +66,7 @@ export function canViewActivity(user: AuthenticatedUser | null | undefined) {
   return (
     hasPermission(user, "activity.view") ||
     hasAnyDirectTeamMembership(user) ||
-    hasAnyProjectAdminMembership(user)
+    hasAnyProjectMembership(user)
   );
 }
 

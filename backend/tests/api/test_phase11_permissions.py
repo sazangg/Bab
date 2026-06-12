@@ -4,7 +4,11 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import require_project_view_or_permission, require_team_view_or_permission
+from app.api.v1.deps import (
+    require_project_team_admin_or_permission,
+    require_project_view_or_permission,
+    require_team_view_or_permission,
+)
 from app.api.v1.routes.guardrails import _require_assignment_admin as require_guardrail_assignment
 from app.api.v1.routes.guardrails import update_assignment as update_guardrail_assignment
 from app.api.v1.routes.policies import _require_assignment_admin as require_policy_assignment
@@ -201,6 +205,43 @@ async def test_project_admin_can_view_own_project_but_not_cross_project_or_org(
                 db=db_session,
             )
         assert exc.value.status_code == 403
+
+
+async def test_project_member_can_view_only_own_project_and_cannot_manage_it(
+    db_session: AsyncSession,
+) -> None:
+    org, _, project, _, other_project, _, _, _ = await _workspace(db_session)
+    user = _user(org_id=org.id)
+    db_session.add(_user_row(user))
+    db_session.add(
+        ProjectMembership(
+            org_id=org.id,
+            project_id=project.id,
+            user_id=user.id,
+            role="project_member",
+        )
+    )
+    await db_session.commit()
+
+    await require_project_view_or_permission(
+        project_id=str(project.id),
+        permission="projects.view",
+        user=user,
+        db=db_session,
+    )
+    with pytest.raises(HTTPException) as cross_project:
+        await require_project_view_or_permission(
+            project_id=str(other_project.id),
+            permission="projects.view",
+            user=user,
+            db=db_session,
+        )
+    manage_project = require_project_team_admin_or_permission("projects.manage")
+    with pytest.raises(HTTPException) as manage:
+        await manage_project(project_id=str(project.id), user=user, db=db_session)
+
+    assert cross_project.value.status_code == 403
+    assert manage.value.status_code == 403
 
 
 @pytest.mark.parametrize("guard", [require_policy_assignment, require_guardrail_assignment])

@@ -7,7 +7,7 @@ test("guardrail policy can be created and assigned in one UI flow", async ({ pag
   const policyName = uniqueName("E2E guardrail");
 
   await loginAs(page, "owner@example.com", "correct-password", "/guardrails");
-  await page.getByRole("button", { name: "New policy" }).first().click();
+  await page.getByRole("button", { name: "New guardrail policy" }).first().click();
 
   const sheet = page.locator('[data-slot="sheet-content"]');
   await page.getByRole("textbox").first().fill(policyName);
@@ -17,5 +17,5 @@ test("guardrail policy can be created and assigned in one UI flow", async ({ pag
   await page.getByRole("button", { name: "Create policy" }).click();
 
   await expect(page.getByText(policyName).first()).toBeVisible();
-  await expect(page.getByRole("main").getByText("Organization", { exact: true })).toBeVisible();
+  await expect(page.getByText("Guardrail policy created and assigned.")).toBeVisible();
 });

@@ -34,6 +34,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   hasAnyProjectAdminMembership,
   hasAnyTeamAdminMembership,
@@ -175,8 +176,9 @@ export function UsersPage() {
       onSuccess: async (response) => {
         await queryClient.invalidateQueries();
         if (response.status === 201 && response.data.invite_url) {
-          setLatestInviteUrl(response.data.invite_url);
-          await navigator.clipboard?.writeText(response.data.invite_url);
+          const inviteUrl = resolveInviteUrl(response.data.invite_url);
+          setLatestInviteUrl(inviteUrl);
+          await navigator.clipboard?.writeText(inviteUrl);
           toast.success("Invite created. Link is shown below and copied.");
         } else {
           toast.success("Invite created.");
@@ -261,6 +263,13 @@ export function UsersPage() {
     !email.trim() ||
     (!canManageOrgMembers && !scopedInviteHasTarget) ||
     (projectId !== NO_SCOPE && projectRole === NO_SCOPE);
+  const inviteDisabledReason = !email.trim()
+    ? "Enter an email address to create an invite."
+    : !canManageOrgMembers && !scopedInviteHasTarget
+      ? "Choose one of your managed teams or projects before inviting."
+      : projectId !== NO_SCOPE && projectRole === NO_SCOPE
+        ? "Choose a project role before inviting."
+        : null;
 
   function submitInvite() {
     inviteMutation.mutate({
@@ -281,160 +290,31 @@ export function UsersPage() {
       <PageHeader
         title="Users"
         description="Organization members, scoped roles, and onboarding invites."
-        actions={
-          <Button disabled={inviteDisabled} onClick={submitInvite}>
-            <UserPlus data-icon="inline-start" />
-            Invite user
-          </Button>
-        }
       />
 
       {canManageOrgMembers ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Create local user</CardTitle>
-            <CardDescription>
-              Add a local account immediately and optionally assign scoped access.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px_180px]">
-            <Field id="users-create-email" label="Email">
-              <Input
-                id="users-create-email"
-                type="email"
-                value={createEmail}
-                onChange={(event) => setCreateEmail(event.target.value)}
-                placeholder="teammate@example.com"
-              />
-            </Field>
-            <Field id="users-create-name" label="Name">
-              <Input
-                id="users-create-name"
-                value={createName}
-                onChange={(event) => setCreateName(event.target.value)}
-                placeholder="Optional"
-              />
-            </Field>
-            <Field id="users-create-password" label="Password">
-              <Input
-                id="users-create-password"
-                type="password"
-                value={createPassword}
-                onChange={(event) => setCreatePassword(event.target.value)}
-                placeholder="8+ characters, 72 bytes max"
-              />
-            </Field>
-            <Field label="Org role">
-              <RoleSelect
-                value={createRole}
-                onValueChange={setCreateRole}
-                roles={assignableOrgRoles}
-              />
-            </Field>
-            <Field label="Team">
-              <ScopeSelect
-                value={createTeamId}
-                onValueChange={(value) => {
-                  setCreateTeamId(value);
-                  if (value === NO_SCOPE) setCreateTeamRole(NO_SCOPE);
-                  if (value !== NO_SCOPE && createProjectId !== NO_SCOPE) {
-                    const project = projectById[createProjectId];
-                    if (project?.team_id !== value) setCreateProjectId(NO_SCOPE);
-                  }
-                }}
-                placeholder="No team"
-                options={manageableTeams.map((team) => ({ value: team.id, label: team.name }))}
-              />
-            </Field>
-            <Field label="Team role">
-              <ScopeSelect
-                value={createTeamRole}
-                onValueChange={setCreateTeamRole}
-                placeholder="No role"
-                disabled={createTeamId === NO_SCOPE}
-                options={[
-                  { value: "team_member", label: "Member" },
-                  { value: "team_admin", label: "Admin" },
-                ]}
-              />
-            </Field>
-            <Field label="Project">
-              <ScopeSelect
-                value={createProjectId}
-                onValueChange={(value) => {
-                  setCreateProjectId(value);
-                  if (value === NO_SCOPE) setCreateProjectRole(NO_SCOPE);
-                  if (value !== NO_SCOPE && createProjectRole === NO_SCOPE) {
-                    setCreateProjectRole("project_admin");
-                  }
-                }}
-                placeholder="No project"
-                options={visibleCreateProjects.map((project) => ({
-                  value: project.id,
-                  label: project.name,
-                }))}
-              />
-            </Field>
-            <Field label="Project role">
-              <ScopeSelect
-                value={createProjectRole}
-                onValueChange={setCreateProjectRole}
-                placeholder="No role"
-                disabled={createProjectId === NO_SCOPE}
-                options={[{ value: "project_admin", label: "Admin" }]}
-              />
-            </Field>
-            <div className="flex items-end lg:col-start-4">
-              <Button
-                type="button"
-                disabled={createUserDisabled}
-                onClick={() =>
-                  createMemberMutation.mutate({
-                    data: {
-                      email: createEmail.trim(),
-                      name: createName.trim() || null,
-                      password: createPassword,
-                      role: createRole,
-                      team_id: createTeamId === NO_SCOPE ? null : createTeamId,
-                      team_role: createTeamRole === NO_SCOPE ? null : createTeamRole,
-                      project_id: createProjectId === NO_SCOPE ? null : createProjectId,
-                      project_role: createProjectRole === NO_SCOPE ? null : createProjectRole,
-                    },
-                  })
-                }
-              >
-                <UserPlus data-icon="inline-start" />
-                Create user
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Invite user</CardTitle>
-          <CardDescription>
-            Invite links are shown after creation and can be copied again while this page is open.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_160px_180px_170px_180px_170px]">
-          <Field id="users-invite-email" label="Email">
-            <Input
-              id="users-invite-email"
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="teammate@example.com"
-            />
-          </Field>
-          <Field label="Org role">
-            <RoleSelect value={role} onValueChange={setRole} roles={assignableOrgRoles} />
-          </Field>
-          <Field label="Team">
-            <ScopeSelect
-              value={teamId}
-              onValueChange={(value) => {
+        <Tabs defaultValue="invite" className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="invite">Invite user</TabsTrigger>
+            <TabsTrigger value="create">Create local user</TabsTrigger>
+          </TabsList>
+          <TabsContent value="invite">
+            <InviteUserCard
+              email={email}
+              role={role}
+              teamId={teamId}
+              teamRole={teamRole}
+              projectId={projectId}
+              projectRole={projectRole}
+              manageableTeams={manageableTeams}
+              visibleProjects={visibleProjects}
+              assignableOrgRoles={assignableOrgRoles}
+              latestInviteUrl={latestInviteUrl}
+              inviteDisabled={inviteDisabled}
+              inviteDisabledReason={inviteDisabledReason}
+              onEmail={setEmail}
+              onRole={setRole}
+              onTeam={(value) => {
                 setTeamId(value);
                 if (value === NO_SCOPE) setTeamRole(NO_SCOPE);
                 if (value !== NO_SCOPE && projectId !== NO_SCOPE) {
@@ -442,69 +322,177 @@ export function UsersPage() {
                   if (project?.team_id !== value) setProjectId(NO_SCOPE);
                 }
               }}
-              placeholder="No team"
-              options={manageableTeams.map((team) => ({ value: team.id, label: team.name }))}
-            />
-          </Field>
-          <Field label="Team role">
-            <ScopeSelect
-              value={teamRole}
-              onValueChange={setTeamRole}
-              placeholder="No role"
-              disabled={teamId === NO_SCOPE}
-              options={[
-                { value: "team_member", label: "Member" },
-                { value: "team_admin", label: "Admin" },
-              ]}
-            />
-          </Field>
-          <Field label="Project">
-            <ScopeSelect
-              value={projectId}
-              onValueChange={(value) => {
+              onTeamRole={setTeamRole}
+              onProject={(value) => {
                 setProjectId(value);
                 if (value === NO_SCOPE) setProjectRole(NO_SCOPE);
                 if (value !== NO_SCOPE && projectRole === NO_SCOPE) setProjectRole("project_admin");
               }}
-              placeholder="No project"
-              options={visibleProjects.map((project) => ({
-                value: project.id,
-                label: project.name,
-              }))}
+              onProjectRole={setProjectRole}
+              onSubmit={submitInvite}
             />
-          </Field>
-          <Field label="Project role">
-            <ScopeSelect
-              value={projectRole}
-              onValueChange={setProjectRole}
-              placeholder="No role"
-              disabled={projectId === NO_SCOPE}
-              options={[{ value: "project_admin", label: "Admin" }]}
-            />
-          </Field>
-        </CardContent>
-        {latestInviteUrl ? (
-          <CardContent className="border-t pt-4">
-            <div className="grid gap-2">
-              <Label>Latest invite link</Label>
-              <div className="flex gap-2">
-                <Input readOnly value={latestInviteUrl} className="font-mono text-xs" />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    void navigator.clipboard?.writeText(latestInviteUrl);
-                    toast.success("Invite link copied.");
-                  }}
-                >
-                  <Copy data-icon="inline-start" />
-                  Copy
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        ) : null}
-      </Card>
+          </TabsContent>
+          <TabsContent value="create">
+            <Card>
+              <CardHeader>
+                <CardTitle>Create local user</CardTitle>
+                <CardDescription>
+                  Add an account immediately. You are setting the initial password for this user.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px_180px]">
+                <Field id="users-create-email" label="Email">
+                  <Input
+                    id="users-create-email"
+                    type="email"
+                    value={createEmail}
+                    onChange={(event) => setCreateEmail(event.target.value)}
+                    placeholder="teammate@example.com"
+                  />
+                </Field>
+                <Field id="users-create-name" label="Name">
+                  <Input
+                    id="users-create-name"
+                    value={createName}
+                    onChange={(event) => setCreateName(event.target.value)}
+                    placeholder="Optional"
+                  />
+                </Field>
+                <Field id="users-create-password" label="Password">
+                  <Input
+                    id="users-create-password"
+                    type="password"
+                    value={createPassword}
+                    onChange={(event) => setCreatePassword(event.target.value)}
+                    placeholder="8+ characters, 72 bytes max"
+                  />
+                </Field>
+                <Field label="Org role">
+                  <RoleSelect
+                    value={createRole}
+                    onValueChange={setCreateRole}
+                    roles={assignableOrgRoles}
+                  />
+                </Field>
+                <Field label="Team">
+                  <ScopeSelect
+                    value={createTeamId}
+                    onValueChange={(value) => {
+                      setCreateTeamId(value);
+                      if (value === NO_SCOPE) setCreateTeamRole(NO_SCOPE);
+                      if (value !== NO_SCOPE && createProjectId !== NO_SCOPE) {
+                        const project = projectById[createProjectId];
+                        if (project?.team_id !== value) setCreateProjectId(NO_SCOPE);
+                      }
+                    }}
+                    placeholder="No team"
+                    options={manageableTeams.map((team) => ({ value: team.id, label: team.name }))}
+                  />
+                </Field>
+                <Field label="Team role">
+                  <ScopeSelect
+                    value={createTeamRole}
+                    onValueChange={setCreateTeamRole}
+                    placeholder="No role"
+                    disabled={createTeamId === NO_SCOPE}
+                    options={[
+                      { value: "team_member", label: "Team member" },
+                      { value: "team_admin", label: "Team admin" },
+                    ]}
+                  />
+                </Field>
+                <Field label="Project">
+                  <ScopeSelect
+                    value={createProjectId}
+                    onValueChange={(value) => {
+                      setCreateProjectId(value);
+                      if (value === NO_SCOPE) setCreateProjectRole(NO_SCOPE);
+                      if (value !== NO_SCOPE && createProjectRole === NO_SCOPE) {
+                        setCreateProjectRole("project_admin");
+                      }
+                    }}
+                    placeholder="No project"
+                    options={visibleCreateProjects.map((project) => ({
+                      value: project.id,
+                      label: project.name,
+                    }))}
+                  />
+                </Field>
+                <Field label="Project role">
+                  <ScopeSelect
+                    value={createProjectRole}
+                    onValueChange={setCreateProjectRole}
+                    placeholder="No role"
+                    disabled={createProjectId === NO_SCOPE}
+                    options={[
+                      { value: "project_member", label: "Project member" },
+                      { value: "project_admin", label: "Project admin" },
+                    ]}
+                  />
+                </Field>
+                <div className="flex items-end lg:col-start-4">
+                  <Button
+                    type="button"
+                    disabled={createUserDisabled}
+                    onClick={() =>
+                      createMemberMutation.mutate({
+                        data: {
+                          email: createEmail.trim(),
+                          name: createName.trim() || null,
+                          password: createPassword,
+                          role: createRole,
+                          team_id: createTeamId === NO_SCOPE ? null : createTeamId,
+                          team_role: createTeamRole === NO_SCOPE ? null : createTeamRole,
+                          project_id: createProjectId === NO_SCOPE ? null : createProjectId,
+                          project_role: createProjectRole === NO_SCOPE ? null : createProjectRole,
+                        },
+                      })
+                    }
+                  >
+                    <UserPlus data-icon="inline-start" />
+                    Create user
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      ) : null}
+
+      {!canManageOrgMembers ? (
+        <InviteUserCard
+          email={email}
+          role={role}
+          teamId={teamId}
+          teamRole={teamRole}
+          projectId={projectId}
+          projectRole={projectRole}
+          manageableTeams={manageableTeams}
+          visibleProjects={visibleProjects}
+          assignableOrgRoles={assignableOrgRoles}
+          latestInviteUrl={latestInviteUrl}
+          inviteDisabled={inviteDisabled}
+          inviteDisabledReason={inviteDisabledReason}
+          onEmail={setEmail}
+          onRole={setRole}
+          onTeam={(value) => {
+            setTeamId(value);
+            if (value === NO_SCOPE) setTeamRole(NO_SCOPE);
+            if (value !== NO_SCOPE && projectId !== NO_SCOPE) {
+              const project = projectById[projectId];
+              if (project?.team_id !== value) setProjectId(NO_SCOPE);
+            }
+          }}
+          onTeamRole={setTeamRole}
+          onProject={(value) => {
+            setProjectId(value);
+            if (value === NO_SCOPE) setProjectRole(NO_SCOPE);
+            if (value !== NO_SCOPE && projectRole === NO_SCOPE) setProjectRole("project_admin");
+          }}
+          onProjectRole={setProjectRole}
+          onSubmit={submitInvite}
+        />
+      ) : null}
 
       {canManageOrgMembers ? (
         <MembersCard
@@ -620,10 +608,10 @@ function MembersCard({
             includeNone={false}
             options={[
               { value: ALL_ROLES, label: "All roles" },
-              { value: "org_owner", label: "Owner" },
-              { value: "org_admin", label: "Admin" },
-              { value: "org_viewer", label: "Viewer" },
-              { value: "org_member", label: "Member" },
+              { value: "org_owner", label: "Org owner" },
+              { value: "org_admin", label: "Org admin" },
+              { value: "org_viewer", label: "Org viewer" },
+              { value: "org_member", label: "Org member" },
             ]}
           />
           <ScopeSelect
@@ -772,6 +760,147 @@ function MembersCard({
           </Table>
         )}
       </CardContent>
+    </Card>
+  );
+}
+
+function InviteUserCard({
+  email,
+  role,
+  teamId,
+  teamRole,
+  projectId,
+  projectRole,
+  manageableTeams,
+  visibleProjects,
+  assignableOrgRoles,
+  latestInviteUrl,
+  inviteDisabled,
+  inviteDisabledReason,
+  onEmail,
+  onRole,
+  onTeam,
+  onTeamRole,
+  onProject,
+  onProjectRole,
+  onSubmit,
+}: {
+  email: string;
+  role: string;
+  teamId: string;
+  teamRole: string;
+  projectId: string;
+  projectRole: string;
+  manageableTeams: TeamResponse[];
+  visibleProjects: ProjectResponse[];
+  assignableOrgRoles: string[];
+  latestInviteUrl: string;
+  inviteDisabled: boolean;
+  inviteDisabledReason: string | null;
+  onEmail: (value: string) => void;
+  onRole: (value: string) => void;
+  onTeam: (value: string) => void;
+  onTeamRole: (value: string) => void;
+  onProject: (value: string) => void;
+  onProjectRole: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Invite user</CardTitle>
+        <CardDescription>
+          Send a link so the recipient can create their own password and join with the selected
+          access.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_160px_180px_170px_180px_170px]">
+        <Field id="users-invite-email" label="Email">
+          <Input
+            id="users-invite-email"
+            type="email"
+            value={email}
+            onChange={(event) => onEmail(event.target.value)}
+            placeholder="teammate@example.com"
+          />
+        </Field>
+        <Field label="Org role">
+          <RoleSelect value={role} onValueChange={onRole} roles={assignableOrgRoles} />
+        </Field>
+        <Field label="Team">
+          <ScopeSelect
+            value={teamId}
+            onValueChange={onTeam}
+            placeholder="No team"
+            options={manageableTeams.map((team) => ({ value: team.id, label: team.name }))}
+          />
+        </Field>
+        <Field label="Team role">
+          <ScopeSelect
+            value={teamRole}
+            onValueChange={onTeamRole}
+            placeholder="No role"
+            disabled={teamId === NO_SCOPE}
+            options={[
+              { value: "team_member", label: "Team member" },
+              { value: "team_admin", label: "Team admin" },
+            ]}
+          />
+        </Field>
+        <Field label="Project">
+          <ScopeSelect
+            value={projectId}
+            onValueChange={onProject}
+            placeholder="No project"
+            options={visibleProjects.map((project) => ({
+              value: project.id,
+              label: project.name,
+            }))}
+          />
+        </Field>
+        <Field label="Project role">
+          <ScopeSelect
+            value={projectRole}
+            onValueChange={onProjectRole}
+            placeholder="No role"
+            disabled={projectId === NO_SCOPE}
+            options={[
+              { value: "project_member", label: "Project member" },
+              { value: "project_admin", label: "Project admin" },
+            ]}
+          />
+        </Field>
+      </CardContent>
+      <CardContent className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-muted-foreground">
+          {inviteDisabledReason ?? "The invite link will be shown here and copied after creation."}
+        </p>
+        <Button type="button" disabled={inviteDisabled} onClick={onSubmit}>
+          <UserPlus data-icon="inline-start" />
+          Invite user
+        </Button>
+      </CardContent>
+      {latestInviteUrl ? (
+        <CardContent className="border-t pt-4">
+          <div className="grid gap-2">
+            <Label>Latest invite link</Label>
+            <div className="flex gap-2">
+              <Input readOnly value={latestInviteUrl} className="font-mono text-xs" />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(latestInviteUrl);
+                  toast.success("Invite link copied.");
+                }}
+              >
+                <Copy data-icon="inline-start" />
+                Copy
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      ) : null}
     </Card>
   );
 }
@@ -938,6 +1067,24 @@ function MemberDetails({
 }) {
   return (
     <div className="grid gap-4 text-sm lg:grid-cols-3">
+      <DetailGroup title="Access source">
+        <Badge variant="secondary">{formatOrgRole(member.role)}</Badge>
+        {member.team_memberships?.length
+          ? member.team_memberships.map((item) => (
+              <Badge key={`source-team-${item.team_id}`} variant="outline">
+                {teamById[item.team_id]?.name ?? item.team_id}: {formatScopedRole(item.role)}
+              </Badge>
+            ))
+          : null}
+        {member.project_memberships?.length
+          ? member.project_memberships.map((item) => (
+              <Badge key={`source-project-${item.project_id}`} variant="outline">
+                {projectById[item.project_id]?.name ?? item.project_id}:{" "}
+                {formatScopedRole(item.role)}
+              </Badge>
+            ))
+          : null}
+      </DetailGroup>
       <DetailGroup title="Team roles">
         {member.team_memberships?.length ? (
           member.team_memberships.map((item) => (
@@ -960,7 +1107,7 @@ function MemberDetails({
           <span className="text-muted-foreground">No project role</span>
         )}
       </DetailGroup>
-      <DetailGroup title="Effective permissions">
+      <DetailGroup title="Capabilities">
         {member.effective_permissions?.length ? (
           member.effective_permissions.slice(0, 12).map((permission) => (
             <Badge key={permission} variant="secondary">
@@ -1163,14 +1310,21 @@ function canInviteToProject(user: AuthenticatedUser | null | undefined, project:
 }
 
 function formatOrgRole(value: string) {
-  if (value === "org_owner") return "Owner";
-  if (value === "org_admin") return "Admin";
-  if (value === "org_member") return "Member";
-  return "Viewer";
+  if (value === "org_owner") return "Org owner";
+  if (value === "org_admin") return "Org admin";
+  if (value === "org_member") return "Org member";
+  return "Org viewer";
 }
 
 function formatScopedRole(value: string) {
-  if (value === "team_admin" || value === "project_admin") return "Admin";
-  if (value === "team_member") return "Member";
+  if (value === "team_admin") return "Team admin";
+  if (value === "project_admin") return "Project admin";
+  if (value === "project_member") return "Project member";
+  if (value === "team_member") return "Team member";
   return value || "Role";
+}
+
+function resolveInviteUrl(inviteUrl: string) {
+  if (/^https?:\/\//i.test(inviteUrl)) return inviteUrl;
+  return new URL(inviteUrl, window.location.origin).toString();
 }

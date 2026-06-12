@@ -77,6 +77,7 @@ import { useAuthStore } from "@/features/auth/model/auth-store";
 import { useBreadcrumbs } from "@/app/shell/breadcrumbs";
 import { useGetSettingsApiV1SettingsGet } from "@/shared/api/generated/settings/settings";
 import { httpClient } from "@/shared/api/http-client";
+import type { AuthenticatedUser } from "@/shared/api/generated/schemas";
 
 const organizationNav = [
   { to: "/", label: "Home", icon: Gauge, end: true },
@@ -321,6 +322,9 @@ export function DashboardLayout() {
                 <span className="block text-xs font-normal text-muted-foreground">
                   {formatRole(currentUser?.role)}
                 </span>
+                <span className="block text-xs font-normal text-muted-foreground">
+                  {formatScopedAccess(currentUser)}
+                </span>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem
@@ -491,11 +495,27 @@ function resolveAssetUrl(url: string) {
 }
 
 function formatRole(role?: string) {
-  if (role === "org_owner") return "Owner";
-  if (role === "org_admin") return "Admin";
-  if (role === "org_viewer") return "Viewer";
-  if (role === "org_member") return "Member";
+  if (role === "org_owner") return "Org owner";
+  if (role === "org_admin") return "Org admin";
+  if (role === "org_viewer") return "Org viewer";
+  if (role === "org_member") return "Org member";
   return "Unknown role";
+}
+
+function formatScopedAccess(user: AuthenticatedUser | null | undefined) {
+  const teamAdminCount = (user?.team_memberships ?? []).filter(
+    (membership) => membership.role === "team_admin",
+  ).length;
+  const teamMemberCount = (user?.team_memberships ?? []).filter(
+    (membership) => membership.role === "team_member",
+  ).length;
+  const projectAdminCount = (user?.project_memberships ?? []).length;
+  const parts = [
+    teamAdminCount ? `${teamAdminCount} team admin` : null,
+    teamMemberCount ? `${teamMemberCount} team member` : null,
+    projectAdminCount ? `${projectAdminCount} project admin` : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "No scoped roles";
 }
 
 function formatEnvironment(environment?: string) {

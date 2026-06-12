@@ -1,6 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
-import { isAxiosError } from "axios";
 import { Check, Copy, KeyRound, Plus } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
@@ -14,6 +13,8 @@ import {
   useRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete,
 } from "@/shared/api/generated/projects/projects";
 import { useGetSettingsApiV1SettingsGet } from "@/shared/api/generated/settings/settings";
+import { resolveGatewayBaseUrl, useGatewayMetadata } from "@/shared/api/gateway-metadata";
+import { getProblemDetail } from "@/shared/api/problem-detail";
 import type {
   CreatedVirtualKeyResponse,
   ProjectResponse,
@@ -61,6 +62,7 @@ import {
 import { EmptyState } from "@/shared/components/EmptyState";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { EffectiveAccessSummaryCard } from "@/features/projects/components/EffectiveAccessSummaryCard";
+import { keyStatusPresentation } from "@/features/projects/lib/key-status";
 
 const STALE_KEY_DAYS = 30;
 
@@ -109,8 +111,13 @@ export function ProjectKeysSection({
   const preflight = preflightQuery.data?.status === 200 ? preflightQuery.data.data : undefined;
   const settingsQuery = useGetSettingsApiV1SettingsGet();
   const settings = settingsQuery.data?.status === 200 ? settingsQuery.data.data : undefined;
-  const gatewayBaseUrl = resolveGatewayBaseUrl(settings?.public_base_url);
-  const canCreateKey = Boolean(project.is_active && preflight?.is_usable);
+  const metadataQuery = useGatewayMetadata();
+  const metadata = metadataQuery.data?.status === 200 ? metadataQuery.data.data : undefined;
+  const gatewayBaseUrl = resolveGatewayBaseUrl(metadata?.public_base_url);
+  const secretDeliveryDisabled = settings?.allow_secret_copy === false;
+  const canCreateKey = Boolean(
+    project.is_active && preflight?.is_usable && !secretDeliveryDisabled,
+  );
   const revokeImpactQuery = useGetVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet(
     projectId,
     revokeId ?? "",
@@ -133,7 +140,7 @@ export function ProjectKeysSection({
         }
       },
       onError: (error) => {
-        toast.error(getMutationDetail(error, "Virtual key could not be created."));
+        toast.error(getProblemDetail(error, "Virtual key could not be created."));
       },
     },
   });
@@ -144,6 +151,7 @@ export function ProjectKeysSection({
         setRevokeReason("");
         await queryClient.invalidateQueries();
       },
+      onError: (error) => toast.error(getProblemDetail(error, "Virtual key could not be revoked.")),
     },
   });
 
@@ -190,6 +198,12 @@ export function ProjectKeysSection({
                       <p className="mt-3 text-sm text-muted-foreground">
                         Configure an active access policy and routable provider/model before
                         creating a key.
+                      </p>
+                    ) : null}
+                    {secretDeliveryDisabled ? (
+                      <p className="mt-3 text-sm text-destructive">
+                        Virtual key creation is disabled because plaintext secret delivery is
+                        turned off in organization settings.
                       </p>
                     ) : null}
                   </div>
@@ -314,15 +328,13 @@ export function ProjectKeysSection({
           <DialogHeader>
             <DialogTitle>Key created</DialogTitle>
             <DialogDescription>
-              {createdKey?.key
-                ? "Copy the key now. It cannot be displayed again after this dialog closes."
-                : "Secret copy is disabled in settings, so the plaintext key was not returned."}
+              Copy the key now. It cannot be displayed again after this dialog closes.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 rounded-md border bg-muted/30 p-3 text-sm md:grid-cols-2">
             <Fact label="Project" value={project.name} />
             <Fact label="Team" value={teamName ?? "Organization owned"} />
-            <Fact label="Gateway base URL" value={gatewayBaseUrl} />
+            <Fact label="Gateway base URL" value={gatewayBaseUrl ?? "Not configured"} />
             <Fact
               label="Effective routes"
               value={
@@ -341,7 +353,7 @@ export function ProjectKeysSection({
               }
             />
           </div>
-          {createdKey?.key ? (
+          {createdKey?.key && gatewayBaseUrl ? (
             <div className="flex items-center gap-2 rounded-md border bg-muted/40 p-2">
               <code className="min-w-0 flex-1 overflow-auto text-xs">{createdKey.key}</code>
               <Button
@@ -356,12 +368,7 @@ export function ProjectKeysSection({
                 {copied ? "Copied" : "Copy"}
               </Button>
             </div>
-          ) : (
-            <div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
-              Key prefix:{" "}
-              <span className="font-mono text-foreground">{createdKey?.key_prefix}</span>
-            </div>
-          )}
+          ) : null}
           <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
             Store this secret in your application secret manager. Bab keeps only a hash and will not
             show the plaintext key again.
@@ -370,7 +377,7 @@ export function ProjectKeysSection({
             <pre className="overflow-auto rounded-md border bg-background p-3 text-xs">
               <code>
                 {sampleCurl({
-                  baseUrl: gatewayBaseUrl,
+                  baseUrl: gatewayBaseUrl!,
                   key: createdKey.key,
                   model:
                     preflight?.routes[0]?.alias ??
@@ -430,9 +437,12 @@ export function ProjectKeysSection({
               ) : null}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">
-              Impact could not be loaded. You can retry by reopening this dialog.
-            </p>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm text-destructive">Impact could not be loaded.</p>
+              <Button variant="outline" size="sm" onClick={() => revokeImpactQuery.refetch()}>
+                Retry
+              </Button>
+            </div>
           )}
           <div className="space-y-1.5">
             <Label htmlFor="project-key-revoke-reason">Reason</Label>
@@ -447,7 +457,7 @@ export function ProjectKeysSection({
           <DialogFooter>
             <Button
               variant="destructive"
-              disabled={revokeMutation.isPending || !revokeReason.trim()}
+              disabled={revokeMutation.isPending || !revokeReason.trim() || !revokeImpact}
               onClick={() =>
                 revokeId &&
                 revokeMutation.mutate({
@@ -470,18 +480,15 @@ export function ProjectKeysSection({
 }
 
 function KeyStatusBadge({ virtualKey }: { virtualKey: VirtualKeyResponse }) {
+  const status = keyStatusPresentation(virtualKey.status);
   return (
-    <StatusBadge variant={keyStatusVariant(virtualKey.status)}>
-      {virtualKey.status.replaceAll("_", " ")}
-    </StatusBadge>
+    <div className="flex flex-col gap-1">
+      <StatusBadge variant={status.variant}>{status.label}</StatusBadge>
+      {!virtualKey.is_usable ? (
+        <span className="max-w-56 text-xs text-muted-foreground">{status.reason}</span>
+      ) : null}
+    </div>
   );
-}
-
-function keyStatusVariant(status: string) {
-  if (status === "active" || status === "unused") return "active";
-  if (status === "revoked") return "revoked";
-  if (status === "expired" || status === "expiring_soon") return "expired";
-  return "inactive";
 }
 
 function KeyUsageInline({
@@ -518,12 +525,6 @@ function keyUsageLabel(lastUsedAt: string | null | undefined) {
   return `Last used ${ageDays === 0 ? "today" : `${ageDays}d ago`}`;
 }
 
-function resolveGatewayBaseUrl(publicBaseUrl?: string | null) {
-  if (publicBaseUrl?.trim()) return publicBaseUrl.replace(/\/+$/, "");
-  const envBaseUrl = import.meta.env.VITE_BAB_API_URL as string | undefined;
-  return envBaseUrl?.replace(/\/+$/, "") ?? "http://localhost:8000";
-}
-
 function sampleCurl({ baseUrl, key, model }: { baseUrl: string; key: string; model: string }) {
   return `curl ${baseUrl}/v1/chat/completions \\
   -H "Authorization: Bearer ${key}" \\
@@ -533,10 +534,4 @@ function sampleCurl({ baseUrl, key, model }: { baseUrl: string; key: string; mod
     "messages": [{"role": "user", "content": "Reply with pong"}],
     "max_completion_tokens": 32
   }'`;
-}
-
-function getMutationDetail(error: unknown, fallback: string) {
-  if (!isAxiosError(error)) return fallback;
-  const detail = error.response?.data?.detail;
-  return typeof detail === "string" && detail.length > 0 ? detail : fallback;
 }

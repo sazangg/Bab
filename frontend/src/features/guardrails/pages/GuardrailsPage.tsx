@@ -39,6 +39,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   hasAnyProjectAdminMembership,
@@ -628,13 +629,13 @@ export function GuardrailsPage() {
               {canAssignGuardrails ? (
                 <Button variant="outline" onClick={openCreateAssignment}>
                   <Plus data-icon="inline-start" />
-                  Assign policy
+                  Assign existing policy
                 </Button>
               ) : null}
               {canManageGuardrails ? (
                 <Button onClick={openCreatePolicy}>
                   <Plus data-icon="inline-start" />
-                  New policy
+                  New guardrail policy
                 </Button>
               ) : null}
             </div>
@@ -648,422 +649,448 @@ export function GuardrailsPage() {
         <SummaryCard label="Recent blocks" value={blockedEvents.length} />
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Simulation</CardTitle>
-          <CardDescription>
-            Test a policy against a model and prompt without recording an event or sending traffic.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
-            <div className="grid gap-3">
-              <div className="grid gap-3 md:grid-cols-2">
-                <SelectField
-                  label="Policy"
-                  value={simulationPolicyId}
-                  onValueChange={setSimulationPolicyId}
-                  options={policies.map((policy) => policy.id)}
-                  labels={Object.fromEntries(policies.map((policy) => [policy.id, policy.name]))}
-                  placeholder="Choose policy"
-                />
-                <Field label="Requested model">
-                  <Input
-                    value={simulationModel}
-                    onChange={(event) => setSimulationModel(event.target.value)}
-                  />
-                </Field>
-              </div>
-              <Field label="Prompt">
-                <Textarea
-                  value={simulationPrompt}
-                  onChange={(event) => setSimulationPrompt(event.target.value)}
-                  className="min-h-28 resize-none"
-                  placeholder="Paste a prompt to test prompt and PII rules"
-                />
-              </Field>
-              <div>
-                <Button onClick={runSimulation} disabled={simulateGuardrails.isPending}>
-                  <ShieldCheck data-icon="inline-start" />
-                  Run simulation
-                </Button>
-              </div>
-            </div>
-            <div className="rounded-md border bg-muted/20 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-medium">Result</div>
-                {simulationResult ? (
-                  <Badge
-                    variant={simulationResult.decision === "blocked" ? "destructive" : "outline"}
-                  >
-                    {simulationResult.decision}
-                  </Badge>
-                ) : (
-                  <Badge variant="outline">Not run</Badge>
-                )}
-              </div>
-              <div className="mt-3 grid gap-2 text-sm">
-                {simulationResult ? (
-                  simulationResult.matches.length > 0 ? (
-                    simulationResult.matches.map((match, index) => (
-                      <div
-                        key={`${match.reason}-${index}`}
-                        className="rounded-md bg-background p-3"
-                      >
-                        <div className="font-medium">
-                          {ruleTypeLabels[match.rule_type] ?? match.rule_type} ·{" "}
-                          {ruleEffectLabel(match.effect)}
-                        </div>
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          {match.reason} · priority {match.priority}
-                        </div>
-                        <div className="mt-2 font-mono text-xs">
-                          {match.matched_values.length > 0
-                            ? match.matched_values.join(", ")
-                            : match.effect === "allow"
-                              ? "Allowlist miss"
-                              : "No direct value match"}
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-muted-foreground">No rules would block this request.</p>
-                  )
-                ) : (
-                  <p className="text-muted-foreground">
-                    Simulation results will show matched rules and dry-run decisions here.
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <Tabs defaultValue="policies" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="policies">Policies</TabsTrigger>
+          <TabsTrigger value="assignments">Assignments</TabsTrigger>
+          <TabsTrigger value="simulation">Simulation</TabsTrigger>
+          <TabsTrigger value="events">Events</TabsTrigger>
+        </TabsList>
 
-      {policiesQuery.isPending ? (
-        <p className="text-sm text-muted-foreground">Loading guardrails...</p>
-      ) : policies.length === 0 ? (
-        <EmptyState
-          icon={ShieldCheck}
-          title="No guardrails yet"
-          description="Create a policy to start constraining routing by model, provider, or pool."
-          action={
-            canManageGuardrails ? (
-              <Button onClick={openCreatePolicy}>
-                <Plus data-icon="inline-start" />
-                New policy
-              </Button>
-            ) : undefined
-          }
-        />
-      ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>Policies</CardTitle>
-            <CardDescription>Policies are restrictive when assigned across scopes.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Policy</TableHead>
-                  <TableHead>Mode</TableHead>
-                  <TableHead>Rules</TableHead>
-                  <TableHead>Status</TableHead>
-                  {canManageGuardrails ? (
-                    <TableHead className="w-24 text-right">Actions</TableHead>
-                  ) : null}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {policyRows.map((policy) => {
-                  const status = guardrailPolicyStatus(policy);
-                  return (
-                    <TableRow key={policy.id}>
-                      <TableCell>
-                        <div className="font-medium">{policy.name}</div>
-                        <div className="text-sm text-muted-foreground">
-                          {policy.description ?? "No description"}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={policy.enforcement_mode === "enforce" ? "default" : "outline"}
-                        >
-                          {policy.enforcement_mode}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="max-w-xl">
-                        <span className="line-clamp-2 text-sm text-muted-foreground">
-                          {policy.summary || "No rules"}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <StatusBadge variant={status.variant}>{status.label}</StatusBadge>
-                      </TableCell>
+        <TabsContent value="simulation">
+          <Card>
+            <CardHeader>
+              <CardTitle>Simulation</CardTitle>
+              <CardDescription>
+                Test a policy against a model and prompt without recording an event or sending
+                traffic.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
+                <div className="grid gap-3">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <SelectField
+                      label="Policy"
+                      value={simulationPolicyId}
+                      onValueChange={setSimulationPolicyId}
+                      options={policies.map((policy) => policy.id)}
+                      labels={Object.fromEntries(
+                        policies.map((policy) => [policy.id, policy.name]),
+                      )}
+                      placeholder="Choose policy"
+                    />
+                    <Field label="Requested model">
+                      <Input
+                        value={simulationModel}
+                        onChange={(event) => setSimulationModel(event.target.value)}
+                      />
+                    </Field>
+                  </div>
+                  <Field label="Prompt">
+                    <Textarea
+                      value={simulationPrompt}
+                      onChange={(event) => setSimulationPrompt(event.target.value)}
+                      className="min-h-28 resize-none"
+                      placeholder="Paste a prompt to test prompt and PII rules"
+                    />
+                  </Field>
+                  <div>
+                    <Button onClick={runSimulation} disabled={simulateGuardrails.isPending}>
+                      <ShieldCheck data-icon="inline-start" />
+                      Run simulation
+                    </Button>
+                  </div>
+                </div>
+                <div className="rounded-md border bg-muted/20 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-sm font-medium">Result</div>
+                    {simulationResult ? (
+                      <Badge
+                        variant={
+                          simulationResult.decision === "blocked" ? "destructive" : "outline"
+                        }
+                      >
+                        {simulationResult.decision}
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline">Not run</Badge>
+                    )}
+                  </div>
+                  <div className="mt-3 grid gap-2 text-sm">
+                    {simulationResult ? (
+                      simulationResult.matches.length > 0 ? (
+                        simulationResult.matches.map((match, index) => (
+                          <div
+                            key={`${match.reason}-${index}`}
+                            className="rounded-md bg-background p-3"
+                          >
+                            <div className="font-medium">
+                              {ruleTypeLabels[match.rule_type] ?? match.rule_type} ·{" "}
+                              {ruleEffectLabel(match.effect)}
+                            </div>
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              {match.reason} · priority {match.priority}
+                            </div>
+                            <div className="mt-2 font-mono text-xs">
+                              {match.matched_values.length > 0
+                                ? match.matched_values.join(", ")
+                                : match.effect === "allow"
+                                  ? "Allowlist miss"
+                                  : "No direct value match"}
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-muted-foreground">No rules would block this request.</p>
+                      )
+                    ) : (
+                      <p className="text-muted-foreground">
+                        Simulation results will show matched rules and dry-run decisions here.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="policies">
+          {policiesQuery.isPending ? (
+            <p className="text-sm text-muted-foreground">Loading guardrails...</p>
+          ) : policies.length === 0 ? (
+            <EmptyState
+              icon={ShieldCheck}
+              title="No guardrails yet"
+              description="Create a policy to start constraining routing by model, provider, or pool."
+              action={
+                canManageGuardrails ? (
+                  <Button onClick={openCreatePolicy}>
+                    <Plus data-icon="inline-start" />
+                    New guardrail policy
+                  </Button>
+                ) : undefined
+              }
+            />
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle>Policies</CardTitle>
+                <CardDescription>
+                  Define reusable guardrail policies. They only affect traffic after assignment.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Policy</TableHead>
+                      <TableHead>Mode</TableHead>
+                      <TableHead>Rules</TableHead>
+                      <TableHead>Status</TableHead>
                       {canManageGuardrails ? (
-                        <TableCell className="text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                aria-label={`Actions for ${policy.name}`}
-                              >
-                                <MoreHorizontal />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onSelect={() => openEditPolicy(policy)}>
-                                <Pencil />
-                                Edit policy
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                variant="destructive"
-                                onSelect={() => void handleDeletePolicy(policy)}
-                                disabled={deletePolicy.isPending}
-                              >
-                                <Trash2 />
-                                Delete policy
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
+                        <TableHead className="w-24 text-right">Actions</TableHead>
                       ) : null}
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+                  </TableHeader>
+                  <TableBody>
+                    {policyRows.map((policy) => {
+                      const status = guardrailPolicyStatus(policy);
+                      return (
+                        <TableRow key={policy.id}>
+                          <TableCell>
+                            <div className="font-medium">{policy.name}</div>
+                            <div className="text-sm text-muted-foreground">
+                              {policy.description ?? "No description"}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                policy.enforcement_mode === "enforce" ? "default" : "outline"
+                              }
+                            >
+                              {policy.enforcement_mode}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="max-w-xl">
+                            <span className="line-clamp-2 text-sm text-muted-foreground">
+                              {policy.summary || "No rules"}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <StatusBadge variant={status.variant}>{status.label}</StatusBadge>
+                          </TableCell>
+                          {canManageGuardrails ? (
+                            <TableCell className="text-right">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    aria-label={`Actions for ${policy.name}`}
+                                  >
+                                    <MoreHorizontal />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onSelect={() => openEditPolicy(policy)}>
+                                    <Pencil />
+                                    Edit policy
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    variant="destructive"
+                                    onSelect={() => void handleDeletePolicy(policy)}
+                                    disabled={deletePolicy.isPending}
+                                  >
+                                    <Trash2 />
+                                    Delete policy
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          ) : null}
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Assignments</CardTitle>
-            <CardDescription>Effective guardrails compose from org down to keys.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {assignments.length === 0 ? (
-              <EmptyState
-                icon={ShieldCheck}
-                title="No assignments"
-                description="Assign a policy to org, team, project, or virtual key."
-              />
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Policy</TableHead>
-                    <TableHead>Scope</TableHead>
-                    <TableHead>Mode</TableHead>
-                    <TableHead>Status</TableHead>
-                    {canAssignGuardrails ? (
-                      <TableHead className="w-12">
-                        <span className="sr-only">Actions</span>
-                      </TableHead>
-                    ) : null}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {assignments.map((assignment) => {
-                    const status = guardrailAssignmentStatus(assignment);
-                    return (
-                      <TableRow key={assignment.id}>
-                        <TableCell className="font-medium">{assignment.policy_name}</TableCell>
+        <TabsContent value="assignments">
+          <Card>
+            <CardHeader>
+              <CardTitle>Assignments</CardTitle>
+              <CardDescription>
+                Apply existing guardrail policies to an organization, team, project, or virtual key.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {assignments.length === 0 ? (
+                <EmptyState
+                  icon={ShieldCheck}
+                  title="No assignments"
+                  description="Assign a policy to org, team, project, or virtual key."
+                />
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Policy</TableHead>
+                      <TableHead>Scope</TableHead>
+                      <TableHead>Mode</TableHead>
+                      <TableHead>Status</TableHead>
+                      {canAssignGuardrails ? (
+                        <TableHead className="w-12">
+                          <span className="sr-only">Actions</span>
+                        </TableHead>
+                      ) : null}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {assignments.map((assignment) => {
+                      const status = guardrailAssignmentStatus(assignment);
+                      return (
+                        <TableRow key={assignment.id}>
+                          <TableCell className="font-medium">{assignment.policy_name}</TableCell>
+                          <TableCell>
+                            <div>{assignment.scope_type}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {labelAssignmentScope(assignment, scopeLabels)}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                assignment.enforcement_mode === "dry_run" ? "outline" : "secondary"
+                              }
+                            >
+                              {assignment.enforcement_mode === "dry_run" ? "Dry run" : "Enforce"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <StatusBadge variant={status.variant}>{status.label}</StatusBadge>
+                          </TableCell>
+                          {canAssignGuardrails ? (
+                            <TableCell className="text-right">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    aria-label={`Actions for ${assignment.policy_name}`}
+                                  >
+                                    <MoreHorizontal />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onSelect={() => openEditAssignment(assignment)}>
+                                    <Pencil />
+                                    Edit assignment
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onSelect={() => void toggleAssignmentActive(assignment)}
+                                    disabled={updateAssignment.isPending}
+                                  >
+                                    {assignment.is_active
+                                      ? "Deactivate assignment"
+                                      : "Activate assignment"}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    variant="destructive"
+                                    onSelect={() => void handleDeleteAssignment(assignment)}
+                                    disabled={deleteAssignment.isPending}
+                                  >
+                                    <Trash2 />
+                                    Remove assignment
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          ) : null}
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="events">
+          <Card>
+            <CardHeader>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <CardTitle>Recent events</CardTitle>
+                  <CardDescription>
+                    Append-only guardrail decisions from proxy traffic.
+                  </CardDescription>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+                <Select value={eventDecision} onValueChange={setEventDecision}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All decisions</SelectItem>
+                    <SelectItem value="allowed">Allowed</SelectItem>
+                    <SelectItem value="dry_run">Dry run</SelectItem>
+                    <SelectItem value="blocked">Blocked</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={eventPolicyId} onValueChange={setEventPolicyId}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All policies</SelectItem>
+                    {policies.map((policy) => (
+                      <SelectItem key={policy.id} value={policy.id}>
+                        {policy.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={eventScopeType}
+                  onValueChange={(value) => {
+                    setEventScopeType(value as EventScopeType);
+                    setEventScopeId("all");
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All scopes</SelectItem>
+                    <SelectItem value="team">Team</SelectItem>
+                    <SelectItem value="project">Project</SelectItem>
+                    <SelectItem value="virtual_key">Virtual key</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  value={eventModel}
+                  onChange={(event) => setEventModel(event.target.value)}
+                  placeholder="Filter model"
+                />
+                {eventScopeType !== "all" ? (
+                  <div className="md:col-span-2 xl:col-span-4">
+                    <Select value={eventScopeId} onValueChange={setEventScopeId}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All {eventScopeType.replace("_", " ")}s</SelectItem>
+                        {eventScopeOptions.map((option) => (
+                          <SelectItem key={option.id} value={option.id}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : null}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {events.length === 0 ? (
+                <EmptyState
+                  icon={ShieldX}
+                  title="No guardrail events"
+                  description="Events appear when proxied requests pass or fail assigned policies."
+                />
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Decision</TableHead>
+                      <TableHead>Policy</TableHead>
+                      <TableHead>Model</TableHead>
+                      <TableHead>Request</TableHead>
+                      <TableHead>Scope</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {events.slice(0, 8).map((event) => (
+                      <TableRow key={event.id}>
                         <TableCell>
-                          <div>{assignment.scope_type}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {labelAssignmentScope(assignment, scopeLabels)}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              assignment.enforcement_mode === "dry_run" ? "outline" : "secondary"
-                            }
-                          >
-                            {assignment.enforcement_mode === "dry_run" ? "Dry run" : "Enforce"}
+                          <Badge variant={event.decision === "blocked" ? "destructive" : "outline"}>
+                            {event.decision}
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <StatusBadge variant={status.variant}>{status.label}</StatusBadge>
+                          <div>
+                            {event.policy_id ? (policyLabels[event.policy_id] ?? "Policy") : "-"}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {event.phase} · {event.reason}
+                          </div>
                         </TableCell>
-                        {canAssignGuardrails ? (
-                          <TableCell className="text-right">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  aria-label={`Actions for ${assignment.policy_name}`}
-                                >
-                                  <MoreHorizontal />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onSelect={() => openEditAssignment(assignment)}>
-                                  <Pencil />
-                                  Edit assignment
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onSelect={() => void toggleAssignmentActive(assignment)}
-                                  disabled={updateAssignment.isPending}
-                                >
-                                  {assignment.is_active
-                                    ? "Deactivate assignment"
-                                    : "Activate assignment"}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  variant="destructive"
-                                  onSelect={() => void handleDeleteAssignment(assignment)}
-                                  disabled={deleteAssignment.isPending}
-                                >
-                                  <Trash2 />
-                                  Remove assignment
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
-                        ) : null}
+                        <TableCell className="font-mono text-xs">
+                          {event.requested_model ?? "-"}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs text-muted-foreground">
+                          {shortId(event.request_id)}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {labelEventScope(event, scopeLabels)}
+                        </TableCell>
                       </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <CardTitle>Recent events</CardTitle>
-                <CardDescription>
-                  Append-only guardrail decisions from proxy traffic.
-                </CardDescription>
-              </div>
-            </div>
-            <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-              <Select value={eventDecision} onValueChange={setEventDecision}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All decisions</SelectItem>
-                  <SelectItem value="allowed">Allowed</SelectItem>
-                  <SelectItem value="dry_run">Dry run</SelectItem>
-                  <SelectItem value="blocked">Blocked</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={eventPolicyId} onValueChange={setEventPolicyId}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All policies</SelectItem>
-                  {policies.map((policy) => (
-                    <SelectItem key={policy.id} value={policy.id}>
-                      {policy.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select
-                value={eventScopeType}
-                onValueChange={(value) => {
-                  setEventScopeType(value as EventScopeType);
-                  setEventScopeId("all");
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All scopes</SelectItem>
-                  <SelectItem value="team">Team</SelectItem>
-                  <SelectItem value="project">Project</SelectItem>
-                  <SelectItem value="virtual_key">Virtual key</SelectItem>
-                </SelectContent>
-              </Select>
-              <Input
-                value={eventModel}
-                onChange={(event) => setEventModel(event.target.value)}
-                placeholder="Filter model"
-              />
-              {eventScopeType !== "all" ? (
-                <div className="md:col-span-2 xl:col-span-4">
-                  <Select value={eventScopeId} onValueChange={setEventScopeId}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All {eventScopeType.replace("_", " ")}s</SelectItem>
-                      {eventScopeOptions.map((option) => (
-                        <SelectItem key={option.id} value={option.id}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              ) : null}
-            </div>
-          </CardHeader>
-          <CardContent>
-            {events.length === 0 ? (
-              <EmptyState
-                icon={ShieldX}
-                title="No guardrail events"
-                description="Events appear when proxied requests pass or fail assigned policies."
-              />
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Decision</TableHead>
-                    <TableHead>Policy</TableHead>
-                    <TableHead>Model</TableHead>
-                    <TableHead>Request</TableHead>
-                    <TableHead>Scope</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {events.slice(0, 8).map((event) => (
-                    <TableRow key={event.id}>
-                      <TableCell>
-                        <Badge variant={event.decision === "blocked" ? "destructive" : "outline"}>
-                          {event.decision}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div>
-                          {event.policy_id ? (policyLabels[event.policy_id] ?? "Policy") : "-"}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {event.phase} · {event.reason}
-                        </div>
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {event.requested_model ?? "-"}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">
-                        {shortId(event.request_id)}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {labelEventScope(event, scopeLabels)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       <Sheet open={policySheetOpen} onOpenChange={setPolicySheetOpen}>
         <SheetContent>

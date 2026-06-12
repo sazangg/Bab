@@ -11,4 +11,5 @@ export interface RevokeVirtualKeyRequest {
      * @maxLength 500
      */
   reason: string;
+  force?: boolean;
 }

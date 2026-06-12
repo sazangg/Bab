@@ -27,6 +27,7 @@ import type {
   CreateProjectRequest,
   CreateTeamRequest,
   HTTPValidationError,
+  MemberOptionResponse,
   OrganizationUsageSummary,
   ProjectResponse,
   TeamArchiveImpactResponse,
@@ -1077,7 +1078,126 @@ export const useAddTeamMemberApiV1TeamsTeamIdMembersPost = <TError = HTTPValidat
       > => {
       return useMutation(getAddTeamMemberApiV1TeamsTeamIdMembersPostMutationOptions(options), queryClient);
     }
-    export type updateTeamMemberApiV1TeamsTeamIdMembersUserIdPatchResponse200 = {
+    export type listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGetResponse200 = {
+  data: MemberOptionResponse[]
+  status: 200
+}
+
+export type listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGetResponseSuccess = (listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGetResponse200) & {
+  headers: Headers;
+};
+export type listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGetResponseError = (listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGetResponse422) & {
+  headers: Headers;
+};
+
+export type listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGetResponse = (listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGetResponseSuccess | listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGetResponseError)
+
+export const getListTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGetUrl = (teamId: string,) => {
+
+
+
+
+  return `/api/v1/teams/${teamId}/member-options`
+}
+
+/**
+ * @summary List Team Member Options
+ */
+export const listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGet = async (teamId: string, options?: RequestInit): Promise<listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGetResponse> => {
+
+  return apiMutator<listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGetResponse>(getListTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGetUrl(teamId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGetQueryKey = (teamId: string,) => {
+    return [
+    `/api/v1/teams/${teamId}/member-options`
+    ] as const;
+    }
+
+
+export const getListTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGetQueryOptions = <TData = Awaited<ReturnType<typeof listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGet>>, TError = HTTPValidationError>(teamId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGetQueryKey(teamId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGet>>> = ({ signal }) => listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGet(teamId, { signal });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(teamId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGetQueryResult = NonNullable<Awaited<ReturnType<typeof listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGet>>>
+export type ListTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGetQueryError = HTTPValidationError
+
+
+export function useListTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGet<TData = Awaited<ReturnType<typeof listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGet>>, TError = HTTPValidationError>(
+ teamId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGet>>,
+          TError,
+          Awaited<ReturnType<typeof listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGet<TData = Awaited<ReturnType<typeof listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGet>>, TError = HTTPValidationError>(
+ teamId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGet>>,
+          TError,
+          Awaited<ReturnType<typeof listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGet<TData = Awaited<ReturnType<typeof listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGet>>, TError = HTTPValidationError>(
+ teamId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List Team Member Options
+ */
+
+export function useListTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGet<TData = Awaited<ReturnType<typeof listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGet>>, TError = HTTPValidationError>(
+ teamId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListTeamMemberOptionsApiV1TeamsTeamIdMemberOptionsGetQueryOptions(teamId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export type updateTeamMemberApiV1TeamsTeamIdMembersUserIdPatchResponse200 = {
   data: TeamMemberResponse
   status: 200
 }

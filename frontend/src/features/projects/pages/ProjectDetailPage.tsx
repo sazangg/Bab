@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { toast } from "sonner";
 
 import {
   useDeactivateProjectApiV1ProjectsProjectIdDelete,
@@ -23,6 +24,7 @@ import {
   useListVirtualKeysApiV1ProjectsProjectIdKeysGet,
   useListProjectMembersApiV1ProjectsProjectIdMembersGet,
   useRemoveProjectMemberApiV1ProjectsProjectIdMembersUserIdDelete,
+  useUpdateProjectMemberApiV1ProjectsProjectIdMembersUserIdPatch,
   useUpdateProjectApiV1ProjectsProjectIdPatch,
 } from "@/shared/api/generated/projects/projects";
 import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
@@ -68,11 +70,17 @@ import { ProjectKeysSection } from "@/features/projects/sections/ProjectKeysSect
 import { EditProjectDialog } from "@/features/projects/components/EditProjectDialog";
 import { EntityUsageCard } from "@/features/usage/components/EntityUsageCard";
 import { UsageRecordsDrilldown } from "@/features/usage/components/UsageRecordsDrilldown";
-import { hasPermission, isProjectAdmin, isTeamAdmin } from "@/features/auth/lib/permissions";
+import {
+  canViewTeam,
+  hasPermission,
+  isProjectAdmin,
+  isTeamAdmin,
+} from "@/features/auth/lib/permissions";
 import { type MemberOption, useProjectMemberOptions } from "@/features/auth/lib/member-options";
 import { ForbiddenPage } from "@/features/auth/components/ProtectedRoute";
 import { RecentGuardrailEventsCard } from "@/features/guardrails/components/RecentGuardrailEventsCard";
 import type { EffectiveAccessSummary, ProjectMemberResponse } from "@/shared/api/generated/schemas";
+import { getProblemDetail } from "@/shared/api/problem-detail";
 
 export function ProjectDetailPage() {
   const { projectId = "" } = useParams<{ projectId: string }>();
@@ -80,7 +88,8 @@ export function ProjectDetailPage() {
   const queryClient = useQueryClient();
   const [editOpen, setEditOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
-  const [selectedProjectAdminId, setSelectedProjectAdminId] = useState("");
+  const [selectedProjectMemberId, setSelectedProjectMemberId] = useState("");
+  const [selectedProjectRole, setSelectedProjectRole] = useState("project_member");
 
   const projectQuery = useGetProjectApiV1ProjectsProjectIdGet(projectId, {
     query: { enabled: Boolean(projectId) },
@@ -96,7 +105,7 @@ export function ProjectDetailPage() {
     : false;
   const memberOptionsQuery = useProjectMemberOptions(projectId, canManageProject);
   const projectMembersQuery = useListProjectMembersApiV1ProjectsProjectIdMembersGet(projectId, {
-    query: { enabled: Boolean(projectId) && canManageProject },
+    query: { enabled: Boolean(projectId) },
   });
   const keysQuery = useListVirtualKeysApiV1ProjectsProjectIdKeysGet(projectId, {
     query: { enabled: Boolean(projectId) },
@@ -117,7 +126,12 @@ export function ProjectDetailPage() {
   const orgMembers = memberOptionsQuery.data ?? [];
   const projectMembers =
     projectMembersQuery.data?.status === 200 ? projectMembersQuery.data.data : [];
-  const team = project ? teams.find((item) => item.id === project.team_id) : undefined;
+  const team = project
+    ? teams.find((item) => item.id === project.team_id) ??
+      (project.team_name
+        ? { id: project.team_id, name: project.team_name, is_active: true }
+        : undefined)
+    : undefined;
   const keys = keysQuery.data?.status === 200 ? keysQuery.data.data : [];
   const usage = usageQuery.data?.status === 200 ? usageQuery.data.data : null;
   const archiveImpact =
@@ -133,6 +147,7 @@ export function ProjectDetailPage() {
         setArchiveOpen(false);
         await queryClient.invalidateQueries();
       },
+      onError: (error) => toast.error(getProblemDetail(error, "Project could not be updated.")),
     },
   });
   const deactivateMutation = useDeactivateProjectApiV1ProjectsProjectIdDelete({
@@ -142,14 +157,17 @@ export function ProjectDetailPage() {
         await queryClient.invalidateQueries();
         navigate("/projects");
       },
+      onError: (error) => toast.error(getProblemDetail(error, "Project could not be archived.")),
     },
   });
   const addProjectMemberMutation = useAddProjectMemberApiV1ProjectsProjectIdMembersPost({
     mutation: {
       onSuccess: async () => {
-        setSelectedProjectAdminId("");
+        setSelectedProjectMemberId("");
         await queryClient.invalidateQueries();
       },
+      onError: (error) =>
+        toast.error(getProblemDetail(error, "Project member could not be added.")),
     },
   });
   const removeProjectMemberMutation =
@@ -158,6 +176,18 @@ export function ProjectDetailPage() {
         onSuccess: async () => {
           await queryClient.invalidateQueries();
         },
+        onError: (error) =>
+          toast.error(getProblemDetail(error, "Project member could not be removed.")),
+      },
+    });
+  const updateProjectMemberMutation =
+    useUpdateProjectMemberApiV1ProjectsProjectIdMembersUserIdPatch({
+      mutation: {
+        onSuccess: async () => {
+          await queryClient.invalidateQueries();
+        },
+        onError: (error) =>
+          toast.error(getProblemDetail(error, "Project member role could not be updated.")),
       },
     });
 
@@ -183,13 +213,18 @@ export function ProjectDetailPage() {
         description={project.description ?? "No description."}
         metadata={
           <>
-            {team ? (
+            {team && canViewTeam(currentUser, team.id) ? (
               <Button asChild variant="ghost" size="sm" className="h-7 px-2">
                 <Link to={`/teams/${team.id}`}>
                   <Building2 />
                   {team.name}
                 </Link>
               </Button>
+            ) : team ? (
+              <span className="inline-flex h-7 items-center gap-2 px-2 text-sm text-muted-foreground">
+                <Building2 />
+                {team.name}
+              </span>
             ) : null}
             <StatusBadge variant={project.is_active ? "active" : "inactive"}>
               {project.is_active ? "Active" : "Archived"}
@@ -247,7 +282,7 @@ export function ProjectDetailPage() {
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-4">
           <Fact label="Owning team" value={team?.name ?? "Unknown"} />
-          <Fact label="Project admins" value={`${projectMembers.length}`} />
+          <Fact label="Project members" value={`${projectMembers.length}`} />
           <Fact label="Active keys" value={`${keys.filter((key) => key.is_usable).length}`} />
           <Fact label="Status" value={project.is_active ? "Active" : "Archived"} />
         </CardContent>
@@ -266,13 +301,13 @@ export function ProjectDetailPage() {
         enabled={canManageProject || hasPermission(currentUser, "guardrails.view")}
       />
 
-      <Tabs defaultValue="keys" className="space-y-4">
+      <Tabs defaultValue={canManageProject ? "access" : "keys"} className="space-y-4">
         <TabsList>
           <TabsTrigger value="keys">
             <KeyRound className="size-3.5" />
             Keys ({keys.length})
           </TabsTrigger>
-          <TabsTrigger value="access">Policies</TabsTrigger>
+          <TabsTrigger value="access">Access</TabsTrigger>
           <TabsTrigger value="members">Members</TabsTrigger>
         </TabsList>
         <TabsContent value="keys" className="space-y-4">
@@ -294,24 +329,37 @@ export function ProjectDetailPage() {
           />
         </TabsContent>
         <TabsContent value="members" className="space-y-4">
-          <ProjectAdminsCard
+          <ProjectMembersCard
             orgMembers={orgMembers}
             projectMembers={projectMembers}
-            selectedUserId={selectedProjectAdminId}
-            onSelectedUserChange={setSelectedProjectAdminId}
+            selectedUserId={selectedProjectMemberId}
+            onSelectedUserChange={setSelectedProjectMemberId}
+            selectedRole={selectedProjectRole}
+            onSelectedRoleChange={setSelectedProjectRole}
             canManage={canManageProject}
             isLoading={memberOptionsQuery.isPending || projectMembersQuery.isPending}
-            isPending={addProjectMemberMutation.isPending || removeProjectMemberMutation.isPending}
-            onAdd={(userId) =>
+            isPending={
+              addProjectMemberMutation.isPending ||
+              removeProjectMemberMutation.isPending ||
+              updateProjectMemberMutation.isPending
+            }
+            onAdd={(userId, role) =>
               addProjectMemberMutation.mutate({
                 projectId: project.id,
-                data: { user_id: userId, role: "project_admin" },
+                data: { user_id: userId, role },
               })
             }
             onRemove={(member) =>
               removeProjectMemberMutation.mutate({
                 projectId: project.id,
                 userId: member.user_id,
+              })
+            }
+            onRoleChange={(member, role) =>
+              updateProjectMemberMutation.mutate({
+                projectId: project.id,
+                userId: member.user_id,
+                data: { role },
               })
             }
           />
@@ -356,14 +404,17 @@ export function ProjectDetailPage() {
               </p>
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">
-              Impact could not be loaded. You can retry by reopening this dialog.
-            </p>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm text-destructive">Impact could not be loaded.</p>
+              <Button variant="outline" size="sm" onClick={() => archiveImpactQuery.refetch()}>
+                Retry
+              </Button>
+            </div>
           )}
           <DialogFooter>
             <Button
               variant="destructive"
-              disabled={deactivateMutation.isPending}
+              disabled={deactivateMutation.isPending || !archiveImpact}
               onClick={() => deactivateMutation.mutate({ projectId: project.id })}
             >
               {deactivateMutation.isPending ? "Archiving..." : "Archive project"}
@@ -378,41 +429,47 @@ export function ProjectDetailPage() {
   );
 }
 
-function ProjectAdminsCard({
+function ProjectMembersCard({
   orgMembers,
   projectMembers,
   selectedUserId,
   onSelectedUserChange,
+  selectedRole,
+  onSelectedRoleChange,
   canManage,
   isLoading,
   isPending,
   onAdd,
   onRemove,
+  onRoleChange,
 }: {
   orgMembers: MemberOption[];
   projectMembers: ProjectMemberResponse[];
   selectedUserId: string;
   onSelectedUserChange: (userId: string) => void;
+  selectedRole: string;
+  onSelectedRoleChange: (role: string) => void;
   canManage: boolean;
   isLoading: boolean;
   isPending: boolean;
-  onAdd: (userId: string) => void;
+  onAdd: (userId: string, role: string) => void;
   onRemove: (member: ProjectMemberResponse) => void;
+  onRoleChange: (member: ProjectMemberResponse, role: string) => void;
 }) {
   const assignedIds = new Set(projectMembers.map((member) => member.user_id));
   const assignableMembers = orgMembers.filter((member) => !assignedIds.has(member.user_id));
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Project admins</CardTitle>
+        <CardTitle>Project members</CardTitle>
         <CardDescription>
-          Project admins can edit this project and manage its virtual keys without gaining team-wide
-          access.
+          Members can view project details, keys, usage, and activity. Admins can also edit the
+          project and manage virtual keys.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">
         {canManage ? (
-          <div className="grid gap-3 rounded-md border p-3 md:grid-cols-[minmax(0,1fr)_auto]">
+          <div className="grid gap-3 rounded-md border p-3 md:grid-cols-[minmax(0,1fr)_12rem_auto]">
             <div className="flex flex-col gap-1.5">
               <Label>User</Label>
               <Select value={selectedUserId} onValueChange={onSelectedUserChange}>
@@ -434,24 +491,36 @@ function ProjectAdminsCard({
                 </SelectContent>
               </Select>
             </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>Role</Label>
+              <Select value={selectedRole} onValueChange={onSelectedRoleChange}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="project_member">Project member</SelectItem>
+                  <SelectItem value="project_admin">Project admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="flex items-end">
               <Button
                 type="button"
                 disabled={isPending || !selectedUserId || selectedUserId === "none"}
-                onClick={() => onAdd(selectedUserId)}
+                onClick={() => onAdd(selectedUserId, selectedRole)}
               >
                 <UserPlus />
-                Add admin
+                Add member
               </Button>
             </div>
           </div>
         ) : null}
 
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading project admins...</p>
+          <p className="text-sm text-muted-foreground">Loading project members...</p>
         ) : projectMembers.length === 0 ? (
           <div className="rounded-md border border-dashed p-6 text-center">
-            <p className="text-sm font-medium">No project admins assigned</p>
+            <p className="text-sm font-medium">No project members assigned</p>
             <p className="mt-1 text-sm text-muted-foreground">
               Project management currently comes from org or team permissions.
             </p>
@@ -478,7 +547,25 @@ function ProjectAdminsCard({
                       ) : null}
                     </TableCell>
                     <TableCell>{formatOrgRole(member.org_role)}</TableCell>
-                    <TableCell>Project admin</TableCell>
+                    <TableCell>
+                      {canManage ? (
+                        <Select
+                          value={member.project_role}
+                          onValueChange={(role) => onRoleChange(member, role)}
+                          disabled={isPending}
+                        >
+                          <SelectTrigger className="w-40">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="project_member">Project member</SelectItem>
+                            <SelectItem value="project_admin">Project admin</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        formatProjectRole(member.project_role)
+                      )}
+                    </TableCell>
                     <TableCell>{new Date(member.created_at).toLocaleDateString()}</TableCell>
                     <TableCell className="text-right">
                       {canManage ? (
@@ -488,7 +575,7 @@ function ProjectAdminsCard({
                           variant="ghost"
                           disabled={isPending}
                           onClick={() => onRemove(member)}
-                          aria-label="Remove project admin"
+                          aria-label="Remove project member"
                         >
                           <Trash2 />
                         </Button>
@@ -506,10 +593,16 @@ function ProjectAdminsCard({
 }
 
 function formatOrgRole(value: string) {
-  if (value === "org_owner") return "Owner";
-  if (value === "org_admin") return "Admin";
-  if (value === "org_viewer") return "Viewer";
-  if (value === "org_member") return "Member";
+  if (value === "org_owner") return "Org owner";
+  if (value === "org_admin") return "Org admin";
+  if (value === "org_viewer") return "Org viewer";
+  if (value === "org_member") return "Org member";
+  return value;
+}
+
+function formatProjectRole(value: string) {
+  if (value === "project_admin") return "Project admin";
+  if (value === "project_member") return "Project member";
   return value;
 }
 

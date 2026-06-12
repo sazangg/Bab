@@ -3,13 +3,14 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.routes.projects import create_virtual_key as create_virtual_key_route
 from app.api.v1.routes.proxy import _enforce_limit_policies
 from app.core.database import Scope
 from app.modules.activity.internal.models import ActivityEvent
-from app.modules.auth.internal.models import AuditEvent, Organization, Team
+from app.modules.auth.internal.models import AuditEvent, Organization, Team, User
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys import facade as keys_facade
 from app.modules.keys.errors import (
@@ -19,13 +20,16 @@ from app.modules.keys.errors import (
     ProjectAccessUnavailableError,
     ProjectInactiveError,
     ProjectNotFoundError,
+    SecretDeliveryDisabledError,
     VirtualKeyAlreadyRevokedError,
+    VirtualKeyOverlapActiveError,
 )
 from app.modules.keys.internal.models import VirtualKey
 from app.modules.keys.schemas import (
     CreateProjectRequest,
     CreateVirtualKeyRequest,
     ResolveAccessRequest,
+    RotateVirtualKeyRequest,
     UpdateProjectRequest,
     UpdateVirtualKeyRequest,
 )
@@ -60,6 +64,8 @@ from app.modules.providers.schemas import (
     UpdateModelOfferingRequest,
     UpdateProviderRequest,
 )
+from app.modules.settings import facade as settings_facade
+from app.modules.settings.schemas import UpdateOrganizationSettingsRequest
 from app.modules.teams.errors import TeamInactiveError
 from app.modules.usage import facade as usage_facade
 from app.modules.usage.schemas import RecordUsage
@@ -72,11 +78,15 @@ async def _create_project_pool_and_models(db_session: AsyncSession):
     team = Team(org_id=org.id, name="Platform", slug=f"platform-{uuid4()}")
     db_session.add(team)
     await db_session.commit()
+    actor_id = uuid4()
+    actor_email = f"admin-{actor_id}@example.com"
+    db_session.add(User(id=actor_id, email=actor_email, name="Policy Admin"))
+    await db_session.commit()
     actor = AuthenticatedUser(
-        id=uuid4(),
+        id=actor_id,
         org_id=org.id,
         team_id=team.id,
-        email="admin@example.com",
+        email=actor_email,
         role="super_admin",
     )
     scope = Scope(org_id=org.id)
@@ -293,6 +303,8 @@ async def test_policy_runtime_grants_pool_model_access(db_session: AsyncSession)
         db=db_session,
     )
     assert key.created_by == actor.id
+    assert key.creator_name == "Policy Admin"
+    assert key.creator_email == actor.email
     assert key.last_used_at is not None
     assert "key_hash" not in key.model_dump()
     assert "key" not in key.model_dump()
@@ -379,12 +391,73 @@ async def test_revocation_records_actor_reason_and_is_irreversible(
 
     assert key.revoked_at is not None
     assert key.revoked_by == actor.id
+    assert key.revoker_name == "Policy Admin"
+    assert key.revoker_email == actor.email
     assert key.revoked_reason == "Application credential was replaced"
     with pytest.raises(InvalidVirtualKeyError):
         await keys_facade.resolve_access(
             payload=ResolveAccessRequest(raw_key=created_key.key, requested_model="fast"),
             db=db_session,
         )
+
+
+async def test_rotation_keeps_both_keys_active_and_guards_early_revocation(
+    db_session: AsyncSession,
+) -> None:
+    actor, scope, team, project, provider, pool, fast_model, _ = (
+        await _create_project_pool_and_models(db_session)
+    )
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=team.id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    old_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Rotating key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    new_key = await keys_facade.rotate_virtual_key(
+        project_id=project.id,
+        key_id=old_key.id,
+        payload=RotateVirtualKeyRequest(name="Replacement key", overlap_days=7),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    assert new_key.supersedes_key_id == old_key.id
+    for raw_key in (old_key.key, new_key.key):
+        resolved = await keys_facade.resolve_access(
+            payload=ResolveAccessRequest(raw_key=raw_key, requested_model="fast"),
+            db=db_session,
+        )
+        assert resolved.project_id == project.id
+
+    with pytest.raises(VirtualKeyOverlapActiveError):
+        await keys_facade.revoke_virtual_key(
+            project_id=project.id,
+            key_id=old_key.id,
+            reason="Rotation completed early",
+            actor=actor,
+            scope=scope,
+            db=db_session,
+        )
+    await keys_facade.revoke_virtual_key(
+        project_id=project.id,
+        key_id=old_key.id,
+        reason="Rotation completed early",
+        actor=actor,
+        scope=scope,
+        db=db_session,
+        force=True,
+    )
 
 
 async def test_virtual_key_events_are_safe_and_failure_does_not_emit_success(
@@ -816,24 +889,36 @@ async def test_virtual_key_inventory_derived_status_pagination_is_not_truncated(
     db_session.add_all(keys)
     await db_session.commit()
 
-    page = await keys_facade.list_virtual_key_inventory(
-        scope=scope,
-        visible_team_ids=None,
-        visible_project_ids=None,
-        manageable_team_ids={team.id},
-        manageable_project_ids=set(),
-        can_manage_all=False,
-        team_id=None,
-        project_id=None,
-        status="active",
-        search="Bulk key",
-        usage="used",
-        limit=5,
-        offset=1000,
-        db=db_session,
-    )
+    query_count = 0
+
+    def count_query(*_args) -> None:
+        nonlocal query_count
+        query_count += 1
+
+    assert db_session.bind is not None
+    event.listen(db_session.bind.sync_engine, "before_cursor_execute", count_query)
+    try:
+        page = await keys_facade.list_virtual_key_inventory(
+            scope=scope,
+            visible_team_ids=None,
+            visible_project_ids=None,
+            manageable_team_ids={team.id},
+            manageable_project_ids=set(),
+            can_manage_all=False,
+            team_id=None,
+            project_id=None,
+            status="active",
+            search="Bulk key",
+            usage="used",
+            limit=5,
+            offset=1000,
+            db=db_session,
+        )
+    finally:
+        event.remove(db_session.bind.sync_engine, "before_cursor_execute", count_query)
 
     assert page.total == 1005
+    assert query_count <= 10
     assert len(page.items) == 5
     assert [item.name for item in page.items] == [
         f"Bulk key {index:04d}" for index in range(4, -1, -1)
@@ -1101,6 +1186,74 @@ async def test_policy_runtime_requires_access_before_key_creation(
         select(func.count()).select_from(VirtualKey).where(VirtualKey.project_id == project.id)
     )
     assert key_count == 0
+
+
+async def test_virtual_key_creation_is_blocked_when_secret_delivery_is_disabled(
+    db_session: AsyncSession,
+) -> None:
+    actor, scope, team, project, provider, pool, fast_model, _ = (
+        await _create_project_pool_and_models(db_session)
+    )
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=team.id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    await settings_facade.update_organization_settings(
+        payload=UpdateOrganizationSettingsRequest(allow_secret_copy=False),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    with pytest.raises(SecretDeliveryDisabledError):
+        await keys_facade.create_virtual_key(
+            project_id=project.id,
+            payload=CreateVirtualKeyRequest(name="Undeliverable key"),
+            actor=actor,
+            scope=scope,
+            db=db_session,
+        )
+
+    key_count = await db_session.scalar(
+        select(func.count()).select_from(VirtualKey).where(VirtualKey.project_id == project.id)
+    )
+    assert key_count == 0
+
+
+async def test_virtual_key_route_returns_structured_secret_delivery_error(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actor, scope, _team, project, _provider, _pool, _fast_model, _ = (
+        await _create_project_pool_and_models(db_session)
+    )
+
+    async def reject_creation(**_kwargs):
+        raise SecretDeliveryDisabledError
+
+    monkeypatch.setattr(keys_facade, "create_virtual_key", reject_creation)
+
+    with pytest.raises(HTTPException) as exc:
+        await create_virtual_key_route(
+            project_id=project.id,
+            payload=CreateVirtualKeyRequest(name="Undeliverable key"),
+            actor=actor,
+            scope=scope,
+            db=db_session,
+        )
+
+    assert exc.value.status_code == 409
+    assert exc.value.detail == {
+        "code": "secret_delivery_disabled",
+        "message": (
+            "Virtual key creation is disabled because plaintext secret delivery is turned off."
+        ),
+    }
 
 
 async def test_virtual_key_status_precedence_is_backend_derived(
@@ -1538,6 +1691,10 @@ async def test_access_narrows_through_org_team_project_and_virtual_key(
     )
 
     assert [model.id for model in key_models] == ["gpt-5.4-mini"]
+    assert key_models[0].provider_name == provider.name
+    assert key_models[0].pool_name == pool.name
+    assert key_models[0].access_policy_name == key_access.name
+    assert key_models[0].source_scope == "virtual_key"
     assert [
         model.provider_model_name
         for provider_option in key_options.providers

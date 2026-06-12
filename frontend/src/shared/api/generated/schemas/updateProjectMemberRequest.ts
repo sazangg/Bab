@@ -6,6 +6,6 @@
  */
 
 export interface UpdateProjectMemberRequest {
-  /** @pattern ^(project_admin)$ */
+  /** @pattern ^(project_admin|project_member)$ */
   role: string;
 }

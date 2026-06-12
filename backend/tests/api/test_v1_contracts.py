@@ -66,6 +66,127 @@ async def test_fresh_bootstrap_creates_core_workspace_without_default_teams(
 
 
 @pytest.mark.asyncio
+async def test_gateway_metadata_is_available_to_scoped_key_managers(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "owner@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    await bootstrap.sync_default_workspace(db_session)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        owner_headers = await _login(client, "owner@example.com", "correct-password")
+        team = await client.post("/api/v1/teams", headers=owner_headers, json={"name": "Team A"})
+        project = await client.post(
+            f"/api/v1/teams/{team.json()['id']}/projects",
+            headers=owner_headers,
+            json={"name": "Project A"},
+        )
+        project_admin = await client.post(
+            "/api/v1/auth/members",
+            headers=owner_headers,
+            json={
+                "email": "project-admin@example.com",
+                "password": "project-admin-password",
+                "role": "org_member",
+            },
+        )
+        await client.post(
+            f"/api/v1/projects/{project.json()['id']}/members",
+            headers=owner_headers,
+            json={"user_id": project_admin.json()["user_id"], "role": "project_admin"},
+        )
+        await client.patch(
+            "/api/v1/settings",
+            headers=owner_headers,
+            json={
+                "public_base_url": "https://gateway.example.com",
+                "virtual_key_prefix": "example",
+                "default_virtual_key_expiration_days": 90,
+            },
+        )
+        project_admin_headers = await _login(
+            client,
+            "project-admin@example.com",
+            "project-admin-password",
+        )
+
+        settings_response = await client.get("/api/v1/settings", headers=project_admin_headers)
+        metadata_response = await client.get(
+            "/api/v1/settings/gateway-metadata",
+            headers=project_admin_headers,
+        )
+
+    assert settings_response.status_code == 403
+    assert metadata_response.status_code == 200
+    assert metadata_response.json() == {
+        "public_base_url": "https://gateway.example.com",
+        "virtual_key_prefix": "example",
+        "default_virtual_key_expiration_days": 90,
+    }
+
+
+@pytest.mark.asyncio
+async def test_project_viewers_can_read_members_but_cannot_manage_them(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "owner@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    await bootstrap.sync_default_workspace(db_session)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        owner_headers = await _login(client, "owner@example.com", "correct-password")
+        team = await client.post("/api/v1/teams", headers=owner_headers, json={"name": "Team A"})
+        project = await client.post(
+            f"/api/v1/teams/{team.json()['id']}/projects",
+            headers=owner_headers,
+            json={"name": "Project A"},
+        )
+        team_member = await client.post(
+            "/api/v1/auth/members",
+            headers=owner_headers,
+            json={
+                "email": "team-member@example.com",
+                "password": "team-member-password",
+                "role": "org_member",
+            },
+        )
+        await client.post(
+            f"/api/v1/teams/{team.json()['id']}/members",
+            headers=owner_headers,
+            json={"user_id": team_member.json()["user_id"], "role": "team_member"},
+        )
+        team_member_headers = await _login(
+            client,
+            "team-member@example.com",
+            "team-member-password",
+        )
+
+        list_response = await client.get(
+            f"/api/v1/projects/{project.json()['id']}/members",
+            headers=team_member_headers,
+        )
+        add_response = await client.post(
+            f"/api/v1/projects/{project.json()['id']}/members",
+            headers=team_member_headers,
+            json={"user_id": team_member.json()["user_id"], "role": "project_admin"},
+        )
+
+    assert list_response.status_code == 200
+    assert list_response.json() == []
+    assert add_response.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_scoped_users_cannot_list_or_fetch_out_of_scope_teams_and_projects(
     app_client,
     db_session: AsyncSession,

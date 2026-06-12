@@ -22,6 +22,11 @@ from app.modules.auth.internal.models import (
 )
 
 
+def _parse_api_datetime(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
 @pytest.mark.asyncio
 async def test_mock_login_sets_refresh_cookie_and_returns_access_token(
     app_client,
@@ -471,7 +476,7 @@ async def test_invite_acceptance_and_team_membership_flow(
 
 
 @pytest.mark.asyncio
-async def test_invite_url_uses_public_app_url_when_configured(
+async def test_invite_url_uses_origin_fallback_and_public_app_url(
     app_client,
     db_session: AsyncSession,
     monkeypatch,
@@ -491,7 +496,7 @@ async def test_invite_url_uses_public_app_url_when_configured(
         admin_headers = {"Authorization": f"Bearer {login_response.json()['access_token']}"}
         relative_response = await client.post(
             "/api/v1/auth/invites",
-            headers=admin_headers,
+            headers={**admin_headers, "Origin": "http://127.0.0.1:5173"},
             json={"email": "relative-invite@example.com", "role": "org_member"},
         )
         settings_response = await client.patch(
@@ -506,7 +511,9 @@ async def test_invite_url_uses_public_app_url_when_configured(
         )
 
     assert relative_response.status_code == 201
-    assert relative_response.json()["invite_url"].startswith("/accept-invite?token=")
+    assert relative_response.json()["invite_url"].startswith(
+        "http://127.0.0.1:5173/accept-invite?token="
+    )
     assert settings_response.status_code == 200
     assert settings_response.json()["public_app_url"] == "https://app.example.com"
     assert absolute_response.status_code == 201
@@ -594,6 +601,70 @@ async def test_project_invite_acceptance_creates_project_membership(
     assert "keys.manage" in member["effective_permissions"]
     assert project_membership is not None
     assert project_membership.role == "project_admin"
+
+
+@pytest.mark.asyncio
+async def test_invite_preview_exposes_safe_acceptance_context(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "admin@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    await bootstrap.sync_default_workspace(db_session)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        login_response = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "admin@example.com", "password": "correct-password"},
+        )
+        headers = {"Authorization": f"Bearer {login_response.json()['access_token']}"}
+        team_response = await client.post(
+            "/api/v1/teams",
+            headers=headers,
+            json={"name": "Preview Team"},
+        )
+        project_response = await client.post(
+            f"/api/v1/teams/{team_response.json()['id']}/projects",
+            headers=headers,
+            json={"name": "Preview Project"},
+        )
+        invite_response = await client.post(
+            "/api/v1/auth/invites",
+            headers=headers,
+            json={
+                "email": "preview-invite@example.com",
+                "role": "org_member",
+                "team_id": team_response.json()["id"],
+                "team_role": "team_member",
+                "project_id": project_response.json()["id"],
+                "project_role": "project_admin",
+            },
+        )
+        invite_token = parse_qs(urlparse(invite_response.json()["invite_url"]).query)["token"][0]
+        preview_response = await client.get(
+            "/api/v1/auth/invites/preview",
+            params={"token": invite_token},
+        )
+
+    assert preview_response.status_code == 200
+    preview = preview_response.json()
+    preview_expires_at = _parse_api_datetime(preview.pop("expires_at"))
+    invite_expires_at = _parse_api_datetime(invite_response.json()["expires_at"])
+    assert preview == {
+        "email": "preview-invite@example.com",
+        "organization_name": "Default Organization",
+        "role": "org_member",
+        "team_name": "Preview Team",
+        "team_role": "team_member",
+        "project_name": "Preview Project",
+        "project_role": "project_admin",
+        "status": "pending",
+    }
+    assert preview_expires_at == invite_expires_at
 
 
 @pytest.mark.asyncio

@@ -3,6 +3,8 @@ import { useMatch } from "react-router-dom";
 import { useListProjectsApiV1ProjectsGet } from "@/shared/api/generated/projects/projects";
 import { useListProvidersApiV1ProvidersGet } from "@/shared/api/generated/providers/providers";
 import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
+import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
+import { canViewTeam } from "@/features/auth/lib/permissions";
 
 export type Breadcrumb = {
   label: string;
@@ -54,9 +56,16 @@ export function useBreadcrumbs(): Breadcrumb[] {
   });
   const teamName =
     teamId && teamsQuery.data?.status === 200
-      ? (teamsQuery.data.data.find((team) => team.id === teamId)?.name ?? "Team")
-      : "Team";
+      ? (teamsQuery.data.data.find((team) => team.id === teamId)?.name ??
+        activeProject?.team_name ??
+        "Team")
+      : (activeProject?.team_name ?? "Team");
   const projectTeamId = activeProject?.team_id ?? null;
+  const currentUserQuery = useMeApiV1AuthMeGet();
+  const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
+  const canOpenProjectTeam = Boolean(
+    projectTeamId && canViewTeam(currentUser, projectTeamId),
+  );
 
   if (homeMatch) {
     return [{ label: "Home" }];
@@ -72,7 +81,10 @@ export function useBreadcrumbs(): Breadcrumb[] {
       ...(projectTeamId
         ? [
             { label: "Teams", to: "/teams" },
-            { label: teamName, to: `/teams/${projectTeamId}` },
+            {
+              label: teamName,
+              to: canOpenProjectTeam ? `/teams/${projectTeamId}` : undefined,
+            },
           ]
         : [{ label: "Projects", to: "/projects" }]),
       { label: projectName, to: `/projects/${keyDetailMatch.params.projectId}` },
@@ -84,7 +96,10 @@ export function useBreadcrumbs(): Breadcrumb[] {
       ...(projectTeamId
         ? [
             { label: "Teams", to: "/teams" },
-            { label: teamName, to: `/teams/${projectTeamId}` },
+            {
+              label: teamName,
+              to: canOpenProjectTeam ? `/teams/${projectTeamId}` : undefined,
+            },
           ]
         : [{ label: "Projects", to: "/projects" }]),
       { label: projectName },

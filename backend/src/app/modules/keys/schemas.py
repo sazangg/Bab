@@ -23,6 +23,7 @@ class ProjectResponse(BaseModel):
     id: UUID
     org_id: UUID
     team_id: UUID
+    team_name: str | None = None
     name: str
     slug: str
     description: str | None
@@ -43,6 +44,7 @@ class UpdateVirtualKeyRequest(BaseModel):
 
 class RevokeVirtualKeyRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
+    force: bool = False
 
     @field_validator("reason")
     @classmethod
@@ -53,21 +55,33 @@ class RevokeVirtualKeyRequest(BaseModel):
         return reason
 
 
+class RotateVirtualKeyRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    expires_at: datetime | None = None
+    overlap_days: int = Field(default=7, ge=1, le=90)
+
+
 class VirtualKeyResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     org_id: UUID
     project_id: UUID
+    supersedes_key_id: UUID | None
     name: str
     key_prefix: str
     status: str
     is_usable: bool
     created_by: UUID | None
+    creator_name: str | None
+    creator_email: str | None
     last_used_at: datetime | None
     expires_at: datetime | None
+    deprecated_at: datetime | None
     revoked_at: datetime | None
     revoked_by: UUID | None
+    revoker_name: str | None
+    revoker_email: str | None
     revoked_reason: str | None
     created_at: datetime
     updated_at: datetime
@@ -82,6 +96,7 @@ class VirtualKeyInventoryItem(BaseModel):
     name: str
     key_prefix: str
     project_id: UUID
+    supersedes_key_id: UUID | None
     project_name: str
     project_is_active: bool
     team_id: UUID
@@ -95,6 +110,7 @@ class VirtualKeyInventoryItem(BaseModel):
     creator_email: str | None
     created_at: datetime
     expires_at: datetime | None
+    deprecated_at: datetime | None
     last_used_at: datetime | None
     revoked_at: datetime | None
     revoked_by: UUID | None
@@ -218,8 +234,12 @@ class AccessibleModel(BaseModel):
     object: str = "model"
     owned_by: str
     provider_id: UUID
+    provider_name: str
     model_offering_id: UUID
     access_policy_id: UUID | None = None
+    access_policy_name: str | None = None
     access_policy_route_id: UUID | None = None
     pool_id: UUID
+    pool_name: str
+    source_scope: str | None = None
     alias: str | None = None

@@ -54,7 +54,10 @@ class CreateInviteRequest(BaseModel):
     team_id: UUID | None = None
     team_role: str | None = Field(default=None, pattern="^(team_admin|team_member)$")
     project_id: UUID | None = None
-    project_role: str | None = Field(default=None, pattern="^(project_admin)$")
+    project_role: str | None = Field(
+        default=None,
+        pattern="^(project_admin|project_member)$",
+    )
 
 
 class CreateMemberRequest(BaseModel):
@@ -68,7 +71,10 @@ class CreateMemberRequest(BaseModel):
     team_id: UUID | None = None
     team_role: str | None = Field(default=None, pattern="^(team_admin|team_member)$")
     project_id: UUID | None = None
-    project_role: str | None = Field(default=None, pattern="^(project_admin)$")
+    project_role: str | None = Field(
+        default=None,
+        pattern="^(project_admin|project_member)$",
+    )
 
     @field_validator("password")
     @classmethod
@@ -92,6 +98,18 @@ class InviteResponse(BaseModel):
     accepted_at: datetime | None
     created_at: datetime
     invite_url: str | None = None
+
+
+class InvitePreviewResponse(BaseModel):
+    email: EmailStr
+    organization_name: str
+    role: str
+    team_name: str | None
+    team_role: str | None
+    project_name: str | None
+    project_role: str | None
+    status: str
+    expires_at: datetime
 
 
 class MemberResponse(BaseModel):
@@ -149,11 +167,14 @@ class UpdateTeamMemberRequest(BaseModel):
 
 class UpsertProjectMemberRequest(BaseModel):
     user_id: UUID
-    role: str = Field(default="project_admin", pattern="^(project_admin)$")
+    role: str = Field(
+        default="project_member",
+        pattern="^(project_admin|project_member)$",
+    )
 
 
 class UpdateProjectMemberRequest(BaseModel):
-    role: str = Field(pattern="^(project_admin)$")
+    role: str = Field(pattern="^(project_admin|project_member)$")
 
 
 class AcceptInviteRequest(BaseModel):

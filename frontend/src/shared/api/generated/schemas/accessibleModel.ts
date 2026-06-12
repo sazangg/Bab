@@ -10,9 +10,13 @@ export interface AccessibleModel {
   object?: string;
   owned_by: string;
   provider_id: string;
+  provider_name: string;
   model_offering_id: string;
   access_policy_id?: string | null;
+  access_policy_name?: string | null;
   access_policy_route_id?: string | null;
   pool_id: string;
+  pool_name: string;
+  source_scope?: string | null;
   alias?: string | null;
 }

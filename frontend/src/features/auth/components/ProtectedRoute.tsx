@@ -1,6 +1,7 @@
 import { ShieldAlert } from "lucide-react";
-import { Navigate, Outlet } from "react-router-dom";
+import { Link, Navigate, Outlet } from "react-router-dom";
 
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   canViewActivity,
@@ -81,15 +82,21 @@ export function ProtectedRoute({
       return <Navigate to={landingPath} replace />;
     }
     if (!landingPath) {
-      return <NoAccessPage />;
+      return <NoAccessPage email={currentUser?.email} role={currentUser?.role} />;
     }
-    return <ForbiddenPage />;
+    return (
+      <ForbiddenPage
+        email={currentUser?.email}
+        role={currentUser?.role}
+        landingPath={landingPath}
+      />
+    );
   }
 
   return <Outlet />;
 }
 
-export function NoAccessPage() {
+export function NoAccessPage({ email, role }: { email?: string; role?: string }) {
   return (
     <div className="grid min-h-[calc(100svh-12rem)] place-items-center">
       <Card className="w-full max-w-lg">
@@ -104,6 +111,11 @@ export function NoAccessPage() {
               assigned yet. Ask an organization admin to add you to a team or grant the permissions
               needed for your work.
             </p>
+            {email ? (
+              <p className="text-xs text-muted-foreground">
+                Signed in as {email} · {formatRole(role)}
+              </p>
+            ) : null}
           </div>
         </CardContent>
       </Card>
@@ -111,7 +123,15 @@ export function NoAccessPage() {
   );
 }
 
-export function ForbiddenPage() {
+export function ForbiddenPage({
+  email,
+  role,
+  landingPath,
+}: {
+  email?: string;
+  role?: string;
+  landingPath?: string | null;
+}) {
   return (
     <div className="grid min-h-[50vh] place-items-center">
       <Card className="w-full max-w-lg">
@@ -124,9 +144,27 @@ export function ForbiddenPage() {
             <p className="text-sm text-muted-foreground">
               Your current role does not include access to this surface.
             </p>
+            {email ? (
+              <p className="text-xs text-muted-foreground">
+                Signed in as {email} · {formatRole(role)}
+              </p>
+            ) : null}
           </div>
+          {landingPath ? (
+            <Button asChild>
+              <Link to={landingPath}>Go to your workspace</Link>
+            </Button>
+          ) : null}
         </CardContent>
       </Card>
     </div>
   );
+}
+
+function formatRole(role?: string) {
+  if (role === "org_owner") return "Org owner";
+  if (role === "org_admin") return "Org admin";
+  if (role === "org_viewer") return "Org viewer";
+  if (role === "org_member") return "Org member";
+  return "Unknown role";
 }

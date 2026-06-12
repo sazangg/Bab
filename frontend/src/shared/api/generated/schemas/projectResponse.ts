@@ -9,6 +9,7 @@ export interface ProjectResponse {
   id: string;
   org_id: string;
   team_id: string;
+  team_name?: string | null;
   name: string;
   slug: string;
   description: string | null;
