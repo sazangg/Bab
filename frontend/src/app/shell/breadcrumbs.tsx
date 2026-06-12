@@ -4,6 +4,10 @@ import { useListProjectsApiV1ProjectsGet } from "@/shared/api/generated/projects
 import { useListProvidersApiV1ProvidersGet } from "@/shared/api/generated/providers/providers";
 import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
 import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
+import {
+  useGetAccessPolicyApiV1PoliciesAccessPolicyIdGet,
+  useGetLimitPolicyApiV1PoliciesLimitsPolicyIdGet,
+} from "@/shared/api/generated/policies/policies";
 import { canViewTeam } from "@/features/auth/lib/permissions";
 
 export type Breadcrumb = {
@@ -27,6 +31,8 @@ export function useBreadcrumbs(): Breadcrumb[] {
   const settingsMatch = useMatch("/settings");
   const apiDocsMatch = useMatch("/api-docs");
   const policiesMatch = useMatch("/policies");
+  const accessPolicyDetailMatch = useMatch("/policies/access/:policyId");
+  const limitPolicyDetailMatch = useMatch("/policies/limits/:policyId");
   const virtualKeysMatch = useMatch("/virtual-keys");
   const guardrailsMatch = useMatch("/guardrails");
   const designSystemMatch = useMatch("/design-system");
@@ -63,9 +69,15 @@ export function useBreadcrumbs(): Breadcrumb[] {
   const projectTeamId = activeProject?.team_id ?? null;
   const currentUserQuery = useMeApiV1AuthMeGet();
   const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
-  const canOpenProjectTeam = Boolean(
-    projectTeamId && canViewTeam(currentUser, projectTeamId),
-  );
+  const accessPolicyId = accessPolicyDetailMatch?.params.policyId ?? "";
+  const accessPolicyQuery = useGetAccessPolicyApiV1PoliciesAccessPolicyIdGet(accessPolicyId, {
+    query: { enabled: Boolean(accessPolicyId) },
+  });
+  const limitPolicyId = limitPolicyDetailMatch?.params.policyId ?? "";
+  const limitPolicyQuery = useGetLimitPolicyApiV1PoliciesLimitsPolicyIdGet(limitPolicyId, {
+    query: { enabled: Boolean(limitPolicyId) },
+  });
+  const canOpenProjectTeam = Boolean(projectTeamId && canViewTeam(currentUser, projectTeamId));
 
   if (homeMatch) {
     return [{ label: "Home" }];
@@ -131,6 +143,26 @@ export function useBreadcrumbs(): Breadcrumb[] {
   }
   if (apiDocsMatch) {
     return [{ label: "API Docs" }];
+  }
+  if (accessPolicyDetailMatch) {
+    return [
+      { label: "Policies", to: "/policies" },
+      {
+        label:
+          accessPolicyQuery.data?.status === 200
+            ? accessPolicyQuery.data.data.name
+            : "Access policy",
+      },
+    ];
+  }
+  if (limitPolicyDetailMatch) {
+    return [
+      { label: "Policies", to: "/policies" },
+      {
+        label:
+          limitPolicyQuery.data?.status === 200 ? limitPolicyQuery.data.data.name : "Limit policy",
+      },
+    ];
   }
   if (policiesMatch) {
     return [{ label: "Policies" }];

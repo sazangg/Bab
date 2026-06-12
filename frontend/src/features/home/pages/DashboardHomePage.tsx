@@ -18,6 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useListProjectsApiV1ProjectsGet } from "@/shared/api/generated/projects/projects";
 import { useListProvidersApiV1ProvidersGet } from "@/shared/api/generated/providers/providers";
 import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
+import { useListVirtualKeyInventoryApiV1VirtualKeysGet } from "@/shared/api/generated/virtual-keys/virtual-keys";
 import { PageHeader } from "@/shared/components/PageHeader";
 
 const setupSteps = [
@@ -63,16 +64,21 @@ export function DashboardHomePage() {
   const providersQuery = useListProvidersApiV1ProvidersGet();
   const teamsQuery = useListTeamsApiV1TeamsGet();
   const projectsQuery = useListProjectsApiV1ProjectsGet();
+  const keysQuery = useListVirtualKeyInventoryApiV1VirtualKeysGet({ limit: 100 });
 
   const providers = providersQuery.data?.status === 200 ? providersQuery.data.data : [];
   const teams = teamsQuery.data?.status === 200 ? teamsQuery.data.data : [];
   const projects = projectsQuery.data?.status === 200 ? projectsQuery.data.data : [];
+  const keysPage = keysQuery.data?.status === 200 ? keysQuery.data.data : null;
   const activeProviders = providers.filter((provider) => provider.is_active);
   const providersWithCredentials = providers.filter(
     (provider) => (provider.credential_summary?.active ?? 0) > 0,
   );
   const readyProviders = providers.filter((provider) => provider.readiness?.is_ready);
   const providersNeedingSetup = activeProviders.length - readyProviders.length;
+  const usableKeys = keysPage?.items.filter((key) => key.is_usable) ?? [];
+  const infrastructureReady = readyProviders.length > 0;
+  const firstRequestReady = infrastructureReady && usableKeys.length > 0;
 
   return (
     <div className="space-y-6">
@@ -89,7 +95,7 @@ export function DashboardHomePage() {
         }
       />
 
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <MetricCard
           label="Active providers"
           value={activeProviders.length}
@@ -109,14 +115,24 @@ export function DashboardHomePage() {
           icon={FolderKanban}
         />
         <MetricCard
-          label="Gateway state"
-          value={readyProviders.length > 0 ? "Routable" : "Setup"}
+          label="Infrastructure"
+          value={infrastructureReady ? "Ready" : "Setup"}
           detail={
-            readyProviders.length > 0
+            infrastructureReady
               ? `${readyProviders.length} provider${readyProviders.length === 1 ? "" : "s"} ready`
               : "Complete a provider readiness chain"
           }
           icon={CircleGauge}
+        />
+        <MetricCard
+          label="First request"
+          value={firstRequestReady ? "Ready" : "Setup"}
+          detail={
+            firstRequestReady
+              ? `${usableKeys.length} usable virtual key${usableKeys.length === 1 ? "" : "s"}`
+              : "Add effective access and a usable key"
+          }
+          icon={KeyRound}
         />
       </section>
 
@@ -203,9 +219,9 @@ export function DashboardHomePage() {
               settings.
             </p>
             <p>
-              Workspace views own domain structure: teams, projects, policies, and future
-              guardrails. Scoped usage appears inside those entities instead of as a second global
-              usage product.
+              Workspace views own domain structure: teams, projects, policies, and guardrails.
+              Scoped users also get an authorized global usage view, with entity pages keeping
+              local drilldowns.
             </p>
             <div className="flex items-center gap-2 rounded-lg border bg-amber-500/10 p-3 text-amber-700 dark:text-amber-300">
               <AlertTriangle className="size-4 shrink-0" />

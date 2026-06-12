@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  Pencil,
   GitBranch,
   Plus,
   Route,
@@ -36,6 +37,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -66,9 +68,18 @@ import {
   useListAccessPoliciesApiV1PoliciesAccessGet,
   useListLimitPoliciesApiV1PoliciesLimitsGet,
   useListPolicyAssignmentsApiV1PoliciesAssignmentsGet,
+  useUpdateAccessPolicyApiV1PoliciesAccessPolicyIdPatch,
   useUpdateAccessPolicyRouteApiV1PoliciesAccessRoutesRouteIdPatch,
+  useUpdateLimitPolicyApiV1PoliciesLimitsPolicyIdPatch,
   useUpdateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatch,
+  useUpdatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatch,
 } from "@/shared/api/generated/policies/policies";
+import { ConfirmationDialog } from "@/features/policies/components/ConfirmationDialog";
+import {
+  LimitRuleFilterFields,
+  LimitRuleFiltersSummary,
+  type LimitRuleFilterValue,
+} from "@/features/policies/components/LimitRuleFilterFields";
 import {
   hasAnyProjectAdminMembership,
   hasAnyTeamAdminMembership,
@@ -104,6 +115,10 @@ import { StatusBadge } from "@/shared/components/StatusBadge";
 type SheetKind = "access" | "limit" | null;
 type RouteSheetState = { policy: AccessPolicyResponse } | null;
 type LimitRulesSheetState = { policy: LimitPolicyResponse } | null;
+type PolicySettingsSheetState =
+  | { kind: "access"; policy: AccessPolicyResponse }
+  | { kind: "limit"; policy: LimitPolicyResponse }
+  | null;
 type AssignmentSheetState =
   | { policyType: "access"; policyId: string }
   | { policyType: "limit"; policyId: string }
@@ -115,6 +130,7 @@ type DraftLimitRule = {
   limitValue: string;
   intervalUnit: string;
   intervalCount: string;
+  filters: LimitRuleFilterValue;
 };
 type DraftAccessRoute = {
   id: string;
@@ -134,34 +150,20 @@ const limitTypeOptions = [
   { value: "tokens_per_request", label: "Tokens per request" },
 ];
 
-async function confirmPolicyImpact(
-  title: string,
-  fetchImpact: () => Promise<{ status: number; data: unknown }>,
-) {
-  const response = await fetchImpact();
-  if (response.status !== 200) {
-    toast.error("Impact preview could not be loaded.");
-    return false;
-  }
-  return window.confirm(formatPolicyImpactPreview(title, response.data as PolicyImpactResponse));
-}
+const emptyLimitRuleFilters = (): LimitRuleFilterValue => ({
+  providerId: "",
+  poolId: "",
+  modelId: "",
+  accessPolicyId: "",
+});
 
-function formatPolicyImpactPreview(title: string, impact: PolicyImpactResponse) {
-  const lines = [
-    title,
-    "",
-    `Affected teams: ${impact.affected_team_count ?? 0}`,
-    `Affected projects: ${impact.affected_project_count ?? 0}`,
-    `Affected virtual keys: ${impact.affected_virtual_key_count ?? 0}`,
-  ];
-  const unusableKeys = impact.virtual_keys_would_become_unusable ?? [];
-  if ((impact.virtual_keys_would_become_unusable_count ?? 0) > 0) {
-    lines.push(
-      `Virtual keys that would become unusable: ${impact.virtual_keys_would_become_unusable_count ?? 0}`,
-      ...unusableKeys.slice(0, 5).map((key) => `- ${key.name}`),
-    );
-  }
-  return lines.join("\n");
+function limitRuleFiltersPayload(filters: LimitRuleFilterValue) {
+  return {
+    provider_id: filters.providerId || null,
+    credential_pool_id: filters.poolId || null,
+    model_offering_id: filters.modelId || null,
+    access_policy_id: filters.accessPolicyId || null,
+  };
 }
 
 function accessPolicyStatus(policy: AccessPolicyResponse, assignments: number) {
@@ -180,6 +182,124 @@ function limitPolicyStatus(policy: LimitPolicyResponse, assignments: number) {
     return { label: "No active rules", variant: "expired" as const };
   }
   return { label: "Blocking traffic", variant: "active" as const };
+}
+
+type ImpactConfirmationState = {
+  title: string;
+  impact: PolicyImpactResponse;
+  onConfirm: () => void;
+} | null;
+
+function useImpactConfirmation() {
+  const [state, setState] = useState<ImpactConfirmationState>(null);
+  const [isLoadingImpact, setIsLoadingImpact] = useState(false);
+  const requestImpactConfirmation = async (
+    title: string,
+    fetchImpact: () => Promise<{ status: number; data: unknown }>,
+    onConfirm: () => void,
+  ) => {
+    setIsLoadingImpact(true);
+    try {
+      const response = await fetchImpact();
+      if (response.status !== 200) {
+        toast.error("Impact preview could not be loaded.");
+        return;
+      }
+      setState({ title, impact: response.data as PolicyImpactResponse, onConfirm });
+    } finally {
+      setIsLoadingImpact(false);
+    }
+  };
+  const dialog = (
+    <ConfirmationDialog
+      open={Boolean(state)}
+      title={state?.title ?? ""}
+      description="Review the affected scopes before removing this policy item."
+      confirmLabel="Delete"
+      onOpenChange={(open) => !open && setState(null)}
+      onConfirm={() => {
+        state?.onConfirm();
+        setState(null);
+      }}
+    >
+      {state ? <PolicyImpactPreview impact={state.impact} /> : null}
+    </ConfirmationDialog>
+  );
+  return { requestImpactConfirmation, isLoadingImpact, dialog };
+}
+
+function PolicyImpactPreview({ impact }: { impact: PolicyImpactResponse }) {
+  const unusableKeys = impact.virtual_keys_would_become_unusable ?? [];
+  return (
+    <div className="grid gap-3 rounded-md border bg-muted/30 p-3 text-sm">
+      <div className="grid grid-cols-3 gap-2">
+        <ImpactCount label="Teams" value={impact.affected_team_count ?? 0} />
+        <ImpactCount label="Projects" value={impact.affected_project_count ?? 0} />
+        <ImpactCount label="Keys" value={impact.affected_virtual_key_count ?? 0} />
+      </div>
+      {(impact.virtual_keys_would_become_unusable_count ?? 0) > 0 ? (
+        <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-destructive">
+          <div className="font-medium">
+            {impact.virtual_keys_would_become_unusable_count} virtual key
+            {impact.virtual_keys_would_become_unusable_count === 1 ? "" : "s"} would become
+            unroutable
+          </div>
+          <div className="mt-1 text-xs">
+            {unusableKeys
+              .slice(0, 5)
+              .map((key) => key.name)
+              .join(", ")}
+            {unusableKeys.length > 5 ? `, +${unusableKeys.length - 5} more` : ""}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ImpactCount({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-md border bg-background p-2">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="text-lg font-semibold">{value}</div>
+    </div>
+  );
+}
+
+type ActionConfirmationState = {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+} | null;
+
+function useActionConfirmation() {
+  const [state, setState] = useState<ActionConfirmationState>(null);
+  const requestActionConfirmation = (nextState: NonNullable<ActionConfirmationState>) =>
+    setState(nextState);
+  const dialog = (
+    <ConfirmationDialog
+      open={Boolean(state)}
+      title={state?.title ?? ""}
+      description={state?.description}
+      confirmLabel={state?.confirmLabel}
+      onOpenChange={(open) => !open && setState(null)}
+      onConfirm={() => {
+        state?.onConfirm();
+        setState(null);
+      }}
+    />
+  );
+  return { requestActionConfirmation, dialog };
+}
+
+function canManagePolicyDefinition(
+  user: Parameters<typeof hasPermission>[0],
+  policy: AccessPolicyResponse | LimitPolicyResponse,
+) {
+  if (hasPermission(user, "policies.manage")) return true;
+  if (!policy.owning_scope_type) return false;
+  return hasAnyTeamAdminMembership(user) || hasAnyProjectAdminMembership(user);
 }
 
 function formatAssignmentTarget(
@@ -203,6 +323,7 @@ export function PoliciesPage() {
   const [sheetKind, setSheetKind] = useState<SheetKind>(null);
   const [routeSheet, setRouteSheet] = useState<RouteSheetState>(null);
   const [limitRulesSheet, setLimitRulesSheet] = useState<LimitRulesSheetState>(null);
+  const [policySettingsSheet, setPolicySettingsSheet] = useState<PolicySettingsSheetState>(null);
   const [assignmentSheet, setAssignmentSheet] = useState<AssignmentSheetState>(null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
@@ -217,6 +338,8 @@ export function PoliciesPage() {
     canManagePolicies ||
     hasAnyTeamAdminMembership(currentUser) ||
     hasAnyProjectAdminMembership(currentUser);
+  const canManageDefinition = (policy: AccessPolicyResponse | LimitPolicyResponse) =>
+    canManagePolicyDefinition(currentUser, policy);
   const accessPolicies = accessQuery.data?.status === 200 ? accessQuery.data.data : [];
   const limitPolicies = limitsQuery.data?.status === 200 ? limitsQuery.data.data : [];
   const assignments = assignmentsQuery.data?.status === 200 ? assignmentsQuery.data.data : [];
@@ -318,10 +441,11 @@ export function PoliciesPage() {
               assignmentCount={assignmentCount}
               isLoading={limitsQuery.isPending}
               onConfigureRules={(policy) => setLimitRulesSheet({ policy })}
+              onEditPolicy={(policy) => setPolicySettingsSheet({ kind: "limit", policy })}
               onAssign={(policy) =>
                 setAssignmentSheet({ policyType: "limit", policyId: policy.id })
               }
-              canManageDefinitions={canManagePolicies}
+              canManageDefinition={canManageDefinition}
               canAssign={canAssignPolicies}
             />
           ) : (
@@ -330,10 +454,11 @@ export function PoliciesPage() {
               assignmentCount={assignmentCount}
               isLoading={accessQuery.isPending}
               onConfigureRoutes={(policy) => setRouteSheet({ policy })}
+              onEditPolicy={(policy) => setPolicySettingsSheet({ kind: "access", policy })}
               onAssign={(policy) =>
                 setAssignmentSheet({ policyType: "access", policyId: policy.id })
               }
-              canManageDefinitions={canManagePolicies}
+              canManageDefinition={canManageDefinition}
               canAssign={canAssignPolicies}
             />
           )}
@@ -358,6 +483,11 @@ export function PoliciesPage() {
         onOpenChange={(open) => !open && setLimitRulesSheet(null)}
         onChanged={invalidatePolicies}
       />
+      <PolicySettingsSheet
+        state={policySettingsSheet}
+        onOpenChange={(open) => !open && setPolicySettingsSheet(null)}
+        onChanged={invalidatePolicies}
+      />
       <AssignmentSheet
         state={assignmentSheet}
         onOpenChange={(open) => !open && setAssignmentSheet(null)}
@@ -372,6 +502,7 @@ export function AccessPolicyDetailPage() {
   const { policyId = "" } = useParams();
   const queryClient = useQueryClient();
   const [routeSheet, setRouteSheet] = useState<RouteSheetState>(null);
+  const [policySettingsSheet, setPolicySettingsSheet] = useState<PolicySettingsSheetState>(null);
   const [assignmentSheet, setAssignmentSheet] = useState<AssignmentSheetState>(null);
   const policyQuery = useGetAccessPolicyApiV1PoliciesAccessPolicyIdGet(policyId, {
     query: { enabled: Boolean(policyId) },
@@ -404,6 +535,7 @@ export function AccessPolicyDetailPage() {
 
   const routeCount = policy.routes?.length ?? 0;
   const modelCount = countRouteModels(policy);
+  const canManageDefinition = canManagePolicyDefinition(currentUser, policy);
 
   return (
     <div className="flex flex-col gap-6">
@@ -427,7 +559,16 @@ export function AccessPolicyDetailPage() {
                 Assign
               </Button>
             ) : null}
-            {canManagePolicies ? (
+            {canManageDefinition ? (
+              <Button
+                variant="outline"
+                onClick={() => setPolicySettingsSheet({ kind: "access", policy })}
+              >
+                <Pencil />
+                Edit policy
+              </Button>
+            ) : null}
+            {canManageDefinition ? (
               <Button onClick={() => setRouteSheet({ policy })}>
                 <Route />
                 Configure routes
@@ -463,6 +604,11 @@ export function AccessPolicyDetailPage() {
         onOpenChange={(open) => !open && setRouteSheet(null)}
         onChanged={invalidatePolicies}
       />
+      <PolicySettingsSheet
+        state={policySettingsSheet}
+        onOpenChange={(open) => !open && setPolicySettingsSheet(null)}
+        onChanged={invalidatePolicies}
+      />
       <AssignmentSheet
         state={assignmentSheet}
         onOpenChange={(open) => !open && setAssignmentSheet(null)}
@@ -477,6 +623,7 @@ export function LimitPolicyDetailPage() {
   const { policyId = "" } = useParams();
   const queryClient = useQueryClient();
   const [limitRulesSheet, setLimitRulesSheet] = useState<LimitRulesSheetState>(null);
+  const [policySettingsSheet, setPolicySettingsSheet] = useState<PolicySettingsSheetState>(null);
   const [assignmentSheet, setAssignmentSheet] = useState<AssignmentSheetState>(null);
   const policyQuery = useGetLimitPolicyApiV1PoliciesLimitsPolicyIdGet(policyId, {
     query: { enabled: Boolean(policyId) },
@@ -508,6 +655,7 @@ export function LimitPolicyDetailPage() {
   }
 
   const rules = policy.rules ?? [];
+  const canManageDefinition = canManagePolicyDefinition(currentUser, policy);
 
   return (
     <div className="flex flex-col gap-6">
@@ -531,7 +679,16 @@ export function LimitPolicyDetailPage() {
                 Assign
               </Button>
             ) : null}
-            {canManagePolicies ? (
+            {canManageDefinition ? (
+              <Button
+                variant="outline"
+                onClick={() => setPolicySettingsSheet({ kind: "limit", policy })}
+              >
+                <Pencil />
+                Edit policy
+              </Button>
+            ) : null}
+            {canManageDefinition ? (
               <Button onClick={() => setLimitRulesSheet({ policy })}>
                 <SlidersHorizontal />
                 Manage rules
@@ -565,6 +722,11 @@ export function LimitPolicyDetailPage() {
       <LimitRulesSheet
         state={limitRulesSheet}
         onOpenChange={(open) => !open && setLimitRulesSheet(null)}
+        onChanged={invalidatePolicies}
+      />
+      <PolicySettingsSheet
+        state={policySettingsSheet}
+        onOpenChange={(open) => !open && setPolicySettingsSheet(null)}
         onChanged={invalidatePolicies}
       />
       <AssignmentSheet
@@ -648,7 +810,9 @@ function AccessRoutesDetailTable({ routes }: { routes: AccessPolicyRouteResponse
               </TableCell>
               <TableCell className="text-sm">
                 Priority {route.priority}
-                <div className="text-xs text-muted-foreground">Weight {route.weight}</div>
+                <div className="text-xs text-muted-foreground">
+                  Tie-break weight {route.weight}
+                </div>
               </TableCell>
               <TableCell>
                 <StatusBadge variant={route.is_active ? "active" : "inactive"}>
@@ -739,7 +903,7 @@ function LimitRulesDetailTable({ rules }: { rules: LimitPolicyRuleResponse[] }) 
                 {formatRuleSummary(rule)}
               </TableCell>
               <TableCell className="text-xs text-muted-foreground">
-                {formatRuleFilters(rule)}
+                <LimitRuleFiltersSummary rule={rule} />
               </TableCell>
               <TableCell>
                 <StatusBadge variant={rule.is_active ? "active" : "inactive"}>
@@ -770,6 +934,16 @@ function PolicyAssignmentsSection({
   const projects = projectsQuery.data?.status === 200 ? projectsQuery.data.data : [];
   const teamNames = new Map(teams.map((team) => [team.id, team.name]));
   const projectNames = new Map(projects.map((project) => [project.id, project.name]));
+  const { requestActionConfirmation, dialog: actionConfirmationDialog } = useActionConfirmation();
+  const updateAssignment = useUpdatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatch({
+    mutation: {
+      onSuccess: async () => {
+        toast.success("Assignment updated.");
+        await onChanged();
+      },
+      onError: () => toast.error("Assignment could not be updated."),
+    },
+  });
   const deleteAssignment = useDeletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDelete({
     mutation: {
       onSuccess: async () => {
@@ -783,9 +957,14 @@ function PolicyAssignmentsSection({
     scopeFilter === "all"
       ? assignments
       : assignments.filter((assignment) => assignment.scope_type === scopeFilter);
-  const handleDeleteAssignment = async (assignment: PolicyAssignmentResponse) => {
-    if (!window.confirm("Remove this policy assignment?")) return;
-    deleteAssignment.mutate({ assignmentId: assignment.id });
+  const handleDeleteAssignment = (assignment: PolicyAssignmentResponse) => {
+    requestActionConfirmation({
+      title: "Remove policy assignment?",
+      description:
+        "This removes the policy from the selected scope. Inherited policies from higher scopes may still apply.",
+      confirmLabel: "Remove",
+      onConfirm: () => deleteAssignment.mutate({ assignmentId: assignment.id }),
+    });
   };
   return (
     <PolicyCard
@@ -832,9 +1011,27 @@ function PolicyAssignmentsSection({
                     </div>
                   </TableCell>
                   <TableCell>
-                    <StatusBadge variant={assignment.is_active ? "active" : "inactive"}>
-                      {assignment.is_active ? "Active" : "Inactive"}
-                    </StatusBadge>
+                    {canManageAssignments ? (
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={assignment.is_active}
+                          disabled={updateAssignment.isPending}
+                          onCheckedChange={(checked) =>
+                            updateAssignment.mutate({
+                              assignmentId: assignment.id,
+                              data: { is_active: checked },
+                            })
+                          }
+                        />
+                        <span className="text-sm">
+                          {assignment.is_active ? "Active" : "Inactive"}
+                        </span>
+                      </div>
+                    ) : (
+                      <StatusBadge variant={assignment.is_active ? "active" : "inactive"}>
+                        {assignment.is_active ? "Active" : "Inactive"}
+                      </StatusBadge>
+                    )}
                   </TableCell>
                   {canManageAssignments ? (
                     <TableCell>
@@ -842,7 +1039,8 @@ function PolicyAssignmentsSection({
                         variant="ghost"
                         size="icon"
                         aria-label="Remove assignment"
-                        onClick={() => void handleDeleteAssignment(assignment)}
+                        disabled={deleteAssignment.isPending}
+                        onClick={() => handleDeleteAssignment(assignment)}
                       >
                         <Trash2 />
                       </Button>
@@ -854,6 +1052,7 @@ function PolicyAssignmentsSection({
           </Table>
         </div>
       )}
+      {actionConfirmationDialog}
     </PolicyCard>
   );
 }
@@ -863,19 +1062,26 @@ function AccessPoliciesTable({
   assignmentCount,
   isLoading,
   onConfigureRoutes,
+  onEditPolicy,
   onAssign,
-  canManageDefinitions,
+  canManageDefinition,
   canAssign,
 }: {
   policies: AccessPolicyResponse[];
   assignmentCount: (policyId: string, type: "access") => number;
   isLoading: boolean;
   onConfigureRoutes: (policy: AccessPolicyResponse) => void;
+  onEditPolicy: (policy: AccessPolicyResponse) => void;
   onAssign: (policy: AccessPolicyResponse) => void;
-  canManageDefinitions: boolean;
+  canManageDefinition: (policy: AccessPolicyResponse) => boolean;
   canAssign: boolean;
 }) {
   const queryClient = useQueryClient();
+  const {
+    requestImpactConfirmation,
+    isLoadingImpact,
+    dialog: impactConfirmationDialog,
+  } = useImpactConfirmation();
   const deletePolicy = useDeleteAccessPolicyApiV1PoliciesAccessPolicyIdDelete({
     mutation: {
       onSuccess: async () => {
@@ -886,10 +1092,11 @@ function AccessPoliciesTable({
     },
   });
   const handleDeletePolicy = async (policy: AccessPolicyResponse) => {
-    const confirmed = await confirmPolicyImpact(`Delete access policy "${policy.name}"?`, () =>
-      getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet(policy.id),
+    await requestImpactConfirmation(
+      `Delete access policy "${policy.name}"?`,
+      () => getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet(policy.id),
+      () => deletePolicy.mutate({ policyId: policy.id }),
     );
-    if (confirmed) deletePolicy.mutate({ policyId: policy.id });
   };
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading policies...</p>;
   if (policies.length === 0) {
@@ -910,6 +1117,7 @@ function AccessPoliciesTable({
         <TableBody>
           {policies.map((policy) => {
             const status = accessPolicyStatus(policy, assignmentCount(policy.id, "access"));
+            const canManage = canManageDefinition(policy);
             return (
               <TableRow key={policy.id}>
                 <TableCell>
@@ -933,21 +1141,42 @@ function AccessPoliciesTable({
                 </TableCell>
                 <TableCell>
                   <div className="flex justify-end gap-1">
-                    {canManageDefinitions ? (
-                      <Button variant="ghost" size="icon" onClick={() => onConfigureRoutes(policy)}>
+                    {canManage ? (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Edit ${policy.name}`}
+                        onClick={() => onEditPolicy(policy)}
+                      >
+                        <Pencil />
+                      </Button>
+                    ) : null}
+                    {canManage ? (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Configure routes for ${policy.name}`}
+                        onClick={() => onConfigureRoutes(policy)}
+                      >
                         <Route />
                       </Button>
                     ) : null}
                     {canAssign ? (
-                      <Button variant="ghost" size="icon" onClick={() => onAssign(policy)}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Assign ${policy.name}`}
+                        onClick={() => onAssign(policy)}
+                      >
                         <Plus />
                       </Button>
                     ) : null}
-                    {canManageDefinitions ? (
+                    {canManage ? (
                       <Button
                         variant="ghost"
                         size="icon"
                         aria-label={`Delete ${policy.name}`}
+                        disabled={isLoadingImpact || deletePolicy.isPending}
                         onClick={() => void handleDeletePolicy(policy)}
                       >
                         <Trash2 />
@@ -960,6 +1189,7 @@ function AccessPoliciesTable({
           })}
         </TableBody>
       </Table>
+      {impactConfirmationDialog}
     </div>
   );
 }
@@ -969,19 +1199,26 @@ function LimitPoliciesTable({
   assignmentCount,
   isLoading,
   onConfigureRules,
+  onEditPolicy,
   onAssign,
-  canManageDefinitions,
+  canManageDefinition,
   canAssign,
 }: {
   policies: LimitPolicyResponse[];
   assignmentCount: (policyId: string, type: "limit") => number;
   isLoading: boolean;
   onConfigureRules: (policy: LimitPolicyResponse) => void;
+  onEditPolicy: (policy: LimitPolicyResponse) => void;
   onAssign: (policy: LimitPolicyResponse) => void;
-  canManageDefinitions: boolean;
+  canManageDefinition: (policy: LimitPolicyResponse) => boolean;
   canAssign: boolean;
 }) {
   const queryClient = useQueryClient();
+  const {
+    requestImpactConfirmation,
+    isLoadingImpact,
+    dialog: impactConfirmationDialog,
+  } = useImpactConfirmation();
   const deletePolicy = useDeleteLimitPolicyApiV1PoliciesLimitsPolicyIdDelete({
     mutation: {
       onSuccess: async () => {
@@ -992,10 +1229,11 @@ function LimitPoliciesTable({
     },
   });
   const handleDeletePolicy = async (policy: LimitPolicyResponse) => {
-    const confirmed = await confirmPolicyImpact(`Delete limit policy "${policy.name}"?`, () =>
-      getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet(policy.id),
+    await requestImpactConfirmation(
+      `Delete limit policy "${policy.name}"?`,
+      () => getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet(policy.id),
+      () => deletePolicy.mutate({ policyId: policy.id }),
     );
-    if (confirmed) deletePolicy.mutate({ policyId: policy.id });
   };
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading policies...</p>;
   if (policies.length === 0) {
@@ -1016,6 +1254,7 @@ function LimitPoliciesTable({
         <TableBody>
           {policies.map((policy) => {
             const status = limitPolicyStatus(policy, assignmentCount(policy.id, "limit"));
+            const canManage = canManageDefinition(policy);
             return (
               <TableRow key={policy.id}>
                 <TableCell>
@@ -1039,21 +1278,42 @@ function LimitPoliciesTable({
                 </TableCell>
                 <TableCell>
                   <div className="flex justify-end gap-1">
-                    {canManageDefinitions ? (
-                      <Button variant="ghost" size="icon" onClick={() => onConfigureRules(policy)}>
+                    {canManage ? (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Edit ${policy.name}`}
+                        onClick={() => onEditPolicy(policy)}
+                      >
+                        <Pencil />
+                      </Button>
+                    ) : null}
+                    {canManage ? (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Configure rules for ${policy.name}`}
+                        onClick={() => onConfigureRules(policy)}
+                      >
                         <SlidersHorizontal />
                       </Button>
                     ) : null}
                     {canAssign ? (
-                      <Button variant="ghost" size="icon" onClick={() => onAssign(policy)}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Assign ${policy.name}`}
+                        onClick={() => onAssign(policy)}
+                      >
                         <Plus />
                       </Button>
                     ) : null}
-                    {canManageDefinitions ? (
+                    {canManage ? (
                       <Button
                         variant="ghost"
                         size="icon"
                         aria-label={`Delete ${policy.name}`}
+                        disabled={isLoadingImpact || deletePolicy.isPending}
                         onClick={() => void handleDeletePolicy(policy)}
                       >
                         <Trash2 />
@@ -1066,7 +1326,119 @@ function LimitPoliciesTable({
           })}
         </TableBody>
       </Table>
+      {impactConfirmationDialog}
     </div>
+  );
+}
+
+function PolicySettingsSheet({
+  state,
+  onOpenChange,
+  onChanged,
+}: {
+  state: PolicySettingsSheetState;
+  onOpenChange: (open: boolean) => void;
+  onChanged: () => Promise<void>;
+}) {
+  return (
+    <Sheet open={Boolean(state)} onOpenChange={onOpenChange}>
+      {state ? (
+        <PolicySettingsSheetContent
+          key={`${state.kind}:${state.policy.id}`}
+          state={state}
+          onOpenChange={onOpenChange}
+          onChanged={onChanged}
+        />
+      ) : null}
+    </Sheet>
+  );
+}
+
+function PolicySettingsSheetContent({
+  state,
+  onOpenChange,
+  onChanged,
+}: {
+  state: NonNullable<PolicySettingsSheetState>;
+  onOpenChange: (open: boolean) => void;
+  onChanged: () => Promise<void>;
+}) {
+  const [name, setName] = useState(state.policy.name);
+  const [description, setDescription] = useState(state.policy.description ?? "");
+  const [isActive, setIsActive] = useState(state.policy.is_active);
+  const updateAccessPolicy = useUpdateAccessPolicyApiV1PoliciesAccessPolicyIdPatch({
+    mutation: {
+      onSuccess: async () => {
+        toast.success("Access policy updated.");
+        await onChanged();
+        onOpenChange(false);
+      },
+      onError: () => toast.error("Access policy could not be updated."),
+    },
+  });
+  const updateLimitPolicy = useUpdateLimitPolicyApiV1PoliciesLimitsPolicyIdPatch({
+    mutation: {
+      onSuccess: async () => {
+        toast.success("Limit policy updated.");
+        await onChanged();
+        onOpenChange(false);
+      },
+      onError: () => toast.error("Limit policy could not be updated."),
+    },
+  });
+
+  const submit = () => {
+    if (!name.trim()) return;
+    const data = {
+      name: name.trim(),
+      description: description.trim() || null,
+      is_active: isActive,
+    };
+    if (state.kind === "access") {
+      updateAccessPolicy.mutate({ policyId: state.policy.id, data });
+      return;
+    }
+    updateLimitPolicy.mutate({ policyId: state.policy.id, data });
+  };
+
+  return (
+    <SheetContent>
+      <SheetHeader>
+        <SheetTitle>Edit policy</SheetTitle>
+        <SheetDescription>Update policy metadata and activation state.</SheetDescription>
+      </SheetHeader>
+      <div className="grid gap-4 overflow-y-auto px-6 py-5">
+        <Field label="Name">
+          <Input value={name} onChange={(event) => setName(event.target.value)} />
+        </Field>
+        <Field label="Description">
+          <Textarea
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+          />
+        </Field>
+        <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/20 p-3">
+          <div>
+            <div className="text-sm font-medium">Active</div>
+            <p className="text-xs text-muted-foreground">
+              Inactive policies remain assigned but do not affect runtime decisions.
+            </p>
+          </div>
+          <Switch checked={isActive} onCheckedChange={setIsActive} />
+        </div>
+      </div>
+      <SheetFooter>
+        <Button
+          onClick={submit}
+          disabled={!name.trim() || updateAccessPolicy.isPending || updateLimitPolicy.isPending}
+        >
+          Save policy
+        </Button>
+        <SheetClose asChild>
+          <Button variant="outline">Cancel</Button>
+        </SheetClose>
+      </SheetFooter>
+    </SheetContent>
   );
 }
 
@@ -1085,6 +1457,9 @@ function CreatePolicySheet({
   const [limitValue, setLimitValue] = useState("");
   const [intervalUnit, setIntervalUnit] = useState("day");
   const [intervalCount, setIntervalCount] = useState("1");
+  const [limitRuleFilters, setLimitRuleFilters] = useState<LimitRuleFilterValue>(
+    emptyLimitRuleFilters,
+  );
   const [draftRules, setDraftRules] = useState<DraftLimitRule[]>([]);
   const [assignmentScope, setAssignmentScope] = useState("none");
   const [assignmentTeamId, setAssignmentTeamId] = useState("");
@@ -1149,6 +1524,7 @@ function CreatePolicySheet({
     setLimitValue("");
     setIntervalUnit("day");
     setIntervalCount("1");
+    setLimitRuleFilters(emptyLimitRuleFilters());
     setDraftRules([]);
     setAssignmentScope("none");
     setAssignmentTeamId("");
@@ -1168,11 +1544,13 @@ function CreatePolicySheet({
     limitValue,
     intervalUnit,
     intervalCount,
+    filters: limitRuleFilters,
   });
   const addDraftRule = () => {
     if (!currentRuleHasLimits) return;
     setDraftRules((current) => [...current, currentDraftRule()]);
     setLimitValue("");
+    setLimitRuleFilters(emptyLimitRuleFilters());
   };
   const ruleInput = (rule: DraftLimitRule) => ({
     name: rule.name,
@@ -1184,6 +1562,7 @@ function CreatePolicySheet({
     interval_unit: rule.intervalUnit,
     interval_count: rule.intervalUnit === "lifetime" ? 1 : Number(rule.intervalCount || 1),
     is_active: true,
+    ...limitRuleFiltersPayload(rule.filters),
   });
   const rulesForSubmit = () => {
     const rules = [...draftRules];
@@ -1608,6 +1987,10 @@ function CreatePolicySheet({
                   onChange={(event) => setLimitValue(event.target.value)}
                 />
               </Field>
+              <LimitRuleFilterFields
+                value={limitRuleFilters}
+                onChange={setLimitRuleFilters}
+              />
               <Button
                 type="button"
                 variant="outline"
@@ -1657,8 +2040,9 @@ function RouteSheet({
   const [editingRoute, setEditingRoute] = useState<AccessPolicyRouteResponse | null>(null);
   const [priority, setPriority] = useState("100");
   const [weight, setWeight] = useState("100");
+  const [routeIsActive, setRouteIsActive] = useState(true);
   const accessOptionsQuery = useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet(
-    { scope_type: "org", exclude_policy_id: state?.policy.id },
+    accessOptionsParamsForPolicy(state?.policy),
     { query: { enabled: Boolean(state) } },
   );
   const accessOptions =
@@ -1722,6 +2106,7 @@ function RouteSheet({
     setEditingRoute(null);
     setPriority("100");
     setWeight("100");
+    setRouteIsActive(true);
   };
   const startEditRoute = (route: AccessPolicyRouteResponse) => {
     setEditingRoute(route);
@@ -1730,12 +2115,14 @@ function RouteSheet({
     setSelectedModels(route.model_offering_ids);
     setPriority(String(route.priority));
     setWeight(String(route.weight));
+    setRouteIsActive(route.is_active);
   };
   const handleDeleteRoute = async (route: AccessPolicyRouteResponse) => {
-    const confirmed = await confirmPolicyImpact("Delete this access route?", () =>
-      getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet(route.id),
+    await requestImpactConfirmation(
+      "Delete this access route?",
+      () => getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet(route.id),
+      () => deleteRoute.mutate({ routeId: route.id }),
     );
-    if (confirmed) deleteRoute.mutate({ routeId: route.id });
   };
   const submit = () => {
     if (!state || !providerId || !poolId || selectedModels.length === 0) return;
@@ -1748,7 +2135,7 @@ function RouteSheet({
           model_offering_ids: selectedModels,
           priority: Number(priority) || 100,
           weight: Number(weight) || 100,
-          is_active: editingRoute.is_active,
+          is_active: routeIsActive,
         },
       });
       return;
@@ -1761,10 +2148,15 @@ function RouteSheet({
         model_offering_ids: selectedModels,
         priority: Number(priority) || 100,
         weight: Number(weight) || 100,
-        is_active: true,
+        is_active: routeIsActive,
       },
     });
   };
+  const {
+    requestImpactConfirmation,
+    isLoadingImpact,
+    dialog: impactConfirmationDialog,
+  } = useImpactConfirmation();
   return (
     <Sheet open={Boolean(state)} onOpenChange={onOpenChange}>
       <SheetContent>
@@ -1784,7 +2176,8 @@ function RouteSheet({
                     <TableRow>
                       <TableHead>Route</TableHead>
                       <TableHead>Priority</TableHead>
-                      <TableHead>Weight</TableHead>
+                      <TableHead>Tie-break weight</TableHead>
+                      <TableHead>Status</TableHead>
                       <TableHead className="w-12" />
                     </TableRow>
                   </TableHeader>
@@ -1804,12 +2197,24 @@ function RouteSheet({
                         <TableCell>{route.priority}</TableCell>
                         <TableCell>{route.weight}</TableCell>
                         <TableCell>
-                          <Button variant="ghost" size="icon" onClick={() => startEditRoute(route)}>
+                          <StatusBadge variant={route.is_active ? "active" : "inactive"}>
+                            {route.is_active ? "Active" : "Inactive"}
+                          </StatusBadge>
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label="Edit route"
+                            onClick={() => startEditRoute(route)}
+                          >
                             <SlidersHorizontal />
                           </Button>
                           <Button
                             variant="ghost"
                             size="icon"
+                            aria-label="Delete route"
+                            disabled={isLoadingImpact || deleteRoute.isPending}
                             onClick={() => void handleDeleteRoute(route)}
                           >
                             <Trash2 />
@@ -1945,7 +2350,19 @@ function RouteSheet({
                   </Field>
                   <Field label="Weight">
                     <Input value={weight} onChange={(event) => setWeight(event.target.value)} />
+                    <p className="text-xs text-muted-foreground">
+                      Higher weight wins when priority ties; it does not split traffic.
+                    </p>
                   </Field>
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-md border bg-background p-3">
+                  <div>
+                    <div className="text-sm font-medium">Active</div>
+                    <p className="text-xs text-muted-foreground">
+                      Inactive routes remain configured but are skipped at runtime.
+                    </p>
+                  </div>
+                  <Switch checked={routeIsActive} onCheckedChange={setRouteIsActive} />
                 </div>
               </div>
             </div>
@@ -1973,6 +2390,7 @@ function RouteSheet({
             <Button variant="outline">Close</Button>
           </SheetClose>
         </SheetFooter>
+        {impactConfirmationDialog}
       </SheetContent>
     </Sheet>
   );
@@ -1993,6 +2411,13 @@ function LimitRulesSheet({
   const [limitValue, setLimitValue] = useState("");
   const [intervalUnit, setIntervalUnit] = useState("day");
   const [intervalCount, setIntervalCount] = useState("1");
+  const [ruleIsActive, setRuleIsActive] = useState(true);
+  const [ruleFilters, setRuleFilters] = useState<LimitRuleFilterValue>(emptyLimitRuleFilters);
+  const {
+    requestImpactConfirmation,
+    isLoadingImpact,
+    dialog: impactConfirmationDialog,
+  } = useImpactConfirmation();
   const createRule = useCreateLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPost({
     mutation: {
       onSuccess: async () => {
@@ -2029,6 +2454,8 @@ function LimitRulesSheet({
     setLimitValue("");
     setIntervalUnit("day");
     setIntervalCount("1");
+    setRuleIsActive(true);
+    setRuleFilters(emptyLimitRuleFilters());
   };
   const startEdit = (rule: LimitPolicyRuleResponse) => {
     setEditingRule(rule);
@@ -2041,12 +2468,20 @@ function LimitRulesSheet({
     );
     setIntervalUnit(rule.interval_unit);
     setIntervalCount(String(rule.interval_count));
+    setRuleIsActive(rule.is_active);
+    setRuleFilters({
+      providerId: rule.provider_id ?? "",
+      poolId: rule.credential_pool_id ?? "",
+      modelId: rule.model_offering_id ?? "",
+      accessPolicyId: rule.access_policy_id ?? "",
+    });
   };
   const handleDeleteRule = async (rule: LimitPolicyRuleResponse) => {
-    const confirmed = await confirmPolicyImpact(`Delete limit rule "${rule.name}"?`, () =>
-      getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet(rule.id),
+    await requestImpactConfirmation(
+      `Delete limit rule "${rule.name}"?`,
+      () => getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet(rule.id),
+      () => deleteRule.mutate({ ruleId: rule.id }),
     );
-    if (confirmed) deleteRule.mutate({ ruleId: rule.id });
   };
   const rulePayload = {
     name,
@@ -2055,7 +2490,8 @@ function LimitRulesSheet({
       limitType === "budget_cents" ? Math.round(Number(limitValue) * 100) : Number(limitValue),
     interval_unit: intervalUnit,
     interval_count: intervalUnit === "lifetime" ? 1 : Number(intervalCount || 1),
-    is_active: true,
+    is_active: ruleIsActive,
+    ...limitRuleFiltersPayload(ruleFilters),
   };
   const hasAnyLimit = Boolean(limitValue.trim());
   const submit = () => {
@@ -2092,6 +2528,8 @@ function LimitRulesSheet({
                       <TableHead>Rule</TableHead>
                       <TableHead>Interval</TableHead>
                       <TableHead>Limit</TableHead>
+                      <TableHead>Filters</TableHead>
+                      <TableHead>Status</TableHead>
                       <TableHead className="w-20" />
                     </TableRow>
                   </TableHeader>
@@ -2105,14 +2543,29 @@ function LimitRulesSheet({
                         <TableCell className="text-xs text-muted-foreground">
                           {formatRuleSummary(rule)}
                         </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          <LimitRuleFiltersSummary rule={rule} />
+                        </TableCell>
+                        <TableCell>
+                          <StatusBadge variant={rule.is_active ? "active" : "inactive"}>
+                            {rule.is_active ? "Active" : "Inactive"}
+                          </StatusBadge>
+                        </TableCell>
                         <TableCell>
                           <div className="flex justify-end gap-1">
-                            <Button variant="ghost" size="icon" onClick={() => startEdit(rule)}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Edit ${rule.name}`}
+                              onClick={() => startEdit(rule)}
+                            >
                               <SlidersHorizontal />
                             </Button>
                             <Button
                               variant="ghost"
                               size="icon"
+                              aria-label={`Delete ${rule.name}`}
+                              disabled={isLoadingImpact || deleteRule.isPending}
                               onClick={() => void handleDeleteRule(rule)}
                             >
                               <Trash2 />
@@ -2176,6 +2629,16 @@ function LimitRulesSheet({
                     onChange={(event) => setLimitValue(event.target.value)}
                   />
                 </Field>
+                <LimitRuleFilterFields value={ruleFilters} onChange={setRuleFilters} />
+                <div className="flex items-center justify-between gap-3 rounded-md border bg-background p-3">
+                  <div>
+                    <div className="text-sm font-medium">Active</div>
+                    <p className="text-xs text-muted-foreground">
+                      Inactive rules remain configured but are skipped at runtime.
+                    </p>
+                  </div>
+                  <Switch checked={ruleIsActive} onCheckedChange={setRuleIsActive} />
+                </div>
               </div>
             </div>
           ) : null}
@@ -2196,6 +2659,7 @@ function LimitRulesSheet({
             <Button variant="outline">Close</Button>
           </SheetClose>
         </SheetFooter>
+        {impactConfirmationDialog}
       </SheetContent>
     </Sheet>
   );
@@ -2401,7 +2865,8 @@ function formatDraftRuleSummary(rule: DraftLimitRule) {
     rule.limitType === "budget_cents"
       ? `$${Number(rule.limitValue).toLocaleString()}`
       : Number(rule.limitValue).toLocaleString();
-  return `${typeLabel}: ${value} ${formatInterval(rule.intervalUnit, rule.intervalCount)}`;
+  const filterSummary = formatDraftRuleFilters(rule.filters);
+  return `${typeLabel}: ${value} ${formatInterval(rule.intervalUnit, rule.intervalCount)}${filterSummary ? ` · ${filterSummary}` : ""}`;
 }
 
 function toAccessRouteInput(route: DraftAccessRoute): AccessPolicyRouteInput {
@@ -2412,14 +2877,14 @@ function toAccessRouteInput(route: DraftAccessRoute): AccessPolicyRouteInput {
   };
 }
 
-function formatRuleFilters(rule: LimitPolicyRuleResponse) {
-  const filters = [
-    rule.provider_id ? `Provider ${rule.provider_id.slice(0, 8)}` : null,
-    rule.credential_pool_id ? `Pool ${rule.credential_pool_id.slice(0, 8)}` : null,
-    rule.model_offering_id ? `Model ${rule.model_offering_id.slice(0, 8)}` : null,
-    rule.access_policy_id ? `Access ${rule.access_policy_id.slice(0, 8)}` : null,
+function formatDraftRuleFilters(filters: LimitRuleFilterValue) {
+  const activeFilters = [
+    filters.providerId ? "provider" : null,
+    filters.poolId ? "pool" : null,
+    filters.modelId ? "model" : null,
+    filters.accessPolicyId ? "access policy" : null,
   ].filter(Boolean);
-  return filters.length ? filters.join(" · ") : "All matching traffic";
+  return activeFilters.length ? `filtered by ${activeFilters.join(", ")}` : "";
 }
 
 function countRouteModels(policy: AccessPolicyResponse) {
@@ -2466,6 +2931,33 @@ function createAccessOptionsParams(
     };
   }
   return { scope_type: "org" };
+}
+
+function accessOptionsParamsForPolicy(policy?: AccessPolicyResponse) {
+  if (!policy) return { scope_type: "org" };
+  if (policy.owning_scope_type === "team" && policy.owning_team_id) {
+    return {
+      scope_type: "team",
+      team_id: policy.owning_team_id,
+      exclude_policy_id: policy.id,
+    };
+  }
+  if (policy.owning_scope_type === "project" && policy.owning_project_id) {
+    return {
+      scope_type: "project",
+      project_id: policy.owning_project_id,
+      exclude_policy_id: policy.id,
+    };
+  }
+  if (policy.owning_scope_type === "virtual_key" && policy.owning_virtual_key_id) {
+    return {
+      scope_type: "virtual_key",
+      project_id: policy.owning_project_id ?? undefined,
+      virtual_key_id: policy.owning_virtual_key_id,
+      exclude_policy_id: policy.id,
+    };
+  }
+  return { scope_type: "org", exclude_policy_id: policy.id };
 }
 
 function formatInterval(intervalUnit: string, intervalCount: string | number) {

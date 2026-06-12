@@ -1,4 +1,5 @@
 import { ListRestart, Send, TerminalSquare } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -17,13 +18,17 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  type PlaygroundMode,
+  validateMaxTokens,
+  validateTemperature,
+} from "@/features/playground/lib/validation";
 import { useListProjectsApiV1ProjectsGet } from "@/shared/api/generated/projects/projects";
-import { useListUsageRecordsApiV1UsageRecordsGet } from "@/shared/api/generated/usage/usage";
 import { useListVirtualKeyInventoryApiV1VirtualKeysGet } from "@/shared/api/generated/virtual-keys/virtual-keys";
+import { apiMutator } from "@/shared/api/orval-mutator";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
 
-type PlaygroundMode = "chat" | "responses" | "completions" | "embeddings";
 type PlaygroundResult = {
   status: number;
   body: unknown;
@@ -31,7 +36,25 @@ type PlaygroundResult = {
   streamedText?: string;
   rawStream?: string;
 };
-type GatewayModel = { id: string };
+type GatewayModel = {
+  id: string;
+  provider_id: string;
+  provider_name: string;
+  alias?: string | null;
+};
+type UsageRecord = {
+  http_status: number;
+  requested_model: string;
+  total_tokens?: number | null;
+  cost_cents?: number | null;
+  request_id?: string | null;
+  created_at: string;
+};
+type UsageRecordsResponse = {
+  data: UsageRecord[];
+  status: number;
+  headers: Headers;
+};
 
 export function PlaygroundPage() {
   const [searchParams] = useSearchParams();
@@ -40,6 +63,7 @@ export function PlaygroundPage() {
   const [selectedKeyId, setSelectedKeyId] = useState("");
   const [virtualKey, setVirtualKey] = useState("");
   const [model, setModel] = useState(searchParams.get("model") ?? "");
+  const [providerId, setProviderId] = useState("");
   const [prompt, setPrompt] = useState("Reply with pong.");
   const [temperature, setTemperature] = useState("0.2");
   const [maxTokens, setMaxTokens] = useState("64");
@@ -48,24 +72,45 @@ export function PlaygroundPage() {
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [result, setResult] = useState<PlaygroundResult | null>(null);
-  const [requestCount, setRequestCount] = useState(0);
+  const [requestId, setRequestId] = useState<string | null>(null);
 
   const projectsQuery = useListProjectsApiV1ProjectsGet();
   const keysQuery = useListVirtualKeyInventoryApiV1VirtualKeysGet(
     selectedProjectId ? { project_id: selectedProjectId, limit: 100 } : undefined,
     { query: { enabled: Boolean(selectedProjectId), retry: false } },
   );
-  const usageQuery = useListUsageRecordsApiV1UsageRecordsGet(
-    { limit: 1, window: "24h" },
-    { query: { enabled: requestCount > 0, retry: false } },
-  );
+  const usageQuery = useQuery({
+    queryKey: ["playground-usage", requestId, selectedKeyId],
+    queryFn: () => {
+      const params = new URLSearchParams({ window: "24h", limit: "1", request_id: requestId! });
+      if (selectedKeyId) params.set("virtual_key_id", selectedKeyId);
+      return apiMutator<UsageRecordsResponse>(`/api/v1/usage/records?${params}`, {
+        method: "GET",
+      });
+    },
+    enabled: Boolean(requestId),
+    retry: false,
+    refetchInterval: (query) => {
+      if (query.state.status === "error") return false;
+      if (query.state.dataUpdateCount >= 10) return false;
+      return query.state.data?.status === 200 && query.state.data.data.length > 0 ? false : 500;
+    },
+  });
   const projects = projectsQuery.data?.status === 200 ? projectsQuery.data.data : [];
   const keysPage = keysQuery.data?.status === 200 ? keysQuery.data.data : null;
   const projectKeys = keysPage?.items ?? [];
   const selectedKey = projectKeys.find((key) => key.id === selectedKeyId) ?? null;
   const latestUsage = usageQuery.data?.status === 200 ? usageQuery.data.data[0] : null;
+  const temperatureError = validateTemperature(temperature, mode);
+  const maxTokensError = validateMaxTokens(maxTokens, mode);
   const canLoadModels = virtualKey.trim().length > 0;
-  const canSend = canLoadModels && model.trim().length > 0 && prompt.trim().length > 0;
+  const canSend =
+    canLoadModels &&
+    providerId.length > 0 &&
+    model.trim().length > 0 &&
+    prompt.trim().length > 0 &&
+    !temperatureError &&
+    !maxTokensError;
   const supportsStream = mode === "chat";
 
   async function loadModels() {
@@ -79,7 +124,10 @@ export function PlaygroundPage() {
       }
       const nextModels = Array.isArray(body.data) ? body.data : [];
       setModels(nextModels);
-      if (!model && nextModels[0]?.id) setModel(nextModels[0].id);
+      if (!model && nextModels[0]?.id) {
+        setModel(nextModels[0].id);
+        setProviderId(nextModels[0].provider_id);
+      }
       toast.success(`Loaded ${nextModels.length} model${nextModels.length === 1 ? "" : "s"}.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not load models.");
@@ -92,9 +140,15 @@ export function PlaygroundPage() {
     if (!canSend) return;
     setIsSending(true);
     setResult(null);
+    const nextRequestId = crypto.randomUUID();
+    setRequestId(nextRequestId);
     try {
       const response = await gatewayFetch(endpointForMode(mode), virtualKey, {
         method: "POST",
+        headers: {
+          "X-Request-ID": nextRequestId,
+          "X-Bab-Provider-Id": providerId,
+        },
         body: JSON.stringify(buildPayload({ mode, model, prompt, temperature, maxTokens, stream })),
       });
       if (mode === "chat" && stream) {
@@ -111,7 +165,6 @@ export function PlaygroundPage() {
         const body = parseJson(text) ?? text;
         setResult({ status: response.status, body, requestId: extractRequestId(response, body) });
       }
-      setRequestCount((value) => value + 1);
     } catch (error) {
       toast.error("Gateway request failed before receiving a response.");
       setResult({ status: 0, body: error instanceof Error ? error.message : String(error) });
@@ -141,7 +194,9 @@ export function PlaygroundPage() {
                 <TabsTrigger value="chat">Chat</TabsTrigger>
                 <TabsTrigger value="responses">Responses</TabsTrigger>
                 <TabsTrigger value="completions">Completions</TabsTrigger>
-                <TabsTrigger value="embeddings">Embeddings</TabsTrigger>
+                <TabsTrigger value="embeddings" disabled>
+                  Embeddings (unavailable)
+                </TabsTrigger>
               </TabsList>
               <TabsContent value={mode} className="space-y-4 pt-2">
                 <SharedRequestControls
@@ -152,10 +207,13 @@ export function PlaygroundPage() {
                   selectedKeyId={selectedKeyId}
                   selectedKey={selectedKey}
                   model={model}
+                  providerId={providerId}
                   models={models}
                   prompt={prompt}
                   temperature={temperature}
                   maxTokens={maxTokens}
+                  temperatureError={temperatureError}
+                  maxTokensError={maxTokensError}
                   stream={stream}
                   supportsStream={supportsStream}
                   isLoadingModels={isLoadingModels}
@@ -165,7 +223,12 @@ export function PlaygroundPage() {
                     setSelectedKeyId("");
                   }}
                   onKeyChange={setSelectedKeyId}
-                  onModelChange={setModel}
+                  onModelChange={(value) => {
+                    setModel(value);
+                    const selectedModel = models.find((entry) => entry.id === value);
+                    if (selectedModel) setProviderId(selectedModel.provider_id);
+                  }}
+                  onProviderChange={setProviderId}
                   onPromptChange={setPrompt}
                   onTemperatureChange={setTemperature}
                   onMaxTokensChange={setMaxTokens}
@@ -173,11 +236,6 @@ export function PlaygroundPage() {
                   onLoadModels={loadModels}
                   canLoadModels={canLoadModels}
                 />
-                {mode === "embeddings" ? (
-                  <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
-                    Embeddings intentionally return 501 until adapter support is implemented.
-                  </div>
-                ) : null}
                 <Button type="button" disabled={!canSend || isSending} onClick={sendRequest}>
                   <Send data-icon="inline-start" />
                   {isSending ? "Sending..." : `Send ${mode}`}
@@ -208,10 +266,13 @@ function SharedRequestControls({
   selectedKeyId,
   selectedKey,
   model,
+  providerId,
   models,
   prompt,
   temperature,
   maxTokens,
+  temperatureError,
+  maxTokensError,
   stream,
   supportsStream,
   isLoadingModels,
@@ -220,6 +281,7 @@ function SharedRequestControls({
   onProjectChange,
   onKeyChange,
   onModelChange,
+  onProviderChange,
   onPromptChange,
   onTemperatureChange,
   onMaxTokensChange,
@@ -252,10 +314,13 @@ function SharedRequestControls({
     revoked_at: string | null;
   } | null;
   model: string;
+  providerId: string;
   models: GatewayModel[];
   prompt: string;
   temperature: string;
   maxTokens: string;
+  temperatureError: string | null;
+  maxTokensError: string | null;
   stream: boolean;
   supportsStream: boolean;
   isLoadingModels: boolean;
@@ -264,6 +329,7 @@ function SharedRequestControls({
   onProjectChange: (value: string) => void;
   onKeyChange: (value: string) => void;
   onModelChange: (value: string) => void;
+  onProviderChange: (value: string) => void;
   onPromptChange: (value: string) => void;
   onTemperatureChange: (value: string) => void;
   onMaxTokensChange: (value: string) => void;
@@ -290,7 +356,7 @@ function SharedRequestControls({
           </Select>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="playground-key-select">Virtual key metadata</Label>
+          <Label htmlFor="playground-key-select">Key context</Label>
           <Select value={selectedKeyId} onValueChange={onKeyChange} disabled={!selectedProjectId}>
             <SelectTrigger id="playground-key-select" className="h-10">
               <SelectValue placeholder="Select key" />
@@ -316,8 +382,8 @@ function SharedRequestControls({
             ) : null}
           </div>
           <p className="mt-2">
-            The selector shows safe metadata only. Paste the plaintext secret you already saved to
-            send gateway requests.
+            This selection scopes context and usage matching. The pasted secret below authenticates
+            the gateway request.
           </p>
         </div>
       ) : null}
@@ -343,8 +409,8 @@ function SharedRequestControls({
             </SelectTrigger>
             <SelectContent className="w-[min(34rem,var(--radix-select-trigger-width))]">
               {models.map((entry) => (
-                <SelectItem key={entry.id} value={entry.id}>
-                  {entry.id}
+                <SelectItem key={`${entry.provider_id}-${entry.id}`} value={entry.id}>
+                  {entry.provider_name} / {entry.alias ?? entry.id}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -365,6 +431,26 @@ function SharedRequestControls({
           placeholder="Manual model id"
         />
       </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="playground-provider">Provider</Label>
+        <Select value={providerId} onValueChange={onProviderChange}>
+          <SelectTrigger id="playground-provider">
+            <SelectValue placeholder="Select an explicit provider" />
+          </SelectTrigger>
+          <SelectContent>
+            {Array.from(
+              new Map(models.map((entry) => [entry.provider_id, entry.provider_name])).entries(),
+            ).map(([id, name]) => (
+              <SelectItem key={id} value={id}>
+                {name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          Requests send this choice in the X-Bab-Provider-Id header.
+        </p>
+      </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor="playground-temperature">Temperature</Label>
@@ -376,7 +462,14 @@ function SharedRequestControls({
             step="0.1"
             value={temperature}
             onChange={(event) => onTemperatureChange(event.target.value)}
+            aria-invalid={Boolean(temperatureError)}
+            aria-describedby={temperatureError ? "playground-temperature-error" : undefined}
           />
+          {temperatureError ? (
+            <p id="playground-temperature-error" className="text-xs text-destructive">
+              {temperatureError}
+            </p>
+          ) : null}
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="playground-max-tokens">Max tokens</Label>
@@ -387,7 +480,14 @@ function SharedRequestControls({
             step="1"
             value={maxTokens}
             onChange={(event) => onMaxTokensChange(event.target.value)}
+            aria-invalid={Boolean(maxTokensError)}
+            aria-describedby={maxTokensError ? "playground-max-tokens-error" : undefined}
           />
+          {maxTokensError ? (
+            <p id="playground-max-tokens-error" className="text-xs text-destructive">
+              {maxTokensError}
+            </p>
+          ) : null}
         </div>
       </div>
       <div className="flex items-center justify-between gap-3 rounded-md border p-3">
@@ -489,11 +589,11 @@ function LatestUsageCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{isMatchingRecord ? "Matching usage record" : "Recent visible usage"}</CardTitle>
+        <CardTitle>Matching usage record</CardTitle>
         <CardDescription>
           {isMatchingRecord
             ? "Matched by request ID from the gateway response."
-            : "Available for roles that can read usage. Without exact request lookup, this may not be the request just sent."}
+            : "Looking up the exact request ID within the selected key context."}
         </CardDescription>
       </CardHeader>
       <CardContent>

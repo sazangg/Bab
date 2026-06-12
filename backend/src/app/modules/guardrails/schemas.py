@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -13,6 +14,8 @@ GUARDRAIL_RULE_TYPES = (
     "pii",
 )
 GUARDRAIL_RULE_TYPE_PATTERN = f"^({'|'.join(GUARDRAIL_RULE_TYPES)})$"
+ROUTING_RULE_TYPES = {"model", "provider", "pool"}
+PII_RULE_VALUES = {"email", "phone", "credit_card"}
 
 
 class GuardrailRuleInput(BaseModel):
@@ -31,6 +34,22 @@ class GuardrailRuleInput(BaseModel):
         if not values:
             raise ValueError("values must contain at least one non-empty item")
         return values
+
+    @model_validator(mode="after")
+    def validate_rule_configuration(self):
+        if self.phase == "response" and self.rule_type in ROUTING_RULE_TYPES:
+            raise ValueError(f"{self.rule_type} rules only support request-phase evaluation")
+        if self.rule_type == "prompt_regex":
+            for value in self.values:
+                try:
+                    re.compile(value)
+                except re.error as exc:
+                    raise ValueError(f"invalid regex {value!r}: {exc}") from exc
+        if self.rule_type == "pii":
+            unsupported = sorted({value.lower() for value in self.values} - PII_RULE_VALUES)
+            if unsupported:
+                raise ValueError(f"unsupported PII values: {', '.join(unsupported)}")
+        return self
 
 
 class GuardrailRuleResponse(BaseModel):

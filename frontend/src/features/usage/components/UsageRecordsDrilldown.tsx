@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useListUsageRecordsApiV1UsageRecordsGet } from "@/shared/api/generated/usage/usage";
+import { httpClient } from "@/shared/api/http-client";
 import type { UsageRecordResponse } from "@/shared/api/generated/schemas";
 
 type UsageRecordsDrilldownProps = {
@@ -39,7 +40,7 @@ export function UsageRecordsDrilldown({
       <CardHeader className="border-b">
         <div className="flex items-center justify-between gap-3">
           <CardTitle>{title}</CardTitle>
-          <Button variant="outline" size="sm" onClick={() => downloadCsv(records)}>
+          <Button variant="outline" size="sm" onClick={() => downloadCsv(filters)}>
             <Download data-icon="inline-start" />
             Export CSV
           </Button>
@@ -99,47 +100,15 @@ export function UsageRecordsDrilldown({
   );
 }
 
-function downloadCsv(records: UsageRecordResponse[]) {
-  const header = [
-    "created_at",
-    "requested_model",
-    "provider_model",
-    "http_status",
-    "total_tokens",
-    "cost_cents",
-    "confirmed_spend_cents",
-    "estimated_spend_cents",
-    "spend_type",
-    "latency_ms",
-    "provider_credential_id",
-    "provider_credential_name",
-    "provider_credential_prefix",
-    "request_id",
-    "error_code",
-  ];
-  const rows = records.map((record) =>
-    [
-      record.created_at,
-      record.requested_model,
-      record.provider_model,
-      record.http_status,
-      record.total_tokens ?? 0,
-      record.cost_cents ?? 0,
-      record.confirmed_spend_cents,
-      record.estimated_spend_cents,
-      record.spend_type,
-      record.latency_ms,
-      record.provider_credential_id ?? "",
-      record.provider_credential_name ?? "",
-      record.provider_credential_prefix ?? "",
-      record.request_id ?? "",
-      record.error_code ?? "",
-    ]
-      .map((value) => `"${String(value).replaceAll('"', '""')}"`)
-      .join(","),
-  );
-  const blob = new Blob([[header.join(","), ...rows].join("\n")], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
+async function downloadCsv(filters: UsageRecordsDrilldownProps["filters"]) {
+  const response = await httpClient.get<Blob>("/api/v1/usage/records/export", {
+    params: {
+      window: "30d",
+      ...filters,
+    },
+    responseType: "blob",
+  });
+  const url = URL.createObjectURL(response.data);
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = "bab-usage-records.csv";
@@ -158,7 +127,7 @@ function formatCents(value: number | null | undefined) {
 function formatRecordSpend(record: UsageRecordResponse) {
   if (record.spend_type === "unknown") return "Unpriced";
   if (record.spend_type === "confirmed") {
-    return `${formatCents(record.confirmed_spend_cents)} confirmed`;
+    return `${formatCents(record.confirmed_spend_cents)} reported usage`;
   }
   return `${formatCents(record.estimated_spend_cents)} estimated`;
 }

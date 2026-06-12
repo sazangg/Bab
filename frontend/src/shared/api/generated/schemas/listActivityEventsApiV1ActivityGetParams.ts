@@ -15,6 +15,9 @@ project_id?: string | null;
 virtual_key_id?: string | null;
 start_at?: string | null;
 end_at?: string | null;
+q?: string | null;
+before_at?: string | null;
+before_id?: string | null;
 /**
  * @minimum 1
  * @maximum 100

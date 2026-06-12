@@ -27,6 +27,7 @@ import {
   useUploadOrganizationLogoApiV1SettingsOrganizationLogoPost,
 } from "@/shared/api/generated/settings/settings";
 import type { UpdateOrganizationSettingsRequest } from "@/shared/api/generated/schemas";
+import { getProblemDetail } from "@/shared/api/problem-detail";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
 
@@ -98,39 +99,35 @@ export function SettingsPage() {
     mutation: {
       onSuccess: async (response) => {
         if (response.status === 200) {
-          await queryClient.invalidateQueries();
+          form.reset(toFormValues(response.data));
+          await queryClient.invalidateQueries({ queryKey: ["/api/v1/settings"] });
+          await queryClient.invalidateQueries({
+            queryKey: ["/api/v1/settings/gateway-metadata"],
+          });
           toast.success("Settings saved.");
         }
       },
-      onError: () => toast.error("Settings could not be saved."),
+      onError: (error) => toast.error(getProblemDetail(error, "Settings could not be saved.")),
     },
   });
   const uploadLogo = useUploadOrganizationLogoApiV1SettingsOrganizationLogoPost({
     mutation: {
       onSuccess: async (response) => {
         if (response.status === 200) {
-          await queryClient.invalidateQueries();
+          form.reset(toFormValues(response.data), { keepDirtyValues: true });
+          await queryClient.invalidateQueries({ queryKey: ["/api/v1/settings"] });
+          await queryClient.invalidateQueries({
+            queryKey: ["/api/v1/settings/gateway-metadata"],
+          });
           toast.success("Organization logo updated.");
         }
       },
-      onError: () => toast.error("Logo could not be uploaded."),
+      onError: (error) => toast.error(getProblemDetail(error, "Logo could not be uploaded.")),
     },
   });
   useEffect(() => {
     if (!settings) return;
-    form.reset({
-      organization_name: settings.organization_name,
-      public_app_url: settings.public_app_url ?? "",
-      public_base_url: settings.public_base_url ?? "",
-      default_request_timeout_seconds: settings.default_request_timeout_seconds,
-      default_retry_count: settings.default_retry_count,
-      default_max_body_bytes: settings.default_max_body_bytes,
-      default_model_sync_mode: toSyncMode(settings.default_model_sync_mode),
-      default_virtual_key_expiration_days:
-        settings.default_virtual_key_expiration_days ?? undefined,
-      virtual_key_prefix: settings.virtual_key_prefix,
-      allow_secret_copy: settings.allow_secret_copy,
-    });
+    form.reset(toFormValues(settings), { keepDirtyValues: true });
   }, [form, settings]);
 
   const submit = form.handleSubmit((values) => {
@@ -164,7 +161,9 @@ export function SettingsPage() {
             <Button
               type="submit"
               form="settings-form"
-              disabled={updateSettings.isPending || settingsQuery.isPending}
+              disabled={
+                updateSettings.isPending || settingsQuery.isPending || !form.formState.isDirty
+              }
             >
               <Save data-icon="inline-start" />
               {updateSettings.isPending ? "Saving..." : "Save settings"}
@@ -219,14 +218,22 @@ export function SettingsPage() {
                   {uploadLogo.isPending ? "Uploading..." : "Upload"}
                 </Button>
               </div>
-              <Field label="Organization name" htmlFor="settings-org-name">
+              <Field
+                label="Organization name"
+                htmlFor="settings-org-name"
+                error={form.formState.errors.organization_name?.message}
+              >
                 <Input
                   id="settings-org-name"
                   disabled={!canManageSettings}
                   {...form.register("organization_name")}
                 />
               </Field>
-              <Field label="Public app URL" htmlFor="settings-public-app-url">
+              <Field
+                label="Public app URL"
+                htmlFor="settings-public-app-url"
+                error={form.formState.errors.public_app_url?.message}
+              >
                 <Input
                   id="settings-public-app-url"
                   placeholder="https://admin.example.com"
@@ -237,7 +244,11 @@ export function SettingsPage() {
                   App/admin console origin used for invite links.
                 </p>
               </Field>
-              <Field label="Public gateway URL" htmlFor="settings-public-url">
+              <Field
+                label="Public gateway URL"
+                htmlFor="settings-public-url"
+                error={form.formState.errors.public_base_url?.message}
+              >
                 <Input
                   id="settings-public-url"
                   placeholder="https://gateway.example.com"
@@ -276,7 +287,12 @@ export function SettingsPage() {
                 name="default_max_body_bytes"
                 form={form}
                 disabled={!canManageSettings}
+                max={settings.deployment_max_body_bytes}
               />
+              <p className="text-xs text-muted-foreground md:col-span-2">
+                The deployment ceiling is {settings.deployment_max_body_bytes.toLocaleString()}{" "}
+                bytes. Provider limits can reduce the effective limit further.
+              </p>
               <Field label="Model sync mode">
                 <Select
                   value={modelSyncMode}
@@ -306,7 +322,7 @@ export function SettingsPage() {
                 </p>
               </Field>
               <div className="rounded-md border bg-muted/20 p-3">
-                <div className="text-sm font-medium">Usage retention</div>
+                <div className="text-sm font-medium">Deployment usage retention intent</div>
                 <div className="mt-1 text-sm text-muted-foreground">
                   {settings.usage_retention_days == null
                     ? "Retain usage records indefinitely. No retention deletion job is configured."
@@ -314,7 +330,7 @@ export function SettingsPage() {
                 </div>
               </div>
               <div className="rounded-md border bg-muted/20 p-3">
-                <div className="text-sm font-medium">Activity retention</div>
+                <div className="text-sm font-medium">Deployment activity retention intent</div>
                 <div className="mt-1 text-sm text-muted-foreground">
                   {settings.activity_retention_days == null
                     ? "Retain activity events indefinitely. No retention deletion job is configured."
@@ -330,7 +346,11 @@ export function SettingsPage() {
               <CardDescription>Defaults for newly issued client-facing keys.</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-2">
-              <Field label="Key prefix" htmlFor="settings-key-prefix">
+              <Field
+                label="Key prefix"
+                htmlFor="settings-key-prefix"
+                error={form.formState.errors.virtual_key_prefix?.message}
+              >
                 <Input
                   id="settings-key-prefix"
                   disabled={!canManageSettings}
@@ -346,10 +366,10 @@ export function SettingsPage() {
               />
               <div className="flex items-center justify-between gap-4 rounded-md border p-3 md:col-span-2">
                 <div>
-                  <Label htmlFor="settings-secret-copy">Return plaintext key once</Label>
+                  <Label htmlFor="settings-secret-copy">Allow key issuance and rotation</Label>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    When off, newly created virtual keys are stored and usable but never returned to
-                    the UI.
+                    When off, virtual key creation and rotation are blocked because the plaintext
+                    secret could not be delivered safely.
                   </p>
                 </div>
                 <Switch
@@ -373,15 +393,22 @@ function Field({
   label,
   htmlFor,
   children,
+  error,
 }: {
   label: string;
   htmlFor?: string;
   children: ReactNode;
+  error?: string;
 }) {
   return (
     <div className="flex flex-col gap-1.5">
       <Label htmlFor={htmlFor}>{label}</Label>
       {children}
+      {error ? (
+        <p className="text-xs text-destructive" role="alert">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -392,6 +419,7 @@ function NumberField({
   form,
   placeholder,
   disabled,
+  max,
 }: {
   label: string;
   name:
@@ -402,14 +430,20 @@ function NumberField({
   form: ReturnType<typeof useForm<SettingsInput, unknown, SettingsValues>>;
   placeholder?: string;
   disabled?: boolean;
+  max?: number;
 }) {
   return (
-    <Field label={label} htmlFor={`settings-${name}`}>
+    <Field
+      label={label}
+      htmlFor={`settings-${name}`}
+      error={form.formState.errors[name]?.message?.toString()}
+    >
       <Input
         id={`settings-${name}`}
         type="number"
         placeholder={placeholder}
         disabled={disabled}
+        max={max}
         {...form.register(name)}
       />
     </Field>
@@ -423,6 +457,32 @@ function optionalNumber(value: unknown) {
 function toSyncMode(value: string): SettingsValues["default_model_sync_mode"] {
   if (value === "replace" || value === "disabled") return value;
   return "merge";
+}
+
+function toFormValues(settings: {
+  organization_name: string;
+  public_app_url: string | null;
+  public_base_url: string | null;
+  default_request_timeout_seconds: number;
+  default_retry_count: number;
+  default_max_body_bytes: number;
+  default_model_sync_mode: string;
+  default_virtual_key_expiration_days: number | null;
+  virtual_key_prefix: string;
+  allow_secret_copy: boolean;
+}): SettingsInput {
+  return {
+    organization_name: settings.organization_name,
+    public_app_url: settings.public_app_url ?? "",
+    public_base_url: settings.public_base_url ?? "",
+    default_request_timeout_seconds: settings.default_request_timeout_seconds,
+    default_retry_count: settings.default_retry_count,
+    default_max_body_bytes: settings.default_max_body_bytes,
+    default_model_sync_mode: toSyncMode(settings.default_model_sync_mode),
+    default_virtual_key_expiration_days: settings.default_virtual_key_expiration_days ?? undefined,
+    virtual_key_prefix: settings.virtual_key_prefix,
+    allow_secret_copy: settings.allow_secret_copy,
+  };
 }
 
 function resolveAssetUrl(url: string) {

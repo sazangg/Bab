@@ -54,13 +54,16 @@ async def test_fresh_bootstrap_creates_core_workspace_without_default_teams(
 ) -> None:
     monkeypatch.setattr(bootstrap.settings, "default_admin_email", "owner@example.com")
     monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    monkeypatch.setattr(bootstrap.settings, "public_app_url", "https://app.example.com")
 
     await bootstrap.sync_default_workspace(db_session)
 
     assert await db_session.scalar(select(Organization)) is not None
     owner = await db_session.scalar(select(User).where(User.email == "owner@example.com"))
     assert owner is not None
-    assert await db_session.scalar(select(OrganizationSettings)) is not None
+    org_settings = await db_session.scalar(select(OrganizationSettings))
+    assert org_settings is not None
+    assert org_settings.public_app_url == "https://app.example.com"
     assert list(await db_session.scalars(select(Provider))) != []
     assert list(await db_session.scalars(select(Team))) == []
 
@@ -107,6 +110,7 @@ async def test_gateway_metadata_is_available_to_scoped_key_managers(
                 "public_base_url": "https://gateway.example.com",
                 "virtual_key_prefix": "example",
                 "default_virtual_key_expiration_days": 90,
+                "allow_secret_copy": False,
             },
         )
         project_admin_headers = await _login(
@@ -124,9 +128,12 @@ async def test_gateway_metadata_is_available_to_scoped_key_managers(
     assert settings_response.status_code == 403
     assert metadata_response.status_code == 200
     assert metadata_response.json() == {
+        "organization_name": bootstrap.settings.default_organization_name,
+        "organization_logo_url": None,
         "public_base_url": "https://gateway.example.com",
         "virtual_key_prefix": "example",
         "default_virtual_key_expiration_days": 90,
+        "allow_secret_copy": False,
     }
 
 

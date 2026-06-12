@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.request_ids import current_request_id
@@ -41,6 +41,9 @@ async def list_activity_events(
     allowed_project_ids: set[UUID] | None = None,
     since: datetime | None = None,
     end_at: datetime | None = None,
+    search: str | None = None,
+    before_at: datetime | None = None,
+    before_id: UUID | None = None,
     db: AsyncSession,
 ) -> list[ActivityEvent]:
     query = select(ActivityEvent).where(ActivityEvent.org_id == org_id)
@@ -52,6 +55,29 @@ async def list_activity_events(
         query = query.where(ActivityEvent.created_at >= since)
     if end_at is not None:
         query = query.where(ActivityEvent.created_at <= end_at)
+    if search:
+        pattern = f"%{search}%"
+        query = query.where(
+            or_(
+                ActivityEvent.message.ilike(pattern),
+                ActivityEvent.action.ilike(pattern),
+                ActivityEvent.actor_email.ilike(pattern),
+                ActivityEvent.request_id.ilike(pattern),
+                ActivityEvent.metadata_["reason"].as_string().ilike(pattern),
+                ActivityEvent.metadata_["requested_model"].as_string().ilike(pattern),
+                ActivityEvent.metadata_["provider_model"].as_string().ilike(pattern),
+                ActivityEvent.metadata_["policy_id"].as_string().ilike(pattern),
+                ActivityEvent.metadata_["rule_id"].as_string().ilike(pattern),
+            )
+        )
+    if before_at is not None:
+        cursor_filter = ActivityEvent.created_at < before_at
+        if before_id is not None:
+            cursor_filter = or_(
+                cursor_filter,
+                and_(ActivityEvent.created_at == before_at, ActivityEvent.id < before_id),
+            )
+        query = query.where(cursor_filter)
     if entity_type is not None and entity_id is not None:
         column = getattr(ActivityEvent, f"{entity_type}_id", None)
         if column is not None:
@@ -90,7 +116,7 @@ async def list_activity_events(
                 )
             )
         query = query.where(or_(*scope_filters) if scope_filters else ActivityEvent.id.is_(None))
-    query = query.order_by(ActivityEvent.created_at.desc())
+    query = query.order_by(ActivityEvent.created_at.desc(), ActivityEvent.id.desc())
     if limit is not None:
         query = query.limit(limit)
     result = await db.scalars(query)

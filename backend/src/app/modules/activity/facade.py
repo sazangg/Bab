@@ -125,6 +125,9 @@ async def list_events(
     allowed_project_ids: set[UUID] | None = None,
     since: datetime | None = None,
     end_at: datetime | None = None,
+    search: str | None = None,
+    before_at: datetime | None = None,
+    before_id: UUID | None = None,
     limit: int | None = 100,
 ) -> list[ActivityEventResponse]:
     events = await repository.list_activity_events(
@@ -140,6 +143,9 @@ async def list_events(
         allowed_project_ids=allowed_project_ids,
         since=since,
         end_at=end_at,
+        search=search,
+        before_at=before_at,
+        before_id=before_id,
         limit=limit,
         db=db,
     )

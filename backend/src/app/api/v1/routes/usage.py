@@ -23,6 +23,7 @@ from app.modules.usage import facade
 from app.modules.usage.schemas import (
     OrganizationUsageSummary,
     SpendInsights,
+    UsageFilterOptions,
     UsageRecordResponse,
     UsageTimeSeriesPoint,
 )
@@ -106,7 +107,10 @@ async def list_usage_records(
     project_id: UUID | None = None,
     virtual_key_id: UUID | None = None,
     model: str | None = None,
+    request_id: str | None = None,
+    search: str | None = None,
     limit: int = 100,
+    offset: int = 0,
 ) -> list[UsageRecordResponse]:
     usage_scope = await _resolve_usage_scope(
         user=user,
@@ -126,9 +130,12 @@ async def list_usage_records(
         project_id=project_id,
         virtual_key_id=virtual_key_id,
         model=model,
+        request_id=request_id,
+        search=search,
         allowed_team_ids=usage_scope.allowed_team_ids,
         allowed_project_ids=usage_scope.allowed_project_ids,
         limit=min(max(limit, 1), 500),
+        offset=max(offset, 0),
         db=db,
     )
 
@@ -146,6 +153,8 @@ async def export_usage_records(
     project_id: UUID | None = None,
     virtual_key_id: UUID | None = None,
     model: str | None = None,
+    request_id: str | None = None,
+    search: str | None = None,
 ) -> Response:
     usage_scope = await _resolve_usage_scope(
         user=user,
@@ -165,9 +174,12 @@ async def export_usage_records(
         project_id=project_id,
         virtual_key_id=virtual_key_id,
         model=model,
+        request_id=request_id,
+        search=search,
         allowed_team_ids=usage_scope.allowed_team_ids,
         allowed_project_ids=usage_scope.allowed_project_ids,
         limit=None,
+        offset=0,
         db=db,
     )
     return _csv_response(
@@ -287,6 +299,38 @@ def _csv_response(*, filename: str, header: list[str], rows: list[list[object]])
         content=output.getvalue(),
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/filter-options")
+async def get_usage_filter_options(
+    scope: RequestScope,
+    db: DatabaseSession,
+    user: CurrentUser,
+    window: UsageWindow = "30d",
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    team_id: UUID | None = None,
+    project_id: UUID | None = None,
+) -> UsageFilterOptions:
+    usage_scope = await _resolve_usage_scope(
+        user=user,
+        org_id=scope.org_id,
+        db=db,
+        team_id=team_id,
+        project_id=project_id,
+        virtual_key_id=None,
+    )
+    return await facade.get_usage_filter_options(
+        org_id=scope.org_id,
+        window=window,
+        start_at=start_at,
+        end_at=end_at,
+        team_id=team_id,
+        project_id=project_id,
+        allowed_team_ids=usage_scope.allowed_team_ids,
+        allowed_project_ids=usage_scope.allowed_project_ids,
+        db=db,
     )
 
 

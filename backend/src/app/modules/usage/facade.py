@@ -11,6 +11,7 @@ from app.modules.usage.schemas import (
     RecordLimitPolicyReservation,
     RecordUsage,
     SpendInsights,
+    UsageFilterOptions,
     UsageRecordResponse,
     UsageTimeSeriesPoint,
     VirtualKeyUsageSummary,
@@ -101,9 +102,12 @@ async def list_usage_records(
     project_id: UUID | None = None,
     virtual_key_id: UUID | None = None,
     model: str | None = None,
+    request_id: str | None = None,
+    search: str | None = None,
     allowed_team_ids: set[UUID] | None = None,
     allowed_project_ids: set[UUID] | None = None,
     limit: int | None = 100,
+    offset: int = 0,
     db: AsyncSession,
 ) -> list[UsageRecordResponse]:
     records = await repository.list_usage_records(
@@ -115,9 +119,12 @@ async def list_usage_records(
         project_id=project_id,
         virtual_key_id=virtual_key_id,
         model=model,
+        request_id=request_id,
+        search=search,
         allowed_team_ids=allowed_team_ids,
         allowed_project_ids=allowed_project_ids,
         limit=limit,
+        offset=offset,
         db=db,
     )
     return records
@@ -210,6 +217,30 @@ async def get_organization_usage_timeseries(
         project_id=project_id,
         virtual_key_id=virtual_key_id,
         model=model,
+        allowed_team_ids=allowed_team_ids,
+        allowed_project_ids=allowed_project_ids,
+        db=db,
+    )
+
+
+async def get_usage_filter_options(
+    *,
+    org_id: UUID,
+    window: str,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    team_id: UUID | None = None,
+    project_id: UUID | None = None,
+    allowed_team_ids: set[UUID] | None = None,
+    allowed_project_ids: set[UUID] | None = None,
+    db: AsyncSession,
+) -> UsageFilterOptions:
+    return await repository.get_usage_filter_options(
+        org_id=org_id,
+        since=start_at or window_start(window),
+        until=end_at,
+        team_id=team_id,
+        project_id=project_id,
         allowed_team_ids=allowed_team_ids,
         allowed_project_ids=allowed_project_ids,
         db=db,

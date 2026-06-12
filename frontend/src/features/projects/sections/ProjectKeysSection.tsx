@@ -13,7 +13,6 @@ import {
   useGetVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet,
   useRevokeVirtualKeyApiV1ProjectsProjectIdKeysKeyIdDelete,
 } from "@/shared/api/generated/projects/projects";
-import { useGetSettingsApiV1SettingsGet } from "@/shared/api/generated/settings/settings";
 import { resolveGatewayBaseUrl, useGatewayMetadata } from "@/shared/api/gateway-metadata";
 import { getProblemDetail } from "@/shared/api/problem-detail";
 import type {
@@ -112,12 +111,10 @@ export function ProjectKeysSection({
     { query: { enabled: canManage && Boolean(projectId) } },
   );
   const preflight = preflightQuery.data?.status === 200 ? preflightQuery.data.data : undefined;
-  const settingsQuery = useGetSettingsApiV1SettingsGet();
-  const settings = settingsQuery.data?.status === 200 ? settingsQuery.data.data : undefined;
   const metadataQuery = useGatewayMetadata();
   const metadata = metadataQuery.data?.status === 200 ? metadataQuery.data.data : undefined;
   const gatewayBaseUrl = resolveGatewayBaseUrl(metadata?.public_base_url);
-  const secretDeliveryDisabled = settings?.allow_secret_copy === false;
+  const secretDeliveryDisabled = metadata?.allow_secret_copy === false;
   const canCreateKey = Boolean(
     project.is_active && preflight?.is_usable && !secretDeliveryDisabled,
   );
@@ -180,7 +177,7 @@ export function ProjectKeysSection({
             <CardAction>
               <Sheet open={createOpen} onOpenChange={setCreateOpen}>
                 <SheetTrigger asChild>
-                  <Button size="sm" disabled={!project.is_active}>
+                  <Button size="sm" disabled={!project.is_active || secretDeliveryDisabled}>
                     <Plus />
                     New key
                   </Button>
@@ -405,11 +402,11 @@ export function ProjectKeysSection({
             Store this secret in your application secret manager. Bab keeps only a hash and will not
             show the plaintext key again.
           </div>
-          {createdKey?.key ? (
+          {createdKey?.key && gatewayBaseUrl ? (
             <pre className="overflow-auto rounded-md border bg-background p-3 text-xs">
               <code>
                 {sampleCurl({
-                  baseUrl: gatewayBaseUrl!,
+                  baseUrl: gatewayBaseUrl,
                   key: createdKey.key,
                   model:
                     preflight?.routes[0]?.alias ??

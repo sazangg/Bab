@@ -3,9 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 import { apiMutator } from "@/shared/api/orval-mutator";
 
 export type GatewayMetadata = {
+  organization_name: string;
+  organization_logo_url: string | null;
   public_base_url: string | null;
   virtual_key_prefix: string;
   default_virtual_key_expiration_days: number | null;
+  allow_secret_copy: boolean;
 };
 
 type GatewayMetadataResponse = {

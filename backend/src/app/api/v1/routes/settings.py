@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_scope, require_permission, require_permission_or_scoped_admin
+from app.api.v1.deps import get_current_user, get_scope, require_permission
 from app.core.config import settings
 from app.core.database import Scope, get_db
 from app.modules.auth.schemas import AuthenticatedUser
@@ -20,10 +20,7 @@ DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RequestScope = Annotated[Scope, Depends(get_scope)]
 SettingsViewer = Annotated[AuthenticatedUser, Depends(require_permission("settings.view"))]
 SettingsAdmin = Annotated[AuthenticatedUser, Depends(require_permission("settings.manage"))]
-KeyManager = Annotated[
-    AuthenticatedUser,
-    Depends(require_permission_or_scoped_admin("keys.manage")),
-]
+CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]
 
 
 @router.get("")
@@ -39,7 +36,7 @@ async def get_settings(
 async def get_gateway_metadata(
     scope: RequestScope,
     db: DatabaseSession,
-    _: KeyManager,
+    _: CurrentUser,
 ) -> GatewayMetadataResponse:
     return await facade.get_gateway_metadata(scope=scope, db=db)
 

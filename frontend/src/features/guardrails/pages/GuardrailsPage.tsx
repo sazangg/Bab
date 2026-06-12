@@ -103,6 +103,10 @@ const emptyAssignmentForm = {
 };
 
 const ruleTypeOptions = ["model", "provider", "pool", "prompt_contains", "prompt_regex", "pii"];
+const responsePhaseRuleTypes = ["prompt_contains", "prompt_regex", "pii"];
+const routingRuleTypes = ["model", "provider", "pool"];
+const piiRuleValues = ["email", "phone", "credit_card"];
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ruleTypeLabels: Record<string, string> = {
   model: "Model",
   provider: "Provider",
@@ -134,7 +138,7 @@ function newRuleForm(overrides: Partial<PolicyRuleForm> = {}): PolicyRuleForm {
     id: crypto.randomUUID(),
     rule_type: "model",
     effect: "allow",
-    phase: "both",
+    phase: "request",
     values: "",
     detector: "local_regex",
     priority: 100,
@@ -197,11 +201,18 @@ export function GuardrailsPage() {
   );
   const [eventDecision, setEventDecision] = useState("all");
   const [eventPolicyId, setEventPolicyId] = useState("all");
+  const [eventPhase, setEventPhase] = useState("all");
   const [eventScopeType, setEventScopeType] = useState<EventScopeType>("all");
   const [eventScopeId, setEventScopeId] = useState("all");
   const [eventModel, setEventModel] = useState("");
+  const [eventRuleId, setEventRuleId] = useState("");
+  const [eventProviderId, setEventProviderId] = useState("");
+  const [eventPoolId, setEventPoolId] = useState("");
   const [simulationPolicyId, setSimulationPolicyId] = useState("");
   const [simulationModel, setSimulationModel] = useState("gpt-5-mini");
+  const [simulationProviderModel, setSimulationProviderModel] = useState("");
+  const [simulationProviderId, setSimulationProviderId] = useState("");
+  const [simulationPoolId, setSimulationPoolId] = useState("");
   const [simulationPrompt, setSimulationPrompt] = useState("");
   const [simulationResult, setSimulationResult] = useState<GuardrailSimulationResponse | null>(
     null,
@@ -224,16 +235,23 @@ export function GuardrailsPage() {
       );
       return response.data;
     },
-    enabled: canAssignGuardrails,
+    enabled: Boolean(currentUser),
   });
   const assignmentsQuery = useListAssignmentsApiV1GuardrailsAssignmentsGet();
+  const eventRuleIdFilter = eventRuleId.trim();
+  const eventProviderIdFilter = eventProviderId.trim();
+  const eventPoolIdFilter = eventPoolId.trim();
   const eventsQuery = useListEventsApiV1GuardrailsEventsGet({
     decision: eventDecision === "all" ? undefined : eventDecision,
     policy_id: eventPolicyId === "all" ? undefined : eventPolicyId,
+    phase: eventPhase === "all" ? undefined : eventPhase,
+    rule_id: uuidPattern.test(eventRuleIdFilter) ? eventRuleIdFilter : undefined,
     team_id: eventScopeType === "team" && eventScopeId !== "all" ? eventScopeId : undefined,
     project_id: eventScopeType === "project" && eventScopeId !== "all" ? eventScopeId : undefined,
     virtual_key_id:
       eventScopeType === "virtual_key" && eventScopeId !== "all" ? eventScopeId : undefined,
+    provider_id: uuidPattern.test(eventProviderIdFilter) ? eventProviderIdFilter : undefined,
+    pool_id: uuidPattern.test(eventPoolIdFilter) ? eventPoolIdFilter : undefined,
     model: eventModel.trim() || undefined,
     limit: 50,
   });
@@ -309,7 +327,10 @@ export function GuardrailsPage() {
   });
   const scopeOptions = buildScopeOptions({ teams, projects, virtualKeys, includeOrg: true });
   const scopeLabels = buildScopeLabels(scopeOptions);
-  const policyLabels = Object.fromEntries(policyOptions.map((policy) => [policy.id, policy.name]));
+  const policyLabels = Object.fromEntries([
+    ...policyOptions.map((policy) => [policy.id, policy.name]),
+    ...policies.map((policy) => [policy.id, policy.name]),
+  ]);
   const activePolicies = policies.filter((policy) => policy.is_active);
   const enforcedPolicies = policies.filter((policy) => policy.enforcement_mode === "enforce");
   const blockedEvents = events.filter((event) => event.decision === "blocked");
@@ -333,6 +354,7 @@ export function GuardrailsPage() {
     await queryClient.invalidateQueries({ queryKey: ["/api/v1/guardrails/policies"] });
     await queryClient.invalidateQueries({ queryKey: ["/api/v1/guardrails/assignments"] });
     await queryClient.invalidateQueries({ queryKey: ["/api/v1/guardrails/events"] });
+    await queryClient.invalidateQueries({ queryKey: ["guardrail-policy-options"] });
   };
 
   const createPolicy = useCreatePolicyApiV1GuardrailsPoliciesPost({
@@ -472,7 +494,7 @@ export function GuardrailsPage() {
               newRuleForm({
                 rule_type: rule.rule_type,
                 effect: rule.effect,
-                phase: rule.phase ?? "both",
+                phase: normalizeRulePhase(rule.rule_type, rule.phase ?? "both"),
                 values: rule.values.join("\n"),
                 detector: readRuleDetector(rule.config),
                 priority: rule.priority,
@@ -492,14 +514,15 @@ export function GuardrailsPage() {
     const rules: GuardrailRuleInput[] = [];
     for (const [index, rule] of policyForm.rules.entries()) {
       const values = parseRuleValues(rule.values);
-      if (values.length === 0) {
-        toast.error(`Rule ${index + 1} needs at least one value.`);
+      const validationError = validateRuleForm(rule, index, values);
+      if (validationError) {
+        toast.error(validationError);
         return;
       }
       rules.push({
         rule_type: rule.rule_type,
         effect: rule.effect,
-        phase: rule.phase,
+        phase: normalizeRulePhase(rule.rule_type, rule.phase),
         values,
         config: buildRuleConfig(rule),
         priority: rule.priority,
@@ -609,10 +632,21 @@ export function GuardrailsPage() {
       toast.error("Model is required.");
       return;
     }
+    if (simulationProviderId.trim() && !uuidPattern.test(simulationProviderId.trim())) {
+      toast.error("Provider ID must be a UUID.");
+      return;
+    }
+    if (simulationPoolId.trim() && !uuidPattern.test(simulationPoolId.trim())) {
+      toast.error("Pool ID must be a UUID.");
+      return;
+    }
     simulateGuardrails.mutate({
       data: {
         policy_id: simulationPolicyId,
         requested_model: simulationModel.trim(),
+        provider_model: simulationProviderModel.trim() || null,
+        provider_id: simulationProviderId.trim() || null,
+        pool_id: simulationPoolId.trim() || null,
         prompt_text: simulationPrompt,
       },
     });
@@ -662,8 +696,7 @@ export function GuardrailsPage() {
             <CardHeader>
               <CardTitle>Simulation</CardTitle>
               <CardDescription>
-                Test a policy against a model and prompt without recording an event or sending
-                traffic.
+                Test request-time policy context without recording an event or sending traffic.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -686,6 +719,27 @@ export function GuardrailsPage() {
                         onChange={(event) => setSimulationModel(event.target.value)}
                       />
                     </Field>
+                    <Field label="Provider model">
+                      <Input
+                        value={simulationProviderModel}
+                        onChange={(event) => setSimulationProviderModel(event.target.value)}
+                        placeholder="Defaults to requested model"
+                      />
+                    </Field>
+                    <Field label="Provider ID">
+                      <Input
+                        value={simulationProviderId}
+                        onChange={(event) => setSimulationProviderId(event.target.value)}
+                        placeholder="Optional UUID"
+                      />
+                    </Field>
+                    <Field label="Pool ID">
+                      <Input
+                        value={simulationPoolId}
+                        onChange={(event) => setSimulationPoolId(event.target.value)}
+                        placeholder="Optional UUID"
+                      />
+                    </Field>
                   </div>
                   <Field label="Prompt">
                     <Textarea
@@ -695,6 +749,10 @@ export function GuardrailsPage() {
                       placeholder="Paste a prompt to test prompt and PII rules"
                     />
                   </Field>
+                  <p className="text-xs text-muted-foreground">
+                    Response-only rules are enforced on live responses; simulation evaluates the
+                    request context.
+                  </p>
                   <div>
                     <Button onClick={runSimulation} disabled={simulateGuardrails.isPending}>
                       <ShieldCheck data-icon="inline-start" />
@@ -985,6 +1043,16 @@ export function GuardrailsPage() {
                     <SelectItem value="blocked">Blocked</SelectItem>
                   </SelectContent>
                 </Select>
+                <Select value={eventPhase} onValueChange={setEventPhase}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All phases</SelectItem>
+                    <SelectItem value="request">Request</SelectItem>
+                    <SelectItem value="response">Response</SelectItem>
+                  </SelectContent>
+                </Select>
                 <Select value={eventPolicyId} onValueChange={setEventPolicyId}>
                   <SelectTrigger>
                     <SelectValue />
@@ -1019,6 +1087,21 @@ export function GuardrailsPage() {
                   value={eventModel}
                   onChange={(event) => setEventModel(event.target.value)}
                   placeholder="Filter model"
+                />
+                <Input
+                  value={eventRuleId}
+                  onChange={(event) => setEventRuleId(event.target.value)}
+                  placeholder="Filter rule ID"
+                />
+                <Input
+                  value={eventProviderId}
+                  onChange={(event) => setEventProviderId(event.target.value)}
+                  placeholder="Filter provider ID"
+                />
+                <Input
+                  value={eventPoolId}
+                  onChange={(event) => setEventPoolId(event.target.value)}
+                  placeholder="Filter pool ID"
                 />
                 {eventScopeType !== "all" ? (
                   <div className="md:col-span-2 xl:col-span-4">
@@ -1058,7 +1141,7 @@ export function GuardrailsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {events.slice(0, 8).map((event) => (
+                    {events.map((event) => (
                       <TableRow key={event.id}>
                         <TableCell>
                           <Badge variant={event.decision === "blocked" ? "destructive" : "outline"}>
@@ -1461,7 +1544,13 @@ function RuleEditor({
         <SelectField
           label="Rule"
           value={rule.rule_type}
-          onValueChange={(value) => onChange({ ...rule, rule_type: value })}
+          onValueChange={(value) =>
+            onChange({
+              ...rule,
+              rule_type: value,
+              phase: normalizeRulePhase(value, rule.phase),
+            })
+          }
           options={ruleTypeOptions}
           labels={ruleTypeLabels}
         />
@@ -1476,7 +1565,7 @@ function RuleEditor({
           label="Phase"
           value={rule.phase}
           onValueChange={(value) => onChange({ ...rule, phase: value })}
-          options={["request", "response", "both"]}
+          options={phaseOptionsForRuleType(rule.rule_type)}
           labels={{ request: "Request", response: "Response", both: "Both" }}
         />
         <Field label="Priority">
@@ -1679,6 +1768,47 @@ function parseRuleValues(value: string) {
     .split(/\r?\n|,/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function phaseOptionsForRuleType(ruleType: string) {
+  return responsePhaseRuleTypes.includes(ruleType) ? ["request", "response", "both"] : ["request"];
+}
+
+function normalizeRulePhase(ruleType: string, phase: string) {
+  const options = phaseOptionsForRuleType(ruleType);
+  return options.includes(phase) ? phase : "request";
+}
+
+function validateRuleForm(rule: PolicyRuleForm, index: number, values: string[]) {
+  const label = `Rule ${index + 1}`;
+  if (values.length === 0) {
+    return `${label} needs at least one value.`;
+  }
+  if (!phaseOptionsForRuleType(rule.rule_type).includes(rule.phase)) {
+    return `${label} ${ruleTypeLabels[rule.rule_type] ?? rule.rule_type} rules only support request phase.`;
+  }
+  if (rule.rule_type === "prompt_regex") {
+    for (const value of values) {
+      try {
+        new RegExp(value);
+      } catch {
+        return `${label} has an invalid regex: ${value}`;
+      }
+    }
+  }
+  if (rule.rule_type === "pii") {
+    const unsupported = values.filter((value) => !piiRuleValues.includes(value.toLowerCase()));
+    if (unsupported.length > 0) {
+      return `${label} supports only these PII values: ${piiRuleValues.join(", ")}.`;
+    }
+  }
+  if (routingRuleTypes.includes(rule.rule_type) && rule.rule_type !== "model") {
+    const invalid = values.filter((value) => !uuidPattern.test(value));
+    if (invalid.length > 0) {
+      return `${label} ${ruleTypeLabels[rule.rule_type]} values must be UUIDs.`;
+    }
+  }
+  return null;
 }
 
 function buildScopeOptions({

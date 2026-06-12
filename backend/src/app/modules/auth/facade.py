@@ -274,6 +274,9 @@ async def list_audit_events(
     action: str | None = None,
     entity_type: str | None = None,
     entity_id=None,
+    search: str | None = None,
+    before_at=None,
+    before_id=None,
 ) -> list[AuditEventResponse]:
     return await service.list_audit_events(
         scope=scope,
@@ -285,6 +288,9 @@ async def list_audit_events(
         action=action,
         entity_type=entity_type,
         entity_id=entity_id,
+        search=search,
+        before_at=before_at,
+        before_id=before_id,
     )
 
 

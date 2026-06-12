@@ -134,6 +134,66 @@ async def test_spend_insights_returns_limit_policy_budget_burn(db_session: Async
 
 
 @pytest.mark.asyncio
+async def test_budget_burn_uses_policy_rule_interval_not_usage_window(
+    db_session: AsyncSession,
+) -> None:
+    org_id = uuid4()
+    team_id = uuid4()
+    project_id = uuid4()
+    limit_policy_id = uuid4()
+    limit_policy_rule_id = uuid4()
+    db_session.add(
+        LimitPolicy(
+            id=limit_policy_id,
+            org_id=org_id,
+            name="Monthly cap",
+        )
+    )
+    db_session.add(
+        LimitPolicyRule(
+            id=limit_policy_rule_id,
+            org_id=org_id,
+            limit_policy_id=limit_policy_id,
+            name="Monthly budget",
+            limit_type="budget_cents",
+            limit_value=1000,
+            interval_unit="month",
+            interval_count=1,
+        )
+    )
+    db_session.add(
+        UsageRecord(
+            org_id=org_id,
+            team_id=team_id,
+            project_id=project_id,
+            limit_policy_ids=[str(limit_policy_id)],
+            limit_policy_rule_ids=[str(limit_policy_rule_id)],
+            virtual_key_id=uuid4(),
+            pool_id=uuid4(),
+            provider_id=uuid4(),
+            provider_credential_id=None,
+            requested_model="gpt-5-mini",
+            provider_model="gpt-5-mini",
+            http_status=200,
+            latency_ms=100,
+            total_tokens=10,
+            cost_cents=400,
+            usage_source="estimated",
+            created_at=datetime.now(UTC) - timedelta(days=2),
+        )
+    )
+    await db_session.commit()
+
+    insights = await usage_facade.get_spend_insights(
+        org_id=org_id,
+        window="24h",
+        db=db_session,
+    )
+
+    assert insights.limit_policy_budget_burn[0].spent_cents == 400
+
+
+@pytest.mark.asyncio
 async def test_usage_summary_splits_confirmed_estimated_and_unknown_spend(
     db_session: AsyncSession,
 ) -> None:
@@ -159,18 +219,21 @@ async def test_usage_summary_splits_confirmed_estimated_and_unknown_spend(
         [
             UsageRecord(
                 **shared,
+                request_id="req-confirmed",
                 total_tokens=15,
                 cost_cents=20,
                 usage_source="provider_reported",
             ),
             UsageRecord(
                 **shared,
+                request_id="req-estimated",
                 total_tokens=15,
                 cost_cents=10,
                 usage_source="estimated",
             ),
             UsageRecord(
                 **shared,
+                request_id="req-unknown",
                 total_tokens=30,
                 cost_cents=None,
                 usage_source="unknown",
@@ -195,6 +258,12 @@ async def test_usage_summary_splits_confirmed_estimated_and_unknown_spend(
         window="lifetime",
         db=db_session,
     )
+    matching_records = await usage_facade.list_usage_records(
+        org_id=org_id,
+        window="lifetime",
+        request_id="req-estimated",
+        db=db_session,
+    )
 
     assert summary.totals.cost_cents == 30
     assert summary.totals.confirmed_spend_cents == 20
@@ -207,6 +276,70 @@ async def test_usage_summary_splits_confirmed_estimated_and_unknown_spend(
     assert timeseries[0].confirmed_spend_cents == 20
     assert timeseries[0].estimated_spend_cents == 10
     assert {record.spend_type for record in records} == {"confirmed", "estimated", "unknown"}
+    assert [record.request_id for record in matching_records] == ["req-estimated"]
+
+
+@pytest.mark.asyncio
+async def test_usage_records_support_search_and_offset(db_session: AsyncSession) -> None:
+    org_id = uuid4()
+    team_id = uuid4()
+    project_id = uuid4()
+    shared = {
+        "org_id": org_id,
+        "team_id": team_id,
+        "project_id": project_id,
+        "virtual_key_id": uuid4(),
+        "pool_id": uuid4(),
+        "provider_id": uuid4(),
+        "provider_credential_id": None,
+        "http_status": 200,
+        "latency_ms": 100,
+        "total_tokens": 10,
+        "cost_cents": 10,
+        "usage_source": "estimated",
+    }
+    db_session.add_all(
+        [
+            UsageRecord(
+                **shared,
+                request_id="req-alpha",
+                requested_model="gpt-5-mini",
+                provider_model="gpt-5-mini",
+            ),
+            UsageRecord(
+                **shared,
+                request_id="req-beta",
+                requested_model="gpt-5-large",
+                provider_model="gpt-5-large",
+            ),
+            UsageRecord(
+                **shared,
+                request_id="req-gamma",
+                requested_model="claude-sonnet",
+                provider_model="claude-sonnet",
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    searched = await usage_facade.list_usage_records(
+        org_id=org_id,
+        window="lifetime",
+        search="gpt-5",
+        limit=10,
+        db=db_session,
+    )
+    second_page = await usage_facade.list_usage_records(
+        org_id=org_id,
+        window="lifetime",
+        search="gpt-5",
+        limit=1,
+        offset=1,
+        db=db_session,
+    )
+
+    assert {record.request_id for record in searched} == {"req-alpha", "req-beta"}
+    assert len(second_page) == 1
 
 
 @pytest.mark.asyncio

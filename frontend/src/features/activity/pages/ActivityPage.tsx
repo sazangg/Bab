@@ -9,9 +9,12 @@ import {
   Search,
   XCircle,
 } from "lucide-react";
-import { useState } from "react";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { toast } from "sonner";
 
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,6 +23,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -32,7 +36,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useListActivityEventsApiV1ActivityGet } from "@/shared/api/generated/activity/activity";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
 import { useListProjectsApiV1ProjectsGet } from "@/shared/api/generated/projects/projects";
 import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
@@ -48,7 +53,19 @@ import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
 
 const ANY = "__any__";
+const PAGE_SIZE = 50;
 type ActivityScopeValue = "authorized" | `team:${string}` | `project:${string}`;
+type ActivityParams = {
+  category?: string;
+  severity?: string;
+  entity_type?: string;
+  entity_id?: string;
+  team_id?: string;
+  project_id?: string;
+  start_at?: string;
+  end_at?: string;
+  q?: string;
+};
 
 export function ActivityPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -66,7 +83,9 @@ export function ActivityPage() {
   );
   const [scopeValue, setScopeValue] = useState<ActivityScopeValue>("authorized");
   const [entitySearch, setEntitySearch] = useState(searchParams.get("q") ?? "");
+  const debouncedSearch = useDebouncedValue(entitySearch, 300);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
   const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
   const canViewOrgActivity = hasPermission(currentUser, "activity.view");
   const teams = teamsQuery.data?.status === 200 ? teamsQuery.data.data : [];
@@ -80,27 +99,42 @@ export function ActivityPage() {
   const selectedActivityScope = activityScopes.some((scope) => scope.value === scopeValue)
     ? scopeValue
     : "authorized";
-  const activityParams = {
-    limit: 100,
+  const dateRange = buildDateRange(customRangeEnabled, startDate, endDate);
+  const activityParams: ActivityParams = {
     category: category === ANY ? undefined : category,
     severity: severity === ANY ? undefined : severity,
     entity_type: entityType === ANY ? undefined : entityType,
     entity_id: entityType === ANY || !entityId.trim() ? undefined : entityId.trim(),
-    start_at:
-      customRangeEnabled && startDate ? new Date(`${startDate}T00:00:00`).toISOString() : undefined,
-    end_at:
-      customRangeEnabled && endDate ? new Date(`${endDate}T23:59:59`).toISOString() : undefined,
+    start_at: dateRange.startAt,
+    end_at: dateRange.endAt,
+    q: debouncedSearch.trim() || undefined,
     ...buildActivityScopeParams(canViewOrgActivity ? "authorized" : selectedActivityScope),
   };
-  const activityQuery = useListActivityEventsApiV1ActivityGet(activityParams);
-  const events = activityQuery.data?.status === 200 ? activityQuery.data.data : [];
-  const filteredEvents = events.filter((event) => {
-    const term = entitySearch.trim().toLowerCase();
-    if (!term) return true;
-    return `${event.message} ${event.action} ${event.actor_email ?? ""} ${event.request_id ?? ""} ${contextLabel(event)} ${JSON.stringify(event.metadata)}`
-      .toLowerCase()
-      .includes(term);
+  const activityQuery = useInfiniteQuery({
+    queryKey: ["activity-events", activityParams],
+    enabled: !dateRange.error,
+    initialPageParam: undefined as ActivityCursor | undefined,
+    queryFn: async ({ pageParam }) => {
+      const response = await httpClient.get<ActivityEventResponse[]>("/api/v1/activity", {
+        params: {
+          ...activityParams,
+          limit: PAGE_SIZE,
+          before_at: pageParam?.beforeAt,
+          before_id: pageParam?.beforeId,
+        },
+      });
+      return response.data;
+    },
+    getNextPageParam: (page) => {
+      if (page.length < PAGE_SIZE) return undefined;
+      const last = page.at(-1);
+      return last ? { beforeAt: last.created_at, beforeId: last.id } : undefined;
+    },
   });
+  const events = activityQuery.data?.pages.flat() ?? [];
+  useEffect(() => {
+    updateSearchParam(setSearchParams, "q", debouncedSearch);
+  }, [debouncedSearch, setSearchParams]);
   const updateFilter = (updates: Record<string, string>) => {
     const next = new URLSearchParams(searchParams);
     for (const [key, value] of Object.entries(updates)) {
@@ -137,7 +171,7 @@ export function ActivityPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
       <PageHeader
         title="Activity"
         description={
@@ -150,7 +184,7 @@ export function ActivityPage() {
         <CardHeader className="border-b">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <CardTitle>Recent events</CardTitle>
-            <div className="flex flex-wrap gap-2">
+            <div className="grid w-full gap-2 sm:grid-cols-2 lg:w-auto lg:grid-cols-4 xl:flex">
               {!canViewOrgActivity ? (
                 <ScopeSelect
                   value={selectedActivityScope}
@@ -158,10 +192,10 @@ export function ActivityPage() {
                   onChange={setScopeValue}
                 />
               ) : null}
-              <div className="relative">
+              <div className="relative sm:col-span-2 lg:col-span-4 xl:col-span-1">
                 <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  className="h-9 w-64 pl-9"
+                  className="h-9 w-full pl-9 xl:w-64"
                   value={entitySearch}
                   onChange={(event) => setEntitySearch(event.target.value)}
                   placeholder="Filter entity, actor, metadata..."
@@ -174,16 +208,19 @@ export function ActivityPage() {
                   updateFilter({ category: value });
                 }}
               >
-                <SelectTrigger className="w-36">
+                <SelectTrigger aria-label="Filter by category" className="w-full xl:w-36">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={ANY}>All categories</SelectItem>
-                  <SelectItem value="provider">Provider</SelectItem>
-                  <SelectItem value="workspace">Workspace</SelectItem>
-                  <SelectItem value="settings">Settings</SelectItem>
-                  <SelectItem value="guardrail">Guardrail</SelectItem>
-                  <SelectItem value="proxy">Proxy</SelectItem>
+                  <SelectGroup>
+                    <SelectItem value={ANY}>All categories</SelectItem>
+                    <SelectItem value="provider">Provider</SelectItem>
+                    <SelectItem value="workspace">Workspace</SelectItem>
+                    <SelectItem value="settings">Settings</SelectItem>
+                    <SelectItem value="policy">Policy</SelectItem>
+                    <SelectItem value="guardrail">Guardrail</SelectItem>
+                    <SelectItem value="proxy">Proxy</SelectItem>
+                  </SelectGroup>
                 </SelectContent>
               </Select>
               <Select
@@ -193,14 +230,16 @@ export function ActivityPage() {
                   updateFilter({ severity: value });
                 }}
               >
-                <SelectTrigger className="w-32">
+                <SelectTrigger aria-label="Filter by severity" className="w-full xl:w-32">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={ANY}>All severities</SelectItem>
-                  <SelectItem value="info">Info</SelectItem>
-                  <SelectItem value="warning">Warning</SelectItem>
-                  <SelectItem value="error">Error</SelectItem>
+                  <SelectGroup>
+                    <SelectItem value={ANY}>All severities</SelectItem>
+                    <SelectItem value="info">Info</SelectItem>
+                    <SelectItem value="warning">Warning</SelectItem>
+                    <SelectItem value="error">Error</SelectItem>
+                  </SelectGroup>
                 </SelectContent>
               </Select>
               <Select
@@ -212,21 +251,23 @@ export function ActivityPage() {
                   updateFilter({ entity_type: value, entity_id: nextEntityId });
                 }}
               >
-                <SelectTrigger className="w-40">
+                <SelectTrigger aria-label="Filter by entity type" className="w-full xl:w-40">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={ANY}>All entities</SelectItem>
-                  <SelectItem value="provider">Provider</SelectItem>
-                  <SelectItem value="team">Team</SelectItem>
-                  <SelectItem value="project">Project</SelectItem>
-                  <SelectItem value="virtual_key">Virtual key</SelectItem>
-                  <SelectItem value="pool">Pool</SelectItem>
-                  <SelectItem value="model_offering">Model offering</SelectItem>
+                  <SelectGroup>
+                    <SelectItem value={ANY}>All entities</SelectItem>
+                    <SelectItem value="provider">Provider</SelectItem>
+                    <SelectItem value="team">Team</SelectItem>
+                    <SelectItem value="project">Project</SelectItem>
+                    <SelectItem value="virtual_key">Virtual key</SelectItem>
+                    <SelectItem value="pool">Pool</SelectItem>
+                    <SelectItem value="model_offering">Model offering</SelectItem>
+                  </SelectGroup>
                 </SelectContent>
               </Select>
               <Input
-                className="h-9 w-72 font-mono"
+                className="h-9 w-full font-mono xl:w-72"
                 value={entityId}
                 disabled={entityType === ANY}
                 onChange={(event) => {
@@ -258,10 +299,21 @@ export function ActivityPage() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => downloadActivityExport(activityParams)}
+                disabled={isExporting || Boolean(dateRange.error)}
+                onClick={async () => {
+                  setIsExporting(true);
+                  try {
+                    await downloadActivityExport(activityParams);
+                    toast.success("Activity export downloaded.");
+                  } catch {
+                    toast.error("Activity export could not be downloaded.");
+                  } finally {
+                    setIsExporting(false);
+                  }
+                }}
               >
                 <Download data-icon="inline-start" />
-                Export CSV
+                {isExporting ? "Exporting..." : "Export CSV"}
               </Button>
               <Button type="button" variant="outline" onClick={clearFilters}>
                 Clear
@@ -270,39 +322,69 @@ export function ActivityPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {activityQuery.isPending ? (
-            <p className="text-sm text-muted-foreground">Loading activity...</p>
-          ) : filteredEvents.length === 0 ? (
+          {dateRange.error ? (
+            <Alert variant="destructive">
+              <AlertTriangle />
+              <AlertTitle>Invalid date range</AlertTitle>
+              <AlertDescription>{dateRange.error}</AlertDescription>
+            </Alert>
+          ) : activityQuery.isPending ? (
+            <ActivitySkeleton />
+          ) : activityQuery.isError ? (
+            <Alert variant="destructive">
+              <AlertTriangle />
+              <AlertTitle>Activity could not be loaded</AlertTitle>
+              <AlertDescription className="flex items-center justify-between gap-3">
+                Check the connection and try again.
+                <Button variant="outline" size="sm" onClick={() => activityQuery.refetch()}>
+                  Retry
+                </Button>
+              </AlertDescription>
+            </Alert>
+          ) : events.length === 0 ? (
             <EmptyState
               icon={Activity}
               title="No activity yet"
               description="Admin changes and proxy denials matching the filters will appear here."
             />
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Event</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Actor</TableHead>
-                  <TableHead>Context</TableHead>
-                  <TableHead className="text-right">Time</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredEvents.map((event) => (
-                  <ActivityRow
-                    key={event.id}
-                    event={event}
-                    expanded={expandedId === event.id}
-                    onToggle={() =>
-                      setExpandedId((current) => (current === event.id ? null : event.id))
-                    }
-                  />
-                ))}
-              </TableBody>
-            </Table>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Event</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Actor</TableHead>
+                    <TableHead>Context</TableHead>
+                    <TableHead className="text-right">Time</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {events.map((event) => (
+                    <ActivityRow
+                      key={event.id}
+                      event={event}
+                      expanded={expandedId === event.id}
+                      onToggle={() =>
+                        setExpandedId((current) => (current === event.id ? null : event.id))
+                      }
+                    />
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
+          {activityQuery.hasNextPage ? (
+            <div className="flex justify-center border-t pt-4">
+              <Button
+                variant="outline"
+                disabled={activityQuery.isFetchingNextPage}
+                onClick={() => activityQuery.fetchNextPage()}
+              >
+                {activityQuery.isFetchingNextPage ? "Loading..." : "Load more"}
+              </Button>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
     </div>
@@ -378,15 +460,17 @@ function ScopeSelect({
 }) {
   return (
     <Select value={value} onValueChange={(nextValue) => onChange(nextValue as ActivityScopeValue)}>
-      <SelectTrigger className="w-52">
+      <SelectTrigger aria-label="Filter by scope" className="w-52">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {scopes.map((scope) => (
-          <SelectItem key={scope.value} value={scope.value}>
-            {scope.label}
-          </SelectItem>
-        ))}
+        <SelectGroup>
+          {scopes.map((scope) => (
+            <SelectItem key={scope.value} value={scope.value}>
+              {scope.label}
+            </SelectItem>
+          ))}
+        </SelectGroup>
       </SelectContent>
     </Select>
   );
@@ -408,9 +492,21 @@ function ActivityRow({
       <TableRow>
         <TableCell className="max-w-[28rem] whitespace-normal">
           <div className="flex gap-2">
-            <Button variant="ghost" size="icon" className="size-6 shrink-0" onClick={onToggle}>
-              {expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-11 shrink-0"
+                  aria-label={expanded ? "Collapse event details" : "Expand event details"}
+                  aria-expanded={expanded}
+                  onClick={onToggle}
+                >
+                  {expanded ? <ChevronDown /> : <ChevronRight />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{expanded ? "Collapse details" : "Expand details"}</TooltipContent>
+            </Tooltip>
             <Icon className="mt-1 size-4 shrink-0 text-muted-foreground" />
             <div className="min-w-0">
               <div className="font-medium">{event.message}</div>
@@ -492,6 +588,11 @@ type ActivityScopeOption = {
   label: string;
 };
 
+type ActivityCursor = {
+  beforeAt: string;
+  beforeId: string;
+};
+
 function buildActivityScopes({
   canViewOrgActivity,
   teams,
@@ -508,7 +609,9 @@ function buildActivityScopes({
   }
   const teamById = Object.fromEntries(teams.map((team) => [team.id, team]));
   const projectById = Object.fromEntries(projects.map((project) => [project.id, project]));
-  const options: ActivityScopeOption[] = [{ value: "authorized", label: "All authorized activity" }];
+  const options: ActivityScopeOption[] = [
+    { value: "authorized", label: "All authorized activity" },
+  ];
   for (const membership of currentUser?.team_memberships ?? []) {
     options.push({
       value: `team:${membership.team_id}`,
@@ -551,19 +654,19 @@ function buildActivityScopeParams(scopeValue: ActivityScopeValue) {
   return params;
 }
 
-async function downloadActivityExport(params: ReturnType<typeof buildActivityScopeParams> & {
-  limit?: number;
-  category?: string;
-  severity?: string;
-  entity_type?: string;
-  entity_id?: string;
-  start_at?: string;
-  end_at?: string;
-}) {
-  const exportParams = { ...params };
-  delete exportParams.limit;
+async function downloadActivityExport(
+  params: ReturnType<typeof buildActivityScopeParams> & {
+    category?: string;
+    severity?: string;
+    entity_type?: string;
+    entity_id?: string;
+    start_at?: string;
+    end_at?: string;
+    q?: string;
+  },
+) {
   const response = await httpClient.get<Blob>("/api/v1/activity/export", {
-    params: exportParams,
+    params,
     responseType: "blob",
   });
   const url = URL.createObjectURL(response.data);
@@ -572,4 +675,61 @@ async function downloadActivityExport(params: ReturnType<typeof buildActivitySco
   anchor.download = "bab-activity-events.csv";
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+function buildDateRange(
+  enabled: boolean,
+  startDate: string,
+  endDate: string,
+): { startAt?: string; endAt?: string; error?: string } {
+  if (!enabled) return {};
+  const startAt = toDateBoundary(startDate, "00:00:00");
+  const endAt = toDateBoundary(endDate, "23:59:59");
+  if (startDate && !startAt) return { error: "The start date is invalid." };
+  if (endDate && !endAt) return { error: "The end date is invalid." };
+  if (startAt && endAt && startAt > endAt) {
+    return { error: "The start date must be before the end date." };
+  }
+  return { startAt, endAt };
+}
+
+function toDateBoundary(value: string, time: string) {
+  if (!value) return undefined;
+  const date = new Date(`${value}T${time}`);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
+function updateSearchParam(
+  setSearchParams: ReturnType<typeof useSearchParams>[1],
+  key: string,
+  value: string,
+) {
+  setSearchParams(
+    (current) => {
+      const next = new URLSearchParams(current);
+      if (value.trim()) next.set(key, value.trim());
+      else next.delete(key);
+      return next;
+    },
+    { replace: true },
+  );
+}
+
+function useDebouncedValue(value: string, delay: number) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebounced(value), delay);
+    return () => window.clearTimeout(timeout);
+  }, [delay, value]);
+  return debounced;
+}
+
+function ActivitySkeleton() {
+  return (
+    <div className="flex flex-col gap-3" aria-label="Loading activity">
+      {Array.from({ length: 5 }, (_, index) => (
+        <Skeleton key={index} className="h-12 w-full" />
+      ))}
+    </div>
+  );
 }

@@ -38,6 +38,9 @@ async def list_activity_events(
     virtual_key_id: UUID | None = None,
     start_at: datetime | None = None,
     end_at: datetime | None = None,
+    q: str | None = Query(default=None, max_length=200),
+    before_at: datetime | None = None,
+    before_id: UUID | None = None,
     limit: int = Query(default=100, ge=1, le=100),
 ) -> list[ActivityEventResponse]:
     team_id, project_id, virtual_key_id = _merge_entity_filter(
@@ -68,6 +71,9 @@ async def list_activity_events(
         allowed_project_ids=activity_scope.allowed_project_ids,
         since=start_at,
         end_at=end_at,
+        search=q.strip() if q and q.strip() else None,
+        before_at=before_at,
+        before_id=before_id,
         limit=limit,
         db=db,
     )
@@ -87,6 +93,7 @@ async def export_activity_events(
     virtual_key_id: UUID | None = None,
     start_at: datetime | None = None,
     end_at: datetime | None = None,
+    q: str | None = Query(default=None, max_length=200),
 ) -> Response:
     team_id, project_id, virtual_key_id = _merge_entity_filter(
         entity_type=entity_type,
@@ -116,6 +123,7 @@ async def export_activity_events(
         allowed_project_ids=activity_scope.allowed_project_ids,
         since=start_at,
         end_at=end_at,
+        search=q.strip() if q and q.strip() else None,
         limit=None,
         db=db,
     )

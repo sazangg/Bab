@@ -48,6 +48,7 @@ async def sync_default_workspace(db) -> None:
                     org_id=org.id,
                     organization_name=org.name,
                     default_max_body_bytes=settings.proxy_max_body_bytes,
+                    public_app_url=settings.public_app_url,
                 )
             )
 

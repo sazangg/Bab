@@ -171,7 +171,7 @@ export function AppRoutes() {
             <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
             <Route path="/projects/:projectId/keys/:keyId" element={<KeyDetailPage />} />
           </Route>
-          <Route element={<ProtectedRoute requireOrgAdminSurface />}>
+          <Route element={<ProtectedRoute permission="policies.view" requireScopedAdmin />}>
             <Route path="/policies" element={<PoliciesPage />} />
             <Route path="/policies/access/:policyId" element={<AccessPolicyDetailPage />} />
             <Route path="/policies/limits/:policyId" element={<LimitPolicyDetailPage />} />

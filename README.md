@@ -57,12 +57,12 @@ GET  /v1/models
 POST /v1/chat/completions
 POST /v1/responses
 POST /v1/completions
-POST /v1/embeddings
 POST /v1/messages
 ```
 
-The first five routes provide the OpenAI-compatible surface. `/v1/messages` provides native
-Anthropic Messages passthrough; it is not an OpenAI-to-Anthropic translation layer.
+The first four routes provide the current OpenAI-compatible surface. `/v1/messages` provides native
+Anthropic Messages passthrough; it is not an OpenAI-to-Anthropic translation layer. Embeddings are
+deferred to the next version; the placeholder route is not part of the current gateway surface.
 
 ## Architecture
 

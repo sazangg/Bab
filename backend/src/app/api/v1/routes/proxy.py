@@ -245,6 +245,7 @@ async def create_chat_completion(
                     upstream=upstream_stream,
                     resolved=resolved,
                     provider_payload=provider_payload,
+                    guardrail_context=guardrail_context,
                     estimated_tokens=estimated_tokens,
                     reservation_ids=reservation_ids,
                     started_at=started_at,
@@ -438,6 +439,7 @@ async def create_anthropic_message(
     )
     resolved = None
     reservation_ids: list[UUID] = []
+    guardrail_context: GuardrailEvaluationContext | None = None
     try:
         resolved = await keys_facade.resolve_access(
             payload=ResolveAccessRequest(raw_key=raw_key, requested_model=provider_payload.model),
@@ -471,8 +473,12 @@ async def create_anthropic_message(
             messages=provider_payload.messages,
             extra_body=provider_payload.extra_body,
         )
+        guardrail_context = _guardrail_context(
+            resolved=resolved,
+            provider_payload=guardrail_payload,
+        )
         await guardrails_facade.evaluate_request(
-            context=_guardrail_context(resolved=resolved, provider_payload=guardrail_payload),
+            context=guardrail_context,
             db=db,
         )
         reservation_ids.extend(
@@ -504,7 +510,7 @@ async def create_anthropic_message(
             detail="invalid virtual key",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
-    except (AccessDeniedError, GuardrailDeniedError) as exc:
+    except AccessDeniedError as exc:
         await _release_reservations(reservation_ids=reservation_ids, db=db)
         if resolved is not None:
             await _record_proxy_request(
@@ -515,12 +521,61 @@ async def create_anthropic_message(
                 error_code="access_denied",
                 db=db,
             )
+            await _record_proxy_activity(
+                resolved=resolved,
+                action="proxy.denied",
+                message="Native Anthropic request denied by access or provider routing policy.",
+                severity="warning",
+                metadata={"reason": "access_denied"},
+                db=db,
+            )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="model or provider is not allowed for this key",
         ) from exc
+    except GuardrailDeniedError as exc:
+        await _release_reservations(reservation_ids=reservation_ids, db=db)
+        if resolved is not None:
+            await _record_proxy_request(
+                resolved=resolved,
+                http_status=status.HTTP_403_FORBIDDEN,
+                latency_ms=_elapsed_ms(started_at),
+                usage=unknown_usage(),
+                error_code="guardrail_denied",
+                db=db,
+            )
+            await _record_proxy_activity(
+                resolved=resolved,
+                action="proxy.guardrail_denied",
+                message=exc.detail,
+                severity="warning",
+                metadata={
+                    "reason": "guardrail_denied",
+                    "policy_id": str(exc.policy_id) if exc.policy_id else None,
+                    "rule_id": str(exc.rule_id) if exc.rule_id else None,
+                },
+                db=db,
+            )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.detail) from exc
     except (ProviderInactiveError, ProviderAdapterNotFoundError, ProviderNotFoundError) as exc:
         await _release_reservations(reservation_ids=reservation_ids, db=db)
+        if resolved is not None:
+            await _record_proxy_request(
+                resolved=resolved,
+                http_status=status.HTTP_502_BAD_GATEWAY,
+                latency_ms=_elapsed_ms(started_at),
+                usage=unknown_usage(),
+                error_code="provider_unavailable",
+                db=db,
+            )
+            await _record_proxy_activity(
+                resolved=resolved,
+                action="proxy.provider_unavailable",
+                message="Native Anthropic provider is not available.",
+                severity="error",
+                metadata={"reason": "provider_unavailable"},
+                db=db,
+            )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="provider is not available",
@@ -535,6 +590,17 @@ async def create_anthropic_message(
                 error_code="provider_upstream_error",
                 db=db,
             )
+            await _record_proxy_activity(
+                resolved=resolved,
+                action="proxy.upstream_failed",
+                message="Native Anthropic provider request failed.",
+                severity="error",
+                metadata={
+                    "reason": "provider_upstream_error",
+                    "http_status": exc.status_code,
+                },
+                db=db,
+            )
         await _release_reservations(reservation_ids=reservation_ids, db=db)
         return JSONResponse(status_code=exc.status_code, content=exc.body)
 
@@ -542,6 +608,49 @@ async def create_anthropic_message(
         request_messages=provider_payload.messages,
         response_body=upstream.body,
     )
+    try:
+        await guardrails_facade.evaluate_response(
+            context=guardrail_context
+            or _guardrail_context(
+                resolved=resolved,
+                provider_payload=ProviderChatCompletionRequest(
+                    model=provider_payload.model,
+                    messages=provider_payload.messages,
+                    extra_body=provider_payload.extra_body,
+                ),
+            ),
+            response_text=_response_text(upstream.body),
+            db=db,
+        )
+    except GuardrailDeniedError as exc:
+        actual_cost_cents = await _record_proxy_request(
+            resolved=resolved,
+            http_status=status.HTTP_403_FORBIDDEN,
+            latency_ms=_elapsed_ms(started_at),
+            usage=usage,
+            error_code="guardrail_output_denied",
+            provider_credential_id=upstream.provider_credential_id,
+            db=db,
+        )
+        await _commit_reservations(
+            reservation_ids=reservation_ids,
+            usage=usage,
+            cost_cents=actual_cost_cents,
+            db=db,
+        )
+        await _record_proxy_activity(
+            resolved=resolved,
+            action="proxy.guardrail_output_denied",
+            message=exc.detail,
+            severity="warning",
+            metadata={
+                "reason": "guardrail_output_denied",
+                "policy_id": str(exc.policy_id) if exc.policy_id else None,
+                "rule_id": str(exc.rule_id) if exc.rule_id else None,
+            },
+            db=db,
+        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.detail) from exc
     actual_cost_cents = await _record_proxy_request(
         resolved=resolved,
         http_status=upstream.status_code,
@@ -704,6 +813,14 @@ async def _execute_chat_proxy(
                 db=db,
             )
             await _release_reservations(reservation_ids=reservation_ids, db=db)
+            await _record_proxy_activity(
+                resolved=resolved,
+                action="proxy.provider_unavailable",
+                message="Provider is not available.",
+                severity="error",
+                metadata={"reason": "provider_unavailable"},
+                db=db,
+            )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="provider is not available",
@@ -719,6 +836,17 @@ async def _execute_chat_proxy(
                 db=db,
             )
             await _release_reservations(reservation_ids=reservation_ids, db=db)
+            await _record_proxy_activity(
+                resolved=resolved,
+                action="proxy.upstream_failed",
+                message="Provider request failed.",
+                severity="error",
+                metadata={
+                    "reason": "provider_upstream_error",
+                    "http_status": exc.status_code,
+                },
+                db=db,
+            )
         return JSONResponse(status_code=exc.status_code, content=exc.body)
 
     usage = usage_from_provider_response(
@@ -783,6 +911,7 @@ async def _stream_proxy_response(
     upstream,
     resolved,
     provider_payload: ProviderChatCompletionRequest,
+    guardrail_context: GuardrailEvaluationContext,
     estimated_tokens: int,
     reservation_ids: list[UUID],
     started_at: float,
@@ -799,6 +928,27 @@ async def _stream_proxy_response(
         raise
     finally:
         await upstream.close()
+        if error_code is None:
+            try:
+                await guardrails_facade.evaluate_response(
+                    context=guardrail_context,
+                    response_text=_stream_response_text(chunks),
+                    db=db,
+                )
+            except GuardrailDeniedError as exc:
+                await _record_proxy_activity(
+                    resolved=resolved,
+                    action="proxy.guardrail_output_denied",
+                    message=exc.detail,
+                    severity="warning",
+                    metadata={
+                        "reason": "guardrail_output_denied",
+                        "policy_id": str(exc.policy_id) if exc.policy_id else None,
+                        "rule_id": str(exc.rule_id) if exc.rule_id else None,
+                        "streaming": True,
+                    },
+                    db=db,
+                )
         usage = usage_from_stream_chunks(
             request_messages=provider_payload.messages,
             chunks=chunks,
@@ -821,6 +971,14 @@ async def _stream_proxy_response(
             )
         else:
             await _release_reservations(reservation_ids=reservation_ids, db=db)
+            await _record_proxy_activity(
+                resolved=resolved,
+                action="proxy.stream_failed",
+                message="Provider stream failed after the response started.",
+                severity="error",
+                metadata={"reason": error_code},
+                db=db,
+            )
 
 
 def _enforce_content_length(request: Request, max_body_bytes: int) -> None:
@@ -892,20 +1050,70 @@ def _messages_text(messages: list[dict[str, Any]]) -> str:
 
 def _response_text(response_body: dict[str, Any]) -> str:
     choices = response_body.get("choices") if isinstance(response_body, dict) else None
-    if not isinstance(choices, list):
-        return ""
     parts: list[str] = []
-    for choice in choices:
-        if not isinstance(choice, dict):
-            continue
-        message = choice.get("message")
-        if isinstance(message, dict):
-            parts.append(_content_to_text(message.get("content")))
-            continue
-        text = choice.get("text")
-        if isinstance(text, str):
-            parts.append(text)
+    if isinstance(choices, list):
+        for choice in choices:
+            if not isinstance(choice, dict):
+                continue
+            message = choice.get("message")
+            if isinstance(message, dict):
+                parts.append(_content_to_text(message.get("content")))
+                continue
+            text = choice.get("text")
+            if isinstance(text, str):
+                parts.append(text)
+    if isinstance(response_body, dict):
+        content = response_body.get("content")
+        if content is not None:
+            parts.append(_content_to_text(content))
+        output_text = response_body.get("output_text")
+        if isinstance(output_text, str):
+            parts.append(output_text)
     return "\n".join(part for part in parts if part)
+
+
+def _stream_response_text(chunks: list[bytes]) -> str:
+    parts: list[str] = []
+    stream_body = b"".join(chunks).decode("utf-8", errors="replace")
+    for line in stream_body.splitlines():
+        line = line.strip()
+        if not line.startswith("data:"):
+            continue
+        payload = line.removeprefix("data:").strip()
+        if not payload or payload == "[DONE]":
+            continue
+        try:
+            event = json.loads(payload)
+        except ValueError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        parts.append(_stream_event_text(event))
+    return "".join(part for part in parts if part)
+
+
+def _stream_event_text(event: dict[str, Any]) -> str:
+    parts: list[str] = []
+    choices = event.get("choices")
+    if isinstance(choices, list):
+        for choice in choices:
+            if not isinstance(choice, dict):
+                continue
+            delta = choice.get("delta")
+            if isinstance(delta, dict):
+                parts.append(_content_to_text(delta.get("content")))
+                continue
+            message = choice.get("message")
+            if isinstance(message, dict):
+                parts.append(_content_to_text(message.get("content")))
+                continue
+            text = choice.get("text")
+            if isinstance(text, str):
+                parts.append(text)
+    content = event.get("content")
+    if content is not None:
+        parts.append(_content_to_text(content))
+    return "".join(part for part in parts if part)
 
 
 def _guardrail_context(

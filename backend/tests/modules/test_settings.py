@@ -1,3 +1,4 @@
+import pytest
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +23,7 @@ async def test_settings_created_from_environment_defaults(db_session: AsyncSessi
 
     assert response.organization_name == "Acme"
     assert response.default_max_body_bytes == settings.proxy_max_body_bytes
+    assert response.deployment_max_body_bytes == settings.proxy_max_body_bytes
     assert response.usage_retention_days == settings.usage_retention_days
     assert response.activity_retention_days == settings.activity_retention_days
     stored = await db_session.scalar(
@@ -155,3 +157,25 @@ def test_public_app_url_is_normalized_and_validated():
         except ValidationError:
             continue
         raise AssertionError(f"{value} should be rejected")
+
+
+def test_non_nullable_settings_reject_explicit_null():
+    for field in [
+        "organization_name",
+        "default_request_timeout_seconds",
+        "default_retry_count",
+        "default_max_body_bytes",
+        "default_model_sync_mode",
+        "virtual_key_prefix",
+        "allow_secret_copy",
+    ]:
+        with pytest.raises(ValidationError):
+            UpdateOrganizationSettingsRequest.model_validate({field: None})
+
+
+def test_default_max_body_bytes_cannot_exceed_deployment_limit(monkeypatch):
+    monkeypatch.setattr(settings, "proxy_max_body_bytes", 10_000)
+
+    assert UpdateOrganizationSettingsRequest(default_max_body_bytes=10_000)
+    with pytest.raises(ValidationError):
+        UpdateOrganizationSettingsRequest(default_max_body_bytes=10_001)

@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.core.config import settings as env_settings
+
 
 class OrganizationSettingsResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -17,6 +19,7 @@ class OrganizationSettingsResponse(BaseModel):
     default_request_timeout_seconds: int
     default_retry_count: int
     default_max_body_bytes: int
+    deployment_max_body_bytes: int = 0
     default_model_sync_mode: str
     default_virtual_key_expiration_days: int | None
     usage_retention_days: int | None = None
@@ -28,9 +31,12 @@ class OrganizationSettingsResponse(BaseModel):
 
 
 class GatewayMetadataResponse(BaseModel):
+    organization_name: str
+    organization_logo_url: str | None
     public_base_url: str | None
     virtual_key_prefix: str
     default_virtual_key_expiration_days: int | None
+    allow_secret_copy: bool
 
 
 class UpdateOrganizationSettingsRequest(BaseModel):
@@ -48,6 +54,32 @@ class UpdateOrganizationSettingsRequest(BaseModel):
     default_virtual_key_expiration_days: int | None = Field(default=None, ge=1, le=3650)
     virtual_key_prefix: str | None = Field(default=None, min_length=1, max_length=32)
     allow_secret_copy: bool | None = None
+
+    @field_validator(
+        "organization_name",
+        "default_request_timeout_seconds",
+        "default_retry_count",
+        "default_max_body_bytes",
+        "default_model_sync_mode",
+        "virtual_key_prefix",
+        "allow_secret_copy",
+        mode="before",
+    )
+    @classmethod
+    def reject_null_for_required_settings(cls, value, info):
+        if value is None:
+            raise ValueError(f"{info.field_name} cannot be null")
+        return value
+
+    @field_validator("default_max_body_bytes")
+    @classmethod
+    def enforce_deployment_body_limit(cls, value: int | None) -> int | None:
+        if value is not None and value > env_settings.proxy_max_body_bytes:
+            raise ValueError(
+                "default_max_body_bytes cannot exceed the deployment limit "
+                f"of {env_settings.proxy_max_body_bytes}"
+            )
+        return value
 
     @field_validator("public_app_url", "public_base_url")
     @classmethod

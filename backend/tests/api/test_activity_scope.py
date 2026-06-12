@@ -268,6 +268,63 @@ async def test_activity_date_filters_and_export_use_scope(
 
 
 @pytest.mark.asyncio
+async def test_activity_search_cursor_and_export_share_filters(
+    app_client,
+    db_session: AsyncSession,
+) -> None:
+    org, team, project, _other_team, *_ = await _workspace(db_session)
+    first = _activity(
+        org.id,
+        team_id=team.id,
+        project_id=project.id,
+        message="matching older event",
+    )
+    first.actor_email = "operator@example.com"
+    first.request_id = "req-search-older"
+    first.metadata_ = {"reason": "quota_exceeded"}
+    first.created_at = datetime.now(UTC) - timedelta(minutes=2)
+    second = _activity(
+        org.id,
+        team_id=team.id,
+        project_id=project.id,
+        message="matching newer event",
+    )
+    second.actor_email = "operator@example.com"
+    second.request_id = "req-search-newer"
+    second.metadata_ = {"reason": "quota_exceeded"}
+    second.created_at = datetime.now(UTC) - timedelta(minutes=1)
+    db_session.add_all([first, second])
+    await db_session.commit()
+    user = _principal(org_id=org.id, permissions=["activity.view"])
+
+    first_page = await _get(
+        app_client,
+        user,
+        "/api/v1/activity?q=quota_exceeded&limit=1",
+    )
+    assert first_page.status_code == 200
+    [newer] = first_page.json()
+    assert newer["message"] == "matching newer event"
+
+    second_page = await _get(
+        app_client,
+        user,
+        (
+            "/api/v1/activity?q=quota_exceeded&limit=1"
+            f"&before_at={newer['created_at']}&before_id={newer['id']}"
+        ),
+    )
+    assert second_page.status_code == 200
+    assert [item["message"] for item in second_page.json()] == ["matching older event"]
+
+    exported = await _get(app_client, user, "/api/v1/activity/export?q=req-search")
+    assert exported.status_code == 200
+    assert "matching older event" in exported.text
+    assert "matching newer event" in exported.text
+    assert "allowed workspace event" not in exported.text
+
+
+@pytest.mark.asyncio
 async def test_team_scoped_users_see_only_team_policy_assignment_activity(
     app_client,
     db_session: AsyncSession,

@@ -477,6 +477,242 @@ async def test_scoped_access_policy_creation_cannot_widen_inherited_access(
 
 
 @pytest.mark.asyncio
+async def test_scoped_admin_can_update_owned_limit_policy_but_not_org_policy(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "admin@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    await bootstrap.sync_default_workspace(db_session)
+    team = await _create_team_fixture(db_session, name="Limit Policy Editors")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        admin_headers = await _login(client)
+        org_policy = await client.post(
+            "/api/v1/policies/limits",
+            headers=admin_headers,
+            json={
+                "name": "Org owned limits",
+                "rules": [
+                    {
+                        "name": "Org daily requests",
+                        "limit_type": "requests",
+                        "limit_value": 1000,
+                        "interval_unit": "day",
+                    }
+                ],
+            },
+        )
+        member_response = await client.post(
+            "/api/v1/auth/members",
+            headers=admin_headers,
+            json={
+                "email": "limit-policy-editor@example.com",
+                "password": "team-admin-password",
+                "role": "org_member",
+            },
+        )
+        await client.post(
+            f"/api/v1/teams/{team.id}/members",
+            headers=admin_headers,
+            json={"user_id": member_response.json()["user_id"], "role": "team_admin"},
+        )
+        scoped_login = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "limit-policy-editor@example.com",
+                "password": "team-admin-password",
+            },
+        )
+        scoped_headers = {"Authorization": f"Bearer {scoped_login.json()['access_token']}"}
+        create_response = await client.post(
+            "/api/v1/policies/assignments/scoped-policy",
+            headers=scoped_headers,
+            json={
+                "policy_type": "limit",
+                "scope_type": "team",
+                "team_id": str(team.id),
+                "limit_policy": {
+                    "name": "Team owned limits",
+                    "rules": [
+                        {
+                            "name": "Team daily requests",
+                            "limit_type": "requests",
+                            "limit_value": 100,
+                            "interval_unit": "day",
+                        }
+                    ],
+                },
+            },
+        )
+        policy = create_response.json()["limit_policy"]
+        rule = policy["rules"][0]
+
+        detail_response = await client.get(
+            f"/api/v1/policies/limits/{policy['id']}", headers=scoped_headers
+        )
+        update_response = await client.patch(
+            f"/api/v1/policies/limits/{policy['id']}",
+            headers=scoped_headers,
+            json={"name": "Team owned limits updated", "is_active": False},
+        )
+        rule_update_response = await client.patch(
+            f"/api/v1/policies/limits/rules/{rule['id']}",
+            headers=scoped_headers,
+            json={"limit_value": 50, "is_active": False},
+        )
+        org_update_response = await client.patch(
+            f"/api/v1/policies/limits/{org_policy.json()['id']}",
+            headers=scoped_headers,
+            json={"name": "Scoped user cannot rename org policy"},
+        )
+
+    assert org_policy.status_code == 201
+    assert create_response.status_code == 201
+    assert detail_response.status_code == 200
+    assert update_response.status_code == 200
+    assert update_response.json()["name"] == "Team owned limits updated"
+    assert update_response.json()["is_active"] is False
+    assert rule_update_response.status_code == 200
+    assert rule_update_response.json()["limit_value"] == 50
+    assert rule_update_response.json()["is_active"] is False
+    assert org_update_response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_scoped_admin_route_update_cannot_widen_inherited_access(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "admin@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    await bootstrap.sync_default_workspace(db_session)
+    team = await _create_team_fixture(db_session, name="Route Policy Editors")
+    allowed_provider, allowed_pool, allowed_model = await _create_provider_fixture(
+        db_session, name="route-update-allowed"
+    )
+    wider_provider, wider_pool, wider_model = await _create_provider_fixture(
+        db_session, name="route-update-wider"
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        admin_headers = await _login(client)
+        parent_policy = await client.post(
+            "/api/v1/policies/access",
+            headers=admin_headers,
+            json={
+                "name": "Org route parent",
+                "routes": [
+                    {
+                        "provider_id": str(allowed_provider.id),
+                        "credential_pool_id": str(allowed_pool.id),
+                        "model_offering_ids": [str(allowed_model.id)],
+                    }
+                ],
+            },
+        )
+        await client.post(
+            "/api/v1/policies/assignments",
+            headers=admin_headers,
+            json={
+                "policy_type": "access",
+                "access_policy_id": parent_policy.json()["id"],
+                "scope_type": "org",
+            },
+        )
+        member_response = await client.post(
+            "/api/v1/auth/members",
+            headers=admin_headers,
+            json={
+                "email": "route-policy-editor@example.com",
+                "password": "team-admin-password",
+                "role": "org_member",
+            },
+        )
+        await client.post(
+            f"/api/v1/teams/{team.id}/members",
+            headers=admin_headers,
+            json={"user_id": member_response.json()["user_id"], "role": "team_admin"},
+        )
+        scoped_login = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "route-policy-editor@example.com",
+                "password": "team-admin-password",
+            },
+        )
+        scoped_headers = {"Authorization": f"Bearer {scoped_login.json()['access_token']}"}
+        create_response = await client.post(
+            "/api/v1/policies/assignments/scoped-policy",
+            headers=scoped_headers,
+            json={
+                "policy_type": "access",
+                "scope_type": "team",
+                "team_id": str(team.id),
+                "access_policy": {
+                    "name": "Team route child",
+                    "routes": [
+                        {
+                            "provider_id": str(allowed_provider.id),
+                            "credential_pool_id": str(allowed_pool.id),
+                            "model_offering_ids": [str(allowed_model.id)],
+                        }
+                    ],
+                },
+            },
+        )
+        policy = create_response.json()["access_policy"]
+        route = policy["routes"][0]
+
+        detail_response = await client.get(
+            f"/api/v1/policies/access/{policy['id']}", headers=scoped_headers
+        )
+        policy_update_response = await client.patch(
+            f"/api/v1/policies/access/{policy['id']}",
+            headers=scoped_headers,
+            json={"description": "Team scoped route policy"},
+        )
+        org_update_response = await client.patch(
+            f"/api/v1/policies/access/{parent_policy.json()['id']}",
+            headers=scoped_headers,
+            json={"description": "Scoped user cannot edit org parent"},
+        )
+        wider_route_response = await client.patch(
+            f"/api/v1/policies/access/routes/{route['id']}",
+            headers=scoped_headers,
+            json={
+                "provider_id": str(wider_provider.id),
+                "credential_pool_id": str(wider_pool.id),
+                "model_offering_ids": [str(wider_model.id)],
+            },
+        )
+        narrowed_route_response = await client.patch(
+            f"/api/v1/policies/access/routes/{route['id']}",
+            headers=scoped_headers,
+            json={"priority": 50, "is_active": False},
+        )
+
+    assert parent_policy.status_code == 201
+    assert create_response.status_code == 201
+    assert detail_response.status_code == 200
+    assert policy_update_response.status_code == 200
+    assert policy_update_response.json()["description"] == "Team scoped route policy"
+    assert org_update_response.status_code == 403
+    assert wider_route_response.status_code == 400
+    assert narrowed_route_response.status_code == 200
+    assert narrowed_route_response.json()["priority"] == 50
+    assert narrowed_route_response.json()["is_active"] is False
+
+
+@pytest.mark.asyncio
 async def test_access_policy_creation_payload_accepts_multiple_routes(
     app_client,
     db_session: AsyncSession,

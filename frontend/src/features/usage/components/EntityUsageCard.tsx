@@ -50,7 +50,7 @@ export function EntityUsageCard({
               />
               <UsageFact
                 icon={WalletCards}
-                label="Confirmed"
+                label="Reported usage spend"
                 value={formatCents(totals?.confirmed_spend_cents)}
                 detail={`${formatCents(totals?.estimated_spend_cents)} estimated`}
               />

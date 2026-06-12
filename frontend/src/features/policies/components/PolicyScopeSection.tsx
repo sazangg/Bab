@@ -33,6 +33,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
   useCreatePolicyAssignmentApiV1PoliciesAssignmentsPost,
@@ -42,7 +43,13 @@ import {
   useListAccessPoliciesApiV1PoliciesAccessGet,
   useListLimitPoliciesApiV1PoliciesLimitsGet,
   useListPolicyAssignmentsApiV1PoliciesAssignmentsGet,
+  useUpdatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatch,
 } from "@/shared/api/generated/policies/policies";
+import { ConfirmationDialog } from "@/features/policies/components/ConfirmationDialog";
+import {
+  LimitRuleFilterFields,
+  type LimitRuleFilterValue,
+} from "@/features/policies/components/LimitRuleFilterFields";
 import type {
   AccessPolicyResponse,
   AccessPolicyRouteInput,
@@ -66,6 +73,7 @@ type DraftLimitRule = {
   limitValue: string;
   intervalUnit: string;
   intervalCount: string;
+  filters: LimitRuleFilterValue;
 };
 type DraftAccessRoute = {
   id: string;
@@ -85,6 +93,22 @@ const limitTypeOptions = [
   { value: "tokens_per_request", label: "Tokens per request" },
 ];
 
+const emptyLimitRuleFilters = (): LimitRuleFilterValue => ({
+  providerId: "",
+  poolId: "",
+  modelId: "",
+  accessPolicyId: "",
+});
+
+function limitRuleFiltersPayload(filters: LimitRuleFilterValue) {
+  return {
+    provider_id: filters.providerId || null,
+    credential_pool_id: filters.poolId || null,
+    model_offering_id: filters.modelId || null,
+    access_policy_id: filters.accessPolicyId || null,
+  };
+}
+
 export function PolicyScopeSection({
   target,
   canManage,
@@ -98,10 +122,21 @@ export function PolicyScopeSection({
   const accessQuery = useListAccessPoliciesApiV1PoliciesAccessGet();
   const limitsQuery = useListLimitPoliciesApiV1PoliciesLimitsGet();
   const assignmentsQuery = useListPolicyAssignmentsApiV1PoliciesAssignmentsGet();
+  const [assignmentToRemove, setAssignmentToRemove] = useState<string | null>(null);
+  const updateAssignment = useUpdatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatch({
+    mutation: {
+      onSuccess: async () => {
+        toast.success("Policy assignment updated.");
+        await queryClient.invalidateQueries();
+      },
+      onError: () => toast.error("Policy assignment could not be updated."),
+    },
+  });
   const deleteAssignment = useDeletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDelete({
     mutation: {
       onSuccess: async () => {
         toast.success("Policy assignment removed.");
+        setAssignmentToRemove(null);
         await queryClient.invalidateQueries();
       },
       onError: () => toast.error("Policy assignment could not be removed."),
@@ -193,6 +228,21 @@ export function PolicyScopeSection({
                     ) : null}
                     {canManage ? (
                       <div className="mt-3 flex flex-wrap gap-2">
+                        <div className="flex items-center gap-2 rounded-md border px-3 py-1.5">
+                          <Switch
+                            checked={assignment.is_active}
+                            disabled={updateAssignment.isPending}
+                            onCheckedChange={(checked) =>
+                              updateAssignment.mutate({
+                                assignmentId: assignment.id,
+                                data: { is_active: checked },
+                              })
+                            }
+                          />
+                          <span className="text-sm">
+                            {assignment.is_active ? "Active" : "Inactive"}
+                          </span>
+                        </div>
                         {policy ? (
                           <Button size="sm" variant="outline" asChild>
                             <Link
@@ -210,7 +260,7 @@ export function PolicyScopeSection({
                           size="sm"
                           variant="outline"
                           disabled={deleteAssignment.isPending}
-                          onClick={() => deleteAssignment.mutate({ assignmentId: assignment.id })}
+                          onClick={() => setAssignmentToRemove(assignment.id)}
                         >
                           Remove assignment
                         </Button>
@@ -249,6 +299,19 @@ export function PolicyScopeSection({
         }
         onOpenChange={(open) => !open && setAssignKind(null)}
       />
+      <ConfirmationDialog
+        open={Boolean(assignmentToRemove)}
+        title="Remove policy assignment?"
+        description="This removes the direct policy assignment from this scope. Inherited policies may still apply."
+        confirmLabel="Remove"
+        isPending={deleteAssignment.isPending}
+        onOpenChange={(open) => !open && setAssignmentToRemove(null)}
+        onConfirm={() => {
+          if (assignmentToRemove) {
+            deleteAssignment.mutate({ assignmentId: assignmentToRemove });
+          }
+        }}
+      />
     </>
   );
 }
@@ -275,8 +338,14 @@ function AssignExistingPolicySheet({
   const createAssignment = useCreatePolicyAssignmentApiV1PoliciesAssignmentsPost();
   const isAccess = kind === "access";
   const policies = isAccess
-    ? accessPolicies.filter((policy) => !assignedAccessPolicyIds.has(policy.id))
-    : limitPolicies.filter((policy) => !assignedLimitPolicyIds.has(policy.id));
+    ? accessPolicies.filter(
+        (policy) =>
+          !assignedAccessPolicyIds.has(policy.id) && policyCanBeAssignedToTarget(policy, target),
+      )
+    : limitPolicies.filter(
+        (policy) =>
+          !assignedLimitPolicyIds.has(policy.id) && policyCanBeAssignedToTarget(policy, target),
+      );
   const assignTarget =
     target.type === "team"
       ? { scope_type: "team", team_id: target.teamId }
@@ -362,7 +431,7 @@ function ScopedPolicySheet({
   const [description, setDescription] = useState("");
   const [providerId, setProviderId] = useState("");
   const [poolId, setPoolId] = useState("");
-  const [selectedModels, setSelectedModels] = useState<string[] | null>(null);
+  const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [draftRoutes, setDraftRoutes] = useState<DraftAccessRoute[]>([]);
   const [draftRules, setDraftRules] = useState<DraftLimitRule[]>([]);
   const [ruleName, setRuleName] = useState("Rule");
@@ -370,6 +439,7 @@ function ScopedPolicySheet({
   const [limitValue, setLimitValue] = useState("");
   const [intervalUnit, setIntervalUnit] = useState("day");
   const [intervalCount, setIntervalCount] = useState("1");
+  const [ruleFilters, setRuleFilters] = useState<LimitRuleFilterValue>(emptyLimitRuleFilters);
   const isAccess = kind === "access";
   const accessOptionsQuery = useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet(
     accessOptionsParams(target),
@@ -384,7 +454,7 @@ function ScopedPolicySheet({
     setDescription("");
     setProviderId("");
     setPoolId("");
-    setSelectedModels(null);
+    setSelectedModels([]);
     setDraftRoutes([]);
     setDraftRules([]);
     setRuleName("Rule");
@@ -392,6 +462,7 @@ function ScopedPolicySheet({
     setLimitValue("");
     setIntervalUnit("day");
     setIntervalCount("1");
+    setRuleFilters(emptyLimitRuleFilters());
   };
   const assignTarget =
     target.type === "team"
@@ -405,6 +476,7 @@ function ScopedPolicySheet({
     limitValue,
     intervalUnit,
     intervalCount,
+    filters: ruleFilters,
   });
   const currentLimitRuleHasLimits = hasLimitRuleValues(currentLimitRule());
   const currentAccessRoute = (): DraftAccessRoute | null => {
@@ -468,8 +540,7 @@ function ScopedPolicySheet({
     }
   };
   const pools = accessOptions.find((provider) => provider.id === providerId)?.pools ?? [];
-  const providerModels = pools.find((pool) => pool.id === poolId)?.models ?? [];
-  const effectiveSelectedModels = selectedModels ?? providerModels.map((model) => model.id);
+  const effectiveSelectedModels = selectedModels;
   const canSubmit =
     Boolean(name.trim()) &&
     ((kind === "limit" && (draftRules.length > 0 || currentLimitRuleHasLimits)) ||
@@ -481,6 +552,7 @@ function ScopedPolicySheet({
     setDraftRules((current) => [...current, currentLimitRule()]);
     setRuleName(`Rule ${draftRules.length + 2}`);
     setLimitValue("");
+    setRuleFilters(emptyLimitRuleFilters());
   };
   const addDraftRoute = () => {
     const route = currentAccessRoute();
@@ -488,7 +560,7 @@ function ScopedPolicySheet({
     setDraftRoutes((current) => [...current, route]);
     setProviderId("");
     setPoolId("");
-    setSelectedModels(null);
+    setSelectedModels([]);
   };
 
   return (
@@ -602,6 +674,7 @@ function ScopedPolicySheet({
                   onChange={(event) => setLimitValue(event.target.value)}
                 />
               </Field>
+              <LimitRuleFilterFields value={ruleFilters} onChange={setRuleFilters} />
               <Button
                 type="button"
                 variant="outline"
@@ -653,12 +726,11 @@ function ScopedPolicySheet({
                   const nextPool = nextProvider?.pools?.[0];
                   setProviderId(value);
                   setPoolId(nextPool?.id ?? "");
-                  setSelectedModels(nextPool?.models?.map((model) => model.id) ?? []);
+                  setSelectedModels([]);
                 }}
                 onPoolChange={(value) => {
-                  const nextPool = pools.find((pool) => pool.id === value);
                   setPoolId(value);
-                  setSelectedModels(nextPool?.models?.map((model) => model.id) ?? []);
+                  setSelectedModels([]);
                 }}
                 onModelsChange={setSelectedModels}
               />
@@ -702,6 +774,7 @@ function toLimitRuleInput(rule: DraftLimitRule): LimitPolicyRuleInput {
     interval_unit: rule.intervalUnit,
     interval_count: rule.intervalUnit === "lifetime" ? 1 : Number(rule.intervalCount || 1),
     is_active: true,
+    ...limitRuleFiltersPayload(rule.filters),
   };
 }
 
@@ -720,7 +793,13 @@ function formatDraftLimitRule(rule: DraftLimitRule) {
     rule.limitType === "budget_cents"
       ? `$${Number(rule.limitValue).toLocaleString()}`
       : Number(rule.limitValue).toLocaleString();
-  return `${rule.name}: ${typeLabel} ${value} ${formatInterval(rule.intervalUnit, rule.intervalCount)}`;
+  const filters = [
+    rule.filters.providerId ? "provider" : null,
+    rule.filters.poolId ? "pool" : null,
+    rule.filters.modelId ? "model" : null,
+    rule.filters.accessPolicyId ? "access policy" : null,
+  ].filter(Boolean);
+  return `${rule.name}: ${typeLabel} ${value} ${formatInterval(rule.intervalUnit, rule.intervalCount)}${filters.length ? ` · filtered by ${filters.join(", ")}` : ""}`;
 }
 
 function formatInterval(intervalUnit: string, intervalCount: string | number) {
@@ -755,6 +834,23 @@ function summarizeLimitPolicy(policy: AccessPolicyResponse | LimitPolicyResponse
       return `${typeLabel}: ${value} ${formatInterval(rule.interval_unit, rule.interval_count)}`;
     })
     .join(" · ");
+}
+
+function policyCanBeAssignedToTarget(
+  policy: AccessPolicyResponse | LimitPolicyResponse,
+  target: ScopeTarget,
+) {
+  if (!policy.owning_scope_type) return true;
+  if (target.type === "team") {
+    return policy.owning_scope_type === "team" && policy.owning_team_id === target.teamId;
+  }
+  if (target.type === "project") {
+    return policy.owning_scope_type === "project" && policy.owning_project_id === target.projectId;
+  }
+  return (
+    policy.owning_scope_type === "virtual_key" &&
+    policy.owning_virtual_key_id === target.virtualKeyId
+  );
 }
 
 function AccessRouteFields({

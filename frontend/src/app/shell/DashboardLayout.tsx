@@ -6,10 +6,12 @@ import {
   FolderKanban,
   Gauge,
   KeyRound,
+  LoaderCircle,
   LogOut,
   Moon,
   Palette,
   Plug,
+  RefreshCw,
   Route,
   Settings,
   ShieldCheck,
@@ -57,6 +59,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
+  SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -65,7 +68,6 @@ import {
   canViewActivity,
   canManageKeys,
   canViewDashboardHome,
-  canViewOrgAdminSurface,
   canViewUsage,
   hasAnyDirectTeamMembership,
   hasAnyProjectAdminMembership,
@@ -75,7 +77,12 @@ import {
 } from "@/features/auth/lib/permissions";
 import { useAuthStore } from "@/features/auth/model/auth-store";
 import { useBreadcrumbs } from "@/app/shell/breadcrumbs";
-import { useGetSettingsApiV1SettingsGet } from "@/shared/api/generated/settings/settings";
+import {
+  formatMigrationStatus,
+  resolveGatewayStatus,
+  type ReadinessResponse,
+} from "@/app/shell/operational-status";
+import { useGatewayMetadata } from "@/shared/api/gateway-metadata";
 import { httpClient } from "@/shared/api/http-client";
 import type { AuthenticatedUser } from "@/shared/api/generated/schemas";
 
@@ -102,14 +109,14 @@ const workspaceNav = [
     to: "/policies",
     label: "Policies",
     icon: Route,
-    orgAdmin: true,
+    permission: "policies.view",
+    scopedAdmin: true,
   },
   {
     to: "/virtual-keys",
     label: "Virtual keys",
     icon: KeyRound,
-    permission: "projects.view",
-    scoped: true,
+    keyManager: true,
   },
   { to: "/playground", label: "Playground", icon: TerminalSquare, keyManager: true },
   {
@@ -126,44 +133,30 @@ const fallbackOrganizationName =
   import.meta.env.VITE_BAB_ORGANIZATION_NAME ?? "Default organization";
 const isProductionBuild = import.meta.env.PROD;
 
-type ReadinessResponse = {
-  status: "ready" | "not_ready";
-  checks: Record<string, { ok: boolean }>;
-};
-
-function LogoSidebarTrigger({ logoUrl }: { logoUrl?: string | null }) {
-  const { toggleSidebar, state } = useSidebar();
-  const collapsed = state === "collapsed";
+function OrganizationLogo({ logoUrl }: { logoUrl?: string | null }) {
   const resolvedLogoUrl = logoUrl ? resolveAssetUrl(logoUrl) : null;
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          onClick={toggleSidebar}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          aria-expanded={!collapsed}
-          aria-controls="primary-sidebar"
-          className="group/logo -mx-2 flex size-11 cursor-pointer items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+    <div className="flex size-7 shrink-0 items-center justify-center">
+      {resolvedLogoUrl ? (
+        <img src={resolvedLogoUrl} alt="" className="size-7 rounded-full object-cover" />
+      ) : (
+        <span
+          aria-hidden="true"
+          className="flex size-7 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground"
         >
-          {resolvedLogoUrl ? (
-            <img
-              src={resolvedLogoUrl}
-              alt=""
-              className="size-7 rounded-full object-cover transition-[opacity,transform] duration-150 group-hover/logo:opacity-90 group-active/logo:scale-95"
-            />
-          ) : (
-            <span
-              aria-hidden="true"
-              className="flex size-7 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground transition-[opacity,transform] duration-150 group-hover/logo:opacity-90 group-active/logo:scale-95"
-            >
-              B
-            </span>
-          )}
-        </button>
-      </TooltipTrigger>
-      <TooltipContent>{collapsed ? "Expand sidebar" : "Collapse sidebar"}</TooltipContent>
-    </Tooltip>
+          B
+        </span>
+      )}
+    </div>
+  );
+}
+
+function SidebarNavigationLink({ to, children }: { to: string; children: React.ReactNode }) {
+  const { isMobile, setOpenMobile } = useSidebar();
+  return (
+    <Link to={to} onClick={() => isMobile && setOpenMobile(false)}>
+      {children}
+    </Link>
   );
 }
 
@@ -171,7 +164,7 @@ export function DashboardLayout() {
   const location = useLocation();
   const queryClient = useQueryClient();
   const { resolvedTheme, setTheme } = useTheme();
-  const settingsQuery = useGetSettingsApiV1SettingsGet();
+  const metadataQuery = useGatewayMetadata();
   const currentUserQuery = useMeApiV1AuthMeGet();
   const readinessQuery = useQuery({
     queryKey: ["gateway-readiness"],
@@ -186,11 +179,10 @@ export function DashboardLayout() {
   const generatedRuntimeInfoQuery = useRuntimeInfoApiV1RuntimeInfoGet({
     query: { staleTime: 300_000 },
   });
-  const settings = settingsQuery.data?.status === 200 ? settingsQuery.data.data : undefined;
+  const metadata = metadataQuery.data?.status === 200 ? metadataQuery.data.data : undefined;
   const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
   const canView = (permission?: string) => !permission || hasPermission(currentUser, permission);
   const canViewWorkspaceItem = (item: (typeof workspaceNav)[number]) => {
-    if (item.orgAdmin) return canViewOrgAdminSurface(currentUser);
     if (item.keyManager) return canManageKeys(currentUser);
     if (item.scopedAdmin) {
       return (
@@ -223,7 +215,7 @@ export function DashboardLayout() {
   });
   const showApiDocs = canManageKeys(currentUser);
   const visibleInternalNav = isProductionBuild ? [] : internalNav;
-  const organizationName = settings?.organization_name ?? fallbackOrganizationName;
+  const organizationName = metadata?.organization_name ?? fallbackOrganizationName;
   const clearSession = useAuthStore((state) => state.clearSession);
   const logoutMutation = useLogoutApiV1AuthLogoutPost({
     mutation: {
@@ -243,6 +235,8 @@ export function DashboardLayout() {
     generatedRuntimeInfoQuery.data?.status === 200
       ? generatedRuntimeInfoQuery.data.data
       : undefined;
+  const canViewRuntimeDetails =
+    currentUser?.role === "org_owner" || currentUser?.role === "org_admin";
 
   const isActive = (path: string, end?: boolean) =>
     end || path === "/" ? location.pathname === path : location.pathname.startsWith(path);
@@ -257,7 +251,13 @@ export function DashboardLayout() {
       </a>
       <header className="fixed inset-x-0 top-0 z-30 flex h-12 items-center border-b bg-sidebar px-3 sm:px-4">
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <LogoSidebarTrigger logoUrl={settings?.organization_logo_url} />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <SidebarTrigger aria-label="Toggle navigation" className="size-11 md:size-7" />
+            </TooltipTrigger>
+            <TooltipContent>Toggle navigation</TooltipContent>
+          </Tooltip>
+          <OrganizationLogo logoUrl={metadata?.organization_logo_url} />
           <span className="shrink-0 font-semibold">Bab</span>
           <span className="hidden max-w-48 truncate text-sm text-muted-foreground md:inline">
             {organizationName}
@@ -369,10 +369,10 @@ export function DashboardLayout() {
                         isActive={isActive(item.to, item.end)}
                         tooltip={item.label}
                       >
-                        <Link to={item.to}>
+                        <SidebarNavigationLink to={item.to}>
                           <item.icon />
                           <span>{item.label}</span>
-                        </Link>
+                        </SidebarNavigationLink>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   ))}
@@ -388,10 +388,10 @@ export function DashboardLayout() {
                   {visibleWorkspaceNav.map((item) => (
                     <SidebarMenuItem key={item.to}>
                       <SidebarMenuButton asChild isActive={isActive(item.to)} tooltip={item.label}>
-                        <Link to={item.to}>
+                        <SidebarNavigationLink to={item.to}>
                           <item.icon />
                           <span>{item.label}</span>
-                        </Link>
+                        </SidebarNavigationLink>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   ))}
@@ -405,10 +405,10 @@ export function DashboardLayout() {
             {visibleInternalNav.map((item) => (
               <SidebarMenuItem key={item.to}>
                 <SidebarMenuButton asChild isActive={isActive(item.to)} tooltip={item.label}>
-                  <Link to={item.to}>
+                  <SidebarNavigationLink to={item.to}>
                     <item.icon />
                     <span>{item.label}</span>
-                  </Link>
+                  </SidebarNavigationLink>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             ))}
@@ -457,17 +457,48 @@ export function DashboardLayout() {
                 </div>
                 <div className="grid gap-2">
                   {Object.entries(readinessQuery.data?.data?.checks ?? {}).map(([name, check]) => (
-                    <div key={name} className="flex items-center justify-between gap-3">
-                      <span className="capitalize">{name.replace(/_/g, " ")}</span>
-                      <span className={check.ok ? "text-emerald-600" : "text-amber-600"}>
-                        {check.ok ? "OK" : "Needs attention"}
-                      </span>
+                    <div key={name} className="grid gap-1">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="capitalize">{name.replace(/_/g, " ")}</span>
+                        <span className={check.ok ? "text-emerald-600" : "text-amber-600"}>
+                          {check.ok ? "OK" : "Needs attention"}
+                        </span>
+                      </div>
+                      {canViewRuntimeDetails && !check.ok ? (
+                        <ReadinessCheckDetails check={check} />
+                      ) : null}
                     </div>
                   ))}
                   {!readinessQuery.data?.data?.checks ? (
                     <div className="text-muted-foreground">No readiness details available.</div>
                   ) : null}
                 </div>
+                {canViewRuntimeDetails && runtimeInfo ? (
+                  <div className="border-t pt-3">
+                    <div className="font-medium text-foreground">Runtime migrations</div>
+                    <div className="mt-1 text-muted-foreground">
+                      {formatMigrationStatus(runtimeInfo.migrations)}
+                    </div>
+                  </div>
+                ) : null}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  disabled={readinessQuery.isFetching || generatedRuntimeInfoQuery.isFetching}
+                  onClick={() => {
+                    void readinessQuery.refetch();
+                    if (canViewRuntimeDetails) void generatedRuntimeInfoQuery.refetch();
+                  }}
+                >
+                  {readinessQuery.isFetching ? (
+                    <LoaderCircle className="animate-spin" data-icon="inline-start" />
+                  ) : (
+                    <RefreshCw data-icon="inline-start" />
+                  )}
+                  Refresh status
+                </Button>
               </div>
             </PopoverContent>
           </Popover>
@@ -480,28 +511,6 @@ export function DashboardLayout() {
       </footer>
     </SidebarProvider>
   );
-}
-
-function resolveGatewayStatus(statusCode?: number, readiness?: ReadinessResponse) {
-  if (!statusCode || !readiness) {
-    return {
-      label: "Status unavailable",
-      variant: "unknown",
-      className: "bg-muted-foreground",
-    } as const;
-  }
-  if (statusCode === 200 && readiness.status === "ready") {
-    return {
-      label: "Gateway ready",
-      variant: "ready",
-      className: "bg-emerald-500",
-    } as const;
-  }
-  return {
-    label: "Gateway degraded",
-    variant: "degraded",
-    className: "bg-amber-500",
-  } as const;
 }
 
 function resolveAssetUrl(url: string) {
@@ -548,4 +557,21 @@ function formatEnvironment(environment?: string) {
 function formatCheckedAt(timestamp: number) {
   if (!timestamp) return "Never";
   return new Date(timestamp).toLocaleTimeString();
+}
+
+function ReadinessCheckDetails({ check }: { check: ReadinessResponse["checks"][string] }) {
+  const details = [
+    check.error ? `Error: ${check.error}` : null,
+    check.current_revision ? `Current: ${check.current_revision}` : null,
+    check.head_revision ? `Expected: ${check.head_revision}` : null,
+  ].filter(Boolean);
+  return details.length ? (
+    <div className="grid gap-0.5 text-muted-foreground">
+      {details.map((detail) => (
+        <span key={detail}>{detail}</span>
+      ))}
+    </div>
+  ) : (
+    <span className="text-muted-foreground">The backend did not provide more detail.</span>
+  );
 }

@@ -635,6 +635,11 @@ async def simulate(
         is_active = getattr(rule, "is_active", True)
         if not is_active:
             continue
+        if not _rule_applies_to_phase(rule=rule, phase=context.phase) or not _rule_supports_phase(
+            rule=rule,
+            phase=context.phase,
+        ):
+            continue
         evaluation = await _evaluate_rule(rule=rule, context=context)
         if not evaluation["denied"]:
             continue
@@ -812,11 +817,11 @@ def _assignment_scope_ids(
 
 
 def _effective_rule_mode(*, policy_mode: str, assignments: list[GuardrailAssignment]) -> str:
-    if any(assignment.enforcement_mode == "dry_run" for assignment in assignments):
-        return "dry_run"
     if policy_mode == "monitor":
         return "dry_run"
-    return "enforce"
+    if any(assignment.enforcement_mode == "enforce" for assignment in assignments):
+        return "enforce"
+    return "dry_run"
 
 
 def _assignment_scope_ids_from_payload(

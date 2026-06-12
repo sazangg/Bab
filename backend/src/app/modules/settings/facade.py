@@ -76,9 +76,12 @@ async def get_gateway_metadata(
 ) -> GatewayMetadataResponse:
     settings = await get_organization_settings(scope=scope, db=db)
     return GatewayMetadataResponse(
+        organization_name=settings.organization_name,
+        organization_logo_url=settings.organization_logo_url,
         public_base_url=settings.public_base_url,
         virtual_key_prefix=settings.virtual_key_prefix,
         default_virtual_key_expiration_days=settings.default_virtual_key_expiration_days,
+        allow_secret_copy=settings.allow_secret_copy,
     )
 
 
@@ -88,6 +91,7 @@ def _to_response(settings) -> OrganizationSettingsResponse:
         update={
             "usage_retention_days": env_settings.usage_retention_days,
             "activity_retention_days": env_settings.activity_retention_days,
+            "deployment_max_body_bytes": env_settings.proxy_max_body_bytes,
         }
     )
 

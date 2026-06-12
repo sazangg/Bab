@@ -7,7 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.database import Base, Scope
 from app.modules.auth.internal.models import AuditEvent, AuditLedgerState, Organization
-from app.modules.auth.internal.service import record_audit_event, verify_audit_chain
+from app.modules.auth.internal.service import (
+    list_audit_events,
+    record_audit_event,
+    verify_audit_chain,
+)
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.guardrails import facade as guardrails_facade
 from app.modules.guardrails.schemas import (
@@ -283,6 +287,49 @@ async def test_audit_verify_detects_tampering_duplicate_previous_hash_and_unreac
     unreachable = await verify_audit_chain(scope=scope, db=db_session)
     assert unreachable.valid is False
     assert unreachable.reason == "chain has unreachable events"
+
+
+@pytest.mark.asyncio
+async def test_audit_search_and_cursor_use_selected_fields(db_session: AsyncSession) -> None:
+    actor, scope = await _actor_scope(db_session)
+    await record_audit_event(
+        actor=actor,
+        action="member.created",
+        entity_type="user",
+        entity_id=uuid4(),
+        metadata={"email": "older@example.com", "status": "active"},
+        db=db_session,
+    )
+    await db_session.flush()
+    events = await _audit_events(db_session, scope.org_id)
+    events[-1].created_at = events[-1].created_at.replace(microsecond=100)
+    await record_audit_event(
+        actor=actor,
+        action="member.created",
+        entity_type="user",
+        entity_id=uuid4(),
+        metadata={"email": "newer@example.com", "status": "active"},
+        db=db_session,
+    )
+    await db_session.commit()
+
+    first_page = await list_audit_events(
+        scope=scope,
+        db=db_session,
+        search="example.com",
+        limit=1,
+    )
+    assert len(first_page) == 1
+    second_page = await list_audit_events(
+        scope=scope,
+        db=db_session,
+        search="example.com",
+        before_at=first_page[0].created_at,
+        before_id=first_page[0].id,
+        limit=1,
+    )
+    assert len(second_page) == 1
+    assert second_page[0].id != first_page[0].id
 
 
 async def _audit_events(db_session: AsyncSession, org_id: UUID) -> list[AuditEvent]:

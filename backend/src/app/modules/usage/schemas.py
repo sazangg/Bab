@@ -107,6 +107,14 @@ class UsageBreakdownRow(UsageSummaryTotals):
     label: str
 
 
+class UsageFilterOptions(BaseModel):
+    by_provider: list[UsageBreakdownRow]
+    by_model: list[UsageBreakdownRow]
+    by_team: list[UsageBreakdownRow]
+    by_project: list[UsageBreakdownRow]
+    by_virtual_key: list[UsageBreakdownRow]
+
+
 class UsageRecentError(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

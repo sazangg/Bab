@@ -1,6 +1,7 @@
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope
@@ -151,6 +152,50 @@ async def test_guardrail_assignment_dry_run_records_without_blocking(
     events = await guardrails_facade.list_events(scope=scope, db=db_session)
     assert events[0].decision == "allowed"
     assert events[1].decision == "dry_run"
+
+
+async def test_guardrail_enforce_assignment_is_not_weakened_by_dry_run_scope(
+    db_session: AsyncSession,
+) -> None:
+    actor, scope, team = await _create_actor_scope(db_session)
+    policy = await guardrails_facade.create_policy(
+        payload=CreateGuardrailPolicyRequest(
+            name="Mixed assignment mode",
+            rules=[GuardrailRuleInput(rule_type="model", effect="deny", values=["gpt-5-large"])],
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    await guardrails_facade.create_assignment(
+        payload=CreateGuardrailAssignmentRequest(
+            policy_id=policy.id,
+            scope_type="org",
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    await guardrails_facade.create_assignment(
+        payload=CreateGuardrailAssignmentRequest(
+            policy_id=policy.id,
+            scope_type="team",
+            team_id=team.id,
+            enforcement_mode="dry_run",
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    with pytest.raises(GuardrailDeniedError):
+        await guardrails_facade.evaluate_request(
+            context=_context(org_id=scope.org_id, team_id=team.id, model="gpt-5-large"),
+            db=db_session,
+        )
+
+    events = await guardrails_facade.list_events(scope=scope, db=db_session)
+    assert events[0].decision == "blocked"
 
 
 async def test_has_enforced_response_guardrails_uses_effective_mode(
@@ -676,6 +721,32 @@ async def test_guardrail_simulation_reports_allowlist_miss(db_session: AsyncSess
     assert result.matches[0].matched_values == []
 
 
+async def test_guardrail_simulation_ignores_response_only_rules(
+    db_session: AsyncSession,
+) -> None:
+    _actor, scope, _team = await _create_actor_scope(db_session)
+
+    result = await guardrails_facade.simulate(
+        payload=GuardrailSimulationRequest(
+            requested_model="gpt-5-mini",
+            prompt_text="contains blocked output",
+            rules=[
+                GuardrailRuleInput(
+                    rule_type="prompt_contains",
+                    effect="deny",
+                    phase="response",
+                    values=["blocked output"],
+                )
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    assert result.decision == "allowed"
+    assert result.matches == []
+
+
 async def test_guardrail_pii_rule_uses_configured_detector(db_session: AsyncSession) -> None:
     _actor, scope, _team = await _create_actor_scope(db_session)
 
@@ -697,3 +768,23 @@ async def test_guardrail_pii_rule_uses_configured_detector(db_session: AsyncSess
     )
 
     assert result.decision == "allowed"
+
+
+def test_guardrail_rule_input_rejects_invalid_regex() -> None:
+    with pytest.raises(ValidationError):
+        GuardrailRuleInput(rule_type="prompt_regex", effect="deny", values=["["])
+
+
+def test_guardrail_rule_input_rejects_unsupported_pii_values() -> None:
+    with pytest.raises(ValidationError):
+        GuardrailRuleInput(rule_type="pii", effect="deny", values=["passport"])
+
+
+def test_guardrail_rule_input_rejects_response_only_routing_rules() -> None:
+    with pytest.raises(ValidationError):
+        GuardrailRuleInput(
+            rule_type="provider",
+            effect="deny",
+            phase="response",
+            values=[str(uuid4())],
+        )

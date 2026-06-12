@@ -6,7 +6,7 @@ from typing import Annotated
 from urllib.parse import urlparse
 from uuid import UUID
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import Response as FastApiResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -266,18 +266,24 @@ async def list_audit_events(
     action: str | None = None,
     entity_type: str | None = None,
     entity_id: UUID | None = None,
-    limit: int = 100,
+    q: str | None = Query(default=None, max_length=200),
+    before_at: datetime | None = None,
+    before_id: UUID | None = None,
+    limit: int = Query(default=100, ge=1, le=500),
 ) -> list[AuditEventResponse]:
     return await facade.list_audit_events(
         scope=scope,
         db=db,
-        limit=min(max(limit, 1), 500),
+        limit=limit,
         start_at=start_at,
         end_at=end_at,
         actor_user_id=actor_user_id,
         action=action,
         entity_type=entity_type,
         entity_id=entity_id,
+        search=q.strip() if q and q.strip() else None,
+        before_at=before_at,
+        before_id=before_id,
     )
 
 
@@ -292,6 +298,7 @@ async def export_audit_events(
     action: str | None = None,
     entity_type: str | None = None,
     entity_id: UUID | None = None,
+    q: str | None = Query(default=None, max_length=200),
 ) -> FastApiResponse:
     events = await facade.list_audit_events(
         scope=scope,
@@ -303,6 +310,7 @@ async def export_audit_events(
         action=action,
         entity_type=entity_type,
         entity_id=entity_id,
+        search=q.strip() if q and q.strip() else None,
     )
     return _csv_response(
         filename="bab-audit-events.csv",

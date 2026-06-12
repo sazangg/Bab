@@ -2,7 +2,7 @@ import asyncio
 import re
 import secrets
 from collections import defaultdict, deque
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
@@ -1727,7 +1727,10 @@ async def stream_chat_completion(
     )
     last_error: ProviderUpstreamError | None = None
     _raise_if_circuit_open(provider)
-    async with _provider_concurrency_slot(provider):
+    concurrency_slot = _provider_concurrency_slot(provider)
+    await concurrency_slot.__aenter__()
+    stream_returned = False
+    try:
         for credential in routed_credentials:
             try:
                 async with asyncio.timeout(request_timeout_seconds):
@@ -1743,13 +1746,58 @@ async def stream_chat_completion(
                         payload=payload,
                         http_client=http_client,
                     )
-                _record_circuit_success(provider)
                 if credential is not None:
                     await repository.mark_provider_credential_used(
                         provider_credential=credential,
                         db=db,
                     )
                     stream.provider_credential_id = credential.id
+                original_chunks = stream.chunks
+                original_close = stream.close
+                released = False
+
+                async def release_stream(
+                    close_stream: Callable[[], Awaitable[None]] = original_close,
+                ) -> None:
+                    nonlocal released
+                    if released:
+                        return
+                    released = True
+                    await close_stream()
+                    await concurrency_slot.__aexit__(None, None, None)
+
+                async def managed_chunks(
+                    chunks: AsyncIterator[bytes] = original_chunks,
+                    routed_credential=credential,
+                ) -> AsyncIterator[bytes]:
+                    try:
+                        async for chunk in chunks:
+                            yield chunk
+                    except Exception as exc:
+                        error = (
+                            exc
+                            if isinstance(exc, ProviderUpstreamError)
+                            else ProviderUpstreamError(
+                                status_code=502,
+                                body={"error": "provider stream failed"},
+                            )
+                        )
+                        _record_circuit_failure(provider)
+                        if routed_credential is not None:
+                            await _mark_provider_credential_failed(
+                                provider_credential=routed_credential,
+                                error=error,
+                                db=db,
+                            )
+                        raise
+                    else:
+                        _record_circuit_success(provider)
+                    finally:
+                        await release_stream()
+
+                stream.chunks = managed_chunks()
+                stream.close = release_stream
+                stream_returned = True
                 return stream
             except TimeoutError as exc:
                 last_error = ProviderUpstreamError(
@@ -1790,9 +1838,12 @@ async def stream_chat_completion(
                     )
                 if provider_credential_id is not None or not _should_try_next_credential(exc):
                     raise
-    if last_error is not None:
-        raise last_error
-    raise ProviderCredentialRequiredError
+        if last_error is not None:
+            raise last_error
+        raise ProviderCredentialRequiredError
+    finally:
+        if not stream_returned:
+            await concurrency_slot.__aexit__(None, None, None)
 
 
 async def _get_provider_or_raise(*, provider_id: UUID, scope: Scope, db: AsyncSession) -> Provider:

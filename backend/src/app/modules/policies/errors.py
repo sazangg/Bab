@@ -12,3 +12,7 @@ class PolicyValidationError(PolicyError):
 
 class PolicyAssignmentConflictError(PolicyError):
     pass
+
+
+class PolicyPermissionError(PolicyError):
+    pass

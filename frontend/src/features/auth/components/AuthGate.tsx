@@ -1,4 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
+import { LoaderCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 
@@ -24,7 +25,17 @@ export function AuthGate() {
   }, [isAuthenticated, queryClient, refreshChecked]);
 
   if (!refreshChecked) {
-    return <p className="text-sm text-muted-foreground">Checking session...</p>;
+    return (
+      <main
+        className="grid min-h-svh place-items-center bg-background p-6 text-foreground"
+        aria-label="Checking session"
+      >
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+          Checking session...
+        </div>
+      </main>
+    );
   }
 
   if (!isAuthenticated) {

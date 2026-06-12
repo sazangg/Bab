@@ -12,4 +12,5 @@ actor_user_id?: string | null;
 action?: string | null;
 entity_type?: string | null;
 entity_id?: string | null;
+q?: string | null;
 };

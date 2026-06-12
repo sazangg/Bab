@@ -71,6 +71,7 @@ import { RecentGuardrailEventsCard } from "@/features/guardrails/components/Rece
 import { PolicyScopeSection } from "@/features/policies/components/PolicyScopeSection";
 import { EffectiveAccessSummaryCard } from "@/features/projects/components/EffectiveAccessSummaryCard";
 import { getProblemDetail } from "@/shared/api/problem-detail";
+import { useGatewayMetadata } from "@/shared/api/gateway-metadata";
 import { keyStatusPresentation } from "@/features/projects/lib/key-status";
 
 const STALE_KEY_DAYS = 30;
@@ -122,11 +123,14 @@ export function KeyDetailPage() {
     useGetVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet(projectId, keyId, {
       query: { enabled: revokeOpen && Boolean(projectId && keyId) },
     });
+  const metadataQuery = useGatewayMetadata();
 
   const teams = teamsQuery.data?.status === 200 ? teamsQuery.data.data : [];
   const key = keyQuery.data?.status === 200 ? keyQuery.data.data : undefined;
   const usage = usageQuery.data?.status === 200 ? usageQuery.data.data : undefined;
   const revokeImpact = revokeImpactQuery.data?.status === 200 ? revokeImpactQuery.data.data : null;
+  const metadata = metadataQuery.data?.status === 200 ? metadataQuery.data.data : undefined;
+  const secretDeliveryDisabled = metadata?.allow_secret_copy === false;
   const canManageKey = project
     ? hasPermission(currentUser, "keys.manage") ||
       isTeamAdmin(currentUser, project.team_id) ||
@@ -227,6 +231,12 @@ export function KeyDetailPage() {
               </Button>
               {!key.revoked_at && !key.deprecated_at ? (
                 <Button
+                  disabled={secretDeliveryDisabled || metadataQuery.isPending}
+                  title={
+                    secretDeliveryDisabled
+                      ? "Key issuance and rotation are disabled in organization settings."
+                      : undefined
+                  }
                   onClick={() => {
                     setRotationName(`${key.name} replacement`);
                     setRotateOpen(true);
@@ -442,10 +452,12 @@ export function KeyDetailPage() {
             <DialogHeader>
               <DialogTitle>Rotate this key</DialogTitle>
               <DialogDescription>
-                Create a replacement now. The current key remains active through the overlap period.
+                {secretDeliveryDisabled
+                  ? "Rotation is disabled because plaintext key delivery is turned off in organization settings."
+                  : "Create a replacement now. The current key remains active through the overlap period."}
               </DialogDescription>
             </DialogHeader>
-            {rotatedKey ? (
+            {secretDeliveryDisabled ? null : rotatedKey ? (
               <div className="space-y-3">
                 <p className="text-sm font-medium">
                   Copy this secret now. It will not be shown again.
@@ -497,6 +509,7 @@ export function KeyDetailPage() {
                   <Button
                     disabled={
                       rotateMutation.isPending ||
+                      metadataQuery.isPending ||
                       !rotationName.trim() ||
                       Number(overlapDays) < 1 ||
                       Number(overlapDays) > 90
@@ -551,7 +564,7 @@ export function KeyDetailPage() {
                     value={(revokeImpact.recent_request_count ?? 0).toLocaleString()}
                   />
                   <Fact
-                    label="Estimated spend"
+                    label="Recent spend"
                     value={formatCents(revokeImpact.recent_cost_cents)}
                   />
                 </div>

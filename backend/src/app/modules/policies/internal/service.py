@@ -9,6 +9,7 @@ from app.modules.keys import facade as keys_facade
 from app.modules.policies.errors import (
     PolicyAssignmentConflictError,
     PolicyNotFoundError,
+    PolicyPermissionError,
     PolicyValidationError,
 )
 from app.modules.policies.internal import repository
@@ -63,9 +64,15 @@ async def list_access_policies(
 
 
 async def get_access_policy(
-    *, policy_id: UUID, scope: Scope, db: AsyncSession
+    *,
+    policy_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
 ) -> AccessPolicyResponse:
     policy = await _get_access_policy_or_raise(policy_id=policy_id, scope=scope, db=db)
+    if not await _can_view_policy(policy=policy, actor=actor, scope=scope, db=db):
+        raise PolicyNotFoundError
     return await _access_policy_response(policy=policy, scope=scope, db=db)
 
 
@@ -118,9 +125,13 @@ async def update_access_policy(
 ) -> AccessPolicyResponse:
     async with transaction(db):
         policy = await _get_access_policy_or_raise(policy_id=policy_id, scope=scope, db=db)
+        if not await _can_manage_policy_definition(
+            policy=policy, actor=actor, scope=scope, db=db
+        ):
+            raise PolicyPermissionError
         if payload.name is not None:
             policy.name = payload.name
-        if payload.description is not None:
+        if "description" in payload.model_fields_set:
             policy.description = payload.description
         if payload.is_active is not None:
             policy.is_active = payload.is_active
@@ -144,6 +155,10 @@ async def delete_access_policy(
 ) -> None:
     async with transaction(db):
         policy = await _get_access_policy_or_raise(policy_id=policy_id, scope=scope, db=db)
+        if not await _can_manage_policy_definition(
+            policy=policy, actor=actor, scope=scope, db=db
+        ):
+            raise PolicyPermissionError
         await repository.delete_assignments_for_access_policy(
             org_id=scope.org_id, access_policy_id=policy.id, db=db
         )
@@ -167,8 +182,18 @@ async def create_access_policy_route(
     actor: AuthenticatedUser | None = None,
 ) -> AccessPolicyRouteResponse:
     async with transaction(db):
-        await _get_access_policy_or_raise(policy_id=policy_id, scope=scope, db=db)
+        policy = await _get_access_policy_or_raise(policy_id=policy_id, scope=scope, db=db)
+        if not await _can_manage_policy_definition(
+            policy=policy, actor=actor, scope=scope, db=db
+        ):
+            raise PolicyPermissionError
         await _validate_access_route(route=payload, scope=scope, db=db)
+        await _validate_scoped_access_policy_routes(
+            policy=policy,
+            routes=[payload],
+            scope=scope,
+            db=db,
+        )
         route = await repository.create_access_policy_route(
             org_id=scope.org_id,
             access_policy_id=policy_id,
@@ -210,17 +235,30 @@ async def update_access_policy_route(
         )
         if route is None:
             raise PolicyNotFoundError
+        policy = await _get_access_policy_or_raise(
+            policy_id=route.access_policy_id, scope=scope, db=db
+        )
+        if not await _can_manage_policy_definition(
+            policy=policy, actor=actor, scope=scope, db=db
+        ):
+            raise PolicyPermissionError
         provider_id = payload.provider_id or route.provider_id
         pool_id = payload.credential_pool_id or route.credential_pool_id
         model_ids = payload.model_offering_ids or [
             UUID(str(item)) for item in route.model_offering_ids
         ]
-        await _validate_access_route(
-            route=AccessPolicyRouteInput(
-                provider_id=provider_id,
-                credential_pool_id=pool_id,
-                model_offering_ids=model_ids,
-            ),
+        candidate = AccessPolicyRouteInput(
+            provider_id=provider_id,
+            credential_pool_id=pool_id,
+            model_offering_ids=model_ids,
+            priority=payload.priority or route.priority,
+            weight=payload.weight or route.weight,
+            is_active=payload.is_active if payload.is_active is not None else route.is_active,
+        )
+        await _validate_access_route(route=candidate, scope=scope, db=db)
+        await _validate_scoped_access_policy_routes(
+            policy=policy,
+            routes=[candidate],
             scope=scope,
             db=db,
         )
@@ -261,6 +299,13 @@ async def delete_access_policy_route(
         )
         if route is None:
             raise PolicyNotFoundError
+        policy = await _get_access_policy_or_raise(
+            policy_id=route.access_policy_id, scope=scope, db=db
+        )
+        if not await _can_manage_policy_definition(
+            policy=policy, actor=actor, scope=scope, db=db
+        ):
+            raise PolicyPermissionError
         await db.delete(route)
         await _record_policy_activity(
             actor=actor,
@@ -287,9 +332,15 @@ async def list_limit_policies(
 
 
 async def get_limit_policy(
-    *, policy_id: UUID, scope: Scope, db: AsyncSession
+    *,
+    policy_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
 ) -> LimitPolicyResponse:
     policy = await _get_limit_policy_or_raise(policy_id=policy_id, scope=scope, db=db)
+    if not await _can_view_policy(policy=policy, actor=actor, scope=scope, db=db):
+        raise PolicyNotFoundError
     return await _limit_policy_response(policy=policy, scope=scope, db=db)
 
 
@@ -336,6 +387,10 @@ async def update_limit_policy(
     values = payload.model_dump(exclude_unset=True)
     async with transaction(db):
         policy = await _get_limit_policy_or_raise(policy_id=policy_id, scope=scope, db=db)
+        if not await _can_manage_policy_definition(
+            policy=policy, actor=actor, scope=scope, db=db
+        ):
+            raise PolicyPermissionError
         for field, value in values.items():
             setattr(policy, field, value)
         await db.flush()
@@ -363,7 +418,11 @@ async def create_limit_policy_rule(
 ) -> LimitPolicyRuleResponse:
     await _validate_limit_rule_filters(payload=payload, scope=scope, db=db)
     async with transaction(db):
-        await _get_limit_policy_or_raise(policy_id=policy_id, scope=scope, db=db)
+        policy = await _get_limit_policy_or_raise(policy_id=policy_id, scope=scope, db=db)
+        if not await _can_manage_policy_definition(
+            policy=policy, actor=actor, scope=scope, db=db
+        ):
+            raise PolicyPermissionError
         rule = await repository.create_limit_policy_rule(
             org_id=scope.org_id,
             limit_policy_id=policy_id,
@@ -395,6 +454,13 @@ async def update_limit_policy_rule(
     values = payload.model_dump(exclude_unset=True)
     async with transaction(db):
         rule = await _get_limit_policy_rule_or_raise(rule_id=rule_id, scope=scope, db=db)
+        policy = await _get_limit_policy_or_raise(
+            policy_id=rule.limit_policy_id, scope=scope, db=db
+        )
+        if not await _can_manage_policy_definition(
+            policy=policy, actor=actor, scope=scope, db=db
+        ):
+            raise PolicyPermissionError
         candidate = LimitPolicyRuleInput(
             name=values.get("name", rule.name),
             limit_type=values.get("limit_type", rule.limit_type),
@@ -431,6 +497,13 @@ async def delete_limit_policy_rule(
 ) -> None:
     async with transaction(db):
         rule = await _get_limit_policy_rule_or_raise(rule_id=rule_id, scope=scope, db=db)
+        policy = await _get_limit_policy_or_raise(
+            policy_id=rule.limit_policy_id, scope=scope, db=db
+        )
+        if not await _can_manage_policy_definition(
+            policy=policy, actor=actor, scope=scope, db=db
+        ):
+            raise PolicyPermissionError
         await db.delete(rule)
         await _record_policy_activity(
             actor=actor,
@@ -450,6 +523,10 @@ async def delete_limit_policy(
 ) -> None:
     async with transaction(db):
         policy = await _get_limit_policy_or_raise(policy_id=policy_id, scope=scope, db=db)
+        if not await _can_manage_policy_definition(
+            policy=policy, actor=actor, scope=scope, db=db
+        ):
+            raise PolicyPermissionError
         await repository.delete_assignments_for_limit_policy(
             org_id=scope.org_id, limit_policy_id=policy.id, db=db
         )
@@ -760,9 +837,15 @@ async def delete_policy_assignment(
 
 
 async def get_access_policy_impact(
-    *, policy_id: UUID, scope: Scope, db: AsyncSession
+    *,
+    policy_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
 ) -> PolicyImpactResponse:
-    await _get_access_policy_or_raise(policy_id=policy_id, scope=scope, db=db)
+    policy = await _get_access_policy_or_raise(policy_id=policy_id, scope=scope, db=db)
+    if not await _can_view_policy(policy=policy, actor=actor, scope=scope, db=db):
+        raise PolicyNotFoundError
     assignments = await repository.list_policy_assignments_for_access_policy(
         org_id=scope.org_id,
         access_policy_id=policy_id,
@@ -779,10 +862,19 @@ async def get_access_policy_impact(
 
 
 async def get_access_policy_route_impact(
-    *, route_id: UUID, scope: Scope, db: AsyncSession
+    *,
+    route_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
 ) -> PolicyImpactResponse:
     route = await repository.get_access_policy_route(route_id=route_id, org_id=scope.org_id, db=db)
     if route is None:
+        raise PolicyNotFoundError
+    policy = await _get_access_policy_or_raise(
+        policy_id=route.access_policy_id, scope=scope, db=db
+    )
+    if not await _can_view_policy(policy=policy, actor=actor, scope=scope, db=db):
         raise PolicyNotFoundError
     assignments = await repository.list_policy_assignments_for_access_policy(
         org_id=scope.org_id,
@@ -800,9 +892,15 @@ async def get_access_policy_route_impact(
 
 
 async def get_limit_policy_impact(
-    *, policy_id: UUID, scope: Scope, db: AsyncSession
+    *,
+    policy_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
 ) -> PolicyImpactResponse:
-    await _get_limit_policy_or_raise(policy_id=policy_id, scope=scope, db=db)
+    policy = await _get_limit_policy_or_raise(policy_id=policy_id, scope=scope, db=db)
+    if not await _can_view_policy(policy=policy, actor=actor, scope=scope, db=db):
+        raise PolicyNotFoundError
     assignments = await repository.list_policy_assignments_for_limit_policy(
         org_id=scope.org_id,
         limit_policy_id=policy_id,
@@ -817,9 +915,18 @@ async def get_limit_policy_impact(
 
 
 async def get_limit_policy_rule_impact(
-    *, rule_id: UUID, scope: Scope, db: AsyncSession
+    *,
+    rule_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
 ) -> PolicyImpactResponse:
     rule = await _get_limit_policy_rule_or_raise(rule_id=rule_id, scope=scope, db=db)
+    policy = await _get_limit_policy_or_raise(
+        policy_id=rule.limit_policy_id, scope=scope, db=db
+    )
+    if not await _can_view_policy(policy=policy, actor=actor, scope=scope, db=db):
+        raise PolicyNotFoundError
     assignments = await repository.list_policy_assignments_for_limit_policy(
         org_id=scope.org_id,
         limit_policy_id=rule.limit_policy_id,
@@ -1183,6 +1290,7 @@ async def _validate_scoped_access_policy_narrowing(
     team_id: UUID | None,
     project_id: UUID | None,
     virtual_key_id: UUID | None,
+    exclude_policy_id: UUID | None = None,
     scope: Scope,
     db: AsyncSession,
 ) -> None:
@@ -1191,7 +1299,7 @@ async def _validate_scoped_access_policy_narrowing(
         team_id=team_id,
         project_id=project_id,
         virtual_key_id=virtual_key_id,
-        exclude_policy_id=None,
+        exclude_policy_id=exclude_policy_id,
         scope=scope,
         db=db,
     )
@@ -1206,6 +1314,27 @@ async def _validate_scoped_access_policy_narrowing(
             )
             if not any(_submitted_route_matches(candidate, parent) for parent in parent_routes):
                 raise PolicyValidationError
+
+
+async def _validate_scoped_access_policy_routes(
+    *,
+    policy: AccessPolicy,
+    routes: list[AccessPolicyRouteInput],
+    scope: Scope,
+    db: AsyncSession,
+) -> None:
+    if policy.owning_scope_type is None:
+        return
+    await _validate_scoped_access_policy_narrowing(
+        routes=routes,
+        scope_type=policy.owning_scope_type,
+        team_id=policy.owning_team_id,
+        project_id=policy.owning_project_id,
+        virtual_key_id=policy.owning_virtual_key_id,
+        exclude_policy_id=policy.id,
+        scope=scope,
+        db=db,
+    )
 
 
 class _SubmittedAccessRouteCandidate:
@@ -1316,12 +1445,39 @@ async def _can_view_policy(
     )
 
 
+async def _can_manage_policy_definition(
+    *,
+    policy: AccessPolicy | LimitPolicy,
+    actor: AuthenticatedUser | None,
+    scope: Scope,
+    db: AsyncSession,
+) -> bool:
+    if actor is None or _is_org_policy_admin(actor):
+        return True
+    if policy.owning_scope_type is None:
+        return False
+    return await _is_admin_for_scope(
+        actor=actor,
+        scope_type=policy.owning_scope_type,
+        team_id=policy.owning_team_id,
+        project_id=policy.owning_project_id,
+        virtual_key_id=policy.owning_virtual_key_id,
+        scope=scope,
+        db=db,
+    )
+
+
 def _is_org_policy_admin(actor: AuthenticatedUser) -> bool:
-    return "*" in actor.permissions or actor.role in {"org_owner", "org_admin"}
+    return "*" in actor.permissions or actor.role in {"super_admin", "org_owner", "org_admin"}
 
 
 def _is_org_policy_viewer(actor: AuthenticatedUser) -> bool:
-    return "*" in actor.permissions or actor.role in {"org_owner", "org_admin", "org_viewer"}
+    return "*" in actor.permissions or actor.role in {
+        "super_admin",
+        "org_owner",
+        "org_admin",
+        "org_viewer",
+    }
 
 
 def _has_scoped_admin_membership(actor: AuthenticatedUser) -> bool:

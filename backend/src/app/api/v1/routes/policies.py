@@ -19,6 +19,7 @@ from app.modules.policies import facade
 from app.modules.policies.errors import (
     PolicyAssignmentConflictError,
     PolicyNotFoundError,
+    PolicyPermissionError,
     PolicyValidationError,
 )
 from app.modules.policies.schemas import (
@@ -46,7 +47,6 @@ from app.modules.policies.schemas import (
 router = APIRouter(prefix="/policies", tags=["policies"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RequestScope = Annotated[Scope, Depends(get_scope)]
-PolicyViewer = Annotated[AuthenticatedUser, Depends(require_permission("policies.view"))]
 ScopedPolicyViewer = Annotated[
     AuthenticatedUser,
     Depends(require_permission_or_scoped_admin("policies.view")),
@@ -80,12 +80,14 @@ async def create_access_policy(
 @router.get("/access/{policy_id}")
 async def get_access_policy(
     policy_id: UUID,
-    _user: PolicyViewer,
+    _user: ScopedPolicyViewer,
     scope: RequestScope,
     db: DatabaseSession,
 ) -> AccessPolicyResponse:
     try:
-        return await facade.get_access_policy(policy_id=policy_id, scope=scope, db=db)
+        return await facade.get_access_policy(
+            policy_id=policy_id, scope=scope, db=db, actor=_user
+        )
     except PolicyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="access policy not found") from exc
 
@@ -94,7 +96,7 @@ async def get_access_policy(
 async def update_access_policy(
     policy_id: UUID,
     payload: UpdateAccessPolicyRequest,
-    _user: PolicyAdmin,
+    _user: AssignmentActor,
     scope: RequestScope,
     db: DatabaseSession,
 ) -> AccessPolicyResponse:
@@ -102,6 +104,8 @@ async def update_access_policy(
         return await facade.update_access_policy(
             policy_id=policy_id, payload=payload, scope=scope, db=db, actor=_user
         )
+    except PolicyPermissionError as exc:
+        raise HTTPException(status_code=403, detail="insufficient permissions") from exc
     except PolicyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="access policy not found") from exc
 
@@ -109,12 +113,14 @@ async def update_access_policy(
 @router.delete("/access/{policy_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_access_policy(
     policy_id: UUID,
-    _user: PolicyAdmin,
+    _user: AssignmentActor,
     scope: RequestScope,
     db: DatabaseSession,
 ) -> None:
     try:
         await facade.delete_access_policy(policy_id=policy_id, scope=scope, db=db, actor=_user)
+    except PolicyPermissionError as exc:
+        raise HTTPException(status_code=403, detail="insufficient permissions") from exc
     except PolicyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="access policy not found") from exc
 
@@ -123,7 +129,7 @@ async def delete_access_policy(
 async def create_access_policy_route(
     policy_id: UUID,
     payload: CreateAccessPolicyRouteRequest,
-    _user: PolicyAdmin,
+    _user: AssignmentActor,
     scope: RequestScope,
     db: DatabaseSession,
 ) -> AccessPolicyRouteResponse:
@@ -131,6 +137,8 @@ async def create_access_policy_route(
         return await facade.create_access_policy_route(
             policy_id=policy_id, payload=payload, scope=scope, db=db, actor=_user
         )
+    except PolicyPermissionError as exc:
+        raise HTTPException(status_code=403, detail="insufficient permissions") from exc
     except PolicyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="access policy not found") from exc
     except PolicyValidationError as exc:
@@ -141,7 +149,7 @@ async def create_access_policy_route(
 async def update_access_policy_route(
     route_id: UUID,
     payload: UpdateAccessPolicyRouteRequest,
-    _user: PolicyAdmin,
+    _user: AssignmentActor,
     scope: RequestScope,
     db: DatabaseSession,
 ) -> AccessPolicyRouteResponse:
@@ -149,6 +157,8 @@ async def update_access_policy_route(
         return await facade.update_access_policy_route(
             route_id=route_id, payload=payload, scope=scope, db=db, actor=_user
         )
+    except PolicyPermissionError as exc:
+        raise HTTPException(status_code=403, detail="insufficient permissions") from exc
     except PolicyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="access policy route not found") from exc
     except PolicyValidationError as exc:
@@ -158,12 +168,14 @@ async def update_access_policy_route(
 @router.delete("/access/routes/{route_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_access_policy_route(
     route_id: UUID,
-    _user: PolicyAdmin,
+    _user: AssignmentActor,
     scope: RequestScope,
     db: DatabaseSession,
 ) -> None:
     try:
         await facade.delete_access_policy_route(route_id=route_id, scope=scope, db=db, actor=_user)
+    except PolicyPermissionError as exc:
+        raise HTTPException(status_code=403, detail="insufficient permissions") from exc
     except PolicyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="access policy route not found") from exc
 
@@ -171,12 +183,14 @@ async def delete_access_policy_route(
 @router.get("/access/{policy_id}/impact")
 async def get_access_policy_impact(
     policy_id: UUID,
-    _user: PolicyViewer,
+    _user: ScopedPolicyViewer,
     scope: RequestScope,
     db: DatabaseSession,
 ) -> PolicyImpactResponse:
     try:
-        return await facade.get_access_policy_impact(policy_id=policy_id, scope=scope, db=db)
+        return await facade.get_access_policy_impact(
+            policy_id=policy_id, scope=scope, db=db, actor=_user
+        )
     except PolicyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="access policy not found") from exc
 
@@ -184,12 +198,14 @@ async def get_access_policy_impact(
 @router.get("/access/routes/{route_id}/impact")
 async def get_access_policy_route_impact(
     route_id: UUID,
-    _user: PolicyViewer,
+    _user: ScopedPolicyViewer,
     scope: RequestScope,
     db: DatabaseSession,
 ) -> PolicyImpactResponse:
     try:
-        return await facade.get_access_policy_route_impact(route_id=route_id, scope=scope, db=db)
+        return await facade.get_access_policy_route_impact(
+            route_id=route_id, scope=scope, db=db, actor=_user
+        )
     except PolicyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="access policy route not found") from exc
 
@@ -255,12 +271,14 @@ async def create_limit_policy(
 @router.get("/limits/{policy_id}")
 async def get_limit_policy(
     policy_id: UUID,
-    _user: PolicyViewer,
+    _user: ScopedPolicyViewer,
     scope: RequestScope,
     db: DatabaseSession,
 ) -> LimitPolicyResponse:
     try:
-        return await facade.get_limit_policy(policy_id=policy_id, scope=scope, db=db)
+        return await facade.get_limit_policy(
+            policy_id=policy_id, scope=scope, db=db, actor=_user
+        )
     except PolicyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="limit policy not found") from exc
 
@@ -269,7 +287,7 @@ async def get_limit_policy(
 async def update_limit_policy(
     policy_id: UUID,
     payload: UpdateLimitPolicyRequest,
-    _user: PolicyAdmin,
+    _user: AssignmentActor,
     scope: RequestScope,
     db: DatabaseSession,
 ) -> LimitPolicyResponse:
@@ -277,6 +295,8 @@ async def update_limit_policy(
         return await facade.update_limit_policy(
             policy_id=policy_id, payload=payload, scope=scope, db=db, actor=_user
         )
+    except PolicyPermissionError as exc:
+        raise HTTPException(status_code=403, detail="insufficient permissions") from exc
     except PolicyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="limit policy not found") from exc
     except PolicyValidationError as exc:
@@ -286,12 +306,14 @@ async def update_limit_policy(
 @router.delete("/limits/{policy_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_limit_policy(
     policy_id: UUID,
-    _user: PolicyAdmin,
+    _user: AssignmentActor,
     scope: RequestScope,
     db: DatabaseSession,
 ) -> None:
     try:
         await facade.delete_limit_policy(policy_id=policy_id, scope=scope, db=db, actor=_user)
+    except PolicyPermissionError as exc:
+        raise HTTPException(status_code=403, detail="insufficient permissions") from exc
     except PolicyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="limit policy not found") from exc
 
@@ -300,7 +322,7 @@ async def delete_limit_policy(
 async def create_limit_policy_rule(
     policy_id: UUID,
     payload: CreateLimitPolicyRuleRequest,
-    _user: PolicyAdmin,
+    _user: AssignmentActor,
     scope: RequestScope,
     db: DatabaseSession,
 ) -> LimitPolicyRuleResponse:
@@ -308,6 +330,8 @@ async def create_limit_policy_rule(
         return await facade.create_limit_policy_rule(
             policy_id=policy_id, payload=payload, scope=scope, db=db, actor=_user
         )
+    except PolicyPermissionError as exc:
+        raise HTTPException(status_code=403, detail="insufficient permissions") from exc
     except PolicyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="limit policy not found") from exc
     except PolicyValidationError as exc:
@@ -318,7 +342,7 @@ async def create_limit_policy_rule(
 async def update_limit_policy_rule(
     rule_id: UUID,
     payload: UpdateLimitPolicyRuleRequest,
-    _user: PolicyAdmin,
+    _user: AssignmentActor,
     scope: RequestScope,
     db: DatabaseSession,
 ) -> LimitPolicyRuleResponse:
@@ -326,6 +350,8 @@ async def update_limit_policy_rule(
         return await facade.update_limit_policy_rule(
             rule_id=rule_id, payload=payload, scope=scope, db=db, actor=_user
         )
+    except PolicyPermissionError as exc:
+        raise HTTPException(status_code=403, detail="insufficient permissions") from exc
     except PolicyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="limit policy rule not found") from exc
     except PolicyValidationError as exc:
@@ -335,12 +361,14 @@ async def update_limit_policy_rule(
 @router.delete("/limits/rules/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_limit_policy_rule(
     rule_id: UUID,
-    _user: PolicyAdmin,
+    _user: AssignmentActor,
     scope: RequestScope,
     db: DatabaseSession,
 ) -> None:
     try:
         await facade.delete_limit_policy_rule(rule_id=rule_id, scope=scope, db=db, actor=_user)
+    except PolicyPermissionError as exc:
+        raise HTTPException(status_code=403, detail="insufficient permissions") from exc
     except PolicyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="limit policy rule not found") from exc
 
@@ -348,12 +376,14 @@ async def delete_limit_policy_rule(
 @router.get("/limits/{policy_id}/impact")
 async def get_limit_policy_impact(
     policy_id: UUID,
-    _user: PolicyViewer,
+    _user: ScopedPolicyViewer,
     scope: RequestScope,
     db: DatabaseSession,
 ) -> PolicyImpactResponse:
     try:
-        return await facade.get_limit_policy_impact(policy_id=policy_id, scope=scope, db=db)
+        return await facade.get_limit_policy_impact(
+            policy_id=policy_id, scope=scope, db=db, actor=_user
+        )
     except PolicyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="limit policy not found") from exc
 
@@ -361,12 +391,14 @@ async def get_limit_policy_impact(
 @router.get("/limits/rules/{rule_id}/impact")
 async def get_limit_policy_rule_impact(
     rule_id: UUID,
-    _user: PolicyViewer,
+    _user: ScopedPolicyViewer,
     scope: RequestScope,
     db: DatabaseSession,
 ) -> PolicyImpactResponse:
     try:
-        return await facade.get_limit_policy_rule_impact(rule_id=rule_id, scope=scope, db=db)
+        return await facade.get_limit_policy_rule_impact(
+            rule_id=rule_id, scope=scope, db=db, actor=_user
+        )
     except PolicyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="limit policy rule not found") from exc
 

@@ -15,6 +15,7 @@ export interface OrganizationSettingsResponse {
   default_request_timeout_seconds: number;
   default_retry_count: number;
   default_max_body_bytes: number;
+  deployment_max_body_bytes: number;
   default_model_sync_mode: string;
   default_virtual_key_expiration_days: number | null;
   usage_retention_days?: number | null;

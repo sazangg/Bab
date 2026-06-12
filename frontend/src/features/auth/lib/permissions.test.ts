@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { workspaceLandingPath } from "@/features/auth/lib/permissions";
+import { canManageKeys, workspaceLandingPath } from "@/features/auth/lib/permissions";
 import type { AuthenticatedUser } from "@/shared/api/generated/schemas";
 
 function user(overrides: Partial<AuthenticatedUser>): AuthenticatedUser {
@@ -50,5 +50,26 @@ describe("workspaceLandingPath", () => {
 
   it("returns no landing path for an unscoped organization member", () => {
     expect(workspaceLandingPath(user({}))).toBeNull();
+  });
+
+  it("does not grant key management to an organization viewer", () => {
+    expect(
+      canManageKeys(
+        user({
+          role: "org_viewer",
+          permissions: ["projects.view"],
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("grants key management to project administrators", () => {
+    expect(
+      canManageKeys(
+        user({
+          project_memberships: [{ project_id: crypto.randomUUID(), role: "project_admin" }],
+        }),
+      ),
+    ).toBe(true);
   });
 });

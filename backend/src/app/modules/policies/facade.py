@@ -35,9 +35,15 @@ async def list_access_policies(
 
 
 async def get_access_policy(
-    *, policy_id: UUID, scope: Scope, db: AsyncSession
+    *,
+    policy_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
 ) -> AccessPolicyResponse:
-    return await service.get_access_policy(policy_id=policy_id, scope=scope, db=db)
+    return await service.get_access_policy(
+        policy_id=policy_id, scope=scope, db=db, actor=actor
+    )
 
 
 async def create_access_policy(
@@ -102,15 +108,27 @@ async def delete_access_policy_route(
 
 
 async def get_access_policy_impact(
-    *, policy_id: UUID, scope: Scope, db: AsyncSession
+    *,
+    policy_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
 ) -> PolicyImpactResponse:
-    return await service.get_access_policy_impact(policy_id=policy_id, scope=scope, db=db)
+    return await service.get_access_policy_impact(
+        policy_id=policy_id, scope=scope, db=db, actor=actor
+    )
 
 
 async def get_access_policy_route_impact(
-    *, route_id: UUID, scope: Scope, db: AsyncSession
+    *,
+    route_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
 ) -> PolicyImpactResponse:
-    return await service.get_access_policy_route_impact(route_id=route_id, scope=scope, db=db)
+    return await service.get_access_policy_route_impact(
+        route_id=route_id, scope=scope, db=db, actor=actor
+    )
 
 
 async def get_access_policy_options(
@@ -141,9 +159,15 @@ async def list_limit_policies(
 
 
 async def get_limit_policy(
-    *, policy_id: UUID, scope: Scope, db: AsyncSession
+    *,
+    policy_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
 ) -> LimitPolicyResponse:
-    return await service.get_limit_policy(policy_id=policy_id, scope=scope, db=db)
+    return await service.get_limit_policy(
+        policy_id=policy_id, scope=scope, db=db, actor=actor
+    )
 
 
 async def create_limit_policy(
@@ -208,15 +232,27 @@ async def delete_limit_policy_rule(
 
 
 async def get_limit_policy_impact(
-    *, policy_id: UUID, scope: Scope, db: AsyncSession
+    *,
+    policy_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
 ) -> PolicyImpactResponse:
-    return await service.get_limit_policy_impact(policy_id=policy_id, scope=scope, db=db)
+    return await service.get_limit_policy_impact(
+        policy_id=policy_id, scope=scope, db=db, actor=actor
+    )
 
 
 async def get_limit_policy_rule_impact(
-    *, rule_id: UUID, scope: Scope, db: AsyncSession
+    *,
+    rule_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
 ) -> PolicyImpactResponse:
-    return await service.get_limit_policy_rule_impact(rule_id=rule_id, scope=scope, db=db)
+    return await service.get_limit_policy_rule_impact(
+        rule_id=rule_id, scope=scope, db=db, actor=actor
+    )
 
 
 async def list_policy_assignments(

@@ -4,7 +4,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -1334,6 +1334,9 @@ async def list_audit_events(
     action: str | None = None,
     entity_type: str | None = None,
     entity_id: UUID | None = None,
+    search: str | None = None,
+    before_at: datetime | None = None,
+    before_id: UUID | None = None,
 ) -> list[AuditEventResponse]:
     filters = [AuditEvent.org_id == scope.org_id]
     if start_at is not None:
@@ -1348,7 +1351,33 @@ async def list_audit_events(
         filters.append(AuditEvent.entity_type == entity_type)
     if entity_id is not None:
         filters.append(AuditEvent.entity_id == entity_id)
-    query = select(AuditEvent).where(*filters).order_by(AuditEvent.created_at.desc())
+    if search:
+        pattern = f"%{search}%"
+        filters.append(
+            or_(
+                AuditEvent.actor_email.ilike(pattern),
+                AuditEvent.actor_role.ilike(pattern),
+                AuditEvent.action.ilike(pattern),
+                AuditEvent.entity_type.ilike(pattern),
+                AuditEvent.metadata_["email"].as_string().ilike(pattern),
+                AuditEvent.metadata_["reason"].as_string().ilike(pattern),
+                AuditEvent.metadata_["role"].as_string().ilike(pattern),
+                AuditEvent.metadata_["status"].as_string().ilike(pattern),
+            )
+        )
+    if before_at is not None:
+        cursor_filter = AuditEvent.created_at < before_at
+        if before_id is not None:
+            cursor_filter = or_(
+                cursor_filter,
+                and_(AuditEvent.created_at == before_at, AuditEvent.id < before_id),
+            )
+        filters.append(cursor_filter)
+    query = (
+        select(AuditEvent)
+        .where(*filters)
+        .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
+    )
     if limit is not None:
         query = query.limit(limit)
     events = await db.scalars(query)

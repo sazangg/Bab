@@ -50,9 +50,7 @@ describe("AppRoutes", () => {
   it("renders the dashboard home route", async () => {
     renderRoute("/");
 
-    expect(
-      await screen.findByRole("heading", { name: "Gateway home" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Gateway home" })).toBeInTheDocument();
   });
 
   it("redirects unknown routes to login", async () => {
@@ -63,6 +61,15 @@ describe("AppRoutes", () => {
 
   it("guards API Docs with key-manager access", () => {
     renderRoute("/api-docs");
+
+    expect(protectedRouteMock).toHaveBeenCalledWith(
+      expect.objectContaining({ requireKeyManager: true }),
+      undefined,
+    );
+  });
+
+  it("guards Playground with key-manager access", () => {
+    renderRoute("/playground");
 
     expect(protectedRouteMock).toHaveBeenCalledWith(
       expect.objectContaining({ requireKeyManager: true }),

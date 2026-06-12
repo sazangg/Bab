@@ -537,7 +537,7 @@ export function ProviderDetailPage() {
                 : `${providerTotals.average_latency_ms}ms`
             }
           />
-          <Fact label="Estimated spend" value={formatCents(providerTotals?.cost_cents ?? 0)} />
+          <Fact label="Known spend" value={formatCents(providerTotals?.cost_cents ?? 0)} />
         </CardContent>
       </Card>
 

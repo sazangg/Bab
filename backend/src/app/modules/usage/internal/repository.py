@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import Integer, case, cast, func, or_, select, update
@@ -20,6 +20,7 @@ from app.modules.usage.schemas import (
     RecordUsage,
     SpendInsights,
     UsageBreakdownRow,
+    UsageFilterOptions,
     UsageRecentError,
     UsageRecordResponse,
     UsageSummaryTotals,
@@ -178,9 +179,12 @@ async def list_usage_records(
     project_id: UUID | None,
     virtual_key_id: UUID | None,
     model: str | None,
+    request_id: str | None,
+    search: str | None,
     allowed_team_ids: set[UUID] | None,
     allowed_project_ids: set[UUID] | None,
     limit: int | None,
+    offset: int,
     db: AsyncSession,
 ) -> list[UsageRecordResponse]:
     filters = _usage_filters(
@@ -192,9 +196,22 @@ async def list_usage_records(
         project_id=project_id,
         virtual_key_id=virtual_key_id,
         model=model,
+        request_id=request_id,
         allowed_team_ids=allowed_team_ids,
         allowed_project_ids=allowed_project_ids,
     )
+    if search:
+        search_pattern = f"%{search.strip()}%"
+        filters.append(
+            or_(
+                UsageRecord.request_id.ilike(search_pattern),
+                UsageRecord.requested_model.ilike(search_pattern),
+                UsageRecord.provider_model.ilike(search_pattern),
+                UsageRecord.error_code.ilike(search_pattern),
+                ProviderCredential.name.ilike(search_pattern),
+                ProviderCredential.key_prefix.ilike(search_pattern),
+            )
+        )
     query = (
         select(UsageRecord, ProviderCredential.name, ProviderCredential.key_prefix)
         .outerjoin(ProviderCredential, ProviderCredential.id == UsageRecord.provider_credential_id)
@@ -203,6 +220,8 @@ async def list_usage_records(
     )
     if limit is not None:
         query = query.limit(limit)
+    if offset:
+        query = query.offset(offset)
     result = await db.execute(query)
     return [
         UsageRecordResponse.model_validate(
@@ -298,6 +317,7 @@ async def get_organization_usage_summary(
             project_id=project_id,
             virtual_key_id=virtual_key_id,
             model=model,
+            request_id=None,
             allowed_team_ids=allowed_team_ids,
             allowed_project_ids=allowed_project_ids,
         )
@@ -387,6 +407,7 @@ async def get_organization_usage_timeseries(
         project_id=project_id,
         virtual_key_id=virtual_key_id,
         model=model,
+        request_id=None,
         allowed_team_ids=allowed_team_ids,
         allowed_project_ids=allowed_project_ids,
     )
@@ -426,6 +447,74 @@ async def get_organization_usage_timeseries(
     ]
 
 
+async def get_usage_filter_options(
+    *,
+    org_id: UUID,
+    since: datetime | None,
+    until: datetime | None,
+    team_id: UUID | None = None,
+    project_id: UUID | None = None,
+    allowed_team_ids: set[UUID] | None = None,
+    allowed_project_ids: set[UUID] | None = None,
+    db: AsyncSession,
+) -> UsageFilterOptions:
+    filters = tuple(
+        _usage_filters(
+            org_id=org_id,
+            since=since,
+            until=until,
+            team_id=team_id,
+            provider_id=None,
+            project_id=project_id,
+            virtual_key_id=None,
+            model=None,
+            request_id=None,
+            allowed_team_ids=allowed_team_ids,
+            allowed_project_ids=allowed_project_ids,
+        )
+    )
+    return UsageFilterOptions(
+        by_provider=await _breakdown(
+            UsageRecord.provider_id,
+            Provider.name,
+            *filters,
+            join_model=Provider,
+            join_on=Provider.id == UsageRecord.provider_id,
+            db=db,
+        ),
+        by_model=await _breakdown(
+            UsageRecord.provider_model,
+            UsageRecord.provider_model,
+            *filters,
+            db=db,
+        ),
+        by_team=await _breakdown(
+            UsageRecord.team_id,
+            Team.name,
+            *filters,
+            join_model=Team,
+            join_on=Team.id == UsageRecord.team_id,
+            db=db,
+        ),
+        by_project=await _breakdown(
+            UsageRecord.project_id,
+            Project.name,
+            *filters,
+            join_model=Project,
+            join_on=Project.id == UsageRecord.project_id,
+            db=db,
+        ),
+        by_virtual_key=await _breakdown(
+            UsageRecord.virtual_key_id,
+            VirtualKey.name,
+            *filters,
+            join_model=VirtualKey,
+            join_on=VirtualKey.id == UsageRecord.virtual_key_id,
+            db=db,
+        ),
+    )
+
+
 async def get_spend_insights(
     *,
     org_id: UUID,
@@ -450,6 +539,7 @@ async def get_spend_insights(
         project_id=project_id,
         virtual_key_id=virtual_key_id,
         model=model,
+        request_id=None,
         allowed_team_ids=allowed_team_ids,
         allowed_project_ids=allowed_project_ids,
     )
@@ -558,13 +648,17 @@ async def _limit_policy_budget_burn(
         policy = await db.get(LimitPolicy, rule.limit_policy_id)
         if policy is None:
             continue
+        rule_since = _limit_rule_window_start(
+            interval_unit=rule.interval_unit,
+            interval_count=rule.interval_count,
+        )
         filters = [
             UsageRecord.org_id == org_id,
             _json_array_contains(UsageRecord.limit_policy_ids, rule.limit_policy_id, db=db),
             _json_array_contains(UsageRecord.limit_policy_rule_ids, rule.id, db=db),
         ]
-        if since is not None:
-            filters.append(UsageRecord.created_at >= since)
+        if rule_since is not None:
+            filters.append(UsageRecord.created_at >= rule_since)
         if until is not None:
             filters.append(UsageRecord.created_at <= until)
         if team_id is not None:
@@ -609,6 +703,21 @@ def format_limit_rule_interval(*, interval_unit: str, interval_count: int) -> st
     return f"{interval_count} {interval_unit}{'' if interval_count == 1 else 's'}"
 
 
+def _limit_rule_window_start(*, interval_unit: str, interval_count: int) -> datetime | None:
+    now = datetime.now(UTC)
+    if interval_unit == "hour":
+        return now - timedelta(hours=interval_count)
+    if interval_unit == "day":
+        return now - timedelta(days=interval_count)
+    if interval_unit == "week":
+        return now - timedelta(weeks=interval_count)
+    if interval_unit == "month":
+        return now - timedelta(days=30 * interval_count)
+    if interval_unit == "year":
+        return now - timedelta(days=365 * interval_count)
+    return None
+
+
 def _usage_filters(
     *,
     org_id: UUID,
@@ -619,6 +728,7 @@ def _usage_filters(
     project_id: UUID | None,
     virtual_key_id: UUID | None,
     model: str | None,
+    request_id: str | None,
     allowed_team_ids: set[UUID] | None,
     allowed_project_ids: set[UUID] | None,
 ) -> list:
@@ -637,6 +747,8 @@ def _usage_filters(
         filters.append(UsageRecord.virtual_key_id == virtual_key_id)
     if model:
         filters.append(UsageRecord.provider_model == model)
+    if request_id:
+        filters.append(UsageRecord.request_id == request_id)
     _add_allowed_scope_filters(
         filters,
         allowed_team_ids=allowed_team_ids,

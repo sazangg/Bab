@@ -311,14 +311,12 @@ async def test_migrations_create_current_schema(tmp_path) -> None:
         )
         virtual_key_columns = await connection.run_sync(
             lambda sync_connection: {
-                item["name"]
-                for item in inspect(sync_connection).get_columns("virtual_keys")
+                item["name"] for item in inspect(sync_connection).get_columns("virtual_keys")
             }
         )
         virtual_key_indexes = await connection.run_sync(
             lambda sync_connection: {
-                item["name"]
-                for item in inspect(sync_connection).get_indexes("virtual_keys")
+                item["name"] for item in inspect(sync_connection).get_indexes("virtual_keys")
             }
         )
         project_columns = await connection.run_sync(
@@ -333,8 +331,7 @@ async def test_migrations_create_current_schema(tmp_path) -> None:
         )
         project_unique_constraints = await connection.run_sync(
             lambda sync_connection: {
-                item["name"]
-                for item in inspect(sync_connection).get_unique_constraints("projects")
+                item["name"] for item in inspect(sync_connection).get_unique_constraints("projects")
             }
         )
         policy_owner_schema = await connection.run_sync(_policy_owner_schema)
@@ -390,9 +387,7 @@ def _policy_owner_schema(sync_connection):
         schema[table_name] = {
             "columns": {item["name"] for item in inspector.get_columns(table_name)},
             "indexed_columns": {
-                column_name
-                for index in indexes
-                for column_name in index.get("column_names", [])
+                column_name for index in indexes for column_name in index.get("column_names", [])
             },
             "foreign_keys": {
                 (
@@ -468,9 +463,7 @@ async def test_anthropic_migration_backfill_requires_canonical_base_url(tmp_path
         await connection.run_sync(upgrade_to, "head")
         integrations = dict(
             (
-                await connection.execute(
-                    text("SELECT id, supported_integration FROM providers")
-                )
+                await connection.execute(text("SELECT id, supported_integration FROM providers"))
             ).all()
         )
 
@@ -653,6 +646,95 @@ async def test_native_anthropic_messages_preserves_shape_and_records_usage(
     assert records[0]["completion_tokens"] == 3
     assert records[0]["total_tokens"] == 11
     assert records[0]["usage_source"] == "provider_reported"
+
+
+@pytest.mark.asyncio
+async def test_native_anthropic_messages_applies_output_guardrails(
+    app_client,
+    db_session,
+) -> None:
+    await sync_default_workspace(db_session)
+
+    async def upstream_handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1/messages"
+        return httpx.Response(
+            200,
+            json={
+                "id": "msg_output_guardrail",
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "text", "text": "contains blocked output"}],
+                "model": "claude-test",
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 8, "output_tokens": 3},
+            },
+        )
+
+    async def override_proxy_http_client() -> AsyncGenerator[httpx.AsyncClient]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(upstream_handler)) as client:
+            yield client
+
+    app_client.dependency_overrides[get_proxy_http_client] = override_proxy_http_client
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client), base_url="http://test"
+    ) as client:
+        admin_headers = await _login(client)
+        virtual_key, _credential_id, _provider_id = await _provision_gateway_path(
+            client,
+            admin_headers,
+            upstream_api_key="sk-ant-output",
+            model="claude-test",
+            provider_slug="anthropic",
+        )
+        policy_response = await client.post(
+            "/api/v1/guardrails/policies",
+            headers=admin_headers,
+            json={
+                "name": "Block Anthropic output",
+                "rules": [
+                    {
+                        "rule_type": "prompt_contains",
+                        "effect": "deny",
+                        "phase": "response",
+                        "values": ["blocked output"],
+                    }
+                ],
+            },
+        )
+        assert policy_response.status_code == 201
+        assignment_response = await client.post(
+            "/api/v1/guardrails/assignments",
+            headers=admin_headers,
+            json={"policy_id": policy_response.json()["id"], "scope_type": "org"},
+        )
+        assert assignment_response.status_code == 201
+
+        response = await client.post(
+            "/v1/messages",
+            headers={"x-api-key": virtual_key},
+            json={
+                "model": "claude-test",
+                "messages": [{"role": "user", "content": "Say hello."}],
+                "max_tokens": 32,
+            },
+        )
+        usage_response = await client.get("/api/v1/usage/records", headers=admin_headers)
+        events_response = await client.get(
+            "/api/v1/guardrails/events",
+            params={"phase": "response", "decision": "blocked"},
+            headers=admin_headers,
+        )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "response blocked by guardrail prompt_contains rule"
+    records = usage_response.json()
+    assert len(records) == 1
+    assert records[0]["http_status"] == 403
+    assert records[0]["error_code"] == "guardrail_output_denied"
+    assert records[0]["total_tokens"] == 11
+    events = events_response.json()
+    assert len(events) == 1
+    assert events[0]["metadata"]["matched_values"] == ["blocked output"]
 
 
 @pytest.mark.asyncio
@@ -1286,7 +1368,8 @@ async def test_streaming_is_allowed_when_output_guardrail_is_monitor_only(
         return httpx.Response(
             200,
             content=(
-                b"data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n"
+                b'data: {"choices":[{"delta":{"content":"contains "}}]}\n\n'
+                b'data: {"choices":[{"delta":{"content":"blocked output"}}]}\n\n'
                 b"data: [DONE]\n\n"
             ),
             headers={"content-type": "text/event-stream"},
@@ -1318,7 +1401,7 @@ async def test_streaming_is_allowed_when_output_guardrail_is_monitor_only(
                         "rule_type": "prompt_contains",
                         "effect": "deny",
                         "phase": "response",
-                        "values": ["anything"],
+                        "values": ["blocked output"],
                     }
                 ],
             },
@@ -1341,6 +1424,11 @@ async def test_streaming_is_allowed_when_output_guardrail_is_monitor_only(
             },
         )
         usage_response = await client.get("/api/v1/usage/records", headers=admin_headers)
+        events_response = await client.get(
+            "/api/v1/guardrails/events",
+            params={"phase": "response", "decision": "dry_run"},
+            headers=admin_headers,
+        )
 
     assert proxy_response.status_code == 200
     assert upstream_called is True
@@ -1348,6 +1436,9 @@ async def test_streaming_is_allowed_when_output_guardrail_is_monitor_only(
     assert len(records) == 1
     assert records[0]["usage_source"] == "estimated"
     assert records[0]["total_tokens"] > 0
+    events = events_response.json()
+    assert len(events) == 1
+    assert events[0]["metadata"]["matched_values"] == ["blocked output"]
 
 
 @pytest.mark.asyncio

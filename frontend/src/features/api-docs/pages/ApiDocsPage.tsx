@@ -26,21 +26,21 @@ export function ApiDocsPage() {
         </CardHeader>
         <CardContent className="grid gap-4">
           {baseUrl ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/20 p-3">
-            <div className="flex min-w-0 items-center gap-2 text-sm">
-              <LinkIcon className="size-4 text-muted-foreground" />
-              <code className="truncate">{baseUrl}</code>
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/20 p-3">
+              <div className="flex min-w-0 items-center gap-2 text-sm">
+                <LinkIcon className="size-4 text-muted-foreground" />
+                <code className="truncate">{baseUrl}</code>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => navigator.clipboard.writeText(baseUrl)}
+              >
+                <Copy />
+                Copy base URL
+              </Button>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => navigator.clipboard.writeText(baseUrl)}
-            >
-              <Copy />
-              Copy base URL
-            </Button>
-          </div>
           ) : (
             <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
               Public gateway URL is not configured. Set it in organization settings before sharing
@@ -48,16 +48,17 @@ export function ApiDocsPage() {
             </div>
           )}
           {baseUrl ? (
-          <>
-          <CommandBlock
-            title="List key-visible models"
-            command={`curl ${baseUrl}/v1/models \\
+            <>
+              <CommandBlock
+                title="List key-visible models"
+                command={`curl ${baseUrl}/v1/models \\
   -H "Authorization: Bearer bab-sk-..."`}
-          />
-          <CommandBlock
-            title="Chat completions (primary)"
-            command={`curl ${baseUrl}/v1/chat/completions \\
+              />
+              <CommandBlock
+                title="Chat completions (primary)"
+                command={`curl ${baseUrl}/v1/chat/completions \\
   -H "Authorization: Bearer bab-sk-..." \\
+  -H "X-Bab-Provider-Id: PROVIDER_UUID" \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "gpt-4o-mini",
@@ -66,36 +67,39 @@ export function ApiDocsPage() {
     ],
     "max_completion_tokens": 32
   }'`}
-          />
-          <CommandBlock
-            title="Responses compatibility adapter"
-            command={`curl ${baseUrl}/v1/responses \\
+              />
+              <CommandBlock
+                title="Responses compatibility adapter"
+                command={`curl ${baseUrl}/v1/responses \\
   -H "Authorization: Bearer bab-sk-..." \\
+  -H "X-Bab-Provider-Id: PROVIDER_UUID" \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "gpt-4o-mini",
     "input": "Reply with pong",
     "max_output_tokens": 32
   }'`}
-          />
-          <CommandBlock
-            title="Legacy completions compatibility adapter"
-            command={`curl ${baseUrl}/v1/completions \\
+              />
+              <CommandBlock
+                title="Legacy completions compatibility adapter"
+                command={`curl ${baseUrl}/v1/completions \\
   -H "Authorization: Bearer bab-sk-..." \\
+  -H "X-Bab-Provider-Id: PROVIDER_UUID" \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "gpt-4o-mini",
     "prompt": "Reply with pong",
     "max_tokens": 32
   }'`}
-          />
-          <CommandBlock
-            title="OpenAI SDK JS/TS"
-            command={`import OpenAI from "openai";
+              />
+              <CommandBlock
+                title="OpenAI SDK JS/TS"
+                command={`import OpenAI from "openai";
 
 const client = new OpenAI({
   apiKey: "bab-sk-...",
   baseURL: "${baseUrl}/v1",
+  defaultHeaders: { "X-Bab-Provider-Id": "PROVIDER_UUID" },
 });
 
 const response = await client.chat.completions.create({
@@ -103,14 +107,15 @@ const response = await client.chat.completions.create({
   messages: [{ role: "user", content: "Reply with pong" }],
   max_completion_tokens: 32,
 });`}
-          />
-          <CommandBlock
-            title="OpenAI SDK Python"
-            command={`from openai import OpenAI
+              />
+              <CommandBlock
+                title="OpenAI SDK Python"
+                command={`from openai import OpenAI
 
 client = OpenAI(
     api_key="bab-sk-...",
     base_url="${baseUrl}/v1",
+    default_headers={"X-Bab-Provider-Id": "PROVIDER_UUID"},
 )
 
 response = client.chat.completions.create(
@@ -118,26 +123,73 @@ response = client.chat.completions.create(
     messages=[{"role": "user", "content": "Reply with pong"}],
     max_completion_tokens=32,
 )`}
-          />
+              />
+              <CommandBlock
+                title="Anthropic Messages cURL"
+                command={`curl ${baseUrl}/v1/messages \\
+  -H "x-api-key: bab-sk-..." \\
+  -H "X-Bab-Provider-Id: PROVIDER_UUID" \\
+  -H "anthropic-version: 2023-06-01" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "claude-model-alias",
+    "max_tokens": 64,
+    "messages": [
+      {"role": "user", "content": "Reply with pong"}
+    ]
+  }'`}
+              />
+              <CommandBlock
+                title="Anthropic SDK JS/TS"
+                command={`import Anthropic from "@anthropic-ai/sdk";
+
+const client = new Anthropic({
+  apiKey: "bab-sk-...",
+  baseURL: "${baseUrl}",
+  defaultHeaders: { "X-Bab-Provider-Id": "PROVIDER_UUID" },
+});
+
+const message = await client.messages.create({
+  model: "claude-model-alias",
+  max_tokens: 64,
+  messages: [{ role: "user", content: "Reply with pong" }],
+});`}
+              />
+              <CommandBlock
+                title="Anthropic SDK Python"
+                command={`from anthropic import Anthropic
+
+client = Anthropic(
+    api_key="bab-sk-...",
+    base_url="${baseUrl}",
+    default_headers={"X-Bab-Provider-Id": "PROVIDER_UUID"},
+)
+
+message = client.messages.create(
+    model="claude-model-alias",
+    max_tokens=64,
+    messages=[{"role": "user", "content": "Reply with pong"}],
+)`}
+              />
+              <div className="rounded-md border bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
+                <div className="font-medium text-foreground">Embeddings unavailable</div>
+                <p>
+                  <code>/v1/embeddings</code> currently returns <code>501 Not Implemented</code>. It
+                  is not a supported V1 endpoint yet.
+                </p>
+              </div>
+            </>
+          ) : null}
           {baseUrl ? (
-          <div className="rounded-md border bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
-            <div className="font-medium text-foreground">Embeddings unavailable</div>
-            <p>
-              <code>/v1/embeddings</code> currently returns <code>501 Not Implemented</code>. It is
-              not a supported V1 endpoint yet.
-            </p>
-          </div>
+            <div className="rounded-md border bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
+              <div className="font-medium text-foreground">Postman setup</div>
+              <p>Method: POST</p>
+              <p>URL: {baseUrl}/v1/chat/completions</p>
+              <p>Authorization: Bearer Token, using the virtual key as the token.</p>
+              <p>Headers: Content-Type application/json.</p>
+              <p>Body: raw JSON using the same payload as the curl example.</p>
+            </div>
           ) : null}
-          </>
-          ) : null}
-          <div className="rounded-md border bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
-            <div className="font-medium text-foreground">Postman setup</div>
-            <p>Method: POST</p>
-            <p>URL: {baseUrl}/v1/chat/completions</p>
-            <p>Authorization: Bearer Token, using the virtual key as the token.</p>
-            <p>Headers: Content-Type application/json.</p>
-            <p>Body: raw JSON using the same payload as the curl example.</p>
-          </div>
         </CardContent>
       </Card>
 
@@ -154,6 +206,12 @@ response = client.chat.completions.create(
             and legacy completions are compatibility adapters over chat completions.
           </p>
           <p>
+            <code>/v1/messages</code> is native Anthropic Messages passthrough, not an
+            OpenAI-to-Anthropic translation layer. It accepts a virtual key through{" "}
+            <code>x-api-key</code> or Bearer authorization. Native Anthropic streaming is not
+            supported yet.
+          </p>
+          <p>
             Some newer OpenAI models reject <code>max_tokens</code>; use{" "}
             <code>max_completion_tokens</code> when testing those models.
           </p>
@@ -161,12 +219,14 @@ response = client.chat.completions.create(
             Embeddings currently return <code>501 Not Implemented</code>. The route exists so client
             integrations fail explicitly until provider adapter coverage is added.
           </p>
-          {baseUrl ? <Button asChild variant="outline" className="w-fit">
-            <a href={`${baseUrl}/openapi.json`} target="_blank" rel="noreferrer">
-              <ExternalLink />
-              Open raw OpenAPI
-            </a>
-          </Button> : null}
+          {baseUrl ? (
+            <Button asChild variant="outline" className="w-fit">
+              <a href={`${baseUrl}/openapi.json`} target="_blank" rel="noreferrer">
+                <ExternalLink />
+                Open raw OpenAPI
+              </a>
+            </Button>
+          ) : null}
         </CardContent>
       </Card>
     </div>
