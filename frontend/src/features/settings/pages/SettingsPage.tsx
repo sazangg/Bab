@@ -28,7 +28,7 @@ import {
 } from "@/shared/api/generated/settings/settings";
 import type { UpdateOrganizationSettingsRequest } from "@/shared/api/generated/schemas";
 import { getProblemDetail } from "@/shared/api/problem-detail";
-import { EmptyState } from "@/shared/components/EmptyState";
+import { MessageStateCard } from "@/shared/components/MessageStateCard";
 import { PageHeader } from "@/shared/components/PageHeader";
 
 const settingsSchema = z.object({
@@ -174,10 +174,17 @@ export function SettingsPage() {
       {settingsQuery.isPending ? (
         <p className="text-sm text-muted-foreground">Loading settings...</p>
       ) : !settings ? (
-        <EmptyState
+        <MessageStateCard
           icon={Settings}
+          tone="destructive"
+          fillViewport={false}
           title="Settings unavailable"
           description="The organization settings record could not be loaded."
+          action={
+            <Button variant="outline" onClick={() => settingsQuery.refetch()}>
+              Try again
+            </Button>
+          }
         />
       ) : (
         <form id="settings-form" className="grid gap-4 xl:grid-cols-2" onSubmit={submit}>

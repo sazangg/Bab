@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
-import { Building2, FolderKanban, MoreHorizontal, Pencil, Plus, Search } from "lucide-react";
+import { Building2, FolderKanban, MoreHorizontal, Pencil, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { Link, useNavigate } from "react-router-dom";
@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { type DataTableColumn } from "@/components/ui/data-table";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -34,20 +34,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { useIsMobile } from "@/hooks/use-mobile";
-import { EmptyState } from "@/shared/components/EmptyState";
-import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
+import { ResourceListPage, type ResourceSegment } from "@/shared/templates/ResourceListPage";
 import {
   hasAnyTeamAdminMembership,
   hasPermission,
@@ -70,8 +60,6 @@ import type { ProjectResponse, TeamResponse } from "@/shared/api/generated/schem
 
 import { formatDateTime, formatRelativeFromNow } from "@/features/providers/lib/format";
 
-type ProjectSegment = "all" | "active" | "archived";
-
 const newProjectSchema = z.object({
   teamId: z.string().min(1, "Pick a team"),
   name: z.string().min(1, "Name is required").max(255),
@@ -82,7 +70,6 @@ type NewProjectValues = z.infer<typeof newProjectSchema>;
 
 export function ProjectsPage() {
   const navigate = useNavigate();
-  const isMobile = useIsMobile();
   const queryClient = useQueryClient();
   const projectsQuery = useListProjectsApiV1ProjectsGet();
   const teamsQuery = useListTeamsApiV1TeamsGet();
@@ -109,243 +96,217 @@ export function ProjectsPage() {
   }, [teams]);
 
   const [search, setSearch] = useState("");
-  const [segment, setSegment] = useState<ProjectSegment>("active");
+  const [segment, setSegment] = useState<ResourceSegment>("active");
   const [teamFilter, setTeamFilter] = useState<string>("all");
   const [newOpen, setNewOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<ProjectResponse | null>(null);
 
-  const segmentCounts = {
-    all: projects.length,
-    active: projects.filter((p) => p.is_active).length,
-    archived: projects.filter((p) => !p.is_active).length,
-  };
-  const filtered = projects
-    .filter((project) => {
-      if (segment === "active") return project.is_active;
-      if (segment === "archived") return !project.is_active;
-      return true;
-    })
-    .filter((project) => teamFilter === "all" || project.team_id === teamFilter)
-    .filter((project) => {
-      const term = search.toLowerCase().trim();
-      if (!term) return true;
-      const teamName = teamById[project.team_id]?.name ?? project.team_name ?? "";
-      return `${project.name} ${project.description ?? ""} ${teamName}`
-        .toLowerCase()
-        .includes(term);
-    });
-
   const canCreate = canCreateProject && activeTeams.length > 0;
+  const canManageProject = (project: ProjectResponse) =>
+    canManageAllProjects ||
+    isTeamAdmin(currentUser, project.team_id) ||
+    isProjectAdmin(currentUser, project.id);
+  const teamFor = (project: ProjectResponse) =>
+    teamById[project.team_id] ??
+    (project.team_name ? { id: project.team_id, name: project.team_name } : undefined);
+
+  const columns: DataTableColumn<ProjectResponse>[] = [
+    {
+      key: "name",
+      header: "Name",
+      className: "font-medium",
+      cell: (project) => (
+        <Link
+          to={`/projects/${project.id}`}
+          onClick={(event) => event.stopPropagation()}
+          className="hover:underline"
+        >
+          {project.name}
+        </Link>
+      ),
+    },
+    {
+      key: "team",
+      header: "Team",
+      cell: (project) => {
+        const team = teamFor(project);
+        if (team && canViewTeam(currentUser, project.team_id)) {
+          return (
+            <Link
+              to={`/teams/${team.id}`}
+              onClick={(event) => event.stopPropagation()}
+              className="text-muted-foreground hover:text-foreground hover:underline"
+            >
+              {team.name}
+            </Link>
+          );
+        }
+        return <span className="text-muted-foreground">{team ? team.name : "—"}</span>;
+      },
+    },
+    {
+      key: "description",
+      header: "Description",
+      className: "max-w-md truncate text-muted-foreground",
+      cell: (project) => project.description || "—",
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (project) => (
+        <StatusBadge variant={project.is_active ? "active" : "inactive"}>
+          {project.is_active ? "Active" : "Archived"}
+        </StatusBadge>
+      ),
+    },
+    {
+      key: "created",
+      header: "Created",
+      className: "text-muted-foreground",
+      cell: (project) => (
+        <span title={formatDateTime(project.created_at)}>
+          {formatRelativeFromNow(project.created_at)}
+        </span>
+      ),
+    },
+    {
+      key: "actions",
+      header: <span className="sr-only">Actions</span>,
+      headClassName: "w-[1%]",
+      cell: (project) =>
+        canManageProject(project) ? (
+          <div onClick={(event) => event.stopPropagation()}>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon-sm" aria-label="Project actions">
+                  <MoreHorizontal />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => setEditingProject(project)}>
+                  <Pencil data-icon="inline-start" />
+                  Edit project
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        ) : null,
+    },
+  ];
 
   return (
-    <>
-      <PageHeader
-        title="Projects"
-        description="Projects live inside teams and receive access and limit policies plus virtual keys."
-        actions={
-          <div className="flex items-center gap-2">
-            {hasPermission(currentUser, "teams.manage") ||
-            hasAnyTeamAdminMembership(currentUser) ? (
-              <Button asChild variant="outline">
-                <Link to="/teams">
-                  <Building2 />
-                  Manage teams
-                </Link>
-              </Button>
-            ) : null}
-            {canCreateProject ? (
-              <NewProjectSheet
-                open={newOpen}
-                onOpenChange={setNewOpen}
-                activeTeams={activeTeams}
-                disabled={!canCreate}
-                onCreated={async (project) => {
-                  await queryClient.invalidateQueries();
-                  setNewOpen(false);
-                  toast.success(`Project "${project.name}" created.`);
-                  navigate(`/projects/${project.id}`);
-                }}
-              />
-            ) : null}
-          </div>
-        }
-      />
-
-      {projectsQuery.isPending ? (
-        <p className="text-sm text-muted-foreground">Loading projects...</p>
-      ) : projects.length === 0 ? (
-        <EmptyState
-          icon={FolderKanban}
-          title="No projects yet"
-          description={
-            canCreate
-              ? "Create the first project to start issuing virtual keys."
-              : "You do not have project creation access in any active team."
-          }
-          action={
-            canCreate ? (
-              <Button onClick={() => setNewOpen(true)}>
-                <Plus />
-                New project
-              </Button>
-            ) : hasPermission(currentUser, "teams.manage") ? (
-              <Button asChild>
-                <Link to="/teams">
-                  <Building2 />
-                  Go to Teams
-                </Link>
-              </Button>
-            ) : undefined
-          }
+    <ResourceListPage
+      title="Projects"
+      description="Projects live inside teams and receive access and limit policies plus virtual keys."
+      headerActions={
+        <div className="flex items-center gap-2">
+          {hasPermission(currentUser, "teams.manage") || hasAnyTeamAdminMembership(currentUser) ? (
+            <Button asChild variant="outline">
+              <Link to="/teams">
+                <Building2 />
+                Manage teams
+              </Link>
+            </Button>
+          ) : null}
+          {canCreateProject ? (
+            <NewProjectSheet
+              open={newOpen}
+              onOpenChange={setNewOpen}
+              activeTeams={activeTeams}
+              disabled={!canCreate}
+              onCreated={async (project) => {
+                await queryClient.invalidateQueries();
+                setNewOpen(false);
+                toast.success(`Project "${project.name}" created.`);
+                navigate(`/projects/${project.id}`);
+              }}
+            />
+          ) : null}
+        </div>
+      }
+      items={projects}
+      isLoading={projectsQuery.isPending}
+      getIsActive={(project) => project.is_active}
+      getRowKey={(project) => project.id}
+      noun="project"
+      loadingLabel="Loading projects..."
+      emptyIcon={FolderKanban}
+      emptyTitle="No projects yet"
+      emptyDescription={
+        canCreate
+          ? "Create the first project to start issuing virtual keys."
+          : "You do not have project creation access in any active team."
+      }
+      emptyAction={
+        canCreate ? (
+          <Button onClick={() => setNewOpen(true)}>
+            <Plus />
+            New project
+          </Button>
+        ) : hasPermission(currentUser, "teams.manage") ? (
+          <Button asChild>
+            <Link to="/teams">
+              <Building2 />
+              Go to Teams
+            </Link>
+          </Button>
+        ) : undefined
+      }
+      cardTitle="All projects"
+      search={search}
+      onSearchChange={setSearch}
+      searchPlaceholder="Search projects..."
+      matchesSearch={(project, term) => {
+        const teamName = teamById[project.team_id]?.name ?? project.team_name ?? "";
+        return `${project.name} ${project.description ?? ""} ${teamName}`
+          .toLowerCase()
+          .includes(term);
+      }}
+      segment={segment}
+      onSegmentChange={setSegment}
+      extraFilter={(project) => teamFilter === "all" || project.team_id === teamFilter}
+      toolbarExtra={
+        <Select value={teamFilter} onValueChange={setTeamFilter}>
+          <SelectTrigger className="h-9 w-44" aria-label="Filter by team">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All teams</SelectItem>
+            {teams.map((team) => (
+              <SelectItem key={team.id} value={team.id}>
+                {team.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      }
+      columns={columns}
+      renderCard={(project) => (
+        <ProjectCard
+          project={project}
+          team={teamFor(project)}
+          onOpen={() => navigate(`/projects/${project.id}`)}
+          onEdit={() => setEditingProject(project)}
+          canManage={canManageProject(project)}
+          canOpenTeam={canViewTeam(currentUser, project.team_id)}
         />
-      ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>All projects</CardTitle>
-            <CardDescription>
-              {projects.length} {projects.length === 1 ? "project" : "projects"} ·{" "}
-              {segmentCounts.active} active · {segmentCounts.archived} archived
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="relative max-w-md flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  className="pl-9"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search projects..."
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <Select value={teamFilter} onValueChange={setTeamFilter}>
-                  <SelectTrigger className="h-9 w-44" aria-label="Filter by team">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All teams</SelectItem>
-                    {teams.map((team) => (
-                      <SelectItem key={team.id} value={team.id}>
-                        {team.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <div className="flex items-center gap-1 rounded-md border bg-muted/30 p-0.5">
-                  {(["all", "active", "archived"] as const).map((value) => (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() => setSegment(value)}
-                      className={cn(
-                        "rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors",
-                        segment === value
-                          ? "bg-background text-foreground shadow-sm"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      {value}
-                      <span className="ml-1.5 text-muted-foreground">{segmentCounts[value]}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {filtered.length === 0 ? (
-              <div className="rounded-md border border-dashed p-8 text-center">
-                <p className="text-sm font-medium">No projects match</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Try another search, status, or team.
-                </p>
-              </div>
-            ) : (
-              <>
-                {isMobile ? (
-                  <div className="grid gap-3">
-                    {filtered.map((project) => {
-                      const team =
-                        teamById[project.team_id] ??
-                        (project.team_name
-                          ? {
-                              id: project.team_id,
-                              name: project.team_name,
-                            }
-                          : undefined);
-                      const canManage =
-                        canManageAllProjects ||
-                        isTeamAdmin(currentUser, project.team_id) ||
-                        isProjectAdmin(currentUser, project.id);
-                      return (
-                        <ProjectCard
-                          key={project.id}
-                          project={project}
-                          team={team}
-                          onOpen={() => navigate(`/projects/${project.id}`)}
-                          onEdit={() => setEditingProject(project)}
-                          canManage={canManage}
-                          canOpenTeam={canViewTeam(currentUser, project.team_id)}
-                        />
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="overflow-hidden rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Name</TableHead>
-                          <TableHead>Team</TableHead>
-                          <TableHead>Description</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Created</TableHead>
-                          <TableHead className="w-[1%]" />
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {filtered.map((project) => (
-                          <ProjectRow
-                            key={project.id}
-                            project={project}
-                            team={
-                              teamById[project.team_id] ??
-                              (project.team_name
-                                ? {
-                                    id: project.team_id,
-                                    name: project.team_name,
-                                  }
-                                : undefined)
-                            }
-                            onOpen={() => navigate(`/projects/${project.id}`)}
-                            onEdit={() => setEditingProject(project)}
-                            canManage={
-                              canManageAllProjects ||
-                              isTeamAdmin(currentUser, project.team_id) ||
-                              isProjectAdmin(currentUser, project.id)
-                            }
-                            canOpenTeam={canViewTeam(currentUser, project.team_id)}
-                          />
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-              </>
-            )}
-          </CardContent>
-        </Card>
       )}
-      <EditProjectSheet
-        project={editingProject}
-        onClose={() => setEditingProject(null)}
-        onUpdated={async () => {
-          setEditingProject(null);
-          await queryClient.invalidateQueries();
-          toast.success("Project updated.");
-        }}
-      />
-    </>
+      onRowClick={(project) => navigate(`/projects/${project.id}`)}
+      rowClassName={(project) => (!project.is_active ? "opacity-60" : undefined)}
+      noMatchTitle="No projects match"
+      noMatchDescription="Try another search, status, or team."
+      editSheet={
+        <EditProjectSheet
+          project={editingProject}
+          onClose={() => setEditingProject(null)}
+          onUpdated={async () => {
+            setEditingProject(null);
+            await queryClient.invalidateQueries();
+            toast.success("Project updated.");
+          }}
+        />
+      }
+    />
   );
 }
 
@@ -435,89 +396,6 @@ function ProjectCard({
         </span>
       </div>
     </div>
-  );
-}
-
-function ProjectRow({
-  project,
-  team,
-  onOpen,
-  onEdit,
-  canManage,
-  canOpenTeam,
-}: {
-  project: ProjectResponse;
-  team: Pick<TeamResponse, "id" | "name"> | undefined;
-  onOpen: () => void;
-  onEdit: () => void;
-  canManage: boolean;
-  canOpenTeam: boolean;
-}) {
-  return (
-    <TableRow
-      className={cn("cursor-pointer", !project.is_active && "opacity-60")}
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onOpen();
-        }
-      }}
-    >
-      <TableCell className="font-medium">
-        <Link
-          to={`/projects/${project.id}`}
-          onClick={(event) => event.stopPropagation()}
-          className="hover:underline"
-        >
-          {project.name}
-        </Link>
-      </TableCell>
-      <TableCell>
-        {team && canOpenTeam ? (
-          <Link
-            to={`/teams/${team.id}`}
-            onClick={(event) => event.stopPropagation()}
-            className="text-muted-foreground hover:text-foreground hover:underline"
-          >
-            {team.name}
-          </Link>
-        ) : team ? (
-          <span className="text-muted-foreground">{team.name}</span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        )}
-      </TableCell>
-      <TableCell className="max-w-md truncate text-muted-foreground">
-        {project.description || "—"}
-      </TableCell>
-      <TableCell>
-        <StatusBadge variant={project.is_active ? "active" : "inactive"}>
-          {project.is_active ? "Active" : "Archived"}
-        </StatusBadge>
-      </TableCell>
-      <TableCell className="text-muted-foreground" title={formatDateTime(project.created_at)}>
-        {formatRelativeFromNow(project.created_at)}
-      </TableCell>
-      <TableCell onClick={(event) => event.stopPropagation()}>
-        {canManage ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon-sm" aria-label="Project actions">
-                <MoreHorizontal />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={onEdit}>
-                <Pencil data-icon="inline-start" />
-                Edit project
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null}
-      </TableCell>
-    </TableRow>
   );
 }
 

@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import { Building2, MoreHorizontal, Pencil, Plus, Search } from "lucide-react";
+import { Building2, MoreHorizontal, Pencil, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { Link, useNavigate } from "react-router-dom";
@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { type DataTableColumn } from "@/components/ui/data-table";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -28,20 +28,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { useIsMobile } from "@/hooks/use-mobile";
-import { EmptyState } from "@/shared/components/EmptyState";
-import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
+import { ResourceListPage, type ResourceSegment } from "@/shared/templates/ResourceListPage";
 import { hasPermission, isTeamAdmin } from "@/features/auth/lib/permissions";
 import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
 import { useListProjectsApiV1ProjectsGet } from "@/shared/api/generated/projects/projects";
@@ -66,16 +56,14 @@ const teamSchema = z.object({
 });
 
 type TeamFormValues = z.infer<typeof teamSchema>;
-type TeamSegment = "all" | "active" | "archived";
 
 export function TeamsPage() {
   const navigate = useNavigate();
-  const isMobile = useIsMobile();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [editingTeam, setEditingTeam] = useState<TeamResponse | null>(null);
   const [search, setSearch] = useState("");
-  const [segment, setSegment] = useState<TeamSegment>("active");
+  const [segment, setSegment] = useState<ResourceSegment>("active");
 
   const currentUserQuery = useMeApiV1AuthMeGet();
   const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
@@ -91,173 +79,157 @@ export function TeamsPage() {
     }
     return counts;
   }, [projectsData]);
+  const canEditTeam = (team: TeamResponse) =>
+    hasPermission(currentUser, "teams.manage") || isTeamAdmin(currentUser, team.id);
 
-  const segmentCounts = {
-    all: teams.length,
-    active: teams.filter((t) => t.is_active).length,
-    archived: teams.filter((t) => !t.is_active).length,
-  };
-  const filtered = teams
-    .filter((team) => {
-      if (segment === "active") return team.is_active;
-      if (segment === "archived") return !team.is_active;
-      return true;
-    })
-    .filter((team) =>
-      `${team.name} ${team.slug} ${team.description ?? ""}`
-        .toLowerCase()
-        .includes(search.toLowerCase().trim()),
-    );
+  const columns: DataTableColumn<TeamResponse>[] = [
+    {
+      key: "name",
+      header: "Name",
+      className: "font-medium",
+      cell: (team) => (
+        <Link
+          to={`/teams/${team.id}`}
+          onClick={(event) => event.stopPropagation()}
+          className="hover:underline"
+        >
+          {team.name}
+        </Link>
+      ),
+    },
+    {
+      key: "slug",
+      header: "Slug",
+      className: "font-mono text-xs text-muted-foreground",
+      cell: (team) => team.slug,
+    },
+    {
+      key: "projects",
+      header: "Projects",
+      align: "right",
+      className: "tabular-nums text-muted-foreground",
+      cell: (team) => projectCountByTeam[team.id] ?? 0,
+    },
+    {
+      key: "description",
+      header: "Description",
+      className: "max-w-md truncate text-muted-foreground",
+      cell: (team) => team.description || "—",
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (team) => (
+        <StatusBadge variant={team.is_active ? "active" : "inactive"}>
+          {team.is_active ? "Active" : "Archived"}
+        </StatusBadge>
+      ),
+    },
+    {
+      key: "updated",
+      header: "Updated",
+      className: "text-muted-foreground",
+      cell: (team) => (
+        <span title={formatDateTime(team.updated_at)}>
+          {formatRelativeFromNow(team.updated_at)}
+        </span>
+      ),
+    },
+    {
+      key: "actions",
+      header: <span className="sr-only">Actions</span>,
+      headClassName: "w-[1%]",
+      cell: (team) =>
+        canEditTeam(team) ? (
+          <div onClick={(event) => event.stopPropagation()}>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon-sm" aria-label="Team actions">
+                  <MoreHorizontal />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => setEditingTeam(team)}>
+                  <Pencil data-icon="inline-start" />
+                  Edit team
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        ) : null,
+    },
+  ];
 
   return (
-    <>
-      <PageHeader
-        title="Teams"
-        description="Teams group projects under a business, product, or division boundary."
-        actions={
-          canCreateTeam ? (
-            <CreateTeamSheet
-              open={createOpen}
-              onOpenChange={setCreateOpen}
-              onCreated={async (team) => {
-                await queryClient.invalidateQueries();
-                setCreateOpen(false);
-                toast.success(`Team "${team.name}" created.`);
-                navigate(`/teams/${team.id}`);
-              }}
-            />
-          ) : null
-        }
-      />
-
-      {teamsQuery.isPending ? (
-        <p className="text-sm text-muted-foreground">Loading teams...</p>
-      ) : teams.length === 0 ? (
-        <EmptyState
-          icon={Building2}
-          title="No teams yet"
-          description="Create the first team to start organizing projects."
-          action={
-            canCreateTeam ? (
-              <Button onClick={() => setCreateOpen(true)}>
-                <Plus />
-                New team
-              </Button>
-            ) : undefined
-          }
+    <ResourceListPage
+      title="Teams"
+      description="Teams group projects under a business, product, or division boundary."
+      headerActions={
+        canCreateTeam ? (
+          <CreateTeamSheet
+            open={createOpen}
+            onOpenChange={setCreateOpen}
+            onCreated={async (team) => {
+              await queryClient.invalidateQueries();
+              setCreateOpen(false);
+              toast.success(`Team "${team.name}" created.`);
+              navigate(`/teams/${team.id}`);
+            }}
+          />
+        ) : null
+      }
+      items={teams}
+      isLoading={teamsQuery.isPending}
+      getIsActive={(team) => team.is_active}
+      getRowKey={(team) => team.id}
+      noun="team"
+      loadingLabel="Loading teams..."
+      emptyIcon={Building2}
+      emptyTitle="No teams yet"
+      emptyDescription="Create the first team to start organizing projects."
+      emptyAction={
+        canCreateTeam ? (
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus />
+            New team
+          </Button>
+        ) : undefined
+      }
+      cardTitle="All teams"
+      search={search}
+      onSearchChange={setSearch}
+      searchPlaceholder="Search teams..."
+      matchesSearch={(team, term) =>
+        `${team.name} ${team.slug} ${team.description ?? ""}`.toLowerCase().includes(term)
+      }
+      segment={segment}
+      onSegmentChange={setSegment}
+      columns={columns}
+      renderCard={(team) => (
+        <TeamCard
+          team={team}
+          projectCount={projectCountByTeam[team.id] ?? 0}
+          onOpen={() => navigate(`/teams/${team.id}`)}
+          onEdit={() => setEditingTeam(team)}
+          canEdit={canEditTeam(team)}
         />
-      ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>All teams</CardTitle>
-            <CardDescription>
-              {teams.length} {teams.length === 1 ? "team" : "teams"} · {segmentCounts.active} active
-              · {segmentCounts.archived} archived
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="relative max-w-md flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  className="pl-9"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search teams..."
-                />
-              </div>
-              <div className="flex items-center gap-1 rounded-md border bg-muted/30 p-0.5">
-                {(["all", "active", "archived"] as const).map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setSegment(value)}
-                    className={cn(
-                      "rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors",
-                      segment === value
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {value}
-                    <span className="ml-1.5 text-muted-foreground">{segmentCounts[value]}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {filtered.length === 0 ? (
-              <div className="rounded-md border border-dashed p-8 text-center">
-                <p className="text-sm font-medium">No teams match</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Try a different search or status.
-                </p>
-              </div>
-            ) : (
-              <>
-                {isMobile ? (
-                  <div className="grid gap-3">
-                    {filtered.map((team) => (
-                      <TeamCard
-                        key={team.id}
-                        team={team}
-                        projectCount={projectCountByTeam[team.id] ?? 0}
-                        onOpen={() => navigate(`/teams/${team.id}`)}
-                        onEdit={() => setEditingTeam(team)}
-                        canEdit={
-                          hasPermission(currentUser, "teams.manage") ||
-                          isTeamAdmin(currentUser, team.id)
-                        }
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="overflow-hidden rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Name</TableHead>
-                          <TableHead>Slug</TableHead>
-                          <TableHead className="text-right">Projects</TableHead>
-                          <TableHead>Description</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Updated</TableHead>
-                          <TableHead className="w-[1%]" />
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {filtered.map((team) => (
-                          <TeamRow
-                            key={team.id}
-                            team={team}
-                            projectCount={projectCountByTeam[team.id] ?? 0}
-                            onOpen={() => navigate(`/teams/${team.id}`)}
-                            onEdit={() => setEditingTeam(team)}
-                            canEdit={
-                              hasPermission(currentUser, "teams.manage") ||
-                              isTeamAdmin(currentUser, team.id)
-                            }
-                          />
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-              </>
-            )}
-          </CardContent>
-        </Card>
       )}
-      <EditTeamSheet
-        team={editingTeam}
-        onClose={() => setEditingTeam(null)}
-        onUpdated={async () => {
-          setEditingTeam(null);
-          await queryClient.invalidateQueries();
-          toast.success("Team updated.");
-        }}
-      />
-    </>
+      onRowClick={(team) => navigate(`/teams/${team.id}`)}
+      rowClassName={(team) => (!team.is_active ? "opacity-60" : undefined)}
+      noMatchTitle="No teams match"
+      noMatchDescription="Try a different search or status."
+      editSheet={
+        <EditTeamSheet
+          team={editingTeam}
+          onClose={() => setEditingTeam(null)}
+          onUpdated={async () => {
+            setEditingTeam(null);
+            await queryClient.invalidateQueries();
+            toast.success("Team updated.");
+          }}
+        />
+      }
+    />
   );
 }
 
@@ -332,76 +304,6 @@ function TeamCard({
         </span>
       </div>
     </div>
-  );
-}
-
-function TeamRow({
-  team,
-  projectCount,
-  onOpen,
-  onEdit,
-  canEdit,
-}: {
-  team: TeamResponse;
-  projectCount: number;
-  onOpen: () => void;
-  onEdit: () => void;
-  canEdit: boolean;
-}) {
-  return (
-    <TableRow
-      className={cn("cursor-pointer", !team.is_active && "opacity-60")}
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onOpen();
-        }
-      }}
-    >
-      <TableCell className="font-medium">
-        <Link
-          to={`/teams/${team.id}`}
-          onClick={(event) => event.stopPropagation()}
-          className="hover:underline"
-        >
-          {team.name}
-        </Link>
-      </TableCell>
-      <TableCell className="font-mono text-xs text-muted-foreground">{team.slug}</TableCell>
-      <TableCell className="text-right tabular-nums text-muted-foreground">
-        {projectCount}
-      </TableCell>
-      <TableCell className="max-w-md truncate text-muted-foreground">
-        {team.description || "—"}
-      </TableCell>
-      <TableCell>
-        <StatusBadge variant={team.is_active ? "active" : "inactive"}>
-          {team.is_active ? "Active" : "Archived"}
-        </StatusBadge>
-      </TableCell>
-      <TableCell className="text-muted-foreground" title={formatDateTime(team.updated_at)}>
-        {formatRelativeFromNow(team.updated_at)}
-      </TableCell>
-      <TableCell onClick={(event) => event.stopPropagation()}>
-        {canEdit ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon-sm" aria-label="Team actions">
-                <MoreHorizontal />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={onEdit}>
-                <Pencil data-icon="inline-start" />
-                Edit team
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null}
-      </TableCell>
-    </TableRow>
   );
 }
 
