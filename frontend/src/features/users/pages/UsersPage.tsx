@@ -1,22 +1,13 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import {
-  ChevronDown,
-  Copy,
-  FilterX,
-  RotateCcw,
-  Search,
-  Trash2,
-  UserPlus,
-  UserX,
-  Users,
-} from "lucide-react";
-import { Fragment, type ReactNode, useMemo, useState } from "react";
+import { Copy, RotateCcw, Search, Trash2, UserPlus, UserX, Users } from "lucide-react";
+import { type ReactNode, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -26,14 +17,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   hasAnyProjectAdminMembership,
@@ -62,7 +45,8 @@ import type {
   TeamResponse,
 } from "@/shared/api/generated/schemas";
 import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
-import { EmptyState } from "@/shared/components/EmptyState";
+import { EventDetailSheet, type EventDetailRow } from "@/shared/components/EventDetailSheet";
+import { FilterToolbar, type FilterChip } from "@/shared/components/FilterToolbar";
 import { PageHeader } from "@/shared/components/PageHeader";
 
 const NO_SCOPE = "__none__";
@@ -98,7 +82,6 @@ export function UsersPage() {
   const [memberRoleFilter, setMemberRoleFilter] = useState(ALL_ROLES);
   const [memberStatusFilter, setMemberStatusFilter] = useState(ALL_STATUSES);
   const [inviteStatusFilter, setInviteStatusFilter] = useState("pending");
-  const [expandedMemberId, setExpandedMemberId] = useState<string | null>(null);
 
   const membersQuery = useListMembersApiV1AuthMembersGet({
     query: { enabled: canManageOrgMembers },
@@ -518,7 +501,6 @@ export function UsersPage() {
           search={memberSearch}
           roleFilter={memberRoleFilter}
           statusFilter={memberStatusFilter}
-          expandedMemberId={expandedMemberId}
           currentUserId={currentUser?.id}
           currentUserRole={currentUser?.role}
           assignableRoles={assignableOrgRoles}
@@ -527,9 +509,6 @@ export function UsersPage() {
           onSearch={setMemberSearch}
           onRoleFilter={setMemberRoleFilter}
           onStatusFilter={setMemberStatusFilter}
-          onToggleExpanded={(memberId) =>
-            setExpandedMemberId((current) => (current === memberId ? null : memberId))
-          }
           onUpdateRole={(member, nextRole) =>
             updateMemberMutation.mutate({ userId: member.user_id, data: { role: nextRole } })
           }
@@ -565,7 +544,6 @@ function MembersCard({
   search,
   roleFilter,
   statusFilter,
-  expandedMemberId,
   currentUserId,
   currentUserRole,
   assignableRoles,
@@ -574,7 +552,6 @@ function MembersCard({
   onSearch,
   onRoleFilter,
   onStatusFilter,
-  onToggleExpanded,
   onUpdateRole,
   onUpdateStatus,
 }: {
@@ -585,7 +562,6 @@ function MembersCard({
   search: string;
   roleFilter: string;
   statusFilter: string;
-  expandedMemberId: string | null;
   currentUserId?: string;
   currentUserRole?: string;
   assignableRoles: string[];
@@ -594,11 +570,193 @@ function MembersCard({
   onSearch: (value: string) => void;
   onRoleFilter: (value: string) => void;
   onStatusFilter: (value: string) => void;
-  onToggleExpanded: (memberId: string) => void;
   onUpdateRole: (member: MemberResponse, role: string) => void;
   onUpdateStatus: (member: MemberResponse, status: "active" | "inactive") => void;
 }) {
-  const hasFilters = search || roleFilter !== ALL_ROLES || statusFilter !== ALL_STATUSES;
+  const [selected, setSelected] = useState<MemberResponse | null>(null);
+
+  const chips: FilterChip[] = [];
+  if (search.trim()) {
+    chips.push({ key: "q", label: `Search: ${search.trim()}`, onRemove: () => onSearch("") });
+  }
+  if (roleFilter !== ALL_ROLES) {
+    chips.push({
+      key: "role",
+      label: `Role: ${formatOrgRole(roleFilter)}`,
+      onRemove: () => onRoleFilter(ALL_ROLES),
+    });
+  }
+  if (statusFilter !== ALL_STATUSES) {
+    chips.push({
+      key: "status",
+      label: `Status: ${statusFilter}`,
+      onRemove: () => onStatusFilter(ALL_STATUSES),
+    });
+  }
+  const clearAll = () => {
+    onSearch("");
+    onRoleFilter(ALL_ROLES);
+    onStatusFilter(ALL_STATUSES);
+  };
+
+  const columns: DataTableColumn<MemberResponse>[] = [
+    {
+      key: "user",
+      header: "User",
+      cell: (member) => (
+        <>
+          <div className="font-medium">{member.email}</div>
+          {member.name ? <div className="text-xs text-muted-foreground">{member.name}</div> : null}
+        </>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (member) => (
+        <Badge variant={member.status === "active" ? "secondary" : "outline"}>
+          {member.status}
+        </Badge>
+      ),
+    },
+    {
+      key: "org_role",
+      header: "Org role",
+      cell: (member) => {
+        const canChangeRole = canManageMemberRole(
+          currentUserRole,
+          member.role,
+          member.user_id,
+          currentUserId,
+        );
+        return canChangeRole && member.status === "active" ? (
+          <div onClick={(event) => event.stopPropagation()}>
+            <RoleSelect
+              value={member.role}
+              onValueChange={(value) => onUpdateRole(member, value)}
+              roles={assignableRoles.filter((role) =>
+                canAssignRole(currentUserRole, member.role, role),
+              )}
+            />
+          </div>
+        ) : (
+          <Badge variant="outline">{formatOrgRole(member.role)}</Badge>
+        );
+      },
+    },
+    {
+      key: "scoped",
+      header: "Scoped roles",
+      cell: (member) => (
+        <ScopedBadges member={member} teamById={teamById} projectById={projectById} />
+      ),
+    },
+    {
+      key: "joined",
+      header: "Joined",
+      cell: (member) => new Date(member.created_at).toLocaleDateString(),
+    },
+    {
+      key: "actions",
+      header: "Actions",
+      align: "right",
+      cell: (member) => {
+        const canChangeRole = canManageMemberRole(
+          currentUserRole,
+          member.role,
+          member.user_id,
+          currentUserId,
+        );
+        if (!canChangeRole) return null;
+        return (
+          <div onClick={(event) => event.stopPropagation()}>
+            {member.status === "active" ? (
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                disabled={isPending}
+                onClick={() => onUpdateStatus(member, "inactive")}
+                aria-label="Deactivate user"
+              >
+                <UserX />
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                disabled={isPending}
+                onClick={() => onUpdateStatus(member, "active")}
+                aria-label="Reactivate user"
+              >
+                <RotateCcw />
+              </Button>
+            )}
+          </div>
+        );
+      },
+    },
+  ];
+
+  const detailRows: EventDetailRow[] = selected
+    ? [
+        {
+          label: "Status",
+          value: (
+            <Badge variant={selected.status === "active" ? "secondary" : "outline"}>
+              {selected.status}
+            </Badge>
+          ),
+        },
+        { label: "Org role", value: <Badge variant="outline">{formatOrgRole(selected.role)}</Badge> },
+        { label: "Joined", value: new Date(selected.created_at).toLocaleString() },
+        {
+          label: "Team roles",
+          value: selected.team_memberships?.length ? (
+            <div className="flex flex-wrap gap-1.5">
+              {selected.team_memberships.map((item) => (
+                <Badge key={item.team_id} variant="outline">
+                  {teamById[item.team_id]?.name ?? item.team_id}: {formatScopedRole(item.role)}
+                </Badge>
+              ))}
+            </div>
+          ) : (
+            <span className="text-muted-foreground">No team role</span>
+          ),
+        },
+        {
+          label: "Project roles",
+          value: selected.project_memberships?.length ? (
+            <div className="flex flex-wrap gap-1.5">
+              {selected.project_memberships.map((item) => (
+                <Badge key={item.project_id} variant="outline">
+                  {projectById[item.project_id]?.name ?? item.project_id}:{" "}
+                  {formatScopedRole(item.role)}
+                </Badge>
+              ))}
+            </div>
+          ) : (
+            <span className="text-muted-foreground">No project role</span>
+          ),
+        },
+        {
+          label: "Capabilities",
+          value: selected.effective_permissions?.length ? (
+            <div className="flex flex-wrap gap-1.5">
+              {selected.effective_permissions.slice(0, 12).map((permission) => (
+                <Badge key={permission} variant="secondary">
+                  {permission}
+                </Badge>
+              ))}
+            </div>
+          ) : (
+            <span className="text-muted-foreground">No derived capabilities</span>
+          ),
+        },
+      ]
+    : [];
+
   return (
     <Card>
       <CardHeader>
@@ -606,8 +764,8 @@ function MembersCard({
         <CardDescription>Org roles plus team and project access for each account.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_180px_auto]">
-          <div className="relative">
+        <FilterToolbar chips={chips} onClearAll={chips.length > 0 ? clearAll : undefined}>
+          <div className="relative w-full sm:w-64">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
@@ -616,165 +774,64 @@ function MembersCard({
               className="pl-9"
             />
           </div>
-          <ScopeSelect
-            value={roleFilter}
-            onValueChange={onRoleFilter}
-            placeholder="All roles"
-            includeNone={false}
-            options={[
-              { value: ALL_ROLES, label: "All roles" },
-              { value: "org_owner", label: "Org owner" },
-              { value: "org_admin", label: "Org admin" },
-              { value: "org_viewer", label: "Org viewer" },
-              { value: "org_member", label: "Org member" },
-            ]}
-          />
-          <ScopeSelect
-            value={statusFilter}
-            onValueChange={onStatusFilter}
-            placeholder="All statuses"
-            includeNone={false}
-            options={[
-              { value: ALL_STATUSES, label: "All statuses" },
-              { value: "active", label: "Active" },
-              { value: "inactive", label: "Inactive" },
-            ]}
-          />
-          <Button
-            type="button"
-            variant="outline"
-            disabled={!hasFilters}
-            onClick={() => {
-              onSearch("");
-              onRoleFilter(ALL_ROLES);
-              onStatusFilter(ALL_STATUSES);
-            }}
-          >
-            <FilterX data-icon="inline-start" />
-            Clear
-          </Button>
-        </div>
-        {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading members...</p>
-        ) : allMembers.length === 0 ? (
-          <EmptyState
-            icon={Users}
-            title="No members found"
-            description="Invite or create the first user to start assigning access."
-          />
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>User</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Org role</TableHead>
-                <TableHead>Scoped roles</TableHead>
-                <TableHead>Joined</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {members.map((member) => {
-                const expanded = expandedMemberId === member.user_id;
-                const canChangeRole = canManageMemberRole(
-                  currentUserRole,
-                  member.role,
-                  member.user_id,
-                  currentUserId,
-                );
-                return (
-                  <Fragment key={member.user_id}>
-                    <TableRow className={member.status !== "active" ? "opacity-60" : undefined}>
-                      <TableCell>
-                        <button
-                          type="button"
-                          className="flex min-w-0 items-center gap-2 text-left"
-                          onClick={() => onToggleExpanded(member.user_id)}
-                        >
-                          <ChevronDown
-                            className={`size-4 shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`}
-                          />
-                          <span className="min-w-0">
-                            <span className="block truncate font-medium">{member.email}</span>
-                            {member.name ? (
-                              <span className="block truncate text-xs text-muted-foreground">
-                                {member.name}
-                              </span>
-                            ) : null}
-                          </span>
-                        </button>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={member.status === "active" ? "secondary" : "outline"}>
-                          {member.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {canChangeRole && member.status === "active" ? (
-                          <RoleSelect
-                            value={member.role}
-                            onValueChange={(value) => onUpdateRole(member, value)}
-                            roles={assignableRoles.filter((role) =>
-                              canAssignRole(currentUserRole, member.role, role),
-                            )}
-                          />
-                        ) : (
-                          <Badge variant="outline">{formatOrgRole(member.role)}</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <ScopedBadges
-                          member={member}
-                          teamById={teamById}
-                          projectById={projectById}
-                        />
-                      </TableCell>
-                      <TableCell>{new Date(member.created_at).toLocaleDateString()}</TableCell>
-                      <TableCell className="text-right">
-                        {canChangeRole && member.status === "active" ? (
-                          <Button
-                            type="button"
-                            size="icon-sm"
-                            variant="ghost"
-                            disabled={isPending}
-                            onClick={() => onUpdateStatus(member, "inactive")}
-                            aria-label="Deactivate user"
-                          >
-                            <UserX />
-                          </Button>
-                        ) : canChangeRole ? (
-                          <Button
-                            type="button"
-                            size="icon-sm"
-                            variant="ghost"
-                            disabled={isPending}
-                            onClick={() => onUpdateStatus(member, "active")}
-                            aria-label="Reactivate user"
-                          >
-                            <RotateCcw />
-                          </Button>
-                        ) : null}
-                      </TableCell>
-                    </TableRow>
-                    {expanded ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="bg-muted/30">
-                          <MemberDetails
-                            member={member}
-                            teamById={teamById}
-                            projectById={projectById}
-                          />
-                        </TableCell>
-                      </TableRow>
-                    ) : null}
-                  </Fragment>
-                );
-              })}
-            </TableBody>
-          </Table>
-        )}
+          <div className="w-44">
+            <ScopeSelect
+              value={roleFilter}
+              onValueChange={onRoleFilter}
+              placeholder="All roles"
+              includeNone={false}
+              options={[
+                { value: ALL_ROLES, label: "All roles" },
+                { value: "org_owner", label: "Org owner" },
+                { value: "org_admin", label: "Org admin" },
+                { value: "org_viewer", label: "Org viewer" },
+                { value: "org_member", label: "Org member" },
+              ]}
+            />
+          </div>
+          <div className="w-40">
+            <ScopeSelect
+              value={statusFilter}
+              onValueChange={onStatusFilter}
+              placeholder="All statuses"
+              includeNone={false}
+              options={[
+                { value: ALL_STATUSES, label: "All statuses" },
+                { value: "active", label: "Active" },
+                { value: "inactive", label: "Inactive" },
+              ]}
+            />
+          </div>
+        </FilterToolbar>
+        <DataTable
+          columns={columns}
+          data={members}
+          loading={isLoading}
+          getRowKey={(member) => member.user_id}
+          onRowClick={setSelected}
+          rowClassName={(member) => (member.status !== "active" ? "opacity-60" : undefined)}
+          empty={
+            allMembers.length === 0
+              ? {
+                  icon: Users,
+                  title: "No members found",
+                  description: "Invite or create the first user to start assigning access.",
+                }
+              : {
+                  icon: Users,
+                  title: "No members match",
+                  description: "Try a different search, role, or status.",
+                }
+          }
+        />
       </CardContent>
+      <EventDetailSheet
+        open={Boolean(selected)}
+        onOpenChange={(open) => !open && setSelected(null)}
+        title={selected?.email ?? "Member"}
+        description="Org role, scoped team and project roles, and derived capabilities."
+        rows={detailRows}
+      />
     </Card>
   );
 }
@@ -975,69 +1032,71 @@ function InvitesCard({
             ]}
           />
         </div>
-        {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading invites...</p>
-        ) : invites.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No invites match this filter.</p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Email</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Access</TableHead>
-                <TableHead>Expires</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {invites.map((invite) => (
-                <TableRow key={invite.id}>
-                  <TableCell>{invite.email}</TableCell>
-                  <TableCell>
-                    <Badge variant={invite.status === "pending" ? "secondary" : "outline"}>
-                      {invite.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <InviteAccess invite={invite} teamById={teamById} projectById={projectById} />
-                  </TableCell>
-                  <TableCell>{new Date(invite.expires_at).toLocaleDateString()}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      {invite.invite_url ? (
-                        <Button
-                          type="button"
-                          size="icon-sm"
-                          variant="outline"
-                          onClick={() => {
-                            void navigator.clipboard?.writeText(invite.invite_url ?? "");
-                            toast.success("Invite link copied.");
-                          }}
-                          aria-label="Copy invite link"
-                        >
-                          <Copy />
-                        </Button>
-                      ) : null}
-                      {invite.status === "pending" ? (
-                        <Button
-                          type="button"
-                          size="icon-sm"
-                          variant="ghost"
-                          disabled={isPending}
-                          onClick={() => onRevoke(invite)}
-                          aria-label="Revoke invite"
-                        >
-                          <Trash2 />
-                        </Button>
-                      ) : null}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+        <DataTable
+          columns={[
+            { key: "email", header: "Email", cell: (invite) => invite.email },
+            {
+              key: "status",
+              header: "Status",
+              cell: (invite) => (
+                <Badge variant={invite.status === "pending" ? "secondary" : "outline"}>
+                  {invite.status}
+                </Badge>
+              ),
+            },
+            {
+              key: "access",
+              header: "Access",
+              cell: (invite) => (
+                <InviteAccess invite={invite} teamById={teamById} projectById={projectById} />
+              ),
+            },
+            {
+              key: "expires",
+              header: "Expires",
+              cell: (invite) => new Date(invite.expires_at).toLocaleDateString(),
+            },
+            {
+              key: "actions",
+              header: "Actions",
+              align: "right",
+              cell: (invite) => (
+                <div className="flex justify-end gap-2">
+                  {invite.invite_url ? (
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant="outline"
+                      onClick={() => {
+                        void navigator.clipboard?.writeText(invite.invite_url ?? "");
+                        toast.success("Invite link copied.");
+                      }}
+                      aria-label="Copy invite link"
+                    >
+                      <Copy />
+                    </Button>
+                  ) : null}
+                  {invite.status === "pending" ? (
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant="ghost"
+                      disabled={isPending}
+                      onClick={() => onRevoke(invite)}
+                      aria-label="Revoke invite"
+                    >
+                      <Trash2 />
+                    </Button>
+                  ) : null}
+                </div>
+              ),
+            },
+          ]}
+          data={invites}
+          loading={isLoading}
+          getRowKey={(invite) => invite.id}
+          empty={{ title: "No invites match this filter." }}
+        />
       </CardContent>
     </Card>
   );
@@ -1079,81 +1138,6 @@ function ScopeSummary({ title, items }: { title: string; items: string[] }) {
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-function MemberDetails({
-  member,
-  teamById,
-  projectById,
-}: {
-  member: MemberResponse;
-  teamById: Record<string, TeamResponse>;
-  projectById: Record<string, ProjectResponse>;
-}) {
-  return (
-    <div className="grid gap-4 text-sm lg:grid-cols-3">
-      <DetailGroup title="Access source">
-        <Badge variant="secondary">{formatOrgRole(member.role)}</Badge>
-        {member.team_memberships?.length
-          ? member.team_memberships.map((item) => (
-              <Badge key={`source-team-${item.team_id}`} variant="outline">
-                {teamById[item.team_id]?.name ?? item.team_id}: {formatScopedRole(item.role)}
-              </Badge>
-            ))
-          : null}
-        {member.project_memberships?.length
-          ? member.project_memberships.map((item) => (
-              <Badge key={`source-project-${item.project_id}`} variant="outline">
-                {projectById[item.project_id]?.name ?? item.project_id}:{" "}
-                {formatScopedRole(item.role)}
-              </Badge>
-            ))
-          : null}
-      </DetailGroup>
-      <DetailGroup title="Team roles">
-        {member.team_memberships?.length ? (
-          member.team_memberships.map((item) => (
-            <Badge key={item.team_id} variant="outline">
-              {teamById[item.team_id]?.name ?? item.team_id}: {formatScopedRole(item.role)}
-            </Badge>
-          ))
-        ) : (
-          <span className="text-muted-foreground">No team role</span>
-        )}
-      </DetailGroup>
-      <DetailGroup title="Project roles">
-        {member.project_memberships?.length ? (
-          member.project_memberships.map((item) => (
-            <Badge key={item.project_id} variant="outline">
-              {projectById[item.project_id]?.name ?? item.project_id}: {formatScopedRole(item.role)}
-            </Badge>
-          ))
-        ) : (
-          <span className="text-muted-foreground">No project role</span>
-        )}
-      </DetailGroup>
-      <DetailGroup title="Capabilities">
-        {member.effective_permissions?.length ? (
-          member.effective_permissions.slice(0, 12).map((permission) => (
-            <Badge key={permission} variant="secondary">
-              {permission}
-            </Badge>
-          ))
-        ) : (
-          <span className="text-muted-foreground">No derived capabilities</span>
-        )}
-      </DetailGroup>
-    </div>
-  );
-}
-
-function DetailGroup({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div className="space-y-2">
-      <div className="text-xs font-medium uppercase text-muted-foreground">{title}</div>
-      <div className="flex flex-wrap gap-2">{children}</div>
     </div>
   );
 }
