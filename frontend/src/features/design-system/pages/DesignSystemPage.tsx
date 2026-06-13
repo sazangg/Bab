@@ -4,6 +4,7 @@ import { PageHeader } from "@/shared/components/PageHeader";
 import { cn } from "@/lib/utils";
 
 import { FoundationsSection } from "../sections/FoundationsSection";
+import { FoundationV2Section } from "../sections/FoundationV2Section";
 import { PrimitivesSection } from "../sections/PrimitivesSection";
 import { OverlaysFeedbackSection } from "../sections/OverlaysFeedbackSection";
 import { DataDisplaySection } from "../sections/DataDisplaySection";
@@ -11,6 +12,7 @@ import { PatternsSection } from "../sections/PatternsSection";
 
 const sections = [
   { id: "foundations", label: "Foundations" },
+  { id: "foundation-v2", label: "Foundation v2 (new)" },
   { id: "primitives", label: "Primitives" },
   { id: "overlays-feedback", label: "Overlays & feedback" },
   { id: "data-display", label: "Data display & navigation" },
@@ -65,6 +67,7 @@ export function DesignSystemPage() {
         </aside>
         <div className="space-y-12">
           <FoundationsSection />
+          <FoundationV2Section />
           <PrimitivesSection />
           <OverlaysFeedbackSection />
           <DataDisplaySection />
