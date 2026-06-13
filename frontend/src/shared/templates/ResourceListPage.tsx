@@ -97,7 +97,7 @@ export function ResourceListPage<T>({
     .filter((item) => !term || matchesSearch(item, term));
 
   return (
-    <>
+    <div className="flex flex-col gap-6">
       <PageHeader title={title} description={description} actions={headerActions} />
 
       {isLoading ? (
@@ -176,6 +176,6 @@ export function ResourceListPage<T>({
         </Card>
       )}
       {editSheet}
-    </>
+    </div>
   );
 }
