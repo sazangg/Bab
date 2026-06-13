@@ -1,287 +1,323 @@
+import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
   AlertTriangle,
+  ArrowRight,
   Building2,
-  CircleGauge,
+  FlaskConical,
   FolderKanban,
+  GitBranch,
+  Info,
   KeyRound,
   Plug,
-  Route,
+  Settings,
   ShieldCheck,
+  Users,
   WalletCards,
+  XCircle,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
 import { useListProjectsApiV1ProjectsGet } from "@/shared/api/generated/projects/projects";
 import { useListProvidersApiV1ProvidersGet } from "@/shared/api/generated/providers/providers";
 import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
+import { useGetOrganizationUsageSummaryApiV1UsageSummaryGet } from "@/shared/api/generated/usage/usage";
 import { useListVirtualKeyInventoryApiV1VirtualKeysGet } from "@/shared/api/generated/virtual-keys/virtual-keys";
+import type { ActivityEventResponse } from "@/shared/api/generated/schemas";
+import { httpClient } from "@/shared/api/http-client";
+import {
+  canViewActivity,
+  canViewOrgAdminSurface,
+  canViewUsage,
+  canViewWorkspace,
+  hasPermission,
+} from "@/features/auth/lib/permissions";
+import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
-
-const setupSteps = [
-  {
-    label: "Connect providers",
-    description: "Configure provider credentials, pools, and model offerings.",
-    to: "/providers",
-    icon: Plug,
-  },
-  {
-    label: "Structure teams",
-    description: "Create the organizational containers that own budgets.",
-    to: "/teams",
-    icon: Building2,
-  },
-  {
-    label: "Create projects",
-    description: "Attach projects to teams and issue scoped virtual keys.",
-    to: "/projects",
-    icon: FolderKanban,
-  },
-];
-
-const attentionItems = [
-  {
-    label: "Policy usage",
-    description: "Review budget, limits, and usage from policy views.",
-    icon: WalletCards,
-  },
-  {
-    label: "Activity stream",
-    description: "Audit admin changes and runtime gateway events.",
-    icon: Activity,
-  },
-  {
-    label: "Guardrails",
-    description: "Assign model, provider, and pool policies across scopes.",
-    icon: ShieldCheck,
-  },
-];
+import { StatCard } from "@/shared/components/StatCard";
+import { StatusBadge } from "@/shared/components/StatusBadge";
+import { formatCents } from "@/shared/lib/format-currency";
 
 export function DashboardHomePage() {
+  const currentUserQuery = useMeApiV1AuthMeGet();
+  const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
+  const isAdmin = canViewOrgAdminSurface(currentUser);
+  const showUsage = canViewUsage(currentUser);
+  const showActivity = canViewActivity(currentUser);
+
   const providersQuery = useListProvidersApiV1ProvidersGet();
   const teamsQuery = useListTeamsApiV1TeamsGet();
   const projectsQuery = useListProjectsApiV1ProjectsGet();
   const keysQuery = useListVirtualKeyInventoryApiV1VirtualKeysGet({ limit: 100 });
+  const usageQuery = useGetOrganizationUsageSummaryApiV1UsageSummaryGet(
+    { window: "30d" },
+    { query: { enabled: showUsage } },
+  );
+  const activityQuery = useQuery({
+    queryKey: ["home-recent-activity"],
+    enabled: showActivity,
+    queryFn: async () => {
+      const response = await httpClient.get<ActivityEventResponse[]>("/api/v1/activity", {
+        params: { limit: 6 },
+      });
+      return response.data;
+    },
+  });
 
   const providers = providersQuery.data?.status === 200 ? providersQuery.data.data : [];
   const teams = teamsQuery.data?.status === 200 ? teamsQuery.data.data : [];
   const projects = projectsQuery.data?.status === 200 ? projectsQuery.data.data : [];
   const keysPage = keysQuery.data?.status === 200 ? keysQuery.data.data : null;
+  const usage = usageQuery.data?.status === 200 ? usageQuery.data.data : null;
+  const recentActivity = activityQuery.data ?? [];
+
   const activeProviders = providers.filter((provider) => provider.is_active);
-  const providersWithCredentials = providers.filter(
-    (provider) => (provider.credential_summary?.active ?? 0) > 0,
-  );
   const readyProviders = providers.filter((provider) => provider.readiness?.is_ready);
-  const providersNeedingSetup = activeProviders.length - readyProviders.length;
-  const usableKeys = keysPage?.items.filter((key) => key.is_usable) ?? [];
-  const infrastructureReady = readyProviders.length > 0;
-  const firstRequestReady = infrastructureReady && usableKeys.length > 0;
+  const keys = keysPage?.items ?? [];
+  const usableKeys = keys.filter((key) => key.is_usable);
+  const infraReady = readyProviders.length > 0 && usableKeys.length > 0;
+
+  const primaryAction = isAdmin
+    ? !infraReady
+      ? { label: "Configure providers", to: "/providers", icon: Plug }
+      : { label: "Open Playground", to: "/playground", icon: FlaskConical }
+    : showUsage
+      ? { label: "View usage", to: "/usage", icon: WalletCards }
+      : null;
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
       <PageHeader
-        title="Gateway home"
-        description="Super-admin command center for provider readiness, workspace structure, and policy control."
+        title="Home"
+        description={
+          isAdmin
+            ? "Set up the gateway, track spend, and jump into the surfaces you manage."
+            : "Organization usage, recent activity, and the surfaces you can view."
+        }
         actions={
-          <Button asChild>
-            <Link to="/providers">
-              <Plug data-icon="inline-start" />
-              Configure providers
-            </Link>
-          </Button>
+          primaryAction ? (
+            <Button asChild>
+              <Link to={primaryAction.to}>
+                <primaryAction.icon data-icon="inline-start" />
+                {primaryAction.label}
+              </Link>
+            </Button>
+          ) : null
         }
       />
 
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-        <MetricCard
-          label="Active providers"
-          value={activeProviders.length}
-          detail={`${providersWithCredentials.length} with active credentials`}
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {showUsage ? (
+          <StatCard
+            label="30-day spend"
+            value={formatCents(usage?.totals.cost_cents)}
+            hint={`${(usage?.totals.requests ?? 0).toLocaleString()} requests`}
+            icon={WalletCards}
+          />
+        ) : null}
+        <StatCard
+          label="Providers"
+          value={`${readyProviders.length}/${activeProviders.length}`}
+          hint="ready / active"
           icon={Plug}
         />
-        <MetricCard
-          label="Teams"
-          value={teams.length}
-          detail="Workspace budget owners"
-          icon={Building2}
-        />
-        <MetricCard
+        <StatCard
           label="Projects"
           value={projects.length}
-          detail="Virtual key containers"
+          hint={`${teams.length} ${teams.length === 1 ? "team" : "teams"}`}
           icon={FolderKanban}
         />
-        <MetricCard
-          label="Infrastructure"
-          value={infrastructureReady ? "Ready" : "Setup"}
-          detail={
-            infrastructureReady
-              ? `${readyProviders.length} provider${readyProviders.length === 1 ? "" : "s"} ready`
-              : "Complete a provider readiness chain"
-          }
-          icon={CircleGauge}
-        />
-        <MetricCard
-          label="First request"
-          value={firstRequestReady ? "Ready" : "Setup"}
-          detail={
-            firstRequestReady
-              ? `${usableKeys.length} usable virtual key${usableKeys.length === 1 ? "" : "s"}`
-              : "Add effective access and a usable key"
-          }
+        <StatCard
+          label="Virtual keys"
+          value={`${usableKeys.length}/${keys.length}`}
+          hint="usable / total"
           icon={KeyRound}
         />
-      </section>
+      </div>
 
-      <section className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
-        <Card>
-          <CardHeader className="border-b">
-            <CardTitle>Operating flow</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-3 md:grid-cols-3">
-              {setupSteps.map((step) => (
-                <Link
-                  key={step.label}
-                  to={step.to}
-                  className="group rounded-lg border bg-background p-4 transition-colors hover:bg-muted/50"
-                >
-                  <step.icon className="mb-4 size-5 text-muted-foreground transition-colors group-hover:text-foreground" />
-                  <div className="font-medium">{step.label}</div>
-                  <p className="mt-1 text-sm leading-6 text-muted-foreground">{step.description}</p>
-                </Link>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+      {isAdmin && !infraReady ? (
+        <GatewaySetupChecklist
+          hasProvider={providers.length > 0}
+          hasReadyProvider={readyProviders.length > 0}
+          hasTeam={teams.length > 0}
+          hasProject={projects.length > 0}
+          hasUsableKey={usableKeys.length > 0}
+        />
+      ) : null}
 
-        <Card>
-          <CardHeader className="border-b">
-            <CardTitle>Attention</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {attentionItems.map((item) => (
-              <div key={item.label} className="flex gap-3 rounded-lg border bg-background p-3">
-                <item.icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">{item.label}</span>
-                    <Badge variant="outline">Live</Badge>
-                  </div>
-                  <p className="mt-1 text-sm leading-5 text-muted-foreground">{item.description}</p>
-                </div>
-              </div>
-            ))}
-            <div className="flex gap-3 rounded-lg border bg-background p-3">
-              <Plug className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">Provider readiness</span>
-                  <Badge variant={providersNeedingSetup > 0 ? "secondary" : "outline"}>
-                    {providersNeedingSetup > 0 ? `${providersNeedingSetup} incomplete` : "Ready"}
-                  </Badge>
-                </div>
-                <p className="mt-1 text-sm leading-5 text-muted-foreground">
-                  {readyProviders.length} of {activeProviders.length} active providers can route
-                  through credentials, pools, and models.
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </section>
-
-      <section className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader className="border-b">
-            <CardTitle>Resource model</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-2 text-sm">
-              <FlowRow icon={Plug} label="Providers" value="Credentials, pools, models" />
-              <FlowRow icon={Route} label="Policies" value="Routes, model offerings, limits" />
-              <FlowRow icon={KeyRound} label="Virtual keys" value="Project access to policies" />
-              <FlowRow icon={Activity} label="Usage" value="Append-only attribution records" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="border-b">
-            <CardTitle>Navigation freeze</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
-            <p>
-              Organization views own gateway-wide administration: providers, usage, activity, and
-              settings.
-            </p>
-            <p>
-              Workspace views own domain structure: teams, projects, policies, and guardrails.
-              Scoped users also get an authorized global usage view, with entity pages keeping
-              local drilldowns.
-            </p>
-            <div className="flex items-center gap-2 rounded-lg border bg-amber-500/10 p-3 text-amber-700 dark:text-amber-300">
-              <AlertTriangle className="size-4 shrink-0" />
-              <span>
-                Navigation entries now point to wired product surfaces. Deeper compatibility and
-                analytics views will continue to expand inside those surfaces.
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-      </section>
+      <div className="grid gap-4 lg:grid-cols-[1.4fr_0.6fr]">
+        {showActivity ? (
+          <RecentActivityCard
+            events={recentActivity}
+            isLoading={activityQuery.isPending}
+            isError={activityQuery.isError}
+          />
+        ) : null}
+        <QuickLinksCard
+          className={showActivity ? undefined : "lg:col-span-2"}
+          links={[
+            { show: true, label: "Providers", description: "Credentials, pools, models", to: "/providers", icon: Plug },
+            { show: canViewWorkspace(currentUser), label: "Policies", description: "Routes, budgets, caps", to: "/policies", icon: GitBranch },
+            { show: canViewWorkspace(currentUser), label: "Guardrails", description: "Model/provider/pool rules", to: "/guardrails", icon: ShieldCheck },
+            { show: true, label: "Teams & projects", description: "Workspace structure", to: "/teams", icon: Building2 },
+            { show: showUsage, label: "Usage", description: "Spend and request records", to: "/usage", icon: WalletCards },
+            { show: showActivity, label: "Activity", description: "Admin & runtime events", to: "/activity", icon: Activity },
+            { show: hasPermission(currentUser, "members.manage"), label: "Users", description: "Members, roles, invites", to: "/users", icon: Users },
+            { show: hasPermission(currentUser, "settings.manage"), label: "Settings", description: "Org & gateway defaults", to: "/settings", icon: Settings },
+          ]}
+        />
+      </div>
     </div>
   );
 }
 
-function MetricCard({
-  label,
-  value,
-  detail,
-  icon: Icon,
+function GatewaySetupChecklist({
+  hasProvider,
+  hasReadyProvider,
+  hasTeam,
+  hasProject,
+  hasUsableKey,
 }: {
-  label: string;
-  value: string | number;
-  detail: string;
-  icon: typeof Plug;
+  hasProvider: boolean;
+  hasReadyProvider: boolean;
+  hasTeam: boolean;
+  hasProject: boolean;
+  hasUsableKey: boolean;
 }) {
+  const steps = [
+    { label: "Connect a provider", done: hasProvider, to: "/providers" },
+    { label: "Get a provider routing-ready", done: hasReadyProvider, to: "/providers" },
+    { label: "Create a team", done: hasTeam, to: "/teams" },
+    { label: "Create a project", done: hasProject, to: "/projects" },
+    { label: "Issue a usable virtual key", done: hasUsableKey, to: "/virtual-keys" },
+    { label: "Send a first request", done: hasReadyProvider && hasUsableKey, to: "/playground" },
+  ];
+  const completed = steps.filter((step) => step.done).length;
   return (
-    <Card size="sm">
-      <CardContent>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="text-sm text-muted-foreground">{label}</div>
-            <div className="mt-2 text-2xl font-semibold tracking-tight">{value}</div>
-            <div className="mt-1 text-xs text-muted-foreground">{detail}</div>
-          </div>
-          <div className="rounded-md border bg-background p-2 text-muted-foreground">
-            <Icon className="size-4" />
-          </div>
-        </div>
+    <Card>
+      <CardHeader>
+        <CardTitle>Get to your first request</CardTitle>
+        <CardDescription>
+          {completed} of {steps.length} prerequisites complete. Finish the chain to start routing
+          gateway traffic.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+        {steps.map((step) => (
+          <Link
+            key={step.label}
+            to={step.to}
+            className="flex items-center justify-between gap-3 rounded-md border bg-background p-3 transition-colors hover:bg-muted/40"
+          >
+            <span className="text-sm font-medium">{step.label}</span>
+            <StatusBadge variant={step.done ? "active" : "muted"}>
+              {step.done ? "Ready" : "To do"}
+            </StatusBadge>
+          </Link>
+        ))}
       </CardContent>
     </Card>
   );
 }
 
-function FlowRow({
-  icon: Icon,
-  label,
-  value,
+function RecentActivityCard({
+  events,
+  isLoading,
+  isError,
 }: {
-  icon: typeof Plug;
-  label: string;
-  value: string;
+  events: ActivityEventResponse[];
+  isLoading: boolean;
+  isError: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-lg border bg-background p-3">
-      <div className="flex min-w-0 items-center gap-3">
-        <Icon className="size-4 shrink-0 text-muted-foreground" />
-        <span className="font-medium">{label}</span>
-      </div>
-      <span className="truncate text-muted-foreground">{value}</span>
-    </div>
+    <Card>
+      <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
+        <div>
+          <CardTitle>Recent activity</CardTitle>
+          <CardDescription>Latest admin changes and runtime gateway events.</CardDescription>
+        </div>
+        <Button asChild variant="ghost" size="sm">
+          <Link to="/activity">
+            View all
+            <ArrowRight data-icon="inline-end" />
+          </Link>
+        </Button>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading activity...</p>
+        ) : isError ? (
+          <p className="text-sm text-muted-foreground">Activity could not be loaded.</p>
+        ) : events.length === 0 ? (
+          <EmptyState
+            icon={Activity}
+            title="No activity yet"
+            description="Admin changes and proxy events will appear here."
+          />
+        ) : (
+          <div className="flex flex-col divide-y divide-border">
+            {events.map((event) => {
+              const Icon =
+                event.severity === "error"
+                  ? XCircle
+                  : event.severity === "warning"
+                    ? AlertTriangle
+                    : Info;
+              return (
+                <div key={event.id} className="flex items-start gap-3 py-2.5 first:pt-0 last:pb-0">
+                  <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">{event.message}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {event.actor_email ?? "Gateway runtime"} ·{" "}
+                      {new Date(event.created_at).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+type QuickLink = {
+  show: boolean;
+  label: string;
+  description: string;
+  to: string;
+  icon: LucideIcon;
+};
+
+function QuickLinksCard({ links, className }: { links: QuickLink[]; className?: string }) {
+  const visible = links.filter((link) => link.show);
+  return (
+    <Card className={className}>
+      <CardHeader>
+        <CardTitle>Quick links</CardTitle>
+        <CardDescription>Jump to the surfaces you can use.</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-2 sm:grid-cols-2">
+        {visible.map((link) => (
+          <Link
+            key={link.to}
+            to={link.to}
+            className="group flex items-start gap-3 rounded-md border bg-background p-3 transition-colors hover:bg-muted/40"
+          >
+            <link.icon className="mt-0.5 size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
+            <div className="min-w-0">
+              <div className="text-sm font-medium">{link.label}</div>
+              <div className="text-xs text-muted-foreground">{link.description}</div>
+            </div>
+          </Link>
+        ))}
+      </CardContent>
+    </Card>
   );
 }
