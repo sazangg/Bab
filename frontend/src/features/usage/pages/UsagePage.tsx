@@ -9,11 +9,14 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Area, AreaChart, CartesianGrid, Tooltip, XAxis, YAxis } from "recharts";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ChartContainer, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
+import { DataTable } from "@/components/ui/data-table";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -54,6 +57,7 @@ import type {
 } from "@/shared/api/generated/schemas";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
+import { HttpStatusBadge } from "@/shared/components/StatusBadge";
 
 type UsageWindow = "24h" | "7d" | "30d" | "90d" | "lifetime";
 type UsageGrain = "hour" | "day" | "week";
@@ -698,6 +702,12 @@ function UsageTrendCard({
   );
 }
 
+const METRIC_LABELS: Record<UsageChartMetric, string> = {
+  spend: "Spend",
+  requests: "Requests",
+  tokens: "Tokens",
+};
+
 function MiniBarChart({
   points,
   metric,
@@ -705,35 +715,47 @@ function MiniBarChart({
   points: UsageTimeSeriesPoint[];
   metric: UsageChartMetric;
 }) {
-  const values = points.map((point) => metricValue(point, metric));
-  const maxValue = Math.max(...values, 1);
-  const totalValue = values.reduce((sum, value) => sum + value, 0);
-  const metricLabel = metric === "spend" ? "spend" : metric;
+  const data = points.map((point) => ({
+    bucket: formatBucket(point.bucket),
+    value: metricValue(point, metric),
+  }));
+  const config: ChartConfig = {
+    value: { label: METRIC_LABELS[metric], color: "var(--chart-1)" },
+  };
   return (
-    <div
-      className="overflow-x-auto rounded-md border bg-muted/20 p-3"
-      role="img"
-      aria-label={`${points.length} ${metricLabel} buckets. Total ${formatMetricValue(totalValue, metric)}. Peak ${formatMetricValue(maxValue, metric)}.`}
-    >
-      <div className="flex h-56 min-w-[520px] items-end gap-1">
-        {points.map((point) => {
-          const value = metricValue(point, metric);
-          const height = Math.max(4, Math.round((value / maxValue) * 100));
-          const label = `${formatBucket(point.bucket)}: ${formatMetricValue(value, metric)}`;
-          return (
-            <div key={point.bucket} className="group flex min-w-3 flex-1 items-end">
-              <div
-                tabIndex={0}
-                aria-label={label}
-                className="w-full rounded-t bg-primary/70 transition-colors group-hover:bg-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-                style={{ height: `${height}%` }}
-                title={label}
-              />
-            </div>
-          );
-        })}
-      </div>
-    </div>
+    <ChartContainer config={config} className="h-56">
+      <AreaChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
+        <defs>
+          <linearGradient id="usage-trend-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--color-value)" stopOpacity={0.35} />
+            <stop offset="100%" stopColor="var(--color-value)" stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid vertical={false} />
+        <XAxis dataKey="bucket" tickLine={false} axisLine={false} tickMargin={8} minTickGap={28} />
+        <YAxis
+          tickLine={false}
+          axisLine={false}
+          width={48}
+          tickFormatter={(value: number) => formatMetricValue(value, metric)}
+        />
+        <Tooltip
+          cursor={{ strokeDasharray: "3 3" }}
+          content={
+            <ChartTooltipContent
+              valueFormatter={(value) => formatMetricValue(Number(value ?? 0), metric)}
+            />
+          }
+        />
+        <Area
+          type="monotone"
+          dataKey="value"
+          stroke="var(--color-value)"
+          strokeWidth={2}
+          fill="url(#usage-trend-fill)"
+        />
+      </AreaChart>
+    </ChartContainer>
   );
 }
 
@@ -823,94 +845,113 @@ function UsageRecordsCard({
         </div>
       </CardHeader>
       <CardContent>
-        {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading usage records...</p>
-        ) : error ? (
-          <UsageErrorAlert
-            title="Usage records failed"
-            error={error}
-            fallback="Unable to load usage records."
-            onRetry={onRetry}
-          />
-        ) : records.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No matching usage records.</p>
-        ) : (
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-              <span>
-                Showing {startRecord.toLocaleString()}-{endRecord.toLocaleString()}
-                {hasNext ? " of more records" : ""}
-              </span>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" disabled={page === 0} onClick={onPreviousPage}>
-                  Previous
-                </Button>
-                <Button variant="outline" size="sm" disabled={!hasNext} onClick={onNextPage}>
-                  Next
-                </Button>
-              </div>
-            </div>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Time</TableHead>
-                  <TableHead>Model</TableHead>
-                  <TableHead>Credential</TableHead>
-                  <TableHead>Request</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Tokens</TableHead>
-                  <TableHead className="text-right">Spend</TableHead>
-                  <TableHead className="text-right">Latency</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {records.map((record) => (
-                  <TableRow key={record.id}>
-                    <TableCell className="text-muted-foreground">
-                      {new Date(record.created_at).toLocaleString()}
-                    </TableCell>
-                    <TableCell>
-                      <div className="font-medium">{record.requested_model}</div>
-                      <div className="text-xs text-muted-foreground">{record.provider_model}</div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="font-medium">
-                        {record.provider_credential_name ?? "Unknown"}
-                      </div>
-                      <div className="font-mono text-xs text-muted-foreground">
-                        {record.provider_credential_prefix ?? shortId(record.provider_credential_id)}
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">
-                      {shortId(record.request_id)}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={record.http_status >= 400 ? "destructive" : "secondary"}>
-                        {record.http_status}
-                      </Badge>
-                      {record.error_code ? (
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          {record.error_code}
-                        </div>
-                      ) : null}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {(record.total_tokens ?? 0).toLocaleString()}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <SpendCell
-                        confirmed={record.confirmed_spend_cents}
-                        estimated={record.estimated_spend_cents}
-                        unknown={record.spend_type === "unknown"}
-                      />
-                    </TableCell>
-                    <TableCell className="text-right">{record.latency_ms}ms</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
+        <DataTable<UsageRecordResponse>
+          data={records}
+          loading={isLoading}
+          error={error ? "Unable to load usage records." : undefined}
+          onRetry={onRetry}
+          getRowKey={(record) => record.id}
+          empty={{
+            icon: ChartNoAxesCombined,
+            title: "No matching usage records",
+            description: "Usage appears here once virtual keys start serving requests.",
+          }}
+          columns={[
+            {
+              key: "time",
+              header: "Time",
+              className: "whitespace-nowrap text-muted-foreground",
+              cell: (record) => new Date(record.created_at).toLocaleString(),
+            },
+            {
+              key: "model",
+              header: "Model",
+              cell: (record) => (
+                <>
+                  <div className="font-medium">{record.requested_model}</div>
+                  <div className="text-xs text-muted-foreground">{record.provider_model}</div>
+                </>
+              ),
+            },
+            {
+              key: "credential",
+              header: "Credential",
+              cell: (record) => (
+                <>
+                  <div className="font-medium">{record.provider_credential_name ?? "Unknown"}</div>
+                  <div className="font-mono text-xs text-muted-foreground">
+                    {record.provider_credential_prefix ?? shortId(record.provider_credential_id)}
+                  </div>
+                </>
+              ),
+            },
+            {
+              key: "request",
+              header: "Request",
+              className: "font-mono text-xs text-muted-foreground",
+              cell: (record) => shortId(record.request_id),
+            },
+            {
+              key: "status",
+              header: "Status",
+              cell: (record) => (
+                <>
+                  <HttpStatusBadge status={record.http_status} />
+                  {record.error_code ? (
+                    <div className="mt-1 text-xs text-muted-foreground">{record.error_code}</div>
+                  ) : null}
+                </>
+              ),
+            },
+            {
+              key: "tokens",
+              header: "Tokens",
+              align: "right",
+              cell: (record) => (record.total_tokens ?? 0).toLocaleString(),
+            },
+            {
+              key: "spend",
+              header: "Spend",
+              align: "right",
+              cell: (record) => (
+                <SpendCell
+                  confirmed={record.confirmed_spend_cents}
+                  estimated={record.estimated_spend_cents}
+                  unknown={record.spend_type === "unknown"}
+                />
+              ),
+            },
+            {
+              key: "latency",
+              header: "Latency",
+              align: "right",
+              cell: (record) => `${record.latency_ms}ms`,
+            },
+          ]}
+          footer={
+            records.length > 0 ? (
+              <>
+                <span>
+                  Showing {startRecord.toLocaleString()}-{endRecord.toLocaleString()}
+                  {hasNext ? " of more records" : ""}
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page === 0}
+                    onClick={onPreviousPage}
+                  >
+                    Previous
+                  </Button>
+                  <Button variant="outline" size="sm" disabled={!hasNext} onClick={onNextPage}>
+                    Next
+                  </Button>
+                </div>
+              </>
+            ) : undefined
+          }
+        />
       </CardContent>
     </Card>
   );

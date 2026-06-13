@@ -5,6 +5,8 @@
 @import "@fontsource/poppins/latin-500.css";
 @import "@fontsource/poppins/latin-600.css";
 @import "@fontsource/poppins/latin-700.css";
+@import "@fontsource/jetbrains-mono/latin-400.css";
+@import "@fontsource/jetbrains-mono/latin-500.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -42,8 +44,13 @@
   --sidebar-border: oklch(0.8699 0 0);
   --sidebar-ring: oklch(0.6487 0.1538 150.3071);
   --destructive-foreground: oklch(1 0 0);
+  --success: oklch(0.62 0.15 150);
+  --success-foreground: oklch(1 0 0);
+  --warning: oklch(0.78 0.16 75);
+  --warning-foreground: oklch(0.28 0.05 75);
+  --info: oklch(0.62 0.13 255);
+  --info-foreground: oklch(1 0 0);
   --font-sans: "Poppins", sans-serif;
-  --font-serif: Source Serif 4, serif;
   --font-mono: JetBrains Mono, monospace;
   --shadow-color: oklch(0 0 0);
   --shadow-opacity: 0.1;
@@ -53,14 +60,14 @@
   --shadow-offset-y: 1px;
   --letter-spacing: 0em;
   --spacing: 0.25rem;
-  --shadow-2xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
-  --shadow-xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
+  --shadow-2xs: 0 1px 2px 0px hsl(0 0% 0% / 0.04);
+  --shadow-xs: 0 1px 3px 0px hsl(0 0% 0% / 0.06);
   --shadow-sm: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 1px 2px -1px hsl(0 0% 0% / 0.1);
   --shadow: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 1px 2px -1px hsl(0 0% 0% / 0.1);
   --shadow-md: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 2px 4px -1px hsl(0 0% 0% / 0.1);
   --shadow-lg: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 4px 6px -1px hsl(0 0% 0% / 0.1);
   --shadow-xl: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 8px 10px -1px hsl(0 0% 0% / 0.1);
-  --shadow-2xl: 0 1px 3px 0px hsl(0 0% 0% / 0.25);
+  --shadow-2xl: 0 24px 48px -12px hsl(0 0% 0% / 0.35);
   --tracking-normal: 0em;
 }
 
@@ -112,7 +119,6 @@ body {
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
   --font-mono: JetBrains Mono, monospace;
-  --font-serif: Source Serif 4, serif;
   --radius: 0.5rem;
   --tracking-tighter: calc(var(--tracking-normal) - 0.05em);
   --tracking-tight: calc(var(--tracking-normal) - 0.025em);
@@ -137,6 +143,26 @@ body {
   --shadow-opacity: var(--shadow-opacity);
   --color-shadow-color: var(--shadow-color);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --text-display: 1.875rem;
+  --text-display--line-height: 2.25rem;
+  --text-h1: 1.5rem;
+  --text-h1--line-height: 2rem;
+  --text-h2: 1.25rem;
+  --text-h2--line-height: 1.75rem;
+  --text-title: 1rem;
+  --text-title--line-height: 1.5rem;
+  --text-body: 0.875rem;
+  --text-body--line-height: 1.25rem;
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1rem;
+  --text-code: 0.75rem;
+  --text-code--line-height: 1rem;
 }
 
 .dark {
@@ -172,9 +198,14 @@ body {
   --sidebar-border: oklch(0.3867 0 0);
   --sidebar-ring: oklch(0.6487 0.1538 150.3071);
   --destructive-foreground: oklch(1 0 0);
+  --success: oklch(0.68 0.15 150);
+  --success-foreground: oklch(0.18 0.02 150);
+  --warning: oklch(0.8 0.15 75);
+  --warning-foreground: oklch(0.24 0.04 75);
+  --info: oklch(0.66 0.12 255);
+  --info-foreground: oklch(0.18 0.02 255);
   --radius: 0.5rem;
   --font-sans: "Poppins", sans-serif;
-  --font-serif: Source Serif 4, serif;
   --font-mono: JetBrains Mono, monospace;
   --shadow-color: oklch(0 0 0);
   --shadow-opacity: 0.1;
@@ -184,14 +215,14 @@ body {
   --shadow-offset-y: 1px;
   --letter-spacing: 0em;
   --spacing: 0.25rem;
-  --shadow-2xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
-  --shadow-xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
+  --shadow-2xs: 0 1px 2px 0px hsl(0 0% 0% / 0.04);
+  --shadow-xs: 0 1px 3px 0px hsl(0 0% 0% / 0.06);
   --shadow-sm: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 1px 2px -1px hsl(0 0% 0% / 0.1);
   --shadow: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 1px 2px -1px hsl(0 0% 0% / 0.1);
   --shadow-md: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 2px 4px -1px hsl(0 0% 0% / 0.1);
   --shadow-lg: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 4px 6px -1px hsl(0 0% 0% / 0.1);
   --shadow-xl: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 8px 10px -1px hsl(0 0% 0% / 0.1);
-  --shadow-2xl: 0 1px 3px 0px hsl(0 0% 0% / 0.25);
+  --shadow-2xl: 0 24px 48px -12px hsl(0 0% 0% / 0.35);
 }
 
 @layer base {

@@ -1,15 +1,28 @@
 import { Badge } from "@/components/ui/badge";
 
-type StatusVariant = "active" | "inactive" | "revoked" | "expired" | "success" | "error" | "muted";
+type StatusVariant =
+  | "active"
+  | "inactive"
+  | "revoked"
+  | "expired"
+  | "success"
+  | "error"
+  | "muted"
+  | "warning"
+  | "info";
 
+// Driven entirely by semantic tokens (no raw palette colors) so a status's color is
+// defined once in index.css and themed automatically.
 const variantClasses: Record<StatusVariant, string> = {
-  active: "bg-emerald-500/10 text-emerald-700 border-emerald-500/20 dark:text-emerald-300",
-  success: "bg-emerald-500/10 text-emerald-700 border-emerald-500/20 dark:text-emerald-300",
+  active: "bg-success/10 text-success border-success/25",
+  success: "bg-success/10 text-success border-success/25",
+  warning: "bg-warning/10 text-warning border-warning/25",
+  expired: "bg-warning/10 text-warning border-warning/25",
+  info: "bg-info/10 text-info border-info/25",
   inactive: "bg-muted text-muted-foreground border-border",
   muted: "bg-muted text-muted-foreground border-border",
   revoked: "bg-destructive/10 text-destructive border-destructive/20",
   error: "bg-destructive/10 text-destructive border-destructive/20",
-  expired: "bg-amber-500/10 text-amber-700 border-amber-500/20 dark:text-amber-300",
 };
 
 export function StatusBadge({
