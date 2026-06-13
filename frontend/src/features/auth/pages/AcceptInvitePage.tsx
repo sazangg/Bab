@@ -1,7 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
-import { Eye, EyeOff } from "lucide-react";
-import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { z } from "zod";
@@ -11,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/ui/password-input";
 import { isWithinBcryptByteLimit } from "@/features/auth/lib/password";
 import { useAuthStore } from "@/features/auth/model/auth-store";
 import { httpClient } from "@/shared/api/http-client";
@@ -49,7 +48,6 @@ export function AcceptInvitePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const token = searchParams.get("token");
-  const [showPassword, setShowPassword] = useState(false);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const setSession = useAuthStore((state) => state.setSession);
   const form = useForm<AcceptInviteValues>({
@@ -143,23 +141,11 @@ export function AcceptInvitePage() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="invite-password">Password</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="invite-password"
-                  type={showPassword ? "text" : "password"}
-                  autoComplete="new-password"
-                  {...form.register("password")}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  aria-label={showPassword ? "Hide secret" : "Show secret"}
-                  onClick={() => setShowPassword((value) => !value)}
-                >
-                  {showPassword ? <EyeOff /> : <Eye />}
-                </Button>
-              </div>
+              <PasswordInput
+                id="invite-password"
+                autoComplete="new-password"
+                {...form.register("password")}
+              />
               {form.formState.errors.password ? (
                 <p className="text-xs text-destructive">{form.formState.errors.password.message}</p>
               ) : (
@@ -170,9 +156,8 @@ export function AcceptInvitePage() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="invite-confirm-password">Confirm password</Label>
-              <Input
+              <PasswordInput
                 id="invite-confirm-password"
-                type={showPassword ? "text" : "password"}
                 autoComplete="new-password"
                 {...form.register("confirmPassword")}
               />

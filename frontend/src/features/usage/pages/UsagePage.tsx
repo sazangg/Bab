@@ -56,6 +56,7 @@ import type {
   UsageTimeSeriesPoint,
 } from "@/shared/api/generated/schemas";
 import { EmptyState } from "@/shared/components/EmptyState";
+import { formatCents } from "@/shared/lib/format-currency";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { HttpStatusBadge } from "@/shared/components/StatusBadge";
 
@@ -1427,10 +1428,6 @@ function RecentDenialsCard({ events }: { events: ActivityEventResponse[] }) {
       </CardContent>
     </Card>
   );
-}
-
-function formatCents(value: number) {
-  return `$${(value / 100).toLocaleString()}`;
 }
 
 function formatSpendParts(row: {

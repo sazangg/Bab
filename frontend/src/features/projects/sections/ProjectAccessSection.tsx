@@ -7,15 +7,7 @@ import {
 } from "@/shared/api/generated/projects/projects";
 import { EffectiveAccessSummaryCard } from "@/features/projects/components/EffectiveAccessSummaryCard";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Button } from "@/components/ui/button";
+import { DataTable } from "@/components/ui/data-table";
 
 export function ProjectAccessSection({
   projectId,
@@ -45,56 +37,47 @@ export function ProjectAccessSection({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {modelsQuery.isPending ? (
-            <p className="text-sm text-muted-foreground">Loading accessible models...</p>
-          ) : blocked ? (
+          {blocked ? (
             <p className="text-sm text-muted-foreground">
               Models are blocked until the project has an effective access policy.
             </p>
-          ) : modelsQuery.isError ? (
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm text-destructive">Accessible models could not be loaded.</p>
-              <Button variant="outline" size="sm" onClick={() => modelsQuery.refetch()}>
-                Retry
-              </Button>
-            </div>
-          ) : models.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No models are currently routable for this project.
-            </p>
           ) : (
-            <div className="overflow-hidden rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Model</TableHead>
-                    <TableHead>Provider</TableHead>
-                    <TableHead>Pool</TableHead>
-                    <TableHead>Source policy</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {models.map((model) => (
-                    <TableRow key={`${model.provider_id}:${model.model_offering_id}`}>
-                      <TableCell>
-                        <div className="font-medium">{model.alias ?? model.id}</div>
-                        {model.alias ? (
-                          <div className="text-xs text-muted-foreground">{model.id}</div>
-                        ) : null}
-                      </TableCell>
-                      <TableCell>{model.provider_name}</TableCell>
-                      <TableCell>{model.pool_name}</TableCell>
-                      <TableCell>
-                        <div>{model.access_policy_name ?? "Inherited policy"}</div>
-                        <div className="text-xs capitalize text-muted-foreground">
-                          {model.source_scope ?? "organization"}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <DataTable
+              columns={[
+                {
+                  key: "model",
+                  header: "Model",
+                  cell: (model) => (
+                    <>
+                      <div className="font-medium">{model.alias ?? model.id}</div>
+                      {model.alias ? (
+                        <div className="text-xs text-muted-foreground">{model.id}</div>
+                      ) : null}
+                    </>
+                  ),
+                },
+                { key: "provider", header: "Provider", cell: (model) => model.provider_name },
+                { key: "pool", header: "Pool", cell: (model) => model.pool_name },
+                {
+                  key: "source",
+                  header: "Source policy",
+                  cell: (model) => (
+                    <>
+                      <div>{model.access_policy_name ?? "Inherited policy"}</div>
+                      <div className="text-xs capitalize text-muted-foreground">
+                        {model.source_scope ?? "organization"}
+                      </div>
+                    </>
+                  ),
+                },
+              ]}
+              data={models}
+              loading={modelsQuery.isPending}
+              error={modelsQuery.isError ? "Accessible models could not be loaded." : undefined}
+              onRetry={() => void modelsQuery.refetch()}
+              getRowKey={(model) => `${model.provider_id}:${model.model_offering_id}`}
+              empty={{ title: "No models are currently routable for this project." }}
+            />
           )}
         </CardContent>
       </Card>

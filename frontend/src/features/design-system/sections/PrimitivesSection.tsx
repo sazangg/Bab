@@ -249,7 +249,7 @@ export function PrimitivesSection() {
 
       <Example label="Inline icon + meta">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Check className="size-3 text-emerald-500" />
+          <Check className="size-3 text-success" />
           <span>Saved 2 minutes ago</span>
           <Caption>typical row meta</Caption>
         </div>

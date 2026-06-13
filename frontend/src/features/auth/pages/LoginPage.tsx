@@ -1,7 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
-import { Eye, EyeOff } from "lucide-react";
-import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { z } from "zod";
@@ -11,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/ui/password-input";
 import { useAuthStore } from "@/features/auth/model/auth-store";
 
 const loginSchema = z.object({
@@ -24,7 +23,6 @@ export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
-  const [showPassword, setShowPassword] = useState(false);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const setSession = useAuthStore((state) => state.setSession);
   const form = useForm<LoginFormValues>({
@@ -80,23 +78,11 @@ export function LoginPage() {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="login-password">Password</Label>
-            <div className="flex gap-2">
-              <Input
-                id="login-password"
-                type={showPassword ? "text" : "password"}
-                autoComplete="current-password"
-                {...form.register("password")}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                aria-label={showPassword ? "Hide secret" : "Show secret"}
-                onClick={() => setShowPassword((value) => !value)}
-              >
-                {showPassword ? <EyeOff /> : <Eye />}
-              </Button>
-            </div>
+            <PasswordInput
+              id="login-password"
+              autoComplete="current-password"
+              {...form.register("password")}
+            />
           </div>
           {loginMutation.isError ? (
             <p className="text-sm text-destructive">Invalid email or password.</p>

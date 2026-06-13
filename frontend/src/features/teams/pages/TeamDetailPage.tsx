@@ -44,17 +44,10 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DataTable } from "@/components/ui/data-table";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
 import { MembersCard } from "@/shared/components/MembersCard";
+import { formatCents } from "@/shared/lib/format-currency";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
@@ -72,11 +65,7 @@ import {
   useUpdateTeamMemberApiV1TeamsTeamIdMembersUserIdPatch,
   useUpdateTeamApiV1TeamsTeamIdPatch,
 } from "@/shared/api/generated/teams/teams";
-import type {
-  ProjectResponse,
-  TeamMemberResponse,
-  UpdateTeamRequest,
-} from "@/shared/api/generated/schemas";
+import type { TeamMemberResponse, UpdateTeamRequest } from "@/shared/api/generated/schemas";
 
 import { formatDateTime, formatRelativeFromNow } from "@/features/providers/lib/format";
 import { PolicyScopeSection } from "@/features/policies/components/PolicyScopeSection";
@@ -464,49 +453,52 @@ export function TeamDetailPage() {
           </CardAction>
         </CardHeader>
         <CardContent>
-          {projectsQuery.isPending ? (
-            <p className="text-sm text-muted-foreground">Loading projects...</p>
-          ) : projects.length === 0 ? (
-            <div className="rounded-md border border-dashed p-8 text-center">
-              <p className="text-sm font-medium">No projects yet</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Create a project to start assigning policies and keys.
-              </p>
-              {canManageTeam ? (
-                <Button
-                  className="mt-4"
-                  size="sm"
-                  onClick={() => setProjectSheetOpen(true)}
-                  disabled={!team.is_active}
-                >
-                  <Plus />
-                  New project
-                </Button>
-              ) : null}
-            </div>
-          ) : (
-            <div className="overflow-hidden rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Created</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {projects.map((project) => (
-                    <ProjectTableRow
-                      key={project.id}
-                      project={project}
-                      onOpen={() => navigate(`/projects/${project.id}`)}
-                    />
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+          <DataTable
+            columns={[
+              { key: "name", header: "Name", className: "font-medium", cell: (project) => project.name },
+              {
+                key: "description",
+                header: "Description",
+                className: "max-w-md truncate text-muted-foreground",
+                cell: (project) => project.description || "—",
+              },
+              {
+                key: "status",
+                header: "Status",
+                cell: (project) => (
+                  <StatusBadge variant={project.is_active ? "active" : "inactive"}>
+                    {project.is_active ? "Active" : "Archived"}
+                  </StatusBadge>
+                ),
+              },
+              {
+                key: "created",
+                header: "Created",
+                className: "text-muted-foreground",
+                cell: (project) => (
+                  <span title={formatDateTime(project.created_at)}>
+                    {new Date(project.created_at).toLocaleDateString()}
+                  </span>
+                ),
+              },
+            ]}
+            data={projects}
+            loading={projectsQuery.isPending}
+            getRowKey={(project) => project.id}
+            onRowClick={(project) => navigate(`/projects/${project.id}`)}
+            rowClassName={(project) => (!project.is_active ? "opacity-60" : undefined)}
+            empty={{
+              title: "No projects yet",
+              description: "Create a project to start assigning policies and keys.",
+              action:
+                canManageTeam ? (
+                  <Button size="sm" onClick={() => setProjectSheetOpen(true)} disabled={!team.is_active}>
+                    <Plus />
+                    New project
+                  </Button>
+                ) : undefined,
+            }}
+          />
         </CardContent>
       </Card>
 
@@ -538,7 +530,7 @@ export function TeamDetailPage() {
                   {editTeamForm.formState.errors.slug.message}
                 </p>
               ) : slugChanged && slugPreview ? (
-                <p className="text-xs text-amber-600 dark:text-amber-500">
+                <p className="text-xs text-warning">
                   Changing the slug will break links that reference{" "}
                   <span className="font-mono">{team.slug}</span>.
                 </p>
@@ -650,25 +642,6 @@ export function TeamDetailPage() {
   );
 }
 
-function ProjectTableRow({ project, onOpen }: { project: ProjectResponse; onOpen: () => void }) {
-  return (
-    <TableRow className={cn("cursor-pointer", !project.is_active && "opacity-60")} onClick={onOpen}>
-      <TableCell className="font-medium">{project.name}</TableCell>
-      <TableCell className="max-w-md truncate text-muted-foreground">
-        {project.description || "—"}
-      </TableCell>
-      <TableCell>
-        <StatusBadge variant={project.is_active ? "active" : "inactive"}>
-          {project.is_active ? "Active" : "Archived"}
-        </StatusBadge>
-      </TableCell>
-      <TableCell className="text-muted-foreground" title={formatDateTime(project.created_at)}>
-        {new Date(project.created_at).toLocaleDateString()}
-      </TableCell>
-    </TableRow>
-  );
-}
-
 function Fact({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-1">
@@ -678,6 +651,3 @@ function Fact({ label, value }: { label: string; value: string }) {
   );
 }
 
-function formatCents(value: number | null | undefined) {
-  return `$${((value ?? 0) / 100).toFixed(2)}`;
-}

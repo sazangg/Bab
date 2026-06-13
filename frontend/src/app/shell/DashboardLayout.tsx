@@ -440,7 +440,7 @@ export function DashboardLayout() {
               >
                 <span className="relative flex size-2 shrink-0" aria-hidden="true">
                   {gatewayStatus.variant === "ready" ? (
-                    <span className="absolute inset-0 rounded-full bg-emerald-500/60 motion-safe:animate-ping" />
+                    <span className="absolute inset-0 rounded-full bg-success/60 motion-safe:animate-ping" />
                   ) : null}
                   <span className={`relative size-2 rounded-full ${gatewayStatus.className}`} />
                 </span>
@@ -460,7 +460,7 @@ export function DashboardLayout() {
                     <div key={name} className="grid gap-1">
                       <div className="flex items-center justify-between gap-3">
                         <span className="capitalize">{name.replace(/_/g, " ")}</span>
-                        <span className={check.ok ? "text-emerald-600" : "text-amber-600"}>
+                        <span className={check.ok ? "text-success" : "text-warning"}>
                           {check.ok ? "OK" : "Needs attention"}
                         </span>
                       </div>

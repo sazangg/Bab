@@ -54,6 +54,7 @@ import { useGetOrganizationUsageSummaryApiV1UsageSummaryGet } from "@/shared/api
 import { useGetSettingsApiV1SettingsGet } from "@/shared/api/generated/settings/settings";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/shared/components/EmptyState";
+import { formatCents } from "@/shared/lib/format-currency";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { EditProviderSheet } from "@/features/providers/components/EditProviderSheet";
@@ -276,15 +277,15 @@ export function ProviderDetailPage() {
         className={cn(
           "flex flex-col gap-4 rounded-md border p-4 md:flex-row md:items-center md:justify-between",
           provider.readiness?.status === "ready"
-            ? "border-emerald-500/30 bg-emerald-500/5"
-            : "border-amber-500/30 bg-amber-500/5",
+            ? "border-success/30 bg-success/5"
+            : "border-warning/30 bg-warning/5",
         )}
       >
         <div className="flex items-start gap-3">
           {provider.readiness?.status === "ready" ? (
-            <CheckCircle2 className="mt-0.5 size-5 text-emerald-600" />
+            <CheckCircle2 className="mt-0.5 size-5 text-success" />
           ) : (
-            <Circle className="mt-0.5 size-5 text-amber-600" />
+            <Circle className="mt-0.5 size-5 text-warning" />
           )}
           <div>
             <div className="flex flex-wrap items-center gap-2">
@@ -681,7 +682,7 @@ function ReadinessStep({ label, ready }: { label: string; ready: boolean }) {
   return (
     <div className="flex items-center gap-2 rounded-md border bg-muted/20 p-3">
       <Icon
-        className={cn("size-4 shrink-0", ready ? "text-emerald-600" : "text-muted-foreground")}
+        className={cn("size-4 shrink-0", ready ? "text-success" : "text-muted-foreground")}
       />
       <span className={cn("text-sm font-medium", !ready && "text-muted-foreground")}>{label}</span>
     </div>
@@ -792,8 +793,4 @@ function lastCredentialFailure(
     sanitizeCredentialValidationMessage(failed.failure_message ?? failed.last_validation_error) ??
     "Credential validation failed."
   );
-}
-
-function formatCents(value: number) {
-  return `$${(value / 100).toLocaleString()}`;
 }
