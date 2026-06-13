@@ -1,12 +1,13 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { AlertTriangle, ClipboardList, Download, Search, ShieldCheck } from "lucide-react";
-import { useEffect, useState } from "react";
+import { AlertTriangle, Download, Search, ShieldCheck } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -16,27 +17,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Sheet,
-  SheetBody,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { httpClient } from "@/shared/api/http-client";
 import type { AuditEventResponse, AuditVerificationResponse } from "@/shared/api/generated/schemas";
-import { EmptyState } from "@/shared/components/EmptyState";
+import { EventDetailSheet, type EventDetailRow } from "@/shared/components/EventDetailSheet";
+import { FilterToolbar, type FilterChip } from "@/shared/components/FilterToolbar";
 import { PageHeader } from "@/shared/components/PageHeader";
+import { buildDateRange } from "@/shared/lib/date-range";
+import { downloadBlob } from "@/shared/lib/download";
+import { shortId } from "@/shared/lib/short-id";
+import { useDebouncedValue } from "@/shared/lib/use-debounced-value";
 
 const ANY = "__any__";
 const PAGE_SIZE = 50;
@@ -145,6 +134,107 @@ export function AuditPage() {
     }
   };
 
+  const chips: FilterChip[] = [];
+  if (search.trim()) {
+    chips.push({ key: "q", label: `Search: ${search.trim()}`, onRemove: () => setSearch("") });
+  }
+  if (action.trim()) {
+    chips.push({ key: "action", label: `Action: ${action.trim()}`, onRemove: () => setAction("") });
+  }
+  if (actorUserId.trim()) {
+    chips.push({
+      key: "actor",
+      label: `Actor: ${shortId(actorUserId.trim())}`,
+      onRemove: () => setActorUserId(""),
+    });
+  }
+  if (entityType !== ANY) {
+    chips.push({
+      key: "entity",
+      label: entityId.trim() ? `Entity: ${entityType} ${shortId(entityId.trim())}` : `Entity: ${entityType}`,
+      onRemove: () => {
+        setEntityType(ANY);
+        setEntityId("");
+      },
+    });
+  }
+  if (startDate || endDate) {
+    chips.push({
+      key: "dates",
+      label: `Date: ${startDate || "…"} – ${endDate || "…"}`,
+      onRemove: () => {
+        setStartDate("");
+        setEndDate("");
+      },
+    });
+  }
+
+  const columns: DataTableColumn<AuditEventResponse>[] = [
+    {
+      key: "time",
+      header: "Time",
+      className: "whitespace-nowrap text-muted-foreground",
+      cell: (event) => new Date(event.created_at).toLocaleString(),
+    },
+    {
+      key: "actor",
+      header: "Actor",
+      cell: (event) => (
+        <>
+          <div className="font-medium">{event.actor_email ?? "System"}</div>
+          {event.actor_role ? (
+            <div className="text-xs text-muted-foreground">{event.actor_role}</div>
+          ) : null}
+        </>
+      ),
+    },
+    {
+      key: "action",
+      header: "Action",
+      cell: (event) => <Badge variant="secondary">{event.action}</Badge>,
+    },
+    {
+      key: "entity",
+      header: "Entity",
+      cell: (event) => (
+        <>
+          <div className="font-medium">{event.entity_type}</div>
+          {event.entity_id ? (
+            <div className="max-w-48 truncate font-mono text-xs text-muted-foreground">
+              {event.entity_id}
+            </div>
+          ) : null}
+        </>
+      ),
+    },
+    {
+      key: "metadata",
+      header: "Metadata",
+      className: "max-w-80 truncate font-mono text-xs text-muted-foreground",
+      cell: (event) => formatMetadata(event.metadata),
+    },
+  ];
+
+  const detailRows: EventDetailRow[] = selectedEvent
+    ? [
+        { label: "Event ID", value: selectedEvent.id, mono: true },
+        { label: "Created", value: new Date(selectedEvent.created_at).toLocaleString() },
+        { label: "Actor", value: selectedEvent.actor_email ?? "System" },
+        { label: "Actor user ID", value: selectedEvent.actor_user_id ?? "-", mono: true },
+        { label: "Actor role", value: selectedEvent.actor_role ?? "-" },
+        { label: "Action", value: selectedEvent.action },
+        { label: "Entity type", value: selectedEvent.entity_type },
+        { label: "Entity ID", value: selectedEvent.entity_id ?? "-", mono: true },
+        { label: "Signature algorithm", value: selectedEvent.signature_algorithm },
+        { label: "Previous hash", value: selectedEvent.previous_hash ?? "Chain origin", mono: true },
+        {
+          label: "Event hash",
+          value: selectedEvent.event_hash ?? "Unsigned legacy event",
+          mono: true,
+        },
+      ]
+    : [];
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -168,88 +258,88 @@ export function AuditPage() {
 
       <Card>
         <CardHeader className="border-b">
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-3">
-              <CardTitle>Audit events</CardTitle>
-              <Badge variant="outline">{events.length} loaded</Badge>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="relative sm:col-span-2">
-                <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  className="pl-9"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search actor, action, entity, selected metadata..."
-                  aria-label="Search audit events"
-                />
-              </div>
-              <Input
-                value={action}
-                onChange={(event) => setAction(event.target.value)}
-                placeholder="Exact action"
-                aria-label="Filter by exact action"
-              />
-              <Input
-                className="font-mono"
-                value={actorUserId}
-                onChange={(event) => setActorUserId(event.target.value)}
-                placeholder="Actor user ID"
-                aria-label="Filter by actor user ID"
-              />
-              <Select
-                value={entityType}
-                onValueChange={(value) => {
-                  setEntityType(value);
-                  if (value === ANY) setEntityId("");
-                }}
-              >
-                <SelectTrigger className="w-full" aria-label="Filter by entity type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value={ANY}>All entity types</SelectItem>
-                    <SelectItem value="organization">Organization</SelectItem>
-                    <SelectItem value="user">User</SelectItem>
-                    <SelectItem value="invite">Invite</SelectItem>
-                    <SelectItem value="team">Team</SelectItem>
-                    <SelectItem value="project">Project</SelectItem>
-                    <SelectItem value="virtual_key">Virtual key</SelectItem>
-                    <SelectItem value="provider">Provider</SelectItem>
-                    <SelectItem value="policy_assignment">Policy assignment</SelectItem>
-                    <SelectItem value="guardrail_policy">Guardrail policy</SelectItem>
-                    <SelectItem value="guardrail_assignment">Guardrail assignment</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              <Input
-                className="font-mono"
-                value={entityId}
-                disabled={entityType === ANY}
-                onChange={(event) => setEntityId(event.target.value)}
-                placeholder="Entity ID"
-                aria-label="Filter by entity ID"
-              />
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(event) => setStartDate(event.target.value)}
-                aria-label="Audit start date"
-              />
-              <Input
-                type="date"
-                value={endDate}
-                onChange={(event) => setEndDate(event.target.value)}
-                aria-label="Audit end date"
-              />
-              <div className="flex justify-end sm:col-span-2 lg:col-span-4">
-                <Button variant="outline" size="sm" onClick={clearFilters}>
-                  Clear filters
-                </Button>
-              </div>
-            </div>
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle>Audit events</CardTitle>
+            <Badge variant="outline">{events.length} loaded</Badge>
           </div>
+          <FilterToolbar
+            className="mt-3"
+            chips={chips}
+            onClearAll={chips.length > 0 ? clearFilters : undefined}
+          >
+            <div className="relative w-full sm:w-72">
+              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search actor, action, entity, selected metadata..."
+                aria-label="Search audit events"
+              />
+            </div>
+            <Input
+              className="w-44"
+              value={action}
+              onChange={(event) => setAction(event.target.value)}
+              placeholder="Exact action"
+              aria-label="Filter by exact action"
+            />
+            <Input
+              className="w-48 font-mono"
+              value={actorUserId}
+              onChange={(event) => setActorUserId(event.target.value)}
+              placeholder="Actor user ID"
+              aria-label="Filter by actor user ID"
+            />
+            <Select
+              value={entityType}
+              onValueChange={(value) => {
+                setEntityType(value);
+                if (value === ANY) setEntityId("");
+              }}
+            >
+              <SelectTrigger className="w-48" aria-label="Filter by entity type">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value={ANY}>All entity types</SelectItem>
+                  <SelectItem value="organization">Organization</SelectItem>
+                  <SelectItem value="user">User</SelectItem>
+                  <SelectItem value="invite">Invite</SelectItem>
+                  <SelectItem value="team">Team</SelectItem>
+                  <SelectItem value="project">Project</SelectItem>
+                  <SelectItem value="virtual_key">Virtual key</SelectItem>
+                  <SelectItem value="provider">Provider</SelectItem>
+                  <SelectItem value="policy_assignment">Policy assignment</SelectItem>
+                  <SelectItem value="guardrail_policy">Guardrail policy</SelectItem>
+                  <SelectItem value="guardrail_assignment">Guardrail assignment</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <Input
+              className="w-48 font-mono"
+              value={entityId}
+              disabled={entityType === ANY}
+              onChange={(event) => setEntityId(event.target.value)}
+              placeholder="Entity ID"
+              aria-label="Filter by entity ID"
+            />
+            <Input
+              type="date"
+              className="w-40"
+              value={startDate}
+              onChange={(event) => setStartDate(event.target.value)}
+              aria-label="Audit start date"
+            />
+            <Input
+              type="date"
+              className="w-40"
+              value={endDate}
+              onChange={(event) => setEndDate(event.target.value)}
+              aria-label="Audit end date"
+            />
+          </FilterToolbar>
         </CardHeader>
         <CardContent>
           {dateRange.error ? (
@@ -258,97 +348,45 @@ export function AuditPage() {
               <AlertTitle>Invalid date range</AlertTitle>
               <AlertDescription>{dateRange.error}</AlertDescription>
             </Alert>
-          ) : auditQuery.isPending ? (
-            <AuditSkeleton />
-          ) : auditQuery.isError ? (
-            <Alert variant="destructive">
-              <AlertTriangle />
-              <AlertTitle>Audit events could not be loaded</AlertTitle>
-              <AlertDescription className="flex items-center justify-between gap-3">
-                Check the filters and connection, then try again.
-                <Button variant="outline" size="sm" onClick={() => auditQuery.refetch()}>
-                  Retry
-                </Button>
-              </AlertDescription>
-            </Alert>
-          ) : events.length === 0 ? (
-            <EmptyState
-              icon={ClipboardList}
-              title="No audit events"
-              description="Administrative mutations matching the filters will appear here."
-            />
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Time</TableHead>
-                    <TableHead>Actor</TableHead>
-                    <TableHead>Action</TableHead>
-                    <TableHead>Entity</TableHead>
-                    <TableHead>Metadata</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {events.map((event) => (
-                    <TableRow
-                      key={event.id}
-                      className="cursor-pointer"
-                      tabIndex={0}
-                      onClick={() => setSelectedEvent(event)}
-                      onKeyDown={(keyEvent) => {
-                        if (keyEvent.key === "Enter" || keyEvent.key === " ") {
-                          keyEvent.preventDefault();
-                          setSelectedEvent(event);
-                        }
-                      }}
-                    >
-                      <TableCell className="whitespace-nowrap text-muted-foreground">
-                        {new Date(event.created_at).toLocaleString()}
-                      </TableCell>
-                      <TableCell>
-                        <div className="font-medium">{event.actor_email ?? "System"}</div>
-                        {event.actor_role ? (
-                          <div className="text-xs text-muted-foreground">{event.actor_role}</div>
-                        ) : null}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">{event.action}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="font-medium">{event.entity_type}</div>
-                        {event.entity_id ? (
-                          <div className="max-w-48 truncate font-mono text-xs text-muted-foreground">
-                            {event.entity_id}
-                          </div>
-                        ) : null}
-                      </TableCell>
-                      <TableCell className="max-w-80 truncate font-mono text-xs text-muted-foreground">
-                        {formatMetadata(event.metadata)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <>
+              <DataTable
+                columns={columns}
+                data={events}
+                loading={auditQuery.isPending}
+                error={auditQuery.isError ? "Audit events could not be loaded." : undefined}
+                onRetry={() => void auditQuery.refetch()}
+                getRowKey={(event) => event.id}
+                onRowClick={setSelectedEvent}
+                empty={{
+                  icon: Search,
+                  title: "No audit events",
+                  description: "Administrative mutations matching the filters will appear here.",
+                }}
+              />
+              {auditQuery.hasNextPage ? (
+                <div className="flex justify-center pt-4">
+                  <Button
+                    variant="outline"
+                    disabled={auditQuery.isFetchingNextPage}
+                    onClick={() => auditQuery.fetchNextPage()}
+                  >
+                    {auditQuery.isFetchingNextPage ? "Loading..." : "Load more"}
+                  </Button>
+                </div>
+              ) : null}
+            </>
           )}
-          {auditQuery.hasNextPage ? (
-            <div className="flex justify-center border-t pt-4">
-              <Button
-                variant="outline"
-                disabled={auditQuery.isFetchingNextPage}
-                onClick={() => auditQuery.fetchNextPage()}
-              >
-                {auditQuery.isFetchingNextPage ? "Loading..." : "Load more"}
-              </Button>
-            </div>
-          ) : null}
         </CardContent>
       </Card>
 
-      <AuditDetailSheet
-        event={selectedEvent}
+      <EventDetailSheet
+        open={Boolean(selectedEvent)}
         onOpenChange={(open) => !open && setSelectedEvent(null)}
+        title="Audit event details"
+        description="Actor, resource, metadata, and chain verification fields for this event."
+        rows={detailRows}
+        json={selectedEvent?.metadata}
       />
     </div>
   );
@@ -372,105 +410,6 @@ function VerificationAlert({ verification }: { verification: AuditVerificationRe
   );
 }
 
-function AuditDetailSheet({
-  event,
-  onOpenChange,
-}: {
-  event: AuditEventResponse | null;
-  onOpenChange: (open: boolean) => void;
-}) {
-  return (
-    <Sheet open={Boolean(event)} onOpenChange={onOpenChange}>
-      <SheetContent>
-        <SheetHeader>
-          <SheetTitle>Audit event details</SheetTitle>
-          <SheetDescription>
-            Actor, resource, metadata, and chain verification fields for this event.
-          </SheetDescription>
-        </SheetHeader>
-        {event ? (
-          <SheetBody className="flex flex-col gap-5">
-            <Detail label="Event ID" value={event.id} mono />
-            <Detail label="Created" value={new Date(event.created_at).toLocaleString()} />
-            <Detail label="Actor" value={event.actor_email ?? "System"} />
-            <Detail label="Actor user ID" value={event.actor_user_id ?? "-"} mono />
-            <Detail label="Actor role" value={event.actor_role ?? "-"} />
-            <Detail label="Action" value={event.action} />
-            <Detail label="Entity type" value={event.entity_type} />
-            <Detail label="Entity ID" value={event.entity_id ?? "-"} mono />
-            <Detail label="Signature algorithm" value={event.signature_algorithm} />
-            <Detail label="Previous hash" value={event.previous_hash ?? "Chain origin"} mono />
-            <Detail label="Event hash" value={event.event_hash ?? "Unsigned legacy event"} mono />
-            <div className="flex flex-col gap-1">
-              <div className="text-xs font-medium text-muted-foreground">Metadata</div>
-              <pre className="max-h-80 overflow-auto rounded-md bg-muted p-3 text-xs">
-                {JSON.stringify(event.metadata, null, 2)}
-              </pre>
-            </div>
-          </SheetBody>
-        ) : null}
-      </SheetContent>
-    </Sheet>
-  );
-}
-
-function Detail({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <div className="text-xs font-medium text-muted-foreground">{label}</div>
-      <div className={mono ? "break-all font-mono text-xs" : "text-sm"}>{value}</div>
-    </div>
-  );
-}
-
 function formatMetadata(metadata: Record<string, unknown>) {
   return Object.keys(metadata).length === 0 ? "-" : JSON.stringify(metadata);
-}
-
-function buildDateRange(
-  startDate: string,
-  endDate: string,
-): { startAt?: string; endAt?: string; error?: string } {
-  const startAt = toDateBoundary(startDate, "00:00:00");
-  const endAt = toDateBoundary(endDate, "23:59:59");
-  if (startDate && !startAt) return { error: "The start date is invalid." };
-  if (endDate && !endAt) return { error: "The end date is invalid." };
-  if (startAt && endAt && startAt > endAt) {
-    return { error: "The start date must be before the end date." };
-  }
-  return { startAt, endAt };
-}
-
-function toDateBoundary(value: string, time: string) {
-  if (!value) return undefined;
-  const date = new Date(`${value}T${time}`);
-  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
-}
-
-function useDebouncedValue(value: string, delay: number) {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const timeout = window.setTimeout(() => setDebounced(value), delay);
-    return () => window.clearTimeout(timeout);
-  }, [delay, value]);
-  return debounced;
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
-
-function AuditSkeleton() {
-  return (
-    <div className="flex flex-col gap-3" aria-label="Loading audit events">
-      {Array.from({ length: 5 }, (_, index) => (
-        <Skeleton key={index} className="h-12 w-full" />
-      ))}
-    </div>
-  );
 }

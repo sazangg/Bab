@@ -2,8 +2,6 @@ import {
   Activity,
   AlertTriangle,
   CalendarDays,
-  ChevronDown,
-  ChevronRight,
   Download,
   Info,
   Search,
@@ -18,6 +16,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -28,16 +27,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
 import { useListProjectsApiV1ProjectsGet } from "@/shared/api/generated/projects/projects";
 import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
@@ -50,7 +39,13 @@ import type {
   TeamResponse,
 } from "@/shared/api/generated/schemas";
 import { EmptyState } from "@/shared/components/EmptyState";
+import { EventDetailSheet, type EventDetailRow } from "@/shared/components/EventDetailSheet";
+import { FilterToolbar, type FilterChip } from "@/shared/components/FilterToolbar";
 import { PageHeader } from "@/shared/components/PageHeader";
+import { buildDateRange, type DateRange } from "@/shared/lib/date-range";
+import { downloadBlob } from "@/shared/lib/download";
+import { shortId } from "@/shared/lib/short-id";
+import { useDebouncedValue } from "@/shared/lib/use-debounced-value";
 
 const ANY = "__any__";
 const PAGE_SIZE = 50;
@@ -84,7 +79,7 @@ export function ActivityPage() {
   const [scopeValue, setScopeValue] = useState<ActivityScopeValue>("authorized");
   const [entitySearch, setEntitySearch] = useState(searchParams.get("q") ?? "");
   const debouncedSearch = useDebouncedValue(entitySearch, 300);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<ActivityEventResponse | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
   const canViewOrgActivity = hasPermission(currentUser, "activity.view");
@@ -99,7 +94,7 @@ export function ActivityPage() {
   const selectedActivityScope = activityScopes.some((scope) => scope.value === scopeValue)
     ? scopeValue
     : "authorized";
-  const dateRange = buildDateRange(customRangeEnabled, startDate, endDate);
+  const dateRange: DateRange = customRangeEnabled ? buildDateRange(startDate, endDate) : {};
   const activityParams: ActivityParams = {
     category: category === ANY ? undefined : category,
     severity: severity === ANY ? undefined : severity,
@@ -170,6 +165,130 @@ export function ActivityPage() {
     );
   }
 
+  const chips: FilterChip[] = [];
+  if (!canViewOrgActivity && selectedActivityScope !== "authorized") {
+    const scopeLabel = activityScopes.find((scope) => scope.value === selectedActivityScope)?.label;
+    chips.push({
+      key: "scope",
+      label: `Scope: ${scopeLabel ?? selectedActivityScope}`,
+      onRemove: () => setScopeValue("authorized"),
+    });
+  }
+  if (entitySearch.trim()) {
+    chips.push({
+      key: "q",
+      label: `Search: ${entitySearch.trim()}`,
+      onRemove: () => setEntitySearch(""),
+    });
+  }
+  if (category !== ANY) {
+    chips.push({
+      key: "category",
+      label: `Category: ${category}`,
+      onRemove: () => {
+        setCategory(ANY);
+        updateFilter({ category: ANY });
+      },
+    });
+  }
+  if (severity !== ANY) {
+    chips.push({
+      key: "severity",
+      label: `Severity: ${severity}`,
+      onRemove: () => {
+        setSeverity(ANY);
+        updateFilter({ severity: ANY });
+      },
+    });
+  }
+  if (entityType !== ANY) {
+    chips.push({
+      key: "entity",
+      label: entityId.trim() ? `Entity: ${entityType} ${shortId(entityId.trim())}` : `Entity: ${entityType}`,
+      onRemove: () => {
+        setEntityType(ANY);
+        setEntityId("");
+        updateFilter({ entity_type: ANY, entity_id: "" });
+      },
+    });
+  }
+  if (customRangeEnabled && (startDate || endDate)) {
+    chips.push({
+      key: "dates",
+      label: `Date: ${startDate || "…"} – ${endDate || "…"}`,
+      onRemove: () => {
+        setStartDate("");
+        setEndDate("");
+        setCustomRangeEnabled(false);
+        updateFilter({ start: "", end: "" });
+      },
+    });
+  }
+
+  const columns: DataTableColumn<ActivityEventResponse>[] = [
+    {
+      key: "event",
+      header: "Event",
+      className: "max-w-[28rem] whitespace-normal",
+      cell: (event) => {
+        const Icon =
+          event.severity === "error" ? XCircle : event.severity === "warning" ? AlertTriangle : Info;
+        return (
+          <div className="flex gap-2">
+            <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+            <div className="min-w-0">
+              <div className="font-medium">{event.message}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{event.action}</div>
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      key: "category",
+      header: "Category",
+      cell: (event) => (
+        <div className="flex items-center gap-1.5">
+          <Badge variant="outline">{event.category}</Badge>
+          <Badge variant={event.severity === "error" ? "destructive" : "secondary"}>
+            {event.severity}
+          </Badge>
+        </div>
+      ),
+    },
+    {
+      key: "actor",
+      header: "Actor",
+      cell: (event) => event.actor_email ?? "Gateway runtime",
+    },
+    {
+      key: "context",
+      header: "Context",
+      className: "max-w-[18rem] whitespace-normal text-xs text-muted-foreground",
+      cell: (event) => contextLabel(event),
+    },
+    {
+      key: "time",
+      header: "Time",
+      align: "right",
+      className: "text-muted-foreground",
+      cell: (event) => new Date(event.created_at).toLocaleString(),
+    },
+  ];
+
+  const detailRows: EventDetailRow[] = selectedEvent
+    ? [
+        { label: "Event", value: selectedEvent.message },
+        { label: "Action", value: selectedEvent.action },
+        { label: "Category", value: selectedEvent.category },
+        { label: "Severity", value: selectedEvent.severity },
+        { label: "Actor", value: selectedEvent.actor_email ?? "Gateway runtime" },
+        { label: "Time", value: new Date(selectedEvent.created_at).toLocaleString() },
+        { label: "Event ID", value: selectedEvent.id, mono: true },
+        { label: "Request ID", value: selectedEvent.request_id ?? "-", mono: true },
+      ]
+    : [];
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -179,147 +298,148 @@ export function ActivityPage() {
             ? "Recent admin changes and runtime gateway denials across the organization."
             : "Recent activity for your authorized teams and directly administered projects."
         }
+        actions={
+          <Button
+            type="button"
+            variant="outline"
+            disabled={isExporting || Boolean(dateRange.error)}
+            onClick={async () => {
+              setIsExporting(true);
+              try {
+                await downloadActivityExport(activityParams);
+                toast.success("Activity export downloaded.");
+              } catch {
+                toast.error("Activity export could not be downloaded.");
+              } finally {
+                setIsExporting(false);
+              }
+            }}
+          >
+            <Download data-icon="inline-start" />
+            {isExporting ? "Exporting..." : "Export CSV"}
+          </Button>
+        }
       />
       <Card>
         <CardHeader className="border-b">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <CardTitle>Recent events</CardTitle>
-            <div className="grid w-full gap-2 sm:grid-cols-2 lg:w-auto lg:grid-cols-4 xl:flex">
-              {!canViewOrgActivity ? (
-                <ScopeSelect
-                  value={selectedActivityScope}
-                  scopes={activityScopes}
-                  onChange={setScopeValue}
-                />
-              ) : null}
-              <div className="relative sm:col-span-2 lg:col-span-4 xl:col-span-1">
-                <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  className="h-9 w-full pl-9 xl:w-64"
-                  value={entitySearch}
-                  onChange={(event) => setEntitySearch(event.target.value)}
-                  placeholder="Filter entity, actor, metadata..."
-                />
-              </div>
-              <Select
-                value={category}
-                onValueChange={(value) => {
-                  setCategory(value);
-                  updateFilter({ category: value });
-                }}
-              >
-                <SelectTrigger aria-label="Filter by category" className="w-full xl:w-36">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value={ANY}>All categories</SelectItem>
-                    <SelectItem value="provider">Provider</SelectItem>
-                    <SelectItem value="workspace">Workspace</SelectItem>
-                    <SelectItem value="settings">Settings</SelectItem>
-                    <SelectItem value="policy">Policy</SelectItem>
-                    <SelectItem value="guardrail">Guardrail</SelectItem>
-                    <SelectItem value="proxy">Proxy</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              <Select
-                value={severity}
-                onValueChange={(value) => {
-                  setSeverity(value);
-                  updateFilter({ severity: value });
-                }}
-              >
-                <SelectTrigger aria-label="Filter by severity" className="w-full xl:w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value={ANY}>All severities</SelectItem>
-                    <SelectItem value="info">Info</SelectItem>
-                    <SelectItem value="warning">Warning</SelectItem>
-                    <SelectItem value="error">Error</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              <Select
-                value={entityType}
-                onValueChange={(value) => {
-                  setEntityType(value);
-                  const nextEntityId = value === ANY ? "" : entityId;
-                  if (value === ANY) setEntityId("");
-                  updateFilter({ entity_type: value, entity_id: nextEntityId });
-                }}
-              >
-                <SelectTrigger aria-label="Filter by entity type" className="w-full xl:w-40">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value={ANY}>All entities</SelectItem>
-                    <SelectItem value="provider">Provider</SelectItem>
-                    <SelectItem value="team">Team</SelectItem>
-                    <SelectItem value="project">Project</SelectItem>
-                    <SelectItem value="virtual_key">Virtual key</SelectItem>
-                    <SelectItem value="pool">Pool</SelectItem>
-                    <SelectItem value="model_offering">Model offering</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
+          <CardTitle>Recent events</CardTitle>
+          <FilterToolbar
+            className="mt-3"
+            chips={chips}
+            onClearAll={chips.length > 0 ? clearFilters : undefined}
+          >
+            {!canViewOrgActivity ? (
+              <ScopeSelect
+                value={selectedActivityScope}
+                scopes={activityScopes}
+                onChange={setScopeValue}
+              />
+            ) : null}
+            <div className="relative w-full sm:w-64">
+              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                className="h-9 w-full font-mono xl:w-72"
-                value={entityId}
-                disabled={entityType === ANY}
-                onChange={(event) => {
-                  setEntityId(event.target.value);
-                  updateFilter({ entity_id: event.target.value });
-                }}
-                placeholder="Entity id"
+                className="pl-9"
+                value={entitySearch}
+                onChange={(event) => setEntitySearch(event.target.value)}
+                placeholder="Filter entity, actor, metadata..."
               />
-              <DateRangePopover
-                startDate={startDate}
-                endDate={endDate}
-                enabled={customRangeEnabled}
-                onStartDateChange={(value) => {
-                  setStartDate(value);
-                  updateFilter({ start: value });
-                }}
-                onEndDateChange={(value) => {
-                  setEndDate(value);
-                  updateFilter({ end: value });
-                }}
-                onApply={() => setCustomRangeEnabled(Boolean(startDate || endDate))}
-                onClear={() => {
-                  setStartDate("");
-                  setEndDate("");
-                  setCustomRangeEnabled(false);
-                  updateFilter({ start: "", end: "" });
-                }}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                disabled={isExporting || Boolean(dateRange.error)}
-                onClick={async () => {
-                  setIsExporting(true);
-                  try {
-                    await downloadActivityExport(activityParams);
-                    toast.success("Activity export downloaded.");
-                  } catch {
-                    toast.error("Activity export could not be downloaded.");
-                  } finally {
-                    setIsExporting(false);
-                  }
-                }}
-              >
-                <Download data-icon="inline-start" />
-                {isExporting ? "Exporting..." : "Export CSV"}
-              </Button>
-              <Button type="button" variant="outline" onClick={clearFilters}>
-                Clear
-              </Button>
             </div>
-          </div>
+            <Select
+              value={category}
+              onValueChange={(value) => {
+                setCategory(value);
+                updateFilter({ category: value });
+              }}
+            >
+              <SelectTrigger aria-label="Filter by category" className="w-36">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value={ANY}>All categories</SelectItem>
+                  <SelectItem value="provider">Provider</SelectItem>
+                  <SelectItem value="workspace">Workspace</SelectItem>
+                  <SelectItem value="settings">Settings</SelectItem>
+                  <SelectItem value="policy">Policy</SelectItem>
+                  <SelectItem value="guardrail">Guardrail</SelectItem>
+                  <SelectItem value="proxy">Proxy</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <Select
+              value={severity}
+              onValueChange={(value) => {
+                setSeverity(value);
+                updateFilter({ severity: value });
+              }}
+            >
+              <SelectTrigger aria-label="Filter by severity" className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value={ANY}>All severities</SelectItem>
+                  <SelectItem value="info">Info</SelectItem>
+                  <SelectItem value="warning">Warning</SelectItem>
+                  <SelectItem value="error">Error</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <Select
+              value={entityType}
+              onValueChange={(value) => {
+                setEntityType(value);
+                const nextEntityId = value === ANY ? "" : entityId;
+                if (value === ANY) setEntityId("");
+                updateFilter({ entity_type: value, entity_id: nextEntityId });
+              }}
+            >
+              <SelectTrigger aria-label="Filter by entity type" className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value={ANY}>All entities</SelectItem>
+                  <SelectItem value="provider">Provider</SelectItem>
+                  <SelectItem value="team">Team</SelectItem>
+                  <SelectItem value="project">Project</SelectItem>
+                  <SelectItem value="virtual_key">Virtual key</SelectItem>
+                  <SelectItem value="pool">Pool</SelectItem>
+                  <SelectItem value="model_offering">Model offering</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <Input
+              className="w-full font-mono xl:w-64"
+              value={entityId}
+              disabled={entityType === ANY}
+              onChange={(event) => {
+                setEntityId(event.target.value);
+                updateFilter({ entity_id: event.target.value });
+              }}
+              placeholder="Entity id"
+            />
+            <DateRangePopover
+              startDate={startDate}
+              endDate={endDate}
+              enabled={customRangeEnabled}
+              onStartDateChange={(value) => {
+                setStartDate(value);
+                updateFilter({ start: value });
+              }}
+              onEndDateChange={(value) => {
+                setEndDate(value);
+                updateFilter({ end: value });
+              }}
+              onApply={() => setCustomRangeEnabled(Boolean(startDate || endDate))}
+              onClear={() => {
+                setStartDate("");
+                setEndDate("");
+                setCustomRangeEnabled(false);
+                updateFilter({ start: "", end: "" });
+              }}
+            />
+          </FilterToolbar>
         </CardHeader>
         <CardContent>
           {dateRange.error ? (
@@ -328,65 +448,47 @@ export function ActivityPage() {
               <AlertTitle>Invalid date range</AlertTitle>
               <AlertDescription>{dateRange.error}</AlertDescription>
             </Alert>
-          ) : activityQuery.isPending ? (
-            <ActivitySkeleton />
-          ) : activityQuery.isError ? (
-            <Alert variant="destructive">
-              <AlertTriangle />
-              <AlertTitle>Activity could not be loaded</AlertTitle>
-              <AlertDescription className="flex items-center justify-between gap-3">
-                Check the connection and try again.
-                <Button variant="outline" size="sm" onClick={() => activityQuery.refetch()}>
-                  Retry
-                </Button>
-              </AlertDescription>
-            </Alert>
-          ) : events.length === 0 ? (
-            <EmptyState
-              icon={Activity}
-              title="No activity yet"
-              description="Admin changes and proxy denials matching the filters will appear here."
-            />
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Event</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Actor</TableHead>
-                    <TableHead>Context</TableHead>
-                    <TableHead className="text-right">Time</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {events.map((event) => (
-                    <ActivityRow
-                      key={event.id}
-                      event={event}
-                      expanded={expandedId === event.id}
-                      onToggle={() =>
-                        setExpandedId((current) => (current === event.id ? null : event.id))
-                      }
-                    />
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <>
+              <DataTable
+                columns={columns}
+                data={events}
+                loading={activityQuery.isPending}
+                error={activityQuery.isError ? "Activity could not be loaded." : undefined}
+                onRetry={() => void activityQuery.refetch()}
+                getRowKey={(event) => event.id}
+                onRowClick={setSelectedEvent}
+                empty={{
+                  icon: Activity,
+                  title: "No activity yet",
+                  description:
+                    "Admin changes and proxy denials matching the filters will appear here.",
+                }}
+              />
+              {activityQuery.hasNextPage ? (
+                <div className="flex justify-center pt-4">
+                  <Button
+                    variant="outline"
+                    disabled={activityQuery.isFetchingNextPage}
+                    onClick={() => activityQuery.fetchNextPage()}
+                  >
+                    {activityQuery.isFetchingNextPage ? "Loading..." : "Load more"}
+                  </Button>
+                </div>
+              ) : null}
+            </>
           )}
-          {activityQuery.hasNextPage ? (
-            <div className="flex justify-center border-t pt-4">
-              <Button
-                variant="outline"
-                disabled={activityQuery.isFetchingNextPage}
-                onClick={() => activityQuery.fetchNextPage()}
-              >
-                {activityQuery.isFetchingNextPage ? "Loading..." : "Load more"}
-              </Button>
-            </div>
-          ) : null}
         </CardContent>
       </Card>
+
+      <EventDetailSheet
+        open={Boolean(selectedEvent)}
+        onOpenChange={(open) => !open && setSelectedEvent(null)}
+        title="Activity event details"
+        description="Severity, actor, context, and metadata for this event."
+        rows={detailRows}
+        json={selectedEvent ? { context: eventContext(selectedEvent), metadata: selectedEvent.metadata } : undefined}
+      />
     </div>
   );
 }
@@ -476,82 +578,6 @@ function ScopeSelect({
   );
 }
 
-function ActivityRow({
-  event,
-  expanded,
-  onToggle,
-}: {
-  event: ActivityEventResponse;
-  expanded: boolean;
-  onToggle: () => void;
-}) {
-  const Icon =
-    event.severity === "error" ? XCircle : event.severity === "warning" ? AlertTriangle : Info;
-  return (
-    <>
-      <TableRow>
-        <TableCell className="max-w-[28rem] whitespace-normal">
-          <div className="flex gap-2">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-11 shrink-0"
-                  aria-label={expanded ? "Collapse event details" : "Expand event details"}
-                  aria-expanded={expanded}
-                  onClick={onToggle}
-                >
-                  {expanded ? <ChevronDown /> : <ChevronRight />}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{expanded ? "Collapse details" : "Expand details"}</TooltipContent>
-            </Tooltip>
-            <Icon className="mt-1 size-4 shrink-0 text-muted-foreground" />
-            <div className="min-w-0">
-              <div className="font-medium">{event.message}</div>
-              <div className="mt-1 text-xs text-muted-foreground">{event.action}</div>
-            </div>
-          </div>
-        </TableCell>
-        <TableCell>
-          <div className="flex items-center gap-1.5">
-            <Badge variant="outline">{event.category}</Badge>
-            <Badge variant={event.severity === "error" ? "destructive" : "secondary"}>
-              {event.severity}
-            </Badge>
-          </div>
-        </TableCell>
-        <TableCell>{event.actor_email ?? "Gateway runtime"}</TableCell>
-        <TableCell className="max-w-[18rem] whitespace-normal text-xs text-muted-foreground">
-          {contextLabel(event)}
-        </TableCell>
-        <TableCell className="text-right text-muted-foreground">
-          {new Date(event.created_at).toLocaleString()}
-        </TableCell>
-      </TableRow>
-      {expanded ? (
-        <TableRow>
-          <TableCell colSpan={5} className="bg-muted/20">
-            <pre className="max-h-64 overflow-auto rounded-md bg-background p-3 text-xs">
-              {JSON.stringify(
-                {
-                  id: event.id,
-                  context: eventContext(event),
-                  request_id: event.request_id,
-                  metadata: event.metadata,
-                },
-                null,
-                2,
-              )}
-            </pre>
-          </TableCell>
-        </TableRow>
-      ) : null}
-    </>
-  );
-}
-
 function contextLabel(event: ActivityEventResponse) {
   const parts = Object.entries(eventContext(event)).map(
     ([key, value]) => `${labelize(key)} ${shortId(value)}`,
@@ -577,10 +603,6 @@ function labelize(value: string) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
-}
-
-function shortId(value: string) {
-  return value.slice(0, 8);
 }
 
 type ActivityScopeOption = {
@@ -669,34 +691,7 @@ async function downloadActivityExport(
     params,
     responseType: "blob",
   });
-  const url = URL.createObjectURL(response.data);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = "bab-activity-events.csv";
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
-
-function buildDateRange(
-  enabled: boolean,
-  startDate: string,
-  endDate: string,
-): { startAt?: string; endAt?: string; error?: string } {
-  if (!enabled) return {};
-  const startAt = toDateBoundary(startDate, "00:00:00");
-  const endAt = toDateBoundary(endDate, "23:59:59");
-  if (startDate && !startAt) return { error: "The start date is invalid." };
-  if (endDate && !endAt) return { error: "The end date is invalid." };
-  if (startAt && endAt && startAt > endAt) {
-    return { error: "The start date must be before the end date." };
-  }
-  return { startAt, endAt };
-}
-
-function toDateBoundary(value: string, time: string) {
-  if (!value) return undefined;
-  const date = new Date(`${value}T${time}`);
-  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+  downloadBlob(response.data, "bab-activity-events.csv");
 }
 
 function updateSearchParam(
@@ -712,24 +707,5 @@ function updateSearchParam(
       return next;
     },
     { replace: true },
-  );
-}
-
-function useDebouncedValue(value: string, delay: number) {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const timeout = window.setTimeout(() => setDebounced(value), delay);
-    return () => window.clearTimeout(timeout);
-  }, [delay, value]);
-  return debounced;
-}
-
-function ActivitySkeleton() {
-  return (
-    <div className="flex flex-col gap-3" aria-label="Loading activity">
-      {Array.from({ length: 5 }, (_, index) => (
-        <Skeleton key={index} className="h-12 w-full" />
-      ))}
-    </div>
   );
 }
