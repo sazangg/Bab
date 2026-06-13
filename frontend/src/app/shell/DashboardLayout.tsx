@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Fragment } from "react";
+import { Fragment, forwardRef, type ComponentProps } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
@@ -151,14 +151,24 @@ function OrganizationLogo({ logoUrl }: { logoUrl?: string | null }) {
   );
 }
 
-function SidebarNavigationLink({ to, children }: { to: string; children: React.ReactNode }) {
-  const { isMobile, setOpenMobile } = useSidebar();
-  return (
-    <Link to={to} onClick={() => isMobile && setOpenMobile(false)}>
-      {children}
-    </Link>
-  );
-}
+const SidebarNavigationLink = forwardRef<HTMLAnchorElement, ComponentProps<typeof Link>>(
+  function SidebarNavigationLink({ to, onClick, children, ...props }, ref) {
+    const { isMobile, setOpenMobile } = useSidebar();
+    return (
+      <Link
+        ref={ref}
+        to={to}
+        onClick={(event) => {
+          onClick?.(event);
+          if (isMobile) setOpenMobile(false);
+        }}
+        {...props}
+      >
+        {children}
+      </Link>
+    );
+  },
+);
 
 export function DashboardLayout() {
   const location = useLocation();
