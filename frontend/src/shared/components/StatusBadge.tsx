@@ -1,6 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 
-type StatusVariant =
+export type StatusVariant =
   | "active"
   | "inactive"
   | "revoked"
