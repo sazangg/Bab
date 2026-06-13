@@ -1383,12 +1383,17 @@ async def _effective_access_routes(
     effective: list[EffectiveAccessRouteCandidate] | None = None
     for scope_type in ("org", "team", "project", "virtual_key"):
         scoped = [assignment for assignment in assignments if assignment.scope_type == scope_type]
-        candidates = await _access_route_candidates(org_id=org_id, assignments=scoped, db=db)
-        if not candidates:
+        if not scoped:
+            # No access assignment at this scope: inherit the ancestor set unchanged.
             continue
+        candidates = await _access_route_candidates(org_id=org_id, assignments=scoped, db=db)
         if effective is None:
             effective = candidates
             continue
+        # This scope has assignments, so it narrows the inherited set — even to empty
+        # when none of its routes are currently routable. Skipping narrowing here would
+        # let a key whose own policy has no active routes fall back to the broader
+        # org/team set (privilege widening); fail closed instead.
         effective = [
             candidate
             for candidate in candidates

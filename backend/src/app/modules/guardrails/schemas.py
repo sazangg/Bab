@@ -16,6 +16,9 @@ GUARDRAIL_RULE_TYPES = (
 GUARDRAIL_RULE_TYPE_PATTERN = f"^({'|'.join(GUARDRAIL_RULE_TYPES)})$"
 ROUTING_RULE_TYPES = {"model", "provider", "pool"}
 PII_RULE_VALUES = {"email", "phone", "credit_card"}
+# Bounds on author-supplied regex rules to limit the ReDoS attack surface.
+MAX_REGEX_VALUES_PER_RULE = 25
+MAX_REGEX_PATTERN_LENGTH = 512
 
 
 class GuardrailRuleInput(BaseModel):
@@ -40,7 +43,13 @@ class GuardrailRuleInput(BaseModel):
         if self.phase == "response" and self.rule_type in ROUTING_RULE_TYPES:
             raise ValueError(f"{self.rule_type} rules only support request-phase evaluation")
         if self.rule_type == "prompt_regex":
+            if len(self.values) > MAX_REGEX_VALUES_PER_RULE:
+                raise ValueError(
+                    f"at most {MAX_REGEX_VALUES_PER_RULE} regex patterns are allowed per rule"
+                )
             for value in self.values:
+                if len(value) > MAX_REGEX_PATTERN_LENGTH:
+                    raise ValueError(f"regex pattern exceeds {MAX_REGEX_PATTERN_LENGTH} characters")
                 try:
                     re.compile(value)
                 except re.error as exc:

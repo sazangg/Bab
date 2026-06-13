@@ -268,11 +268,12 @@ async def list_virtual_key_inventory(
     if project_id is not None:
         filters.append(Project.id == project_id)
     if search:
-        term = f"%{search.strip().lower()}%"
+        # autoescape escapes %/_ so a literal wildcard in the term matches verbatim.
+        term = search.strip()
         filters.append(
             or_(
-                func.lower(VirtualKey.name).like(term),
-                func.lower(VirtualKey.key_prefix).like(term),
+                VirtualKey.name.icontains(term, autoescape=True),
+                VirtualKey.key_prefix.icontains(term, autoescape=True),
             )
         )
     if usage == "used":

@@ -21,3 +21,8 @@ class CostCalculator(Protocol):
 
     def calculate_cents(self, *, context: CostingContext, usage: UsageAccounting) -> int | None:
         pass
+
+    def calculate_micro_cents(
+        self, *, context: CostingContext, usage: UsageAccounting
+    ) -> int | None:
+        pass

@@ -135,7 +135,9 @@ async def test_mock_refresh_rotates_cookie(
     assert new_session is not None
     assert old_session.revoked_at is not None
     assert old_session.replaced_by_session_id == new_session.id
-    assert new_session.revoked_at is None
+    # Replaying the already-rotated token is treated as reuse: the whole rotation
+    # family (including the live successor) is revoked, forcing re-authentication.
+    assert new_session.revoked_at is not None
 
 
 @pytest.mark.asyncio

@@ -39,6 +39,7 @@ async def _provision_gateway_path(
     model: str = "gpt-test",
     key_payload: dict | None = None,
     limit_payload: dict | None = None,
+    offering_payload: dict | None = None,
     provider_slug: str = "openai",
 ) -> tuple[str, str, str]:
     providers = (await client.get("/api/v1/providers", headers=headers)).json()
@@ -79,6 +80,7 @@ async def _provision_gateway_path(
             "capabilities": {"chat": True, "streaming": True},
             "input_price_per_million_tokens": 100,
             "output_price_per_million_tokens": 200,
+            **(offering_payload or {}),
         },
     )
     assert offering_response.status_code == 201

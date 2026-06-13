@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, get_scope, require_permission
 from app.core.config import settings
+from app.core.csv_safe import sanitize_csv_cell
 from app.core.database import Scope, get_db
 from app.modules.auth import facade
 from app.modules.auth.errors import (
@@ -24,6 +25,7 @@ from app.modules.auth.errors import (
     LastOwnerError,
     MemberAlreadyExistsError,
     MemberNotFoundError,
+    MemberOrganizationConflictError,
     PermissionDeniedError,
 )
 from app.modules.auth.schemas import (
@@ -80,7 +82,12 @@ async def accept_invite(
 ) -> TokenResponse:
     try:
         token_response, raw_refresh_token = await facade.accept_invite(payload, db)
-    except InvalidCredentialsError as exc:
+    except MemberOrganizationConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="this account already belongs to another organization",
+        ) from exc
+    except (InvalidCredentialsError, InviteLifecycleError) as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="invalid invite"
         ) from exc
@@ -363,7 +370,7 @@ def _csv_response(*, filename: str, header: list[str], rows: list[list[object]])
     output = StringIO()
     writer = csv.writer(output)
     writer.writerow(header)
-    writer.writerows(rows)
+    writer.writerows([sanitize_csv_cell(cell) for cell in row] for row in rows)
     return FastApiResponse(
         content=output.getvalue(),
         media_type="text/csv; charset=utf-8",

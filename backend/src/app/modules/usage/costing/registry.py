@@ -13,6 +13,14 @@ class CostCalculatorRegistry:
                 return calculator.calculate_cents(context=context, usage=usage)
         return None
 
+    def calculate_micro_cents(
+        self, *, context: CostingContext, usage: UsageAccounting
+    ) -> int | None:
+        for calculator in self._calculators:
+            if calculator.supports(context):
+                return calculator.calculate_micro_cents(context=context, usage=usage)
+        return None
+
 
 default_cost_calculator_registry = CostCalculatorRegistry(
     calculators=[TokenPricingCostCalculator()],

@@ -23,6 +23,12 @@ async def record_usage(*, payload: RecordUsage, db: AsyncSession) -> None:
     await db.commit()
 
 
+async def acquire_limit_scope_lock(*, assignment_id: UUID, db: AsyncSession) -> None:
+    """Serialize concurrent limit enforcement for one policy assignment (Postgres
+    advisory xact lock; a no-op on SQLite, which serializes writers anyway)."""
+    await repository.acquire_limit_scope_lock(assignment_id=assignment_id, db=db)
+
+
 async def create_limit_policy_reservation(
     *,
     payload: RecordLimitPolicyReservation,
@@ -137,7 +143,7 @@ async def summarize_limit_policy_usage(
     limit_policy_assignment_id: UUID | None = None,
     since: datetime | None,
     db: AsyncSession,
-) -> tuple[int, int, int, int]:
+) -> tuple[int, int, int, int, int]:
     return await repository.summarize_limit_policy_usage(
         limit_policy_id=limit_policy_id,
         limit_policy_rule_id=limit_policy_rule_id,

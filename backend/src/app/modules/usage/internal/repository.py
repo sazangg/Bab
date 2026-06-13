@@ -1,7 +1,8 @@
+import hashlib
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import Integer, case, cast, func, or_, select, update
+from sqlalchemy import Integer, case, cast, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,7 +11,7 @@ from app.modules.auth.internal.models import Team
 from app.modules.keys.internal.models import Project, VirtualKey
 from app.modules.policies.internal.models import AccessPolicy, LimitPolicy, LimitPolicyRule
 from app.modules.providers.internal.models import CredentialPool, Provider, ProviderCredential
-from app.modules.usage.accounting import UsageAccounting
+from app.modules.usage.accounting import UsageAccounting, subtract_months
 from app.modules.usage.internal.models import LimitPolicyReservation, UsageRecord
 from app.modules.usage.schemas import (
     LimitPolicyBudgetBurnRow,
@@ -36,6 +37,19 @@ async def create_usage_record(*, payload: RecordUsage, db: AsyncSession) -> Usag
     db.add(usage_record)
     await db.flush()
     return usage_record
+
+
+async def acquire_limit_scope_lock(*, assignment_id: UUID, db: AsyncSession) -> None:
+    # Postgres transaction-scoped advisory lock keyed by the assignment id. Held until
+    # the enclosing transaction commits, so the read-decide-reserve sequence runs
+    # without interleaving. SQLite has no advisory locks but serializes writers, so
+    # the race the lock guards against does not arise there.
+    if db.get_bind().dialect.name != "postgresql":
+        return
+    key = int.from_bytes(
+        hashlib.sha256(str(assignment_id).encode()).digest()[:8], "big", signed=True
+    )
+    await db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
 
 
 async def create_limit_policy_reservation(
@@ -81,6 +95,7 @@ async def summarize_active_limit_policy_reservations(
                 func.coalesce(func.sum(LimitPolicyReservation.reserved_completion_tokens), 0),
                 func.coalesce(func.sum(LimitPolicyReservation.reserved_total_tokens), 0),
                 func.coalesce(func.sum(LimitPolicyReservation.reserved_cost_cents), 0),
+                func.coalesce(func.sum(LimitPolicyReservation.reserved_cost_micro_cents), 0),
             ).where(*filters)
         )
     ).one()
@@ -90,6 +105,7 @@ async def summarize_active_limit_policy_reservations(
         completion_tokens=int(row[2]),
         total_tokens=int(row[3]),
         cost_cents=int(row[4]),
+        cost_micro_cents=int(row[5]),
     )
 
 
@@ -115,6 +131,7 @@ async def summarize_active_virtual_key_reservations(
                 func.coalesce(func.sum(LimitPolicyReservation.reserved_completion_tokens), 0),
                 func.coalesce(func.sum(LimitPolicyReservation.reserved_total_tokens), 0),
                 func.coalesce(func.sum(LimitPolicyReservation.reserved_cost_cents), 0),
+                func.coalesce(func.sum(LimitPolicyReservation.reserved_cost_micro_cents), 0),
             ).where(*filters)
         )
     ).one()
@@ -124,6 +141,7 @@ async def summarize_active_virtual_key_reservations(
         completion_tokens=int(row[2]),
         total_tokens=int(row[3]),
         cost_cents=int(row[4]),
+        cost_micro_cents=int(row[5]),
     )
 
 
@@ -201,15 +219,16 @@ async def list_usage_records(
         allowed_project_ids=allowed_project_ids,
     )
     if search:
-        search_pattern = f"%{search.strip()}%"
+        # autoescape escapes %/_ so a literal wildcard in the term matches verbatim.
+        term = search.strip()
         filters.append(
             or_(
-                UsageRecord.request_id.ilike(search_pattern),
-                UsageRecord.requested_model.ilike(search_pattern),
-                UsageRecord.provider_model.ilike(search_pattern),
-                UsageRecord.error_code.ilike(search_pattern),
-                ProviderCredential.name.ilike(search_pattern),
-                ProviderCredential.key_prefix.ilike(search_pattern),
+                UsageRecord.request_id.icontains(term, autoescape=True),
+                UsageRecord.requested_model.icontains(term, autoescape=True),
+                UsageRecord.provider_model.icontains(term, autoescape=True),
+                UsageRecord.error_code.icontains(term, autoescape=True),
+                ProviderCredential.name.icontains(term, autoescape=True),
+                ProviderCredential.key_prefix.icontains(term, autoescape=True),
             )
         )
     query = (
@@ -242,7 +261,7 @@ async def summarize_limit_policy_usage(
     limit_policy_assignment_id: UUID | None,
     since: datetime | None,
     db: AsyncSession,
-) -> tuple[int, int, int, int]:
+) -> tuple[int, int, int, int, int]:
     filters = [
         _json_array_contains(UsageRecord.limit_policy_ids, limit_policy_id, db=db),
         UsageRecord.http_status < 400,
@@ -268,10 +287,11 @@ async def summarize_limit_policy_usage(
                 func.coalesce(func.sum(UsageRecord.prompt_tokens), 0),
                 func.coalesce(func.sum(UsageRecord.completion_tokens), 0),
                 func.coalesce(func.sum(UsageRecord.cost_cents), 0),
+                func.coalesce(func.sum(UsageRecord.cost_micro_cents), 0),
             ).where(*filters)
         )
     ).one()
-    return int(row[0]), int(row[1]), int(row[2]), int(row[3])
+    return int(row[0]), int(row[1]), int(row[2]), int(row[3]), int(row[4])
 
 
 async def summarize_virtual_key_usage(
@@ -712,9 +732,9 @@ def _limit_rule_window_start(*, interval_unit: str, interval_count: int) -> date
     if interval_unit == "week":
         return now - timedelta(weeks=interval_count)
     if interval_unit == "month":
-        return now - timedelta(days=30 * interval_count)
+        return subtract_months(now, interval_count)
     if interval_unit == "year":
-        return now - timedelta(days=365 * interval_count)
+        return subtract_months(now, 12 * interval_count)
     return None
 
 

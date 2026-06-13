@@ -1,6 +1,8 @@
+import asyncio
 import re
 from uuid import UUID
 
+import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope, transaction
@@ -685,7 +687,9 @@ async def _matched_rule_values(*, rule, context: GuardrailEvaluationContext) -> 
         target_text = _guardrail_target_text(context).lower()
         return [value for value in values if value.lower() in target_text]
     elif rule.rule_type == "prompt_regex":
-        return _matched_regex_values(values=values, prompt_text=_guardrail_target_text(context))
+        return await _matched_regex_values(
+            values=values, prompt_text=_guardrail_target_text(context)
+        )
     elif rule.rule_type == "pii":
         return await _matched_detector_values(
             rule=rule,
@@ -726,18 +730,38 @@ async def _matched_detector_values(*, rule, values: list[str], prompt_text: str)
     detector = get_detector(detector_name)
     if detector is None:
         return []
-    result = await detector.detect(text=prompt_text, values=values, config=config)
+    result = await detector.detect(
+        text=prompt_text[:GUARDRAIL_SCAN_CHAR_LIMIT], values=values, config=config
+    )
     return result.matched_values
 
 
-def _matched_regex_values(*, values: list[str], prompt_text: str) -> list[str]:
+_logger = structlog.get_logger(__name__)
+# Text scanned by prompt_regex / PII detectors is capped, and each match runs off the
+# event loop under a wall-clock budget, so a catastrophic-backtracking pattern (in a
+# stored rule or a /simulate payload) cannot hang the worker and starve other requests.
+GUARDRAIL_SCAN_CHAR_LIMIT = 65_536
+GUARDRAIL_REGEX_TIMEOUT_SECONDS = 1.0
+
+
+async def _matched_regex_values(*, values: list[str], prompt_text: str) -> list[str]:
+    text = prompt_text[:GUARDRAIL_SCAN_CHAR_LIMIT]
     matched: list[str] = []
     for value in values:
         try:
-            if re.search(value, prompt_text, re.IGNORECASE):
-                matched.append(value)
+            pattern = re.compile(value, re.IGNORECASE)
         except re.error:
             continue
+        try:
+            found = await asyncio.wait_for(
+                asyncio.to_thread(lambda p=pattern, t=text: p.search(t) is not None),
+                timeout=GUARDRAIL_REGEX_TIMEOUT_SECONDS,
+            )
+        except TimeoutError:
+            _logger.warning("guardrail_regex_timeout", pattern_prefix=value[:48])
+            continue
+        if found:
+            matched.append(value)
     return matched
 
 

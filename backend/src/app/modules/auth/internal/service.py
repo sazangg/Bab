@@ -30,7 +30,9 @@ from app.modules.auth.errors import (
     LastOwnerError,
     MemberAlreadyExistsError,
     MemberNotFoundError,
+    MemberOrganizationConflictError,
     PermissionDeniedError,
+    RefreshTokenReuseError,
 )
 from app.modules.auth.internal.models import (
     AuditEvent,
@@ -47,6 +49,7 @@ from app.modules.auth.internal.models import (
 from app.modules.auth.internal.refresh_sessions import (
     create_refresh_session,
     revoke_refresh_session,
+    revoke_refresh_session_family,
     rotate_refresh_session,
 )
 from app.modules.auth.schemas import (
@@ -126,7 +129,11 @@ async def login(payload: LoginRequest, db: AsyncSession) -> tuple[TokenResponse,
         if not password_is_valid:
             raise InvalidCredentialsError
 
-        principal = await _principal_for_user(user.id, db)
+        try:
+            principal = await _principal_for_user(user.id, db)
+        except InvalidAccessTokenError as exc:
+            # No active organization membership (e.g. deactivated member).
+            raise InvalidCredentialsError from exc
         raw_refresh_token = await create_refresh_session(
             user_id=principal.id,
             org_id=principal.org_id,
@@ -136,15 +143,22 @@ async def login(payload: LoginRequest, db: AsyncSession) -> tuple[TokenResponse,
 
 
 async def refresh(raw_refresh_token: str | None, db: AsyncSession) -> tuple[TokenResponse, str]:
-    async with transaction(db):
-        session, new_raw_refresh_token = await rotate_refresh_session(
-            raw_token=raw_refresh_token,
-            db=db,
-        )
-        try:
-            principal = await _principal_for_user(session.user_id, db)
-        except InvalidAccessTokenError as exc:
-            raise InvalidRefreshTokenError from exc
+    try:
+        async with transaction(db):
+            session, new_raw_refresh_token = await rotate_refresh_session(
+                raw_token=raw_refresh_token,
+                db=db,
+            )
+            try:
+                principal = await _principal_for_user(session.user_id, db)
+            except InvalidAccessTokenError as exc:
+                raise InvalidRefreshTokenError from exc
+    except RefreshTokenReuseError as exc:
+        # Replay of an already-rotated token: revoke the whole rotation chain in a
+        # fresh (committed) transaction, then reject.
+        async with transaction(db):
+            await revoke_refresh_session_family(raw_token=raw_refresh_token, db=db)
+        raise InvalidRefreshTokenError from exc
     return _access_response(principal), new_raw_refresh_token
 
 
@@ -171,10 +185,13 @@ async def verify_access_token(token: str, db: AsyncSession) -> AuthenticatedUser
     try:
         claims = decode_access_token(token)
         user_id = UUID(str(claims.get("sub")))
+        org_id = UUID(str(claims.get("org_id")))
     except (SecurityError, ValueError, TypeError) as exc:
         raise InvalidAccessTokenError from exc
 
-    return await _principal_for_user(user_id, db)
+    # Bind the principal to the organization the token was issued for instead of
+    # re-deriving it; the org context must come from the signed claim, not a guess.
+    return await _principal_for_user(user_id, db, org_id=org_id)
 
 
 async def list_members(*, scope: Scope, db: AsyncSession) -> list[MemberResponse]:
@@ -417,17 +434,19 @@ async def update_member_status(
             current_role=membership.role,
             new_role=membership.role,
         )
+        # Activation is gated per organization via membership.status, NOT the global
+        # User.is_active flag. Toggling the shared user row here would let one org's
+        # admin lock the user out of (or re-enable them in) another org.
+        del user
         if payload.status == "inactive":
             if membership.role == "org_owner":
                 await _ensure_not_last_owner(scope=scope, excluding_user_id=user_id, db=db)
             _ensure_not_self_deactivating(actor=actor, user_id=user_id)
             previous_status = membership.status
             membership.status = "inactive"
-            user.is_active = False
         else:
             previous_status = membership.status
             membership.status = "active"
-            user.is_active = True
         await db.flush()
         await record_audit_event(
             actor=actor,
@@ -898,9 +917,7 @@ async def preview_invite(*, token: str, db: AsyncSession) -> InvitePreviewRespon
         raise InviteNotFoundError
     organization = await db.scalar(select(Organization).where(Organization.id == invite.org_id))
     team = (
-        await db.scalar(select(Team).where(Team.id == invite.team_id))
-        if invite.team_id
-        else None
+        await db.scalar(select(Team).where(Team.id == invite.team_id)) if invite.team_id else None
     )
     project = (
         await db.scalar(select(Project).where(Project.id == invite.project_id))
@@ -908,9 +925,7 @@ async def preview_invite(*, token: str, db: AsyncSession) -> InvitePreviewRespon
         else None
     )
     status = (
-        "expired"
-        if invite.status == "pending" and _is_past(invite.expires_at)
-        else invite.status
+        "expired" if invite.status == "pending" and _is_past(invite.expires_at) else invite.status
     )
     return InvitePreviewResponse(
         email=invite.email,
@@ -1150,13 +1165,10 @@ async def accept_invite(
         else:
             user.name = payload.name or user.name
             user.password_hash = user.password_hash or hash_password(payload.password)
-        membership = await db.scalar(
-            select(OrganizationMembership).where(
-                OrganizationMembership.org_id == invite.org_id,
-                OrganizationMembership.user_id == user.id,
-            )
+        existing_membership = await db.scalar(
+            select(OrganizationMembership).where(OrganizationMembership.user_id == user.id)
         )
-        if membership is None:
+        if existing_membership is None:
             db.add(
                 OrganizationMembership(
                     org_id=invite.org_id,
@@ -1165,8 +1177,12 @@ async def accept_invite(
                     status="active",
                 )
             )
-        elif membership.status != "active":
-            raise InvalidCredentialsError
+        elif existing_membership.org_id != invite.org_id:
+            # An account belongs to exactly one organization; the invited email is
+            # already a member of a different org.
+            raise MemberOrganizationConflictError
+        elif existing_membership.status != "active":
+            raise InviteLifecycleError
         if invite.team_id and invite.team_role:
             team_membership = await db.scalar(
                 select(TeamMembership).where(
@@ -1292,6 +1308,7 @@ async def record_audit_event(
     metadata = sanitize_metadata(metadata)
     ledger_state = await _audit_ledger_state(org_id=actor.org_id, db=db)
     previous_hash = ledger_state.latest_event_hash
+    signing_key, signing_key_id = _current_audit_signing_key()
     event_hash = _audit_event_hash(
         org_id=actor.org_id,
         actor_user_id=actor.id,
@@ -1303,6 +1320,7 @@ async def record_audit_event(
         metadata=metadata,
         previous_hash=previous_hash,
         created_at=created_at,
+        secret=signing_key,
     )
     db.add(
         AuditEvent(
@@ -1317,6 +1335,7 @@ async def record_audit_event(
             previous_hash=previous_hash,
             event_hash=event_hash,
             signature_algorithm="hmac-sha256",
+            signing_key_id=signing_key_id,
             created_at=created_at,
         )
     )
@@ -1352,17 +1371,18 @@ async def list_audit_events(
     if entity_id is not None:
         filters.append(AuditEvent.entity_id == entity_id)
     if search:
-        pattern = f"%{search}%"
+        # icontains(autoescape=True) escapes %/_ in the user term so a literal
+        # wildcard is matched verbatim rather than altering the search.
         filters.append(
             or_(
-                AuditEvent.actor_email.ilike(pattern),
-                AuditEvent.actor_role.ilike(pattern),
-                AuditEvent.action.ilike(pattern),
-                AuditEvent.entity_type.ilike(pattern),
-                AuditEvent.metadata_["email"].as_string().ilike(pattern),
-                AuditEvent.metadata_["reason"].as_string().ilike(pattern),
-                AuditEvent.metadata_["role"].as_string().ilike(pattern),
-                AuditEvent.metadata_["status"].as_string().ilike(pattern),
+                AuditEvent.actor_email.icontains(search, autoescape=True),
+                AuditEvent.actor_role.icontains(search, autoescape=True),
+                AuditEvent.action.icontains(search, autoescape=True),
+                AuditEvent.entity_type.icontains(search, autoescape=True),
+                AuditEvent.metadata_["email"].as_string().icontains(search, autoescape=True),
+                AuditEvent.metadata_["reason"].as_string().icontains(search, autoescape=True),
+                AuditEvent.metadata_["role"].as_string().icontains(search, autoescape=True),
+                AuditEvent.metadata_["status"].as_string().icontains(search, autoescape=True),
             )
         )
     if before_at is not None:
@@ -1397,7 +1417,19 @@ async def verify_audit_chain(*, scope: Scope, db: AsyncSession):
             .order_by(AuditEvent.created_at.asc(), AuditEvent.id.asc())
         )
     )
+    # The ledger anchor records the authoritative chain tip. Comparing the
+    # reconstructed tip against it is the only way to detect tail truncation
+    # (deletion of the most-recent events leaves a self-consistent prefix).
+    ledger_tip = await db.scalar(
+        select(AuditLedgerState.latest_event_hash).where(AuditLedgerState.org_id == scope.org_id)
+    )
     if not events:
+        if ledger_tip is not None:
+            return AuditVerificationResponse(
+                valid=False,
+                checked_events=0,
+                reason="ledger tip mismatch (events truncated)",
+            )
         return AuditVerificationResponse(valid=True, checked_events=0)
     events_by_previous_hash = {event.previous_hash: event for event in events}
     if len(events_by_previous_hash) != len(events):
@@ -1406,6 +1438,7 @@ async def verify_audit_chain(*, scope: Scope, db: AsyncSession):
             checked_events=0,
             reason="duplicate previous hash",
         )
+    keyring = _audit_keyring()
     previous_hash = None
     checked_events = 0
     while previous_hash in events_by_previous_hash:
@@ -1418,6 +1451,14 @@ async def verify_audit_chain(*, scope: Scope, db: AsyncSession):
                 first_invalid_event_id=event.id,
                 reason="previous hash mismatch",
             )
+        secret = keyring.get(event.signing_key_id)
+        if secret is None:
+            return AuditVerificationResponse(
+                valid=False,
+                checked_events=checked_events,
+                first_invalid_event_id=event.id,
+                reason="unknown signing key",
+            )
         expected_hash = _audit_event_hash(
             org_id=event.org_id,
             actor_user_id=event.actor_user_id,
@@ -1429,6 +1470,7 @@ async def verify_audit_chain(*, scope: Scope, db: AsyncSession):
             metadata=event.metadata_,
             previous_hash=event.previous_hash,
             created_at=event.created_at,
+            secret=secret,
         )
         if event.event_hash != expected_hash:
             return AuditVerificationResponse(
@@ -1443,6 +1485,13 @@ async def verify_audit_chain(*, scope: Scope, db: AsyncSession):
             valid=False,
             checked_events=checked_events,
             reason="chain has unreachable events",
+        )
+    # `previous_hash` now holds the reconstructed chain tip (the last event's hash).
+    if ledger_tip is not None and ledger_tip != previous_hash:
+        return AuditVerificationResponse(
+            valid=False,
+            checked_events=checked_events,
+            reason="ledger tip mismatch (events truncated)",
         )
     return AuditVerificationResponse(valid=True, checked_events=checked_events)
 
@@ -1492,6 +1541,7 @@ def _audit_event_hash(
     metadata: dict,
     previous_hash: str | None,
     created_at: datetime,
+    secret: str,
 ) -> str:
     payload = {
         "org_id": str(org_id),
@@ -1507,10 +1557,29 @@ def _audit_event_hash(
     }
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return hmac.new(
-        settings.secret_key.encode(),
+        secret.encode(),
         canonical.encode(),
         hashlib.sha256,
     ).hexdigest()
+
+
+def _audit_key_fingerprint(key: str) -> str:
+    return hashlib.sha256(f"bab-audit-kid:{key}".encode()).hexdigest()[:16]
+
+
+def _current_audit_signing_key() -> tuple[str, str]:
+    key = settings.audit_signing_key or settings.secret_key
+    return key, _audit_key_fingerprint(key)
+
+
+def _audit_keyring() -> dict[str | None, str]:
+    # Maps signing_key_id -> key. NULL id resolves to the legacy secret_key so that
+    # events written before key separation still verify after a JWT-secret rotation.
+    ring: dict[str | None, str] = {None: settings.secret_key}
+    for key in (settings.secret_key, settings.audit_signing_key):
+        if key:
+            ring[_audit_key_fingerprint(key)] = key
+    return ring
 
 
 def _audit_timestamp(value: datetime) -> str:
@@ -1529,16 +1598,24 @@ def _is_past(value: datetime) -> bool:
     return value < datetime.now(UTC)
 
 
-async def _principal_for_user(user_id: UUID, db: AsyncSession) -> AuthenticatedUser:
+async def _principal_for_user(
+    user_id: UUID, db: AsyncSession, *, org_id: UUID | None = None
+) -> AuthenticatedUser:
+    filters = [
+        User.id == user_id,
+        User.is_active.is_(True),
+        OrganizationMembership.status == "active",
+    ]
+    # A user belongs to exactly one organization (enforced by a UNIQUE(user_id)
+    # constraint on organization_memberships). When the caller knows the target org
+    # (e.g. from a token claim) we pin to it; the ordering is defensive only.
+    if org_id is not None:
+        filters.append(OrganizationMembership.org_id == org_id)
     row = (
         await db.execute(
             select(User, OrganizationMembership)
             .join(OrganizationMembership, OrganizationMembership.user_id == User.id)
-            .where(
-                User.id == user_id,
-                User.is_active.is_(True),
-                OrganizationMembership.status == "active",
-            )
+            .where(*filters)
             .order_by(OrganizationMembership.created_at.asc())
             .limit(1)
         )

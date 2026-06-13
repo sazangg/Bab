@@ -13,7 +13,13 @@ class TokenPricingCostCalculator:
             or context.output_price_per_million_tokens is not None
         )
 
-    def calculate_cents(self, *, context: CostingContext, usage: UsageAccounting) -> int | None:
+    def calculate_micro_cents(
+        self, *, context: CostingContext, usage: UsageAccounting
+    ) -> int | None:
+        # Exact cost in micro-cents (1_000_000 == 1 cent): prices are cents-per-million
+        # tokens, so tokens * price is already in micro-cents with no rounding. This is
+        # the precise value used for budget enforcement; per-request rounding (below) is
+        # only for display and would otherwise over-bill sub-cent requests.
         if usage.prompt_tokens is None and usage.completion_tokens is None:
             return None
         if not self.supports(context):
@@ -22,7 +28,10 @@ class TokenPricingCostCalculator:
         output_cost = (usage.completion_tokens or 0) * (
             context.output_price_per_million_tokens or 0
         )
-        total_cost = input_cost + output_cost
-        if total_cost <= 0:
-            return 0
-        return math.ceil(total_cost / 1_000_000)
+        return max(0, input_cost + output_cost)
+
+    def calculate_cents(self, *, context: CostingContext, usage: UsageAccounting) -> int | None:
+        micro_cents = self.calculate_micro_cents(context=context, usage=usage)
+        if micro_cents is None:
+            return None
+        return math.ceil(micro_cents / 1_000_000)

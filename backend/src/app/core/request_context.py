@@ -10,6 +10,21 @@ logger = structlog.get_logger(__name__)
 
 REQUEST_ID_HEADER = "X-Request-ID"
 
+# Baseline security response headers applied to every response (including the
+# /assets static mount). nosniff stops MIME-confusion on uploaded assets;
+# no-referrer keeps tokens carried in URLs (e.g. accept-invite links) out of the
+# Referer header sent to third parties.
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "X-Frame-Options": "DENY",
+}
+
+
+def _apply_security_headers(response: Response) -> None:
+    for header, value in SECURITY_HEADERS.items():
+        response.headers.setdefault(header, value)
+
 
 async def request_context_middleware(
     request: Request,
@@ -34,6 +49,7 @@ async def request_context_middleware(
 
     duration_ms = round((time.perf_counter() - started_at) * 1000)
     response.headers[REQUEST_ID_HEADER] = request_id
+    _apply_security_headers(response)
     logger.info(
         "request_completed",
         method=request.method,

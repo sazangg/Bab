@@ -31,7 +31,7 @@ async def test_logo_upload_rejects_svg(
         )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "logo must be a png, jpg, or webp image"
+    assert response.json()["detail"] == "logo must be a valid png, jpg, or webp image"
 
 
 @pytest.mark.asyncio

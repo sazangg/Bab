@@ -390,7 +390,7 @@ async def test_limit_policy_usage_matches_exact_json_uuid_values(
     )
     await db_session.commit()
 
-    requests, prompt_tokens, completion_tokens, cost_cents = (
+    requests, prompt_tokens, completion_tokens, cost_cents, cost_micro_cents = (
         await usage_facade.summarize_limit_policy_usage(
             limit_policy_id=target_policy_id,
             limit_policy_rule_id=target_rule_id,
@@ -404,6 +404,7 @@ async def test_limit_policy_usage_matches_exact_json_uuid_values(
     assert prompt_tokens == 10
     assert completion_tokens == 0
     assert cost_cents == 25
+    assert cost_micro_cents == 0
 
 
 @pytest.mark.asyncio

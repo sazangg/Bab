@@ -7,7 +7,7 @@ from sqlalchemy import event, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.routes.projects import create_virtual_key as create_virtual_key_route
-from app.api.v1.routes.proxy import _enforce_limit_policies
+from app.api.v1.routes.proxy import ProxyLimitExceededError, _enforce_limit_policies
 from app.core.database import Scope
 from app.modules.activity.internal.models import ActivityEvent
 from app.modules.auth.internal.models import AuditEvent, Organization, Team, User
@@ -1878,7 +1878,7 @@ async def test_limit_policy_request_limit_is_enforced(db_session: AsyncSession) 
         db=db_session,
     )
 
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(ProxyLimitExceededError) as exc:
         await _enforce_limit_policies(
             resolved=resolved,
             estimated_input_tokens=1,
@@ -2008,7 +2008,7 @@ async def test_reused_limit_policy_counts_per_assignment(db_session: AsyncSessio
         requested_output_tokens=0,
         db=db_session,
     )
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(ProxyLimitExceededError) as exc:
         await _enforce_limit_policies(
             resolved=first_resolved,
             estimated_input_tokens=1,
