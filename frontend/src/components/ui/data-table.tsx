@@ -43,6 +43,7 @@ export function DataTable<T>({
   onRetry,
   getRowKey,
   onRowClick,
+  rowClassName,
   empty,
   skeletonRows = 6,
   footer,
@@ -55,6 +56,7 @@ export function DataTable<T>({
   onRetry?: () => void;
   getRowKey: (row: T, index: number) => string;
   onRowClick?: (row: T) => void;
+  rowClassName?: (row: T, index: number) => string | undefined;
   empty?: DataTableEmpty;
   skeletonRows?: number;
   footer?: React.ReactNode;
@@ -120,7 +122,7 @@ export function DataTable<T>({
               return (
                 <TableRow
                   key={getRowKey(row, rowIndex)}
-                  className={clickable ? "cursor-pointer" : undefined}
+                  className={cn(clickable && "cursor-pointer", rowClassName?.(row, rowIndex))}
                   tabIndex={clickable ? 0 : undefined}
                   onClick={clickable ? () => onRowClick?.(row) : undefined}
                   onKeyDown={

@@ -1,75 +1,20 @@
-import { zodResolver } from "@hookform/resolvers/zod";
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
-import {
-  Activity,
-  CheckCircle2,
-  ChevronDown,
-  Circle,
-  Pencil,
-  Plus,
-  Power,
-  RefreshCw,
-  RotateCcw,
-  Trash2,
-} from "lucide-react";
-import { Link } from "react-router-dom";
+import { Activity, ChevronDown, Plus, RefreshCw } from "lucide-react";
+import { useState } from "react";
 import { useQueryState } from "nuqs";
-import { useEffect, useState } from "react";
-import { useForm, useWatch, type UseFormRegister } from "react-hook-form";
 import { toast } from "sonner";
-import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
 import {
   useDeleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDelete,
   useAddCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPost,
@@ -94,41 +39,29 @@ import {
   useUpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch,
 } from "@/shared/api/generated/providers/providers";
 import type {
-  CredentialPoolCredentialResponse,
   CredentialPoolResponse,
   ModelOfferingResponse,
   ProviderCredentialResponse,
-  ProviderResourceImpactResponse,
   ProviderResponse,
+  SyncModelOfferingsResponse,
 } from "@/shared/api/generated/schemas";
-import { StatusBadge } from "@/shared/components/StatusBadge";
 
 import {
   capabilityListToRecord,
-  capabilityRecordToList,
   combinedModality,
-  centsToDollars,
   dollarsToCents,
-  formatDateTime,
-  formatModalities,
-  formatPricingSource,
-  formatRelativeFromNow,
-  formatTokenPrice,
   sanitizeCredentialValidationMessage,
 } from "../lib/format";
-import {
-  modelCapabilityOptions,
-  modelModalities,
-  modelOfferingSchema,
-  credentialPoolSchema,
-  providerCredentialSchema,
-  routingPolicyOptions,
-  type CredentialPoolValues,
-  type ModelOfferingFormInput,
-  type ModelOfferingValues,
-  type ProviderCredentialValues,
-} from "../lib/schemas";
-import type { SyncModelOfferingsResponse } from "@/shared/api/generated/schemas";
+import { CreateModelOfferingSheet } from "./resources/CreateModelOfferingSheet";
+import { CreateProviderCredentialSheet } from "./resources/CreateProviderCredentialSheet";
+import { CredentialPoolMembersPanel } from "./resources/CredentialPoolMembersPanel";
+import { CredentialPoolSheet } from "./resources/CredentialPoolSheet";
+import { CredentialPoolsTable } from "./resources/CredentialPoolsTable";
+import { CredentialsTable } from "./resources/CredentialsTable";
+import { ModelSyncSummary } from "./resources/ModelSyncSummary";
+import { ModelsTable } from "./resources/ModelsTable";
+import { ProviderSetupChecklist } from "./resources/ProviderSetupChecklist";
+import { ResourceImpactDialog } from "./resources/ResourceImpactDialog";
 
 export function ProviderResourcesPanel({
   provider,
@@ -179,6 +112,9 @@ function ProviderResourcesContent({
   const [deactivateModelTarget, setDeactivateModelTarget] = useState<ModelOfferingResponse | null>(
     null,
   );
+  const [bulkTestProgress, setBulkTestProgress] = useState<{ index: number; total: number } | null>(
+    null,
+  );
   const credentialSheetOpen =
     createCredentialOpen || (canManage && resourceAction === "add-credential");
 
@@ -187,16 +123,12 @@ function ProviderResourcesContent({
   });
   const credentialsQuery = useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet(
     providerId,
-    {
-      query: { enabled: Boolean(providerId) },
-    },
+    { query: { enabled: Boolean(providerId) } },
   );
   const modelsQuery = useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet(
     providerId,
     modelParams,
-    {
-      query: { enabled: Boolean(providerId), placeholderData: keepPreviousData },
-    },
+    { query: { enabled: Boolean(providerId), placeholderData: keepPreviousData } },
   );
   const credentialImpactQuery =
     useGetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet(
@@ -249,15 +181,11 @@ function ProviderResourcesContent({
     });
   const updatePoolCredential =
     useUpdateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatch(
-      {
-        mutation: { onSuccess: async () => queryClient.invalidateQueries() },
-      },
+      { mutation: { onSuccess: async () => queryClient.invalidateQueries() } },
     );
   const deletePoolCredential =
     useDeleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDelete(
-      {
-        mutation: { onSuccess: async () => queryClient.invalidateQueries() },
-      },
+      { mutation: { onSuccess: async () => queryClient.invalidateQueries() } },
     );
   const createCredential = useCreateProviderCredentialApiV1ProvidersProviderIdCredentialsPost({
     mutation: {
@@ -319,11 +247,6 @@ function ProviderResourcesContent({
     provider.integration_capabilities?.openai_compatible_chat === true ||
     provider.integration_capabilities?.native_anthropic_messages === true;
   const providerReady = provider.readiness?.status === "ready";
-  const [bulkTestProgress, setBulkTestProgress] = useState<{
-    index: number;
-    total: number;
-  } | null>(null);
-  const [showCompletedChecklist, setShowCompletedChecklist] = useState(false);
 
   async function handleTestAllCredentials() {
     const active = credentials.filter((credential) => credential.is_active);
@@ -366,7 +289,6 @@ function ProviderResourcesContent({
             );
             return;
           }
-
           if (response.data.health_status === "valid") {
             toast.success(`${providerCredential.name}: credential test succeeded.`);
           } else {
@@ -396,7 +318,6 @@ function ProviderResourcesContent({
             );
             return;
           }
-
           if (response.data.health_status === "valid") {
             toast.success(`${model.provider_model_name}: model test succeeded.`);
           } else {
@@ -415,87 +336,58 @@ function ProviderResourcesContent({
     );
   }
 
+  async function handleRotateCredential(credential: ProviderCredentialResponse, apiKey: string) {
+    try {
+      const updateResponse = await updateCredential.mutateAsync({
+        providerId,
+        providerCredentialId: credential.id,
+        data: { api_key: apiKey },
+      });
+      if (updateResponse.status !== 200) {
+        toast.error("Credential secret was not replaced.");
+        return false;
+      }
+      const testResponse = await testCredential.mutateAsync({
+        providerId,
+        providerCredentialId: credential.id,
+      });
+      if (testResponse.status === 200 && testResponse.data.health_status === "valid") {
+        toast.success(`${credential.name}: secret replaced and validated.`);
+        return true;
+      }
+      const message =
+        sanitizeCredentialValidationMessage(
+          testResponse.status === 200 ? testResponse.data.last_validation_error : null,
+        ) ?? "Secret was replaced, but validation failed.";
+      toast.error(`${credential.name}: ${message}`);
+      return false;
+    } catch {
+      toast.error(`${credential.name}: secret replacement failed.`);
+      return false;
+    }
+  }
+
   return (
     <>
-      <div className="rounded-md border bg-muted/15">
-        <div className="flex items-center justify-between gap-3 px-4 py-3">
-          <div className="flex items-center gap-2">
-            <CheckCircle2
-              className={cn("size-4", providerReady ? "text-emerald-600" : "text-muted-foreground")}
-            />
-            <div>
-              <p className="text-sm font-medium">
-                {providerReady ? "Setup complete" : "Setup checklist"}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {providerReady
-                  ? "Credentials, routing pool, and models are ready."
-                  : "Complete each routing prerequisite, then test a model."}
-              </p>
-            </div>
-          </div>
-          {providerReady ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setShowCompletedChecklist((current) => !current)}
-            >
-              {showCompletedChecklist ? "Hide steps" : "View steps"}
-              <ChevronDown
-                className={cn("transition-transform", showCompletedChecklist && "rotate-180")}
-              />
-            </Button>
-          ) : null}
-        </div>
-        {!providerReady || showCompletedChecklist ? (
-          <div className="grid gap-3 border-t p-4 md:grid-cols-2 xl:grid-cols-3">
-            <SetupStep
-              label="Add credential"
-              complete={credentials.length > 0}
-              action={canManage ? "Add" : undefined}
-              onAction={() => {
-                void setTab("credentials");
-                setCreateCredentialOpen(true);
-              }}
-            />
-            <SetupStep
-              label="Validate credential"
-              complete={credentials.some(
-                (item) => item.is_active && item.health_status === "valid",
-              )}
-              action={hasActiveCredential ? "Test all" : undefined}
-              onAction={handleTestAllCredentials}
-            />
-            <SetupStep
-              label="Create active pool"
-              complete={pools.some((item) => item.is_active)}
-              action={canManage ? "Create" : undefined}
-              onAction={() => {
-                void setTab("pools");
-                setCreatePoolOpen(true);
-              }}
-            />
-            <SetupStep
-              label="Attach credential"
-              complete={pools.some((item) => (item.active_credential_count ?? 0) > 0)}
-              action={pools.length > 0 ? "Open pools" : undefined}
-              onAction={() => void setTab("pools")}
-            />
-            <SetupStep
-              label="Sync or add models"
-              complete={(provider.readiness?.active_model_count ?? 0) > 0}
-              action="Open models"
-              onAction={() => void setTab("models")}
-            />
-            <SetupStep
-              label="Test request"
-              complete={providerReady}
-              action={providerReady ? "Playground" : undefined}
-              href="/playground"
-            />
-          </div>
-        ) : null}
-      </div>
+      <ProviderSetupChecklist
+        providerReady={providerReady}
+        canManage={canManage}
+        credentials={credentials}
+        pools={pools}
+        hasActiveCredential={hasActiveCredential}
+        activeModelCount={provider.readiness?.active_model_count ?? 0}
+        onAddCredential={() => {
+          void setTab("credentials");
+          setCreateCredentialOpen(true);
+        }}
+        onTestAllCredentials={handleTestAllCredentials}
+        onCreatePool={() => {
+          void setTab("pools");
+          setCreatePoolOpen(true);
+        }}
+        onOpenPools={() => void setTab("pools")}
+        onOpenModels={() => void setTab("models")}
+      />
 
       <Card>
         <CardHeader>
@@ -511,6 +403,7 @@ function ProviderResourcesContent({
               <TabsTrigger value="pools">Pools</TabsTrigger>
               <TabsTrigger value="models">Models</TabsTrigger>
             </TabsList>
+
             <TabsContent value="credentials" className="flex flex-col gap-4">
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div>
@@ -544,56 +437,20 @@ function ProviderResourcesContent({
                   </div>
                 ) : null}
               </div>
-              <ResourceKeyTable
+              <CredentialsTable
                 providerId={providerId}
                 credentials={credentials}
-                isLoading={credentialsQuery.isPending || credentialsQuery.isFetching}
+                isLoading={credentialsQuery.isPending}
                 isError={credentialsQuery.isError}
                 isTesting={testCredential.isPending}
                 onUpdate={(credential, values) =>
                   updateCredential.mutate({
                     providerId,
                     providerCredentialId: credential.id,
-                    data: {
-                      name: values.name,
-                    },
+                    data: { name: values.name },
                   })
                 }
-                onRotate={async (credential, apiKey) => {
-                  try {
-                    const updateResponse = await updateCredential.mutateAsync({
-                      providerId,
-                      providerCredentialId: credential.id,
-                      data: { api_key: apiKey },
-                    });
-                    if (updateResponse.status !== 200) {
-                      toast.error("Credential secret was not replaced.");
-                      return false;
-                    }
-                    const testResponse = await testCredential.mutateAsync({
-                      providerId,
-                      providerCredentialId: credential.id,
-                    });
-                    if (
-                      testResponse.status === 200 &&
-                      testResponse.data.health_status === "valid"
-                    ) {
-                      toast.success(`${credential.name}: secret replaced and validated.`);
-                      return true;
-                    }
-                    const message =
-                      sanitizeCredentialValidationMessage(
-                        testResponse.status === 200
-                          ? testResponse.data.last_validation_error
-                          : null,
-                      ) ?? "Secret was replaced, but validation failed.";
-                    toast.error(`${credential.name}: ${message}`);
-                    return false;
-                  } catch {
-                    toast.error(`${credential.name}: secret replacement failed.`);
-                    return false;
-                  }
-                }}
+                onRotate={handleRotateCredential}
                 onDeactivate={setDeactivateCredentialTarget}
                 onReactivate={(credential) =>
                   updateCredential.mutate({
@@ -622,10 +479,10 @@ function ProviderResourcesContent({
                   </Button>
                 ) : null}
               </div>
-              <CredentialPoolTable
+              <CredentialPoolsTable
                 pools={pools}
                 selectedPoolId={selectedPool?.id ?? null}
-                isLoading={poolsQuery.isPending || poolsQuery.isFetching}
+                isLoading={poolsQuery.isPending}
                 isError={poolsQuery.isError}
                 onSelect={setSelectedPoolId}
                 onUpdate={(pool, values) =>
@@ -641,11 +498,7 @@ function ProviderResourcesContent({
                 }
                 onDeactivate={setDeactivatePoolTarget}
                 onReactivate={(pool) =>
-                  updatePool.mutate({
-                    providerId,
-                    poolId: pool.id,
-                    data: { is_active: true },
-                  })
+                  updatePool.mutate({ providerId, poolId: pool.id, data: { is_active: true } })
                 }
                 canManage={canManage}
               />
@@ -654,15 +507,11 @@ function ProviderResourcesContent({
                 pool={selectedPool}
                 credentials={credentials}
                 members={poolCredentials}
-                isLoading={poolCredentialsQuery.isPending || poolCredentialsQuery.isFetching}
+                isLoading={poolCredentialsQuery.isPending}
                 isError={poolCredentialsQuery.isError}
                 isAdding={addPoolCredential.isPending}
                 onAdd={(pool, values) =>
-                  addPoolCredential.mutate({
-                    providerId,
-                    poolId: pool.id,
-                    data: values,
-                  })
+                  addPoolCredential.mutate({ providerId, poolId: pool.id, data: values })
                 }
                 onUpdate={(pool, member, values) =>
                   updatePoolCredential.mutate({
@@ -754,7 +603,7 @@ function ProviderResourcesContent({
                   </div>
                 ) : null}
               </div>
-              <ResourceModelTable
+              <ModelsTable
                 providerId={providerId}
                 models={modelsPage.items}
                 total={modelsPage.total}
@@ -764,7 +613,7 @@ function ProviderResourcesContent({
                 modality={modelModality}
                 status={modelStatus}
                 page={modelPage}
-                isLoading={modelsQuery.isPending || modelsQuery.isFetching}
+                isLoading={modelsQuery.isPending}
                 isError={modelsQuery.isError}
                 hasActiveCredential={hasActiveCredential}
                 supportsModelTest={supportsModelTest}
@@ -781,7 +630,7 @@ function ProviderResourcesContent({
                   void setModelStatus(value);
                   void setModelPageParam("1");
                 }}
-                onPageChange={(page) => void setModelPageParam(String(page))}
+                onPageChange={(nextPage) => void setModelPageParam(String(nextPage))}
                 onUpdate={(model, values) =>
                   updateModel.mutate({
                     providerId,
@@ -876,10 +725,7 @@ function ProviderResourcesContent({
           onSubmit={(values) =>
             createCredential.mutate({
               providerId,
-              data: {
-                name: values.name,
-                api_key: values.api_key,
-              },
+              data: { name: values.name, api_key: values.api_key },
             })
           }
           isPending={createCredential.isPending}
@@ -938,1920 +784,5 @@ function ProviderResourcesContent({
         />
       ) : null}
     </>
-  );
-}
-
-const healthLabels: Record<string, { label: string; variant: "active" | "inactive" | "error" }> = {
-  valid: { label: "Valid", variant: "active" },
-  unchecked: { label: "Untested", variant: "inactive" },
-  invalid: { label: "Invalid", variant: "error" },
-  degraded: { label: "Degraded", variant: "error" },
-};
-
-function formatHealth(status: string) {
-  return healthLabels[status] ?? { label: status, variant: "inactive" as const };
-}
-
-function formatRoutingPolicy(value: string) {
-  return routingPolicyOptions.find((option) => option.value === value)?.label ?? value;
-}
-
-function formatMetadataSource(value: string) {
-  if (value === "manual") return "Manual override";
-  if (value === "catalog") return "Provider catalog";
-  if (value === "provider") return "Provider-reported";
-  return value;
-}
-
-function toRoutingPolicyValue(value: string): CredentialPoolValues["selection_policy"] {
-  return routingPolicyOptions.some((option) => option.value === value)
-    ? (value as CredentialPoolValues["selection_policy"])
-    : "priority";
-}
-
-function CredentialPoolTable({
-  pools,
-  selectedPoolId,
-  isLoading,
-  isError,
-  onSelect,
-  onUpdate,
-  onDeactivate,
-  onReactivate,
-  canManage,
-}: {
-  pools: CredentialPoolResponse[];
-  selectedPoolId: string | null;
-  isLoading: boolean;
-  isError: boolean;
-  onSelect: (poolId: string) => void;
-  onUpdate: (pool: CredentialPoolResponse, values: CredentialPoolValues) => void;
-  onDeactivate: (pool: CredentialPoolResponse) => void;
-  onReactivate: (pool: CredentialPoolResponse) => void;
-  canManage: boolean;
-}) {
-  const [editPool, setEditPool] = useState<CredentialPoolResponse | null>(null);
-  const colSpan = canManage ? 6 : 5;
-
-  return (
-    <>
-      <div className="overflow-x-auto rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Pool</TableHead>
-              <TableHead>Policy</TableHead>
-              <TableHead className="text-right">Active keys</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Updated</TableHead>
-              {canManage ? <TableHead className="w-[1%]" /> : null}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell
-                  colSpan={colSpan}
-                  className="py-8 text-center text-sm text-muted-foreground"
-                >
-                  Loading pools...
-                </TableCell>
-              </TableRow>
-            ) : null}
-            {isError ? (
-              <TableRow>
-                <TableCell colSpan={colSpan} className="py-8 text-center text-sm text-destructive">
-                  Pools could not be loaded.
-                </TableCell>
-              </TableRow>
-            ) : null}
-            {!isLoading && !isError && pools.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={colSpan}
-                  className="py-8 text-center text-sm text-muted-foreground"
-                >
-                  No pools added yet.
-                </TableCell>
-              </TableRow>
-            ) : null}
-            {pools.map((pool) => {
-              const isSelected = pool.id === selectedPoolId;
-              return (
-                <TableRow
-                  key={pool.id}
-                  className={cn(
-                    "cursor-pointer",
-                    !pool.is_active && "opacity-60",
-                    isSelected && "bg-muted/40",
-                  )}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => onSelect(pool.id)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      onSelect(pool.id);
-                    }
-                  }}
-                >
-                  <TableCell>
-                    <div className="font-medium">{pool.name}</div>
-                    <p className="text-xs text-muted-foreground">
-                      {pool.description || "No description"}
-                    </p>
-                  </TableCell>
-                  <TableCell>{formatRoutingPolicy(pool.selection_policy)}</TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {pool.active_credential_count}/{pool.credential_count}
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge variant={pool.is_active ? "active" : "inactive"}>
-                      {pool.is_active ? "Active" : "Disabled"}
-                    </StatusBadge>
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {formatDateTime(pool.updated_at)}
-                  </TableCell>
-                  {canManage ? (
-                    <TableCell className="flex justify-end gap-1">
-                      <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setEditPool(pool);
-                        }}
-                        title="Edit pool"
-                        aria-label="Edit pool"
-                      >
-                        <Pencil />
-                      </Button>
-                      {pool.is_active ? (
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onDeactivate(pool);
-                          }}
-                          title="Disable pool"
-                          aria-label="Disable pool"
-                        >
-                          <Power />
-                        </Button>
-                      ) : (
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onReactivate(pool);
-                          }}
-                          title="Reactivate pool"
-                          aria-label="Reactivate pool"
-                        >
-                          <RotateCcw />
-                        </Button>
-                      )}
-                    </TableCell>
-                  ) : null}
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </div>
-      <CredentialPoolSheet
-        open={Boolean(editPool)}
-        onOpenChange={(open) => !open && setEditPool(null)}
-        title="Edit credential pool"
-        description="Update how this pool selects active credentials."
-        submitLabel="Save changes"
-        initialValue={editPool}
-        onSubmit={(values) => {
-          if (!editPool) return;
-          onUpdate(editPool, values);
-          setEditPool(null);
-        }}
-      />
-    </>
-  );
-}
-
-const poolMembershipSchema = z.object({
-  provider_credential_id: z.string().min(1),
-  priority: z.coerce.number().int().min(0),
-  weight: z.coerce.number().int().min(1),
-});
-
-type PoolMembershipInput = z.input<typeof poolMembershipSchema>;
-type PoolMembershipValues = z.output<typeof poolMembershipSchema>;
-
-function CredentialPoolMembersPanel({
-  providerId,
-  pool,
-  credentials,
-  members,
-  isLoading,
-  isError,
-  isAdding,
-  onAdd,
-  onUpdate,
-  onDelete,
-  canManage,
-}: {
-  providerId: string;
-  pool: CredentialPoolResponse | null;
-  credentials: ProviderCredentialResponse[];
-  members: CredentialPoolCredentialResponse[];
-  isLoading: boolean;
-  isError: boolean;
-  isAdding: boolean;
-  onAdd: (pool: CredentialPoolResponse, values: PoolMembershipValues) => void;
-  onUpdate: (
-    pool: CredentialPoolResponse,
-    member: CredentialPoolCredentialResponse,
-    values: Partial<Pick<CredentialPoolCredentialResponse, "priority" | "weight" | "is_active">>,
-  ) => void;
-  onDelete: (pool: CredentialPoolResponse, member: CredentialPoolCredentialResponse) => void;
-  canManage: boolean;
-}) {
-  const [editMember, setEditMember] = useState<CredentialPoolCredentialResponse | null>(null);
-  const [deleteMember, setDeleteMember] = useState<CredentialPoolCredentialResponse | null>(null);
-  const form = useForm<PoolMembershipInput, unknown, PoolMembershipValues>({
-    resolver: zodResolver(poolMembershipSchema),
-    defaultValues: { provider_credential_id: "", priority: 100, weight: 1 },
-  });
-  const memberCredentialIds = new Set(members.map((member) => member.provider_credential_id));
-  const availableCredentials = credentials.filter(
-    (credential) => credential.is_active && !memberCredentialIds.has(credential.id),
-  );
-  const firstAvailableCredentialId = availableCredentials[0]?.id ?? "";
-  const selectedCredentialId = useWatch({ control: form.control, name: "provider_credential_id" });
-
-  useEffect(() => {
-    form.reset({
-      provider_credential_id: firstAvailableCredentialId,
-      priority: 100,
-      weight: 1,
-    });
-  }, [pool?.id, firstAvailableCredentialId, form]);
-
-  if (!pool) {
-    return (
-      <div className="rounded-md border py-8 text-center text-sm text-muted-foreground">
-        Create a pool before assigning credentials.
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-md border">
-      <div className="flex flex-col gap-3 border-b p-4 md:flex-row md:items-end md:justify-between">
-        <div>
-          <h4 className="font-medium">{pool.name} credentials</h4>
-          <p className="text-sm text-muted-foreground">
-            Priority orders deterministic routing. Weight only affects weighted routing.
-          </p>
-        </div>
-        {canManage ? (
-          <form
-            className="grid gap-2 md:grid-cols-[minmax(220px,1fr)_92px_92px_auto]"
-            onSubmit={form.handleSubmit((values) => {
-              if (!pool) return;
-              onAdd(pool, values);
-            })}
-          >
-            <Select
-              value={selectedCredentialId}
-              onValueChange={(value) => form.setValue("provider_credential_id", value)}
-              disabled={!providerId || availableCredentials.length === 0}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Credential" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableCredentials.map((credential) => (
-                  <SelectItem key={credential.id} value={credential.id}>
-                    {credential.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Input
-              aria-label="Membership priority"
-              title="Priority"
-              placeholder="Priority"
-              type="number"
-              min={0}
-              {...form.register("priority", { valueAsNumber: true })}
-            />
-            <Input
-              aria-label="Membership weight"
-              title="Weight"
-              placeholder="Weight"
-              type="number"
-              min={1}
-              {...form.register("weight", { valueAsNumber: true })}
-            />
-            <Button
-              type="submit"
-              disabled={isAdding || !providerId || availableCredentials.length === 0}
-            >
-              <Plus />
-              Assign
-            </Button>
-          </form>
-        ) : null}
-      </div>
-
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Credential</TableHead>
-            <TableHead className="text-right">Priority</TableHead>
-            <TableHead className="text-right">Weight</TableHead>
-            <TableHead>Health</TableHead>
-            <TableHead>Status</TableHead>
-            {canManage ? <TableHead className="w-[1%]" /> : null}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {isLoading ? (
-            <TableRow>
-              <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
-                Loading pool credentials...
-              </TableCell>
-            </TableRow>
-          ) : null}
-          {isError ? (
-            <TableRow>
-              <TableCell colSpan={6} className="py-8 text-center text-sm text-destructive">
-                Pool credentials could not be loaded.
-              </TableCell>
-            </TableRow>
-          ) : null}
-          {!isLoading && !isError && members.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
-                This pool is empty. Routing through it will fail until an active credential is
-                assigned.
-              </TableCell>
-            </TableRow>
-          ) : null}
-          {[...members]
-            .sort((a, b) => a.priority - b.priority)
-            .map((member) => {
-              const health = formatHealth(member.credential.health_status);
-              return (
-                <TableRow
-                  key={member.id}
-                  className={!member.is_active || !member.credential.is_active ? "opacity-60" : ""}
-                >
-                  <TableCell>
-                    <div className="font-medium">{member.credential.name}</div>
-                    <p className="font-mono text-xs text-muted-foreground">
-                      {member.credential.key_prefix}
-                    </p>
-                  </TableCell>
-                  <TableCell className="text-right font-mono text-xs">{member.priority}</TableCell>
-                  <TableCell className="text-right font-mono text-xs">{member.weight}</TableCell>
-                  <TableCell>
-                    <StatusBadge variant={health.variant}>{health.label}</StatusBadge>
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge
-                      variant={
-                        member.is_active && member.credential.is_active ? "active" : "inactive"
-                      }
-                    >
-                      {member.is_active
-                        ? member.credential.is_active
-                          ? "Active"
-                          : "Credential disabled"
-                        : "Membership disabled"}
-                    </StatusBadge>
-                  </TableCell>
-                  {canManage ? (
-                    <TableCell className="flex justify-end">
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
-                          onClick={() => setEditMember(member)}
-                          title="Edit membership"
-                          aria-label="Edit membership"
-                        >
-                          <Pencil />
-                        </Button>
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
-                          onClick={() => onUpdate(pool, member, { is_active: !member.is_active })}
-                          title={member.is_active ? "Disable membership" : "Reactivate membership"}
-                          aria-label={
-                            member.is_active ? "Disable membership" : "Reactivate membership"
-                          }
-                        >
-                          {member.is_active ? <Power /> : <RotateCcw />}
-                        </Button>
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
-                          onClick={() => setDeleteMember(member)}
-                          title="Remove from pool"
-                          aria-label="Remove from pool"
-                        >
-                          <Trash2 />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  ) : null}
-                </TableRow>
-              );
-            })}
-        </TableBody>
-      </Table>
-      <PoolMembershipSheet
-        member={editMember}
-        onClose={() => setEditMember(null)}
-        onSubmit={(values) => {
-          if (!editMember) return;
-          onUpdate(pool, editMember, values);
-          setEditMember(null);
-        }}
-      />
-      <Dialog open={Boolean(deleteMember)} onOpenChange={(open) => !open && setDeleteMember(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Remove credential from pool?</DialogTitle>
-            <DialogDescription>
-              {deleteMember
-                ? `${deleteMember.credential.name} will stop being selected by ${pool.name}. The credential itself remains available.`
-                : "This credential will stop being selected by the pool."}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="destructive"
-              disabled={!deleteMember}
-              onClick={() => {
-                if (!deleteMember) return;
-                onDelete(pool, deleteMember);
-                setDeleteMember(null);
-              }}
-            >
-              Remove
-            </Button>
-            <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
-            </DialogClose>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
-
-function PoolMembershipSheet({
-  member,
-  onClose,
-  onSubmit,
-}: {
-  member: CredentialPoolCredentialResponse | null;
-  onClose: () => void;
-  onSubmit: (values: Pick<PoolMembershipValues, "priority" | "weight">) => void;
-}) {
-  const form = useForm<
-    Pick<PoolMembershipInput, "priority" | "weight">,
-    unknown,
-    Pick<PoolMembershipValues, "priority" | "weight">
-  >({
-    resolver: zodResolver(poolMembershipSchema.pick({ priority: true, weight: true })),
-    defaultValues: { priority: 100, weight: 1 },
-  });
-
-  useEffect(() => {
-    if (!member) return;
-    form.reset({
-      priority: member.priority,
-      weight: member.weight,
-    });
-  }, [member, form]);
-
-  return (
-    <Sheet open={Boolean(member)} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent>
-        <SheetHeader>
-          <SheetTitle>Edit pool credential</SheetTitle>
-          <SheetDescription>
-            Update this credential's routing metadata for this pool only.
-          </SheetDescription>
-        </SheetHeader>
-        <form
-          className="grid gap-4 overflow-y-auto px-6 py-5"
-          onSubmit={form.handleSubmit(onSubmit)}
-        >
-          <div className="space-y-1.5">
-            <Label htmlFor="pool-membership-priority">Priority</Label>
-            <Input
-              id="pool-membership-priority"
-              type="number"
-              min={0}
-              {...form.register("priority", { valueAsNumber: true })}
-            />
-            <p className="text-xs text-muted-foreground">
-              Lower numbers are preferred by priority-based policies.
-            </p>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="pool-membership-weight">Weight</Label>
-            <Input
-              id="pool-membership-weight"
-              type="number"
-              min={1}
-              {...form.register("weight", { valueAsNumber: true })}
-            />
-            <p className="text-xs text-muted-foreground">
-              Higher numbers receive more traffic only when this pool uses weighted routing.
-            </p>
-          </div>
-        </form>
-        <SheetFooter>
-          <Button disabled={!member} onClick={form.handleSubmit(onSubmit)}>
-            Save changes
-          </Button>
-          <SheetClose asChild>
-            <Button variant="outline">Cancel</Button>
-          </SheetClose>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
-  );
-}
-
-function CredentialPoolSheet({
-  open,
-  onOpenChange,
-  title,
-  description,
-  submitLabel,
-  initialValue,
-  isPending,
-  onSubmit,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  title: string;
-  description: string;
-  submitLabel: string;
-  initialValue?: CredentialPoolResponse | null;
-  isPending?: boolean;
-  onSubmit: (values: CredentialPoolValues) => void;
-}) {
-  const form = useForm<CredentialPoolValues>({
-    resolver: zodResolver(credentialPoolSchema),
-    defaultValues: {
-      name: "",
-      description: "",
-      selection_policy: "priority",
-    },
-  });
-  const selectedPolicy = useWatch({ control: form.control, name: "selection_policy" });
-
-  useEffect(() => {
-    if (!open) return;
-    form.reset({
-      name: initialValue?.name ?? "",
-      description: initialValue?.description ?? "",
-      selection_policy: toRoutingPolicyValue(initialValue?.selection_policy ?? "priority"),
-    });
-  }, [open, initialValue, form]);
-
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent>
-        <SheetHeader>
-          <SheetTitle>{title}</SheetTitle>
-          <SheetDescription>{description}</SheetDescription>
-        </SheetHeader>
-        <form
-          className="grid gap-4 overflow-y-auto px-6 py-5"
-          onSubmit={form.handleSubmit(onSubmit)}
-        >
-          <div className="space-y-1.5">
-            <Label htmlFor="credential-pool-name">Name</Label>
-            <Input id="credential-pool-name" autoFocus {...form.register("name")} />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="credential-pool-description">Description</Label>
-            <Textarea id="credential-pool-description" {...form.register("description")} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Selection policy</Label>
-            <Select
-              value={selectedPolicy}
-              onValueChange={(value) =>
-                form.setValue("selection_policy", value as CredentialPoolValues["selection_policy"])
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {routingPolicyOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              {routingPolicyOptions.find((option) => option.value === selectedPolicy)?.description}
-            </p>
-          </div>
-        </form>
-        <SheetFooter>
-          <Button disabled={isPending} onClick={form.handleSubmit(onSubmit)}>
-            {isPending ? "Saving..." : submitLabel}
-          </Button>
-          <SheetClose asChild>
-            <Button variant="outline">Cancel</Button>
-          </SheetClose>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
-  );
-}
-
-function ResourceKeyTable({
-  providerId,
-  credentials,
-  isLoading,
-  isError,
-  isTesting,
-  onUpdate,
-  onRotate,
-  onDeactivate,
-  onReactivate,
-  onTest,
-  canManage,
-}: {
-  providerId: string;
-  credentials: ProviderCredentialResponse[];
-  isLoading: boolean;
-  isError: boolean;
-  isTesting: boolean;
-  onUpdate: (credential: ProviderCredentialResponse, values: { name: string }) => void;
-  onRotate: (credential: ProviderCredentialResponse, apiKey: string) => Promise<boolean>;
-  onDeactivate: (credential: ProviderCredentialResponse) => void;
-  onReactivate: (credential: ProviderCredentialResponse) => void;
-  onTest: (credential: ProviderCredentialResponse) => void;
-  canManage: boolean;
-}) {
-  const sortedCredentials = [...credentials].sort(
-    (a, b) =>
-      Number(b.is_active) - Number(a.is_active) ||
-      new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-  );
-  const syncCredential = sortedCredentials.find((credential) => credential.is_active);
-  const [editCredential, setEditCredential] = useState<ProviderCredentialResponse | null>(null);
-  const [rotateCredential, setRotateCredential] = useState<ProviderCredentialResponse | null>(null);
-  const [apiKey, setApiKey] = useState("");
-  const [isRotating, setIsRotating] = useState(false);
-
-  return (
-    <>
-      <div className="overflow-x-auto rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Credential</TableHead>
-              <TableHead>Health</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Last activity</TableHead>
-              {canManage ? <TableHead className="w-[1%]" /> : null}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell
-                  colSpan={canManage ? 5 : 4}
-                  className="py-8 text-center text-sm text-muted-foreground"
-                >
-                  Loading credentials...
-                </TableCell>
-              </TableRow>
-            ) : null}
-            {isError ? (
-              <TableRow>
-                <TableCell
-                  colSpan={canManage ? 5 : 4}
-                  className="py-8 text-center text-sm text-destructive"
-                >
-                  Credentials could not be loaded.
-                </TableCell>
-              </TableRow>
-            ) : null}
-            {!isLoading && !isError && sortedCredentials.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={canManage ? 5 : 4}
-                  className="py-8 text-center text-sm text-muted-foreground"
-                >
-                  No credentials added yet.
-                </TableCell>
-              </TableRow>
-            ) : null}
-            {sortedCredentials.map((credential) => {
-              const health = formatHealth(credential.health_status);
-              return (
-                <TableRow key={credential.id}>
-                  <TableCell className="font-medium">
-                    <div>{credential.name}</div>
-                    <p className="font-mono text-xs text-muted-foreground">
-                      {credential.key_prefix}
-                    </p>
-                    {syncCredential?.id === credential.id ? (
-                      <p className="text-xs text-muted-foreground">Used first for model sync</p>
-                    ) : null}
-                    {credential.failure_message || credential.last_validation_error ? (
-                      <p className="text-xs text-destructive">
-                        {credential.failure_reason
-                          ? `${credential.failure_reason.replaceAll("_", " ")}: `
-                          : ""}
-                        {sanitizeCredentialValidationMessage(
-                          credential.failure_message ?? credential.last_validation_error,
-                        )}
-                      </p>
-                    ) : null}
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge variant={health.variant}>{health.label}</StatusBadge>
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge variant={credential.is_active ? "active" : "inactive"}>
-                      {credential.is_active ? "Active" : "Disabled"}
-                    </StatusBadge>
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {credential.last_used_at
-                      ? formatRelativeFromNow(credential.last_used_at)
-                      : credential.last_validation_at
-                        ? `Validated ${formatRelativeFromNow(credential.last_validation_at)}`
-                        : "Never used"}
-                  </TableCell>
-                  {canManage ? (
-                    <TableCell className="flex justify-end gap-1">
-                      <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        disabled={!providerId || !credential.is_active || isTesting}
-                        onClick={() => onTest(credential)}
-                        title="Test credential"
-                        aria-label="Test credential"
-                      >
-                        <Activity />
-                      </Button>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            aria-label={`${credential.name} actions`}
-                          >
-                            <ChevronDown />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onSelect={() => setEditCredential(credential)}>
-                            <Pencil />
-                            Rename
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onSelect={() => setRotateCredential(credential)}>
-                            <RefreshCw />
-                            Replace secret
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          {credential.is_active ? (
-                            <DropdownMenuItem
-                              variant="destructive"
-                              onSelect={() => onDeactivate(credential)}
-                            >
-                              <Power />
-                              Disable
-                            </DropdownMenuItem>
-                          ) : (
-                            <DropdownMenuItem onSelect={() => onReactivate(credential)}>
-                              <RotateCcw />
-                              Reactivate
-                            </DropdownMenuItem>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  ) : null}
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </div>
-      <EditProviderCredentialSheet
-        providerCredential={editCredential}
-        onClose={() => setEditCredential(null)}
-        onSubmit={(values) => {
-          if (!editCredential) return;
-          onUpdate(editCredential, values);
-          setEditCredential(null);
-        }}
-      />
-      <Dialog
-        open={Boolean(rotateCredential)}
-        onOpenChange={(open) => {
-          if (!open) {
-            setRotateCredential(null);
-            setApiKey("");
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Rotate {rotateCredential?.name ?? "credential"}</DialogTitle>
-            <DialogDescription>
-              The current key stops working as soon as you save. Make sure the new key is active
-              before rotating.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-muted-foreground">Current prefix</span>
-              <span className="font-mono">{rotateCredential?.key_prefix ?? "—"}</span>
-            </div>
-            <Label htmlFor="rotate-api-key" className="text-xs">
-              New API key
-            </Label>
-            <Input
-              id="rotate-api-key"
-              type="password"
-              autoComplete="new-password"
-              value={apiKey}
-              onChange={(event) => setApiKey(event.target.value)}
-            />
-          </div>
-          <DialogFooter>
-            <Button
-              variant="destructive"
-              disabled={!rotateCredential || !apiKey || isRotating}
-              onClick={async () => {
-                if (!rotateCredential) return;
-                setIsRotating(true);
-                const succeeded = await onRotate(rotateCredential, apiKey);
-                setIsRotating(false);
-                if (succeeded) {
-                  setRotateCredential(null);
-                  setApiKey("");
-                }
-              }}
-            >
-              {isRotating ? "Replacing..." : "Replace and test"}
-            </Button>
-            <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
-            </DialogClose>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
-
-function EditProviderCredentialSheet({
-  providerCredential,
-  onClose,
-  onSubmit,
-}: {
-  providerCredential: ProviderCredentialResponse | null;
-  onClose: () => void;
-  onSubmit: (values: { name: string }) => void;
-}) {
-  const form = useForm<{ name: string }>({
-    resolver: zodResolver(
-      z.object({
-        name: z.string().min(1).max(255),
-      }),
-    ),
-    defaultValues: { name: "" },
-  });
-
-  useEffect(() => {
-    if (providerCredential) {
-      form.reset({
-        name: providerCredential.name,
-      });
-    }
-  }, [providerCredential, form]);
-
-  return (
-    <Sheet open={Boolean(providerCredential)} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent>
-        <SheetHeader>
-          <SheetTitle>Edit credential</SheetTitle>
-          <SheetDescription>
-            Rename this provider credential. Pool membership, priority, and weight are managed from
-            the Pools tab.
-          </SheetDescription>
-        </SheetHeader>
-        <form
-          className="grid gap-4 overflow-y-auto px-6 py-5"
-          onSubmit={form.handleSubmit(onSubmit)}
-        >
-          <div className="space-y-1.5">
-            <Label htmlFor="edit-provider-key-name">Name</Label>
-            <Input id="edit-provider-key-name" autoFocus {...form.register("name")} />
-            {form.formState.errors.name ? (
-              <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
-            ) : null}
-          </div>
-        </form>
-        <SheetFooter>
-          <Button onClick={form.handleSubmit(onSubmit)}>Save changes</Button>
-          <SheetClose asChild>
-            <Button variant="outline">Cancel</Button>
-          </SheetClose>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
-  );
-}
-
-function CreateProviderCredentialSheet({
-  open,
-  onOpenChange,
-  providerName,
-  onSubmit,
-  isPending,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  providerName: string;
-  onSubmit: (values: ProviderCredentialValues) => void;
-  isPending: boolean;
-}) {
-  const form = useForm<ProviderCredentialValues>({
-    resolver: zodResolver(providerCredentialSchema),
-    defaultValues: { name: "", api_key: "" },
-  });
-
-  useEffect(() => {
-    if (open) {
-      form.reset({
-        name: `${providerName} credential`,
-        api_key: "",
-      });
-    }
-  }, [open, providerName, form]);
-
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent>
-        <SheetHeader>
-          <SheetTitle>Add credential</SheetTitle>
-          <SheetDescription>
-            Add an encrypted upstream API key for {providerName}. Assign it to pools after saving.
-          </SheetDescription>
-        </SheetHeader>
-        <form
-          className="grid gap-4 overflow-y-auto px-6 py-5"
-          onSubmit={form.handleSubmit(onSubmit)}
-        >
-          <div className="space-y-1.5">
-            <Label htmlFor="detail-provider-key-name">Name</Label>
-            <Input id="detail-provider-key-name" autoFocus {...form.register("name")} />
-            {form.formState.errors.name ? (
-              <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
-            ) : null}
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="detail-provider-key-secret">API key</Label>
-            <Input
-              id="detail-provider-key-secret"
-              type="password"
-              autoComplete="new-password"
-              {...form.register("api_key")}
-            />
-            {form.formState.errors.api_key ? (
-              <p className="text-xs text-destructive">{form.formState.errors.api_key.message}</p>
-            ) : null}
-          </div>
-        </form>
-        <SheetFooter>
-          <Button disabled={isPending} onClick={form.handleSubmit(onSubmit)}>
-            {isPending ? "Adding..." : "Add credential"}
-          </Button>
-          <SheetClose asChild>
-            <Button variant="outline">Cancel</Button>
-          </SheetClose>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
-  );
-}
-
-function CreateModelOfferingSheet({
-  open,
-  onOpenChange,
-  providerName,
-  onSubmit,
-  isPending,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  providerName: string;
-  onSubmit: (values: ModelOfferingValues) => void;
-  isPending: boolean;
-}) {
-  const form = useForm<ModelOfferingFormInput, unknown, ModelOfferingValues>({
-    resolver: zodResolver(modelOfferingSchema),
-    defaultValues: {
-      provider_model_name: "",
-      alias: "",
-      version: "",
-      input_modalities: ["text"],
-      output_modalities: ["text"],
-      context_window: undefined,
-      input_price_per_million_tokens: undefined,
-      output_price_per_million_tokens: undefined,
-      cached_input_price_per_million_tokens: undefined,
-      capabilities: ["chat", "streaming"],
-    },
-  });
-  const inputModalities = useWatch({ control: form.control, name: "input_modalities" });
-  const outputModalities = useWatch({ control: form.control, name: "output_modalities" });
-  const capabilities = useWatch({ control: form.control, name: "capabilities" });
-
-  useEffect(() => {
-    if (open) {
-      form.reset({
-        provider_model_name: "",
-        alias: "",
-        version: "",
-        input_modalities: ["text"],
-        output_modalities: ["text"],
-        context_window: undefined,
-        input_price_per_million_tokens: undefined,
-        output_price_per_million_tokens: undefined,
-        cached_input_price_per_million_tokens: undefined,
-        capabilities: ["chat", "streaming"],
-      });
-    }
-  }, [open, form]);
-
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent>
-        <SheetHeader>
-          <SheetTitle>Add model</SheetTitle>
-          <SheetDescription>
-            Register a model exposed by {providerName}. Alias is optional and provider-scoped.
-          </SheetDescription>
-        </SheetHeader>
-        <form
-          className="grid gap-4 overflow-y-auto px-6 py-5"
-          onSubmit={form.handleSubmit(onSubmit)}
-        >
-          <div className="space-y-1.5">
-            <Label htmlFor="detail-provider-model-name">Provider model name</Label>
-            <Input
-              id="detail-provider-model-name"
-              autoFocus
-              placeholder="gpt-5.4-mini"
-              {...form.register("provider_model_name")}
-            />
-            {form.formState.errors.provider_model_name ? (
-              <p className="text-xs text-destructive">
-                {form.formState.errors.provider_model_name.message}
-              </p>
-            ) : null}
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="detail-provider-model-alias">Alias</Label>
-            <Input
-              id="detail-provider-model-alias"
-              placeholder="fast"
-              {...form.register("alias")}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="detail-provider-model-version">Version</Label>
-            <Input
-              id="detail-provider-model-version"
-              placeholder="2025-08-07"
-              {...form.register("version")}
-            />
-          </div>
-          <ModalityCheckboxGroup
-            label="Input modalities"
-            values={inputModalities ?? []}
-            onChange={(values) => form.setValue("input_modalities", values)}
-          />
-          <ModalityCheckboxGroup
-            label="Output modalities"
-            values={outputModalities ?? []}
-            onChange={(values) => form.setValue("output_modalities", values)}
-          />
-          <div className="space-y-1.5">
-            <Label htmlFor="detail-provider-model-context">Context window</Label>
-            <Input
-              id="detail-provider-model-context"
-              type="number"
-              min={1}
-              placeholder="128000"
-              {...form.register("context_window")}
-            />
-            {form.formState.errors.context_window ? (
-              <p className="text-xs text-destructive">
-                {form.formState.errors.context_window.message}
-              </p>
-            ) : null}
-          </div>
-          <PricingFields register={form.register} prefix="detail" />
-          <CapabilityCheckboxGroup
-            values={capabilities ?? []}
-            onChange={(values) => form.setValue("capabilities", values)}
-          />
-        </form>
-        <SheetFooter>
-          <Button disabled={isPending} onClick={form.handleSubmit(onSubmit)}>
-            {isPending ? "Adding..." : "Add model"}
-          </Button>
-          <SheetClose asChild>
-            <Button variant="outline">Cancel</Button>
-          </SheetClose>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
-  );
-}
-
-function PricingFields({
-  register,
-  prefix,
-}: {
-  register: UseFormRegister<ModelOfferingFormInput>;
-  prefix: string;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label>Pricing (USD per 1M tokens)</Label>
-      <p className="text-xs text-muted-foreground">
-        Enter dollars. Bab stores normalized cents for usage and budget calculations.
-      </p>
-      <div className="grid gap-3 md:grid-cols-3">
-        <div className="space-y-1.5">
-          <Label
-            htmlFor={`${prefix}-provider-model-input-price`}
-            className="text-xs text-muted-foreground"
-          >
-            Input
-          </Label>
-          <Input
-            id={`${prefix}-provider-model-input-price`}
-            type="number"
-            min={0}
-            step="0.0001"
-            placeholder="0"
-            {...register("input_price_per_million_tokens")}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label
-            htmlFor={`${prefix}-provider-model-output-price`}
-            className="text-xs text-muted-foreground"
-          >
-            Output
-          </Label>
-          <Input
-            id={`${prefix}-provider-model-output-price`}
-            type="number"
-            min={0}
-            step="0.0001"
-            placeholder="0"
-            {...register("output_price_per_million_tokens")}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label
-            htmlFor={`${prefix}-provider-model-cached-price`}
-            className="text-xs text-muted-foreground"
-          >
-            Cached input
-          </Label>
-          <Input
-            id={`${prefix}-provider-model-cached-price`}
-            type="number"
-            min={0}
-            step="0.0001"
-            placeholder="0"
-            {...register("cached_input_price_per_million_tokens")}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ResourceModelTable({
-  providerId,
-  models,
-  total,
-  limit,
-  offset,
-  search,
-  modality,
-  status,
-  page,
-  isLoading,
-  isError,
-  hasActiveCredential,
-  supportsModelTest,
-  isTesting,
-  onSearchChange,
-  onModalityChange,
-  onStatusChange,
-  onPageChange,
-  onUpdate,
-  onDeactivate,
-  onReactivate,
-  onTest,
-  canManage,
-}: {
-  providerId: string;
-  models: ModelOfferingResponse[];
-  total: number;
-  limit: number;
-  offset: number;
-  search: string;
-  modality: string;
-  status: string;
-  page: number;
-  isLoading: boolean;
-  isError: boolean;
-  hasActiveCredential: boolean;
-  supportsModelTest: boolean;
-  isTesting: boolean;
-  onSearchChange: (value: string) => void;
-  onModalityChange: (value: string) => void;
-  onStatusChange: (value: string) => void;
-  onPageChange: (page: number) => void;
-  onUpdate: (model: ModelOfferingResponse, values: ModelOfferingValues) => void;
-  onDeactivate: (model: ModelOfferingResponse) => void;
-  onReactivate: (model: ModelOfferingResponse) => void;
-  onTest: (model: ModelOfferingResponse) => void;
-  canManage: boolean;
-}) {
-  const [editModel, setEditModel] = useState<ModelOfferingResponse | null>(null);
-  const editForm = useForm<ModelOfferingFormInput, unknown, ModelOfferingValues>({
-    resolver: zodResolver(modelOfferingSchema),
-    defaultValues: {
-      provider_model_name: "",
-      alias: "",
-      version: "",
-      input_modalities: ["text"],
-      output_modalities: ["text"],
-      context_window: undefined,
-      input_price_per_million_tokens: undefined,
-      output_price_per_million_tokens: undefined,
-      cached_input_price_per_million_tokens: undefined,
-      capabilities: [],
-    },
-  });
-  const editInputModalities = useWatch({ control: editForm.control, name: "input_modalities" });
-  const editOutputModalities = useWatch({ control: editForm.control, name: "output_modalities" });
-  const editCapabilities = useWatch({ control: editForm.control, name: "capabilities" });
-  const selectedModalities = modality === "all" ? [] : modality.split(",").filter(Boolean);
-  const pageCount = Math.max(Math.ceil(total / limit), 1);
-  const safePage = Math.min(page, pageCount);
-  const hasFilters = Boolean(search.trim()) || modality !== "all" || status !== "all";
-
-  useEffect(() => {
-    if (!editModel) return;
-    editForm.reset({
-      provider_model_name: editModel.provider_model_name,
-      alias: editModel.alias ?? "",
-      version: editModel.version ?? "",
-      input_modalities: editModel.input_modalities?.length
-        ? editModel.input_modalities
-        : editModel.modality.split("+"),
-      output_modalities: editModel.output_modalities?.length
-        ? editModel.output_modalities
-        : ["text"],
-      context_window: editModel.context_window ?? undefined,
-      input_price_per_million_tokens: centsToDollars(editModel.input_price_per_million_tokens),
-      output_price_per_million_tokens: centsToDollars(editModel.output_price_per_million_tokens),
-      cached_input_price_per_million_tokens: centsToDollars(
-        editModel.cached_input_price_per_million_tokens,
-      ),
-      capabilities: capabilityRecordToList(editModel.capabilities),
-    });
-  }, [editModel, editForm]);
-
-  return (
-    <>
-      <div className="flex flex-col gap-4">
-        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto_auto]">
-          <Input
-            value={search}
-            onChange={(event) => onSearchChange(event.target.value)}
-            placeholder="Search models or aliases..."
-          />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline">
-                {selectedModalities.length
-                  ? `Modalities: ${selectedModalities.join(", ")}`
-                  : "All modalities"}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel>Required modalities</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuCheckboxItem
-                checked={selectedModalities.length === 0}
-                onCheckedChange={() => onModalityChange("all")}
-              >
-                All modalities
-              </DropdownMenuCheckboxItem>
-              {modelModalities.map((item) => {
-                const next = selectedModalities.includes(item)
-                  ? selectedModalities.filter((value) => value !== item)
-                  : [...selectedModalities, item];
-                return (
-                  <DropdownMenuCheckboxItem
-                    key={item}
-                    checked={selectedModalities.includes(item)}
-                    onCheckedChange={() => onModalityChange(next.length ? next.join(",") : "all")}
-                  >
-                    {item}
-                  </DropdownMenuCheckboxItem>
-                );
-              })}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Select value={status} onValueChange={onStatusChange}>
-            <SelectTrigger>
-              <SelectValue placeholder="Filter by status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value="all">All statuses</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="disabled">Disabled</SelectItem>
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {isLoading ? (
-          <p className="rounded-lg border py-8 text-center text-sm text-muted-foreground">
-            Loading model offerings...
-          </p>
-        ) : null}
-        {isError ? (
-          <p className="rounded-lg border py-8 text-center text-sm text-destructive">
-            Models could not be loaded.
-          </p>
-        ) : null}
-        {!isLoading && !isError && total === 0 && !hasFilters ? (
-          <p className="rounded-lg border py-8 text-center text-sm text-muted-foreground">
-            No models added yet.
-          </p>
-        ) : null}
-        {!isLoading && !isError && total === 0 && hasFilters ? (
-          <p className="rounded-lg border py-8 text-center text-sm text-muted-foreground">
-            No models match these filters.
-          </p>
-        ) : null}
-
-        {models.length > 0 ? (
-          <div className="overflow-x-auto rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Model</TableHead>
-                  <TableHead>Modalities</TableHead>
-                  <TableHead className="text-right">Context</TableHead>
-                  <TableHead className="text-right">Price (in/out)</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Status</TableHead>
-                  {canManage ? <TableHead className="w-[1%]" /> : null}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {models.map((model) => {
-                  const activeCapabilities = capabilityRecordToList(model.capabilities);
-                  return (
-                    <TableRow
-                      key={model.id}
-                      className={!model.is_active ? "opacity-60" : undefined}
-                    >
-                      <TableCell>
-                        <div className="flex flex-col gap-1">
-                          <span className="font-mono text-sm font-medium">
-                            {model.provider_model_name}
-                          </span>
-                          {model.is_active ? (
-                            <Link
-                              className="w-fit text-xs text-primary hover:underline"
-                              to={`/playground?model=${encodeURIComponent(model.alias || model.provider_model_name)}`}
-                            >
-                              Test in playground
-                            </Link>
-                          ) : null}
-                          <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                            {model.alias ? <span>alias: {model.alias}</span> : null}
-                            {model.version ? <span>v{model.version}</span> : null}
-                            {activeCapabilities.length > 0 ? (
-                              <div className="flex flex-wrap gap-1">
-                                {activeCapabilities.map((capability) => (
-                                  <span
-                                    key={capability}
-                                    className="rounded border bg-muted/40 px-1.5 py-0.5 text-[10px]"
-                                  >
-                                    {capability}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : null}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <div className="flex items-center gap-1.5 text-muted-foreground">
-                          <span>{formatModalities(model.input_modalities)}</span>
-                          <span aria-hidden>→</span>
-                          <span>{formatModalities(model.output_modalities)}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-xs">
-                        {model.context_window ? model.context_window.toLocaleString() : "—"}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-xs">
-                        <div className="flex flex-col">
-                          <span>
-                            {formatTokenPrice(model.effective_input_price_per_million_tokens)} /{" "}
-                            {formatTokenPrice(model.effective_output_price_per_million_tokens)}
-                          </span>
-                          <span className="font-sans text-[11px] text-muted-foreground">
-                            {formatPricingSource(model.pricing_source)}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        <div className="flex flex-col">
-                          <span>
-                            {model.metadata_source}
-                            {model.pricing_catalog_version
-                              ? ` · pricing ${model.pricing_catalog_version}`
-                              : ""}
-                          </span>
-                          {model.metadata_last_synced_at ? (
-                            <span className="text-[11px]">
-                              {formatRelativeFromNow(model.metadata_last_synced_at)}
-                            </span>
-                          ) : null}
-                          {model.pricing_last_refreshed_at ? (
-                            <span className="text-[11px]">
-                              price {formatRelativeFromNow(model.pricing_last_refreshed_at)}
-                            </span>
-                          ) : null}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <StatusBadge variant={model.is_active ? "active" : "inactive"}>
-                          {model.is_active ? "Active" : "Disabled"}
-                        </StatusBadge>
-                      </TableCell>
-                      {canManage ? (
-                        <TableCell className="flex justify-end gap-1">
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            disabled={
-                              !providerId ||
-                              !model.is_active ||
-                              !hasActiveCredential ||
-                              !supportsModelTest ||
-                              isTesting
-                            }
-                            onClick={() => onTest(model)}
-                            title={
-                              !hasActiveCredential
-                                ? "Add an active credential before testing models."
-                                : !supportsModelTest
-                                  ? "Model testing is unavailable for this provider integration."
-                                  : "Test model"
-                            }
-                            aria-label="Test model"
-                          >
-                            <Activity />
-                          </Button>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                size="icon-sm"
-                                variant="ghost"
-                                aria-label={`${model.provider_model_name} actions`}
-                              >
-                                <ChevronDown />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onSelect={() => setEditModel(model)}>
-                                <Pencil />
-                                Edit metadata
-                              </DropdownMenuItem>
-                              <DropdownMenuItem asChild>
-                                <Link
-                                  to={`/playground?model=${encodeURIComponent(
-                                    model.alias || model.provider_model_name,
-                                  )}`}
-                                >
-                                  Test in playground
-                                </Link>
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              {model.is_active ? (
-                                <DropdownMenuItem
-                                  variant="destructive"
-                                  onSelect={() => onDeactivate(model)}
-                                >
-                                  <Power />
-                                  Disable
-                                </DropdownMenuItem>
-                              ) : (
-                                <DropdownMenuItem onSelect={() => onReactivate(model)}>
-                                  <RotateCcw />
-                                  Reactivate
-                                </DropdownMenuItem>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      ) : null}
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
-        ) : null}
-
-        {total > limit ? (
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-muted-foreground">
-              Page {safePage} of {pageCount} · showing {offset + 1}-
-              {Math.min(offset + models.length, total)} of {total}
-            </p>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={safePage <= 1}
-                onClick={() => onPageChange(safePage - 1)}
-              >
-                Previous
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={safePage >= pageCount}
-                onClick={() => onPageChange(safePage + 1)}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
-        ) : null}
-      </div>
-      <Sheet open={Boolean(editModel)} onOpenChange={(open) => !open && setEditModel(null)}>
-        <SheetContent>
-          <SheetHeader>
-            <SheetTitle>Edit model</SheetTitle>
-            <SheetDescription>
-              Update the model metadata Bab uses for display, filtering, routing, and spend
-              estimates.
-            </SheetDescription>
-          </SheetHeader>
-          <form
-            className="grid gap-4 overflow-y-auto px-6 py-5"
-            onSubmit={editForm.handleSubmit((values) => {
-              if (editModel) onUpdate(editModel, values);
-              setEditModel(null);
-            })}
-          >
-            {editModel ? (
-              <div className="rounded-md border bg-muted/20 p-3 text-sm">
-                <div className="font-medium">Metadata source</div>
-                <div className="mt-1 text-muted-foreground">
-                  {formatMetadataSource(editModel.metadata_source)}
-                  {editModel.metadata_last_synced_at
-                    ? ` · synced ${formatRelativeFromNow(editModel.metadata_last_synced_at)}`
-                    : ""}
-                </div>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Saving here marks this model as manually managed. Catalog sync will preserve these
-                  values unless overwrite mode is selected.
-                </p>
-              </div>
-            ) : null}
-            {editModel ? <PricingSnapshot model={editModel} /> : null}
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-provider-model-name">Provider model name</Label>
-              <Input id="edit-provider-model-name" {...editForm.register("provider_model_name")} />
-              {editForm.formState.errors.provider_model_name ? (
-                <p className="text-xs text-destructive">
-                  {editForm.formState.errors.provider_model_name.message}
-                </p>
-              ) : null}
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-provider-model-alias">Alias</Label>
-              <Input id="edit-provider-model-alias" {...editForm.register("alias")} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-provider-model-version">Version</Label>
-              <Input id="edit-provider-model-version" {...editForm.register("version")} />
-            </div>
-            <ModalityCheckboxGroup
-              label="Input modalities"
-              values={editInputModalities ?? []}
-              onChange={(values) => editForm.setValue("input_modalities", values)}
-            />
-            <ModalityCheckboxGroup
-              label="Output modalities"
-              values={editOutputModalities ?? []}
-              onChange={(values) => editForm.setValue("output_modalities", values)}
-            />
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-provider-model-context">Context window</Label>
-              <Input
-                id="edit-provider-model-context"
-                type="number"
-                min={1}
-                {...editForm.register("context_window")}
-              />
-              {editForm.formState.errors.context_window ? (
-                <p className="text-xs text-destructive">
-                  {editForm.formState.errors.context_window.message}
-                </p>
-              ) : null}
-            </div>
-            <PricingFields register={editForm.register} prefix="edit" />
-            <CapabilityCheckboxGroup
-              values={editCapabilities ?? []}
-              onChange={(values) => editForm.setValue("capabilities", values)}
-            />
-          </form>
-          <SheetFooter>
-            <Button
-              disabled={!editModel}
-              onClick={editForm.handleSubmit((values) => {
-                if (editModel) onUpdate(editModel, values);
-                setEditModel(null);
-              })}
-            >
-              Save
-            </Button>
-            <SheetClose asChild>
-              <Button variant="outline">Cancel</Button>
-            </SheetClose>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
-    </>
-  );
-}
-
-function SetupStep({
-  label,
-  complete,
-  action,
-  onAction,
-  href,
-}: {
-  label: string;
-  complete: boolean;
-  action?: string;
-  onAction?: () => void;
-  href?: string;
-}) {
-  return (
-    <div className="flex min-h-14 items-center justify-between gap-3 rounded-md border px-3 py-2">
-      <div className="flex min-w-0 items-center gap-2">
-        {complete ? (
-          <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
-        ) : (
-          <Circle className="size-4 shrink-0 text-muted-foreground" />
-        )}
-        <span className="text-sm font-medium">{label}</span>
-      </div>
-      {action && href ? (
-        <Button asChild size="sm" variant="ghost">
-          <Link to={href}>{action}</Link>
-        </Button>
-      ) : action && onAction ? (
-        <Button size="sm" variant="ghost" onClick={onAction}>
-          {action}
-        </Button>
-      ) : null}
-    </div>
-  );
-}
-
-function ModelSyncSummary({ result }: { result: SyncModelOfferingsResponse }) {
-  const summary = result.summary;
-  return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border bg-muted/30 px-3 py-2 text-xs">
-      <span className="font-medium">Last sync {formatRelativeFromNow(result.synced_at)}</span>
-      <span>{summary?.added ?? 0} added</span>
-      <span>{summary?.updated ?? 0} updated</span>
-      <span>{summary?.reactivated ?? 0} reactivated</span>
-      <span>{summary?.disabled ?? 0} disabled</span>
-      <span>{summary?.unchanged ?? 0} unchanged</span>
-      {(summary?.failed ?? 0) > 0 ? (
-        <span className="text-destructive">{summary?.failed} failed</span>
-      ) : null}
-    </div>
-  );
-}
-
-function ResourceImpactDialog({
-  open,
-  title,
-  impact,
-  loading,
-  onOpenChange,
-  onConfirm,
-}: {
-  open: boolean;
-  title: string;
-  impact: ProviderResourceImpactResponse | null;
-  loading: boolean;
-  onOpenChange: (open: boolean) => void;
-  onConfirm: () => void;
-}) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>
-            Review active routing and recent usage before continuing.
-          </DialogDescription>
-        </DialogHeader>
-        {loading ? (
-          <p className="text-sm text-muted-foreground">Checking impact...</p>
-        ) : impact ? (
-          <div className="space-y-2 text-sm">
-            <p>
-              {impact.active_pool_membership_count ?? 0} active pool memberships,{" "}
-              {impact.access_policies?.length ?? 0} access routes, and{" "}
-              {impact.active_limit_rule_count ?? 0} limit rules.
-            </p>
-            <p>
-              Last 30 days: {(impact.recent_request_count ?? 0).toLocaleString()} requests and $
-              {((impact.recent_cost_cents ?? 0) / 100).toFixed(2)} estimated spend.
-            </p>
-            {impact.leaves_provider_unroutable ? (
-              <p className="font-medium text-destructive">
-                This action removes the provider's last active resource of this type.
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="outline">Cancel</Button>
-          </DialogClose>
-          <Button variant="destructive" disabled={loading} onClick={onConfirm}>
-            Disable
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function PricingSnapshot({ model }: { model: ModelOfferingResponse }) {
-  return (
-    <div className="rounded-md border bg-muted/20 p-3 text-sm">
-      <div className="font-medium">Effective pricing</div>
-      <div className="mt-2 grid gap-2 text-xs sm:grid-cols-3">
-        <Fact
-          label="Input"
-          value={formatTokenPrice(model.effective_input_price_per_million_tokens)}
-        />
-        <Fact
-          label="Output"
-          value={formatTokenPrice(model.effective_output_price_per_million_tokens)}
-        />
-        <Fact
-          label="Cached input"
-          value={formatTokenPrice(model.effective_cached_input_price_per_million_tokens)}
-        />
-      </div>
-      <div className="mt-2 text-xs text-muted-foreground">
-        {formatPricingSource(model.pricing_source)}
-        {model.pricing_catalog_version ? ` · catalog ${model.pricing_catalog_version}` : ""}
-        {model.pricing_last_refreshed_at
-          ? ` · refreshed ${formatRelativeFromNow(model.pricing_last_refreshed_at)}`
-          : ""}
-      </div>
-    </div>
-  );
-}
-
-function Fact({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div className="text-muted-foreground">{label}</div>
-      <div className="font-mono">{value}</div>
-    </div>
-  );
-}
-
-function ModalityCheckboxGroup({
-  label,
-  values,
-  onChange,
-}: {
-  label: string;
-  values: string[];
-  onChange: (values: string[]) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <Label>{label}</Label>
-      <div className="grid gap-2 sm:grid-cols-2">
-        {modelModalities.map((item) => (
-          <CheckboxOption
-            key={item}
-            label={item}
-            checked={values.includes(item)}
-            onCheckedChange={(checked) => {
-              const next = checked ? [...values, item] : values.filter((value) => value !== item);
-              onChange(next.length ? next : ["text"]);
-            }}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function CapabilityCheckboxGroup({
-  values,
-  onChange,
-}: {
-  values: string[];
-  onChange: (values: string[]) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <Label>Capabilities</Label>
-      <div className="grid gap-2 sm:grid-cols-2">
-        {modelCapabilityOptions.map((item) => (
-          <CheckboxOption
-            key={item}
-            label={item}
-            checked={values.includes(item)}
-            onCheckedChange={(checked) => {
-              const next = checked ? [...values, item] : values.filter((value) => value !== item);
-              onChange(next);
-            }}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function CheckboxOption({
-  label,
-  checked,
-  onCheckedChange,
-}: {
-  label: string;
-  checked: boolean;
-  onCheckedChange: (checked: boolean) => void;
-}) {
-  return (
-    <label className="flex items-center gap-2 rounded-md border p-2 text-sm">
-      <Checkbox checked={checked} onCheckedChange={(value) => onCheckedChange(value === true)} />
-      <span>{label}</span>
-    </label>
   );
 }
