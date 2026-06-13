@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -109,7 +110,9 @@ import {
 } from "@/shared/api/generated/projects/projects";
 import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
 import { EmptyState } from "@/shared/components/EmptyState";
+import { ImpactConfirmationDialog } from "@/shared/components/ImpactConfirmationDialog";
 import { PageHeader } from "@/shared/components/PageHeader";
+import { StatCard } from "@/shared/components/StatCard";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 
 type SheetKind = "access" | "limit" | null;
@@ -211,7 +214,7 @@ function useImpactConfirmation() {
     }
   };
   const dialog = (
-    <ConfirmationDialog
+    <ImpactConfirmationDialog
       open={Boolean(state)}
       title={state?.title ?? ""}
       description="Review the affected scopes before removing this policy item."
@@ -223,7 +226,7 @@ function useImpactConfirmation() {
       }}
     >
       {state ? <PolicyImpactPreview impact={state.impact} /> : null}
-    </ConfirmationDialog>
+    </ImpactConfirmationDialog>
   );
   return { requestImpactConfirmation, isLoadingImpact, dialog };
 }
@@ -538,8 +541,8 @@ export function AccessPolicyDetailPage() {
   const canManageDefinition = canManagePolicyDefinition(currentUser, policy);
 
   return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
+    <>
+      <PolicyDetailLayout
         title={policy.name}
         description={policy.description || "Access policy route configuration."}
         actions={
@@ -576,29 +579,20 @@ export function AccessPolicyDetailPage() {
             ) : null}
           </div>
         }
-      />
-
-      <div className="grid gap-3 md:grid-cols-4">
-        <MetricCard label="Routes" value={routeCount} />
-        <MetricCard label="Models" value={modelCount} />
-        <MetricCard label="Assignments" value={assignments.length} />
-        <MetricCard label="Status" value={policy.is_active ? "Active" : "Inactive"} />
-      </div>
-
-      <PolicyCard
-        title="Access routes"
-        description="Routes decide which provider pool can serve selected models."
-        icon={Route}
-      >
-        <AccessRoutesDetailTable routes={policy.routes ?? []} />
-      </PolicyCard>
-
-      <PolicyAssignmentsSection
+        metrics={[
+          { label: "Routes", value: routeCount },
+          { label: "Models", value: modelCount },
+          { label: "Assignments", value: assignments.length },
+          { label: "Status", value: policy.is_active ? "Active" : "Inactive" },
+        ]}
+        detailTitle="Access routes"
+        detailDescription="Routes decide which provider pool can serve selected models."
+        detailIcon={Route}
+        detailContent={<AccessRoutesDetailTable routes={policy.routes ?? []} />}
         assignments={assignments}
         onChanged={invalidatePolicies}
         canManageAssignments={canAssignPolicies}
       />
-
       <RouteSheet
         state={routeSheet}
         onOpenChange={(open) => !open && setRouteSheet(null)}
@@ -615,7 +609,7 @@ export function AccessPolicyDetailPage() {
         onChanged={invalidatePolicies}
         canAssignOrg={canManagePolicies}
       />
-    </div>
+    </>
   );
 }
 
@@ -658,8 +652,8 @@ export function LimitPolicyDetailPage() {
   const canManageDefinition = canManagePolicyDefinition(currentUser, policy);
 
   return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
+    <>
+      <PolicyDetailLayout
         title={policy.name}
         description={policy.description || "Limit policy rule configuration."}
         actions={
@@ -696,29 +690,20 @@ export function LimitPolicyDetailPage() {
             ) : null}
           </div>
         }
-      />
-
-      <div className="grid gap-3 md:grid-cols-4">
-        <MetricCard label="Rules" value={rules.length} />
-        <MetricCard label="Assignments" value={assignments.length} />
-        <MetricCard label="Active rules" value={rules.filter((rule) => rule.is_active).length} />
-        <MetricCard label="Status" value={policy.is_active ? "Active" : "Inactive"} />
-      </div>
-
-      <PolicyCard
-        title="Limit rules"
-        description="Rules compose across matching scopes and dimensions."
-        icon={SlidersHorizontal}
-      >
-        <LimitRulesDetailTable rules={rules} />
-      </PolicyCard>
-
-      <PolicyAssignmentsSection
+        metrics={[
+          { label: "Rules", value: rules.length },
+          { label: "Assignments", value: assignments.length },
+          { label: "Active rules", value: rules.filter((rule) => rule.is_active).length },
+          { label: "Status", value: policy.is_active ? "Active" : "Inactive" },
+        ]}
+        detailTitle="Limit rules"
+        detailDescription="Rules compose across matching scopes and dimensions."
+        detailIcon={SlidersHorizontal}
+        detailContent={<LimitRulesDetailTable rules={rules} />}
         assignments={assignments}
         onChanged={invalidatePolicies}
         canManageAssignments={canAssignPolicies}
       />
-
       <LimitRulesSheet
         state={limitRulesSheet}
         onOpenChange={(open) => !open && setLimitRulesSheet(null)}
@@ -735,7 +720,7 @@ export function LimitPolicyDetailPage() {
         onChanged={invalidatePolicies}
         canAssignOrg={canManagePolicies}
       />
-    </div>
+    </>
   );
 }
 
@@ -768,62 +753,91 @@ function PolicyCard({
   );
 }
 
-function MetricCard({ label, value }: { label: string; value: ReactNode }) {
+function PolicyDetailLayout({
+  title,
+  description,
+  actions,
+  metrics,
+  detailTitle,
+  detailDescription,
+  detailIcon,
+  detailContent,
+  assignments,
+  onChanged,
+  canManageAssignments,
+}: {
+  title: string;
+  description: string;
+  actions: ReactNode;
+  metrics: { label: string; value: ReactNode }[];
+  detailTitle: string;
+  detailDescription: string;
+  detailIcon: typeof GitBranch;
+  detailContent: ReactNode;
+  assignments: PolicyAssignmentResponse[];
+  onChanged: () => Promise<void>;
+  canManageAssignments: boolean;
+}) {
   return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="text-sm text-muted-foreground">{label}</div>
-        <div className="mt-1 text-2xl font-semibold">{value}</div>
-      </CardContent>
-    </Card>
+    <div className="flex flex-col gap-6">
+      <PageHeader title={title} description={description} actions={actions} />
+      <div className="grid gap-3 md:grid-cols-4">
+        {metrics.map((metric) => (
+          <StatCard key={metric.label} label={metric.label} value={metric.value} />
+        ))}
+      </div>
+      <PolicyCard title={detailTitle} description={detailDescription} icon={detailIcon}>
+        {detailContent}
+      </PolicyCard>
+      <PolicyAssignmentsSection
+        assignments={assignments}
+        onChanged={onChanged}
+        canManageAssignments={canManageAssignments}
+      />
+    </div>
   );
 }
 
 function AccessRoutesDetailTable({ routes }: { routes: AccessPolicyRouteResponse[] }) {
-  if (routes.length === 0) {
-    return (
-      <EmptyState
-        title="No routes configured"
-        description="Add at least one provider pool and model route before assigning this policy."
-      />
-    );
-  }
+  const columns: DataTableColumn<AccessPolicyRouteResponse>[] = [
+    { key: "route", header: "Route", cell: (route) => <RouteProviderPool route={route} /> },
+    {
+      key: "models",
+      header: "Model offerings",
+      cell: (route) => <RouteModelNames route={route} />,
+    },
+    {
+      key: "routing",
+      header: "Routing",
+      className: "text-sm",
+      cell: (route) => (
+        <>
+          Priority {route.priority}
+          <div className="text-xs text-muted-foreground">Tie-break weight {route.weight}</div>
+        </>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (route) => (
+        <StatusBadge variant={route.is_active ? "active" : "inactive"}>
+          {route.is_active ? "Active" : "Inactive"}
+        </StatusBadge>
+      ),
+    },
+  ];
   return (
-    <div className="overflow-hidden rounded-md border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Route</TableHead>
-            <TableHead>Model offerings</TableHead>
-            <TableHead>Routing</TableHead>
-            <TableHead>Status</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {routes.map((route) => (
-            <TableRow key={route.id}>
-              <TableCell>
-                <RouteProviderPool route={route} />
-              </TableCell>
-              <TableCell>
-                <RouteModelNames route={route} />
-              </TableCell>
-              <TableCell className="text-sm">
-                Priority {route.priority}
-                <div className="text-xs text-muted-foreground">
-                  Tie-break weight {route.weight}
-                </div>
-              </TableCell>
-              <TableCell>
-                <StatusBadge variant={route.is_active ? "active" : "inactive"}>
-                  {route.is_active ? "Active" : "Inactive"}
-                </StatusBadge>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+    <DataTable
+      columns={columns}
+      data={routes}
+      getRowKey={(route) => route.id}
+      empty={{
+        title: "No routes configured",
+        description:
+          "Add at least one provider pool and model route before assigning this policy.",
+      }}
+    />
   );
 }
 
@@ -874,47 +888,45 @@ function RouteModelNames({ route }: { route: AccessPolicyRouteResponse }) {
 }
 
 function LimitRulesDetailTable({ rules }: { rules: LimitPolicyRuleResponse[] }) {
-  if (rules.length === 0) {
-    return (
-      <EmptyState
-        title="No rules configured"
-        description="Add budget, request, or token rules before assigning this policy."
-      />
-    );
-  }
+  const columns: DataTableColumn<LimitPolicyRuleResponse>[] = [
+    { key: "rule", header: "Rule", className: "font-medium", cell: (rule) => rule.name },
+    {
+      key: "interval",
+      header: "Interval",
+      cell: (rule) => formatInterval(rule.interval_unit, rule.interval_count),
+    },
+    {
+      key: "limit",
+      header: "Limit",
+      className: "text-sm text-muted-foreground",
+      cell: (rule) => formatRuleSummary(rule),
+    },
+    {
+      key: "filters",
+      header: "Filters",
+      className: "text-xs text-muted-foreground",
+      cell: (rule) => <LimitRuleFiltersSummary rule={rule} />,
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (rule) => (
+        <StatusBadge variant={rule.is_active ? "active" : "inactive"}>
+          {rule.is_active ? "Active" : "Inactive"}
+        </StatusBadge>
+      ),
+    },
+  ];
   return (
-    <div className="overflow-hidden rounded-md border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Rule</TableHead>
-            <TableHead>Interval</TableHead>
-            <TableHead>Limit</TableHead>
-            <TableHead>Filters</TableHead>
-            <TableHead>Status</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rules.map((rule) => (
-            <TableRow key={rule.id}>
-              <TableCell className="font-medium">{rule.name}</TableCell>
-              <TableCell>{formatInterval(rule.interval_unit, rule.interval_count)}</TableCell>
-              <TableCell className="text-sm text-muted-foreground">
-                {formatRuleSummary(rule)}
-              </TableCell>
-              <TableCell className="text-xs text-muted-foreground">
-                <LimitRuleFiltersSummary rule={rule} />
-              </TableCell>
-              <TableCell>
-                <StatusBadge variant={rule.is_active ? "active" : "inactive"}>
-                  {rule.is_active ? "Active" : "Inactive"}
-                </StatusBadge>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+    <DataTable
+      columns={columns}
+      data={rules}
+      getRowKey={(rule) => rule.id}
+      empty={{
+        title: "No rules configured",
+        description: "Add budget, request, or token rules before assigning this policy.",
+      }}
+    />
   );
 }
 
@@ -966,6 +978,65 @@ function PolicyAssignmentsSection({
       onConfirm: () => deleteAssignment.mutate({ assignmentId: assignment.id }),
     });
   };
+  const columns: DataTableColumn<PolicyAssignmentResponse>[] = [
+    {
+      key: "scope",
+      header: "Scope",
+      cell: (assignment) => (
+        <>
+          <div className="capitalize">{assignment.scope_type.replace("_", " ")}</div>
+          <div className="text-xs text-muted-foreground">
+            {formatAssignmentTarget(assignment, teamNames, projectNames)}
+          </div>
+        </>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (assignment) =>
+        canManageAssignments ? (
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={assignment.is_active}
+              disabled={updateAssignment.isPending}
+              onCheckedChange={(checked) =>
+                updateAssignment.mutate({
+                  assignmentId: assignment.id,
+                  data: { is_active: checked },
+                })
+              }
+            />
+            <span className="text-sm">{assignment.is_active ? "Active" : "Inactive"}</span>
+          </div>
+        ) : (
+          <StatusBadge variant={assignment.is_active ? "active" : "inactive"}>
+            {assignment.is_active ? "Active" : "Inactive"}
+          </StatusBadge>
+        ),
+    },
+    ...(canManageAssignments
+      ? [
+          {
+            key: "actions",
+            header: <span className="sr-only">Actions</span>,
+            align: "right" as const,
+            headClassName: "w-12",
+            cell: (assignment: PolicyAssignmentResponse) => (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Remove assignment"
+                disabled={deleteAssignment.isPending}
+                onClick={() => handleDeleteAssignment(assignment)}
+              >
+                <Trash2 />
+              </Button>
+            ),
+          },
+        ]
+      : []),
+  ];
   return (
     <PolicyCard
       title="Assignments"
@@ -986,72 +1057,15 @@ function PolicyAssignmentsSection({
           </SelectContent>
         </Select>
       </div>
-      {filteredAssignments.length === 0 ? (
-        <EmptyState
-          title="No assignments"
-          description="This policy is not assigned to this scope."
-        />
-      ) : (
-        <div className="overflow-hidden rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Scope</TableHead>
-                <TableHead>Status</TableHead>
-                {canManageAssignments ? <TableHead className="w-12" /> : null}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredAssignments.map((assignment) => (
-                <TableRow key={assignment.id}>
-                  <TableCell>
-                    <div className="capitalize">{assignment.scope_type.replace("_", " ")}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {formatAssignmentTarget(assignment, teamNames, projectNames)}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {canManageAssignments ? (
-                      <div className="flex items-center gap-2">
-                        <Switch
-                          checked={assignment.is_active}
-                          disabled={updateAssignment.isPending}
-                          onCheckedChange={(checked) =>
-                            updateAssignment.mutate({
-                              assignmentId: assignment.id,
-                              data: { is_active: checked },
-                            })
-                          }
-                        />
-                        <span className="text-sm">
-                          {assignment.is_active ? "Active" : "Inactive"}
-                        </span>
-                      </div>
-                    ) : (
-                      <StatusBadge variant={assignment.is_active ? "active" : "inactive"}>
-                        {assignment.is_active ? "Active" : "Inactive"}
-                      </StatusBadge>
-                    )}
-                  </TableCell>
-                  {canManageAssignments ? (
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label="Remove assignment"
-                        disabled={deleteAssignment.isPending}
-                        onClick={() => handleDeleteAssignment(assignment)}
-                      >
-                        <Trash2 />
-                      </Button>
-                    </TableCell>
-                  ) : null}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+      <DataTable
+        columns={columns}
+        data={filteredAssignments}
+        getRowKey={(assignment) => assignment.id}
+        empty={{
+          title: "No assignments",
+          description: "This policy is not assigned to this scope.",
+        }}
+      />
       {actionConfirmationDialog}
     </PolicyCard>
   );
@@ -1098,99 +1112,108 @@ function AccessPoliciesTable({
       () => deletePolicy.mutate({ policyId: policy.id }),
     );
   };
-  if (isLoading) return <p className="text-sm text-muted-foreground">Loading policies...</p>;
-  if (policies.length === 0) {
-    return <EmptyState title="No access policies" description="Create a route policy first." />;
-  }
+  const columns: DataTableColumn<AccessPolicyResponse>[] = [
+    {
+      key: "name",
+      header: "Name",
+      cell: (policy) => (
+        <>
+          <Link to={`/policies/access/${policy.id}`} className="font-medium hover:underline">
+            {policy.name}
+          </Link>
+          <div className="text-xs text-muted-foreground">{policy.description}</div>
+        </>
+      ),
+    },
+    {
+      key: "routes",
+      header: "Routes",
+      cell: (policy) => (
+        <>
+          <div>{policy.routes?.length ?? 0} routes</div>
+          <div className="text-xs text-muted-foreground">{countRouteModels(policy)} models</div>
+        </>
+      ),
+    },
+    {
+      key: "assignments",
+      header: "Assignments",
+      cell: (policy) => assignmentCount(policy.id, "access"),
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (policy) => {
+        const status = accessPolicyStatus(policy, assignmentCount(policy.id, "access"));
+        return <StatusBadge variant={status.variant}>{status.label}</StatusBadge>;
+      },
+    },
+    {
+      key: "actions",
+      header: <span className="sr-only">Actions</span>,
+      align: "right",
+      headClassName: "w-36",
+      cell: (policy) => {
+        const canManage = canManageDefinition(policy);
+        return (
+          <div className="flex justify-end gap-1">
+            {canManage ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={`Edit ${policy.name}`}
+                onClick={() => onEditPolicy(policy)}
+              >
+                <Pencil />
+              </Button>
+            ) : null}
+            {canManage ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={`Configure routes for ${policy.name}`}
+                onClick={() => onConfigureRoutes(policy)}
+              >
+                <Route />
+              </Button>
+            ) : null}
+            {canAssign ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={`Assign ${policy.name}`}
+                onClick={() => onAssign(policy)}
+              >
+                <Plus />
+              </Button>
+            ) : null}
+            {canManage ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={`Delete ${policy.name}`}
+                disabled={isLoadingImpact || deletePolicy.isPending}
+                onClick={() => void handleDeletePolicy(policy)}
+              >
+                <Trash2 />
+              </Button>
+            ) : null}
+          </div>
+        );
+      },
+    },
+  ];
   return (
-    <div className="overflow-hidden rounded-md border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Routes</TableHead>
-            <TableHead>Assignments</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead className="w-36" />
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {policies.map((policy) => {
-            const status = accessPolicyStatus(policy, assignmentCount(policy.id, "access"));
-            const canManage = canManageDefinition(policy);
-            return (
-              <TableRow key={policy.id}>
-                <TableCell>
-                  <Link
-                    to={`/policies/access/${policy.id}`}
-                    className="font-medium hover:underline"
-                  >
-                    {policy.name}
-                  </Link>
-                  <div className="text-xs text-muted-foreground">{policy.description}</div>
-                </TableCell>
-                <TableCell>
-                  <div>{policy.routes?.length ?? 0} routes</div>
-                  <div className="text-xs text-muted-foreground">
-                    {countRouteModels(policy)} models
-                  </div>
-                </TableCell>
-                <TableCell>{assignmentCount(policy.id, "access")}</TableCell>
-                <TableCell>
-                  <StatusBadge variant={status.variant}>{status.label}</StatusBadge>
-                </TableCell>
-                <TableCell>
-                  <div className="flex justify-end gap-1">
-                    {canManage ? (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Edit ${policy.name}`}
-                        onClick={() => onEditPolicy(policy)}
-                      >
-                        <Pencil />
-                      </Button>
-                    ) : null}
-                    {canManage ? (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Configure routes for ${policy.name}`}
-                        onClick={() => onConfigureRoutes(policy)}
-                      >
-                        <Route />
-                      </Button>
-                    ) : null}
-                    {canAssign ? (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Assign ${policy.name}`}
-                        onClick={() => onAssign(policy)}
-                      >
-                        <Plus />
-                      </Button>
-                    ) : null}
-                    {canManage ? (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Delete ${policy.name}`}
-                        disabled={isLoadingImpact || deletePolicy.isPending}
-                        onClick={() => void handleDeletePolicy(policy)}
-                      >
-                        <Trash2 />
-                      </Button>
-                    ) : null}
-                  </div>
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
+    <>
+      <DataTable
+        columns={columns}
+        data={policies}
+        loading={isLoading}
+        getRowKey={(policy) => policy.id}
+        empty={{ title: "No access policies", description: "Create a route policy first." }}
+      />
       {impactConfirmationDialog}
-    </div>
+    </>
   );
 }
 
@@ -1235,99 +1258,111 @@ function LimitPoliciesTable({
       () => deletePolicy.mutate({ policyId: policy.id }),
     );
   };
-  if (isLoading) return <p className="text-sm text-muted-foreground">Loading policies...</p>;
-  if (policies.length === 0) {
-    return <EmptyState title="No limit policies" description="Create a budget or cap policy." />;
-  }
+  const columns: DataTableColumn<LimitPolicyResponse>[] = [
+    {
+      key: "name",
+      header: "Name",
+      cell: (policy) => (
+        <>
+          <Link to={`/policies/limits/${policy.id}`} className="font-medium hover:underline">
+            {policy.name}
+          </Link>
+          <div className="text-xs text-muted-foreground">{policy.description}</div>
+        </>
+      ),
+    },
+    {
+      key: "rules",
+      header: "Rules",
+      className: "text-xs text-muted-foreground",
+      cell: (policy) => (
+        <>
+          {(policy.rules ?? []).length} rules
+          {(policy.rules ?? []).slice(0, 2).map((rule) => (
+            <div key={rule.id}>{formatRuleSummary(rule)}</div>
+          ))}
+        </>
+      ),
+    },
+    {
+      key: "assignments",
+      header: "Assignments",
+      cell: (policy) => assignmentCount(policy.id, "limit"),
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (policy) => {
+        const status = limitPolicyStatus(policy, assignmentCount(policy.id, "limit"));
+        return <StatusBadge variant={status.variant}>{status.label}</StatusBadge>;
+      },
+    },
+    {
+      key: "actions",
+      header: <span className="sr-only">Actions</span>,
+      align: "right",
+      headClassName: "w-24",
+      cell: (policy) => {
+        const canManage = canManageDefinition(policy);
+        return (
+          <div className="flex justify-end gap-1">
+            {canManage ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={`Edit ${policy.name}`}
+                onClick={() => onEditPolicy(policy)}
+              >
+                <Pencil />
+              </Button>
+            ) : null}
+            {canManage ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={`Configure rules for ${policy.name}`}
+                onClick={() => onConfigureRules(policy)}
+              >
+                <SlidersHorizontal />
+              </Button>
+            ) : null}
+            {canAssign ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={`Assign ${policy.name}`}
+                onClick={() => onAssign(policy)}
+              >
+                <Plus />
+              </Button>
+            ) : null}
+            {canManage ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={`Delete ${policy.name}`}
+                disabled={isLoadingImpact || deletePolicy.isPending}
+                onClick={() => void handleDeletePolicy(policy)}
+              >
+                <Trash2 />
+              </Button>
+            ) : null}
+          </div>
+        );
+      },
+    },
+  ];
   return (
-    <div className="overflow-hidden rounded-md border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Rules</TableHead>
-            <TableHead>Assignments</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead className="w-24" />
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {policies.map((policy) => {
-            const status = limitPolicyStatus(policy, assignmentCount(policy.id, "limit"));
-            const canManage = canManageDefinition(policy);
-            return (
-              <TableRow key={policy.id}>
-                <TableCell>
-                  <Link
-                    to={`/policies/limits/${policy.id}`}
-                    className="font-medium hover:underline"
-                  >
-                    {policy.name}
-                  </Link>
-                  <div className="text-xs text-muted-foreground">{policy.description}</div>
-                </TableCell>
-                <TableCell className="text-xs text-muted-foreground">
-                  {(policy.rules ?? []).length} rules
-                  {(policy.rules ?? []).slice(0, 2).map((rule) => (
-                    <div key={rule.id}>{formatRuleSummary(rule)}</div>
-                  ))}
-                </TableCell>
-                <TableCell>{assignmentCount(policy.id, "limit")}</TableCell>
-                <TableCell>
-                  <StatusBadge variant={status.variant}>{status.label}</StatusBadge>
-                </TableCell>
-                <TableCell>
-                  <div className="flex justify-end gap-1">
-                    {canManage ? (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Edit ${policy.name}`}
-                        onClick={() => onEditPolicy(policy)}
-                      >
-                        <Pencil />
-                      </Button>
-                    ) : null}
-                    {canManage ? (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Configure rules for ${policy.name}`}
-                        onClick={() => onConfigureRules(policy)}
-                      >
-                        <SlidersHorizontal />
-                      </Button>
-                    ) : null}
-                    {canAssign ? (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Assign ${policy.name}`}
-                        onClick={() => onAssign(policy)}
-                      >
-                        <Plus />
-                      </Button>
-                    ) : null}
-                    {canManage ? (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Delete ${policy.name}`}
-                        disabled={isLoadingImpact || deletePolicy.isPending}
-                        onClick={() => void handleDeletePolicy(policy)}
-                      >
-                        <Trash2 />
-                      </Button>
-                    ) : null}
-                  </div>
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
+    <>
+      <DataTable
+        columns={columns}
+        data={policies}
+        loading={isLoading}
+        getRowKey={(policy) => policy.id}
+        empty={{ title: "No limit policies", description: "Create a budget or cap policy." }}
+      />
       {impactConfirmationDialog}
-    </div>
+    </>
   );
 }
 
