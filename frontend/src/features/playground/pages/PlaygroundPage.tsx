@@ -28,6 +28,7 @@ import { useListVirtualKeyInventoryApiV1VirtualKeysGet } from "@/shared/api/gene
 import { apiMutator } from "@/shared/api/orval-mutator";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
+import { HttpStatusBadge, StatusBadge } from "@/shared/components/StatusBadge";
 
 type PlaygroundResult = {
   status: number;
@@ -374,9 +375,22 @@ function SharedRequestControls({
       {selectedKey ? (
         <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
           <div className="font-medium text-foreground">{selectedKey.name}</div>
-          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+          <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
             <span>Prefix: {selectedKey.key_prefix}...</span>
-            <span>Status: {keyStateLabel(selectedKey)}</span>
+            <span className="inline-flex items-center gap-1.5">
+              Status:{" "}
+              <StatusBadge
+                variant={
+                  selectedKey.is_usable
+                    ? "active"
+                    : selectedKey.revoked_at
+                      ? "revoked"
+                      : "warning"
+                }
+              >
+                {keyStateLabel(selectedKey)}
+              </StatusBadge>
+            </span>
             {selectedKey.expires_at ? (
               <span>Expires: {new Date(selectedKey.expires_at).toLocaleString()}</span>
             ) : null}
@@ -529,8 +543,13 @@ function ResponseCard({ result, mode }: { result: PlaygroundResult | null; mode:
       <CardContent>
         {result ? (
           <div className="space-y-3">
-            <div className="text-sm">
-              Status: <span className="font-mono font-medium">{result.status}</span>
+            <div className="flex items-center gap-2 text-sm">
+              Status:{" "}
+              {result.status > 0 ? (
+                <HttpStatusBadge status={result.status} />
+              ) : (
+                <StatusBadge variant="error">Failed</StatusBadge>
+              )}
             </div>
             {result.requestId ? (
               <div className="text-sm">
