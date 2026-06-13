@@ -2,18 +2,14 @@ import { Download } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { useListUsageRecordsApiV1UsageRecordsGet } from "@/shared/api/generated/usage/usage";
 import { httpClient } from "@/shared/api/http-client";
 import type { UsageRecordResponse } from "@/shared/api/generated/schemas";
+import { HttpStatusBadge } from "@/shared/components/StatusBadge";
+import { downloadBlob } from "@/shared/lib/download";
 import { formatCents } from "@/shared/lib/format-currency";
+import { shortId } from "@/shared/lib/short-id";
 
 type UsageRecordsDrilldownProps = {
   title?: string;
@@ -36,6 +32,60 @@ export function UsageRecordsDrilldown({
   });
   const records = recordsQuery.data?.status === 200 ? recordsQuery.data.data : [];
 
+  const columns: DataTableColumn<UsageRecordResponse>[] = [
+    {
+      key: "time",
+      header: "Time",
+      className: "whitespace-nowrap text-muted-foreground",
+      cell: (record) => new Date(record.created_at).toLocaleString(),
+    },
+    {
+      key: "model",
+      header: "Model",
+      cell: (record) => (
+        <>
+          <div className="font-medium">{record.requested_model}</div>
+          <div className="text-xs text-muted-foreground">{record.provider_model}</div>
+        </>
+      ),
+    },
+    {
+      key: "credential",
+      header: "Credential",
+      cell: (record) => (
+        <>
+          <div className="font-medium">{record.provider_credential_name ?? "Unknown"}</div>
+          <div className="font-mono text-xs text-muted-foreground">
+            {record.provider_credential_prefix ?? shortId(record.provider_credential_id)}
+          </div>
+        </>
+      ),
+    },
+    {
+      key: "request",
+      header: "Request",
+      className: "font-mono text-xs text-muted-foreground",
+      cell: (record) => shortId(record.request_id),
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (record) => <HttpStatusBadge status={record.http_status} />,
+    },
+    {
+      key: "spend",
+      header: "Spend",
+      align: "right",
+      cell: (record) => formatRecordSpend(record),
+    },
+    {
+      key: "latency",
+      header: "Latency",
+      align: "right",
+      cell: (record) => `${record.latency_ms}ms`,
+    },
+  ];
+
   return (
     <Card>
       <CardHeader className="border-b">
@@ -48,54 +98,13 @@ export function UsageRecordsDrilldown({
         </div>
       </CardHeader>
       <CardContent>
-        {recordsQuery.isPending ? (
-          <p className="text-sm text-muted-foreground">Loading usage records...</p>
-        ) : records.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No usage records in the last 30 days.</p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Time</TableHead>
-                <TableHead>Model</TableHead>
-                <TableHead>Credential</TableHead>
-                <TableHead>Request</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Spend</TableHead>
-                <TableHead className="text-right">Latency</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {records.slice(0, 15).map((record) => (
-                <TableRow key={record.id}>
-                  <TableCell className="whitespace-nowrap text-muted-foreground">
-                    {new Date(record.created_at).toLocaleString()}
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-medium">{record.requested_model}</div>
-                    <div className="text-xs text-muted-foreground">{record.provider_model}</div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-medium">
-                      {record.provider_credential_name ?? "Unknown"}
-                    </div>
-                    <div className="font-mono text-xs text-muted-foreground">
-                      {record.provider_credential_prefix ?? shortId(record.provider_credential_id)}
-                    </div>
-                  </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {shortId(record.request_id)}
-                  </TableCell>
-                  <TableCell>{record.http_status}</TableCell>
-                  <TableCell className="text-right">
-                    {formatRecordSpend(record)}
-                  </TableCell>
-                  <TableCell className="text-right">{record.latency_ms}ms</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+        <DataTable
+          columns={columns}
+          data={records.slice(0, 15)}
+          loading={recordsQuery.isPending}
+          getRowKey={(record) => record.id}
+          empty={{ title: "No usage records in the last 30 days." }}
+        />
       </CardContent>
     </Card>
   );
@@ -109,16 +118,7 @@ async function downloadCsv(filters: UsageRecordsDrilldownProps["filters"]) {
     },
     responseType: "blob",
   });
-  const url = URL.createObjectURL(response.data);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = "bab-usage-records.csv";
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
-
-function shortId(value: string | null | undefined) {
-  return value ? value.slice(0, 8) : "-";
+  downloadBlob(response.data, "bab-usage-records.csv");
 }
 
 function formatRecordSpend(record: UsageRecordResponse) {
