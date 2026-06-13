@@ -17,7 +17,6 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -111,6 +110,7 @@ import {
 import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { ImpactConfirmationDialog } from "@/shared/components/ImpactConfirmationDialog";
+import { ModelMultiselect } from "@/shared/components/ModelMultiselect";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatCard } from "@/shared/components/StatCard";
 import { StatusBadge } from "@/shared/components/StatusBadge";
@@ -1503,7 +1503,6 @@ function CreatePolicySheet({
   const [providerId, setProviderId] = useState("");
   const [poolId, setPoolId] = useState("");
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
-  const [modelSearch, setModelSearch] = useState("");
   const [draftRoutes, setDraftRoutes] = useState<DraftAccessRoute[]>([]);
   const teamsQuery = useListTeamsApiV1TeamsGet();
   const projectsQuery = useListProjectsApiV1ProjectsGet();
@@ -1537,17 +1536,6 @@ function CreatePolicySheet({
     accessOptionsQuery.data?.status === 200 ? (accessOptionsQuery.data.data.providers ?? []) : [];
   const pools = accessOptions.find((provider) => provider.id === providerId)?.pools ?? [];
   const models = pools.find((pool) => pool.id === poolId)?.models ?? [];
-  const filteredModels = models.filter((model) => {
-    const term = modelSearch.trim().toLowerCase();
-    if (!term) return true;
-    return [model.provider_model_name, model.alias]
-      .filter(Boolean)
-      .some((value) => value?.toLowerCase().includes(term));
-  });
-  const visibleModelIds = filteredModels.map((model) => model.id);
-  const allVisibleModelsSelected =
-    visibleModelIds.length > 0 &&
-    selectedModels.filter((id) => visibleModelIds.includes(id)).length === visibleModelIds.length;
   const createAccess = useCreateAccessPolicyApiV1PoliciesAccessPost();
   const createLimit = useCreateLimitPolicyApiV1PoliciesLimitsPost();
   const createAssignment = useCreatePolicyAssignmentApiV1PoliciesAssignmentsPost();
@@ -1568,7 +1556,6 @@ function CreatePolicySheet({
     setProviderId("");
     setPoolId("");
     setSelectedModels([]);
-    setModelSearch("");
     setDraftRoutes([]);
   };
   const currentRuleHasLimits = Boolean(limitValue.trim());
@@ -1692,7 +1679,6 @@ function CreatePolicySheet({
     setProviderId("");
     setPoolId("");
     setSelectedModels([]);
-    setModelSearch("");
   };
   return (
     <Sheet
@@ -1739,7 +1725,6 @@ function CreatePolicySheet({
                 setProviderId("");
                 setPoolId("");
                 setSelectedModels([]);
-                setModelSearch("");
               }}
               options={["none", "org", "team", "project", "virtual_key"]}
               labels={{
@@ -1769,7 +1754,6 @@ function CreatePolicySheet({
                   setProviderId("");
                   setPoolId("");
                   setSelectedModels([]);
-                  setModelSearch("");
                 }}
                 options={projects.map((project) => project.id)}
                 labels={projectLabels(projects)}
@@ -1784,7 +1768,6 @@ function CreatePolicySheet({
                   setProviderId("");
                   setPoolId("");
                   setSelectedModels([]);
-                  setModelSearch("");
                 }}
                 options={virtualKeys.map((key) => key.id)}
                 labels={Object.fromEntries(
@@ -1842,7 +1825,6 @@ function CreatePolicySheet({
                   setProviderId(value);
                   setPoolId(pool?.id ?? "");
                   setSelectedModels(pool?.models?.map((model) => model.id) ?? []);
-                  setModelSearch("");
                 }}
                 options={accessOptions.map((provider) => provider.id)}
                 labels={providerOptionLabels(accessOptions)}
@@ -1855,83 +1837,20 @@ function CreatePolicySheet({
                   const pool = pools.find((option) => option.id === value);
                   setPoolId(value);
                   setSelectedModels(pool?.models?.map((model) => model.id) ?? []);
-                  setModelSearch("");
                 }}
                 options={pools.map((pool) => pool.id)}
                 labels={Object.fromEntries(pools.map((pool) => [pool.id, pool.name]))}
               />
-              <div className="grid gap-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <Label>Model offerings</Label>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">
-                      {selectedModels.length} selected
-                    </span>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={visibleModelIds.length === 0}
-                      onClick={() =>
-                        setSelectedModels((current) =>
-                          allVisibleModelsSelected
-                            ? current.filter((id) => !visibleModelIds.includes(id))
-                            : Array.from(new Set([...current, ...visibleModelIds])),
-                        )
-                      }
-                    >
-                      {allVisibleModelsSelected ? "Clear visible" : "Select visible"}
-                    </Button>
-                  </div>
-                </div>
-                <Input
-                  value={modelSearch}
-                  onChange={(event) => setModelSearch(event.target.value)}
-                  placeholder="Search model offerings"
-                  disabled={!poolId}
-                />
-                <div className="max-h-72 overflow-y-auto rounded-md border bg-background">
-                  {!poolId ? (
-                    <p className="p-3 text-sm text-muted-foreground">
-                      Choose a provider and pool to load model offerings.
-                    </p>
-                  ) : filteredModels.length === 0 ? (
-                    <p className="p-3 text-sm text-muted-foreground">
-                      {modelSearch.trim()
-                        ? "No model offerings match this search."
-                        : "No model offerings are available for this pool."}
-                    </p>
-                  ) : (
-                    filteredModels.map((model) => (
-                      <label
-                        key={model.id}
-                        className="flex cursor-pointer items-start gap-2 border-b px-3 py-2 text-sm last:border-b-0 hover:bg-muted/50"
-                      >
-                        <Checkbox
-                          checked={selectedModels.includes(model.id)}
-                          onCheckedChange={(checked) =>
-                            setSelectedModels((current) =>
-                              checked
-                                ? Array.from(new Set([...current, model.id]))
-                                : current.filter((id) => id !== model.id),
-                            )
-                          }
-                        />
-                        <span className="min-w-0">
-                          <span className="block break-all font-mono leading-5">
-                            {model.provider_model_name}
-                          </span>
-                          {model.alias ? (
-                            <span className="block break-all text-xs text-muted-foreground">
-                              {model.alias}
-                            </span>
-                          ) : null}
-                        </span>
-                      </label>
-                    ))
-                  )}
-                </div>
-              </div>
+              <ModelMultiselect
+                models={models}
+                selected={selectedModels}
+                onChange={setSelectedModels}
+                disabled={!poolId}
+                isLoading={accessOptionsQuery.isLoading}
+                isError={accessOptionsQuery.isError}
+                placeholderHint="Choose a provider and pool to load model offerings."
+                emptyHint="No model offerings are available for this pool."
+              />
               <Button
                 type="button"
                 variant="outline"
@@ -1980,51 +1899,17 @@ function CreatePolicySheet({
                   ))}
                 </div>
               ) : null}
-              <div className="grid gap-3 sm:grid-cols-[8rem_minmax(0,1fr)]">
-                <Field label="Every">
-                  <Input
-                    type="number"
-                    min={1}
-                    value={intervalCount}
-                    disabled={intervalUnit === "lifetime"}
-                    onChange={(event) => setIntervalCount(event.target.value)}
-                  />
-                </Field>
-                <SelectField
-                  label="Interval"
-                  value={intervalUnit}
-                  onValueChange={setIntervalUnit}
-                  options={["minute", "hour", "day", "week", "month", "lifetime"]}
-                  labels={{
-                    minute: "Minute",
-                    hour: "Hour",
-                    day: "Day",
-                    week: "Week",
-                    month: "Month",
-                    lifetime: "Lifetime",
-                  }}
-                />
-              </div>
-              <SelectField
-                label="Limit type"
-                value={limitType}
-                onValueChange={setLimitType}
-                options={limitTypeOptions.map((option) => option.value)}
-                labels={Object.fromEntries(
-                  limitTypeOptions.map((option) => [option.value, option.label]),
-                )}
-              />
-              <Field label={limitType === "budget_cents" ? "Amount ($)" : "Value"}>
-                <Input
-                  type="number"
-                  min={1}
-                  value={limitValue}
-                  onChange={(event) => setLimitValue(event.target.value)}
-                />
-              </Field>
-              <LimitRuleFilterFields
-                value={limitRuleFilters}
-                onChange={setLimitRuleFilters}
+              <LimitRuleFields
+                limitType={limitType}
+                onLimitTypeChange={setLimitType}
+                limitValue={limitValue}
+                onLimitValueChange={setLimitValue}
+                intervalUnit={intervalUnit}
+                onIntervalUnitChange={setIntervalUnit}
+                intervalCount={intervalCount}
+                onIntervalCountChange={setIntervalCount}
+                filters={limitRuleFilters}
+                onFiltersChange={setLimitRuleFilters}
               />
               <Button
                 type="button"
@@ -2071,7 +1956,6 @@ function RouteSheet({
   const [providerId, setProviderId] = useState("");
   const [poolId, setPoolId] = useState("");
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
-  const [modelSearch, setModelSearch] = useState("");
   const [editingRoute, setEditingRoute] = useState<AccessPolicyRouteResponse | null>(null);
   const [priority, setPriority] = useState("100");
   const [weight, setWeight] = useState("100");
@@ -2084,17 +1968,6 @@ function RouteSheet({
     accessOptionsQuery.data?.status === 200 ? (accessOptionsQuery.data.data.providers ?? []) : [];
   const pools = accessOptions.find((provider) => provider.id === providerId)?.pools ?? [];
   const models = pools.find((pool) => pool.id === poolId)?.models ?? [];
-  const filteredModels = models.filter((model) => {
-    const term = modelSearch.trim().toLowerCase();
-    if (!term) return true;
-    return [model.provider_model_name, model.alias]
-      .filter(Boolean)
-      .some((value) => value?.toLowerCase().includes(term));
-  });
-  const filteredModelIds = filteredModels.map((model) => model.id);
-  const selectedVisibleModels = selectedModels.filter((id) => filteredModelIds.includes(id));
-  const allVisibleModelsSelected =
-    filteredModelIds.length > 0 && selectedVisibleModels.length === filteredModelIds.length;
   const createRoute = useCreateAccessPolicyRouteApiV1PoliciesAccessPolicyIdRoutesPost({
     mutation: {
       onSuccess: async () => {
@@ -2127,17 +2000,10 @@ function RouteSheet({
   const routeModelLabels = Object.fromEntries(
     models.map((model) => [model.id, model.provider_model_name]),
   );
-  const selectVisibleModels = () => {
-    setSelectedModels((current) => Array.from(new Set([...current, ...filteredModelIds])));
-  };
-  const clearVisibleModels = () => {
-    setSelectedModels((current) => current.filter((id) => !filteredModelIds.includes(id)));
-  };
   const resetForm = () => {
     setProviderId("");
     setPoolId("");
     setSelectedModels([]);
-    setModelSearch("");
     setEditingRoute(null);
     setPriority("100");
     setWeight("100");
@@ -2294,91 +2160,14 @@ function RouteSheet({
                   labels={Object.fromEntries(pools.map((pool) => [pool.id, pool.name]))}
                   placeholder="Choose pool"
                 />
-                <div className="grid gap-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <Label>Model offerings</Label>
-                      <p className="text-xs text-muted-foreground">
-                        Select at least one active model this route can serve.
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">
-                        {selectedModels.length} selected
-                      </span>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={
-                          allVisibleModelsSelected ? clearVisibleModels : selectVisibleModels
-                        }
-                        disabled={
-                          !providerId ||
-                          filteredModelIds.length === 0 ||
-                          accessOptionsQuery.isLoading
-                        }
-                      >
-                        {allVisibleModelsSelected ? "Clear visible" : "Select all visible"}
-                      </Button>
-                    </div>
-                  </div>
-                  <Input
-                    value={modelSearch}
-                    onChange={(event) => setModelSearch(event.target.value)}
-                    placeholder="Search model offerings"
-                    disabled={!providerId}
-                  />
-                  <div className="max-h-64 overflow-y-auto rounded-md border bg-background">
-                    {!providerId ? (
-                      <div className="px-3 py-6 text-sm text-muted-foreground">
-                        Choose a provider to load model offerings.
-                      </div>
-                    ) : accessOptionsQuery.isLoading ? (
-                      <div className="px-3 py-6 text-sm text-muted-foreground">
-                        Loading model offerings...
-                      </div>
-                    ) : accessOptionsQuery.isError ? (
-                      <div className="px-3 py-6 text-sm text-destructive">
-                        Model offerings could not be loaded.
-                      </div>
-                    ) : filteredModels.length === 0 ? (
-                      <div className="px-3 py-6 text-sm text-muted-foreground">
-                        {modelSearch.trim()
-                          ? "No model offerings match this search."
-                          : "No active model offerings are available for this provider."}
-                      </div>
-                    ) : (
-                      filteredModels.map((model) => (
-                        <label
-                          key={model.id}
-                          className="flex cursor-pointer items-start gap-2 border-b px-3 py-2 text-sm last:border-b-0 hover:bg-muted/50"
-                        >
-                          <Checkbox
-                            checked={selectedModels.includes(model.id)}
-                            onCheckedChange={(checked) =>
-                              setSelectedModels((current) =>
-                                checked
-                                  ? Array.from(new Set([...current, model.id]))
-                                  : current.filter((id) => id !== model.id),
-                              )
-                            }
-                          />
-                          <span className="min-w-0">
-                            <span className="block break-all font-mono leading-5">
-                              {model.provider_model_name}
-                            </span>
-                            {model.alias ? (
-                              <span className="block break-all text-xs text-muted-foreground">
-                                {model.alias}
-                              </span>
-                            ) : null}
-                          </span>
-                        </label>
-                      ))
-                    )}
-                  </div>
-                </div>
+                <ModelMultiselect
+                  models={models}
+                  selected={selectedModels}
+                  onChange={setSelectedModels}
+                  disabled={!providerId}
+                  isLoading={accessOptionsQuery.isLoading}
+                  isError={accessOptionsQuery.isError}
+                />
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="Priority">
                     <Input value={priority} onChange={(event) => setPriority(event.target.value)} />
@@ -2622,49 +2411,18 @@ function LimitRulesSheet({
                 <Field label="Rule name">
                   <Input value={name} onChange={(event) => setName(event.target.value)} />
                 </Field>
-                <div className="grid gap-3 sm:grid-cols-[8rem_minmax(0,1fr)]">
-                  <Field label="Every">
-                    <Input
-                      type="number"
-                      min={1}
-                      value={intervalCount}
-                      disabled={intervalUnit === "lifetime"}
-                      onChange={(event) => setIntervalCount(event.target.value)}
-                    />
-                  </Field>
-                  <SelectField
-                    label="Interval"
-                    value={intervalUnit}
-                    onValueChange={setIntervalUnit}
-                    options={["minute", "hour", "day", "week", "month", "lifetime"]}
-                    labels={{
-                      minute: "Minute",
-                      hour: "Hour",
-                      day: "Day",
-                      week: "Week",
-                      month: "Month",
-                      lifetime: "Lifetime",
-                    }}
-                  />
-                </div>
-                <SelectField
-                  label="Limit type"
-                  value={limitType}
-                  onValueChange={setLimitType}
-                  options={limitTypeOptions.map((option) => option.value)}
-                  labels={Object.fromEntries(
-                    limitTypeOptions.map((option) => [option.value, option.label]),
-                  )}
+                <LimitRuleFields
+                  limitType={limitType}
+                  onLimitTypeChange={setLimitType}
+                  limitValue={limitValue}
+                  onLimitValueChange={setLimitValue}
+                  intervalUnit={intervalUnit}
+                  onIntervalUnitChange={setIntervalUnit}
+                  intervalCount={intervalCount}
+                  onIntervalCountChange={setIntervalCount}
+                  filters={ruleFilters}
+                  onFiltersChange={setRuleFilters}
                 />
-                <Field label={limitType === "budget_cents" ? "Amount ($)" : "Value"}>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={limitValue}
-                    onChange={(event) => setLimitValue(event.target.value)}
-                  />
-                </Field>
-                <LimitRuleFilterFields value={ruleFilters} onChange={setRuleFilters} />
                 <div className="flex items-center justify-between gap-3 rounded-md border bg-background p-3">
                   <div>
                     <div className="text-sm font-medium">Active</div>
@@ -2880,6 +2638,76 @@ function SelectField({
         </SelectContent>
       </Select>
     </Field>
+  );
+}
+
+function LimitRuleFields({
+  limitType,
+  onLimitTypeChange,
+  limitValue,
+  onLimitValueChange,
+  intervalUnit,
+  onIntervalUnitChange,
+  intervalCount,
+  onIntervalCountChange,
+  filters,
+  onFiltersChange,
+}: {
+  limitType: string;
+  onLimitTypeChange: (value: string) => void;
+  limitValue: string;
+  onLimitValueChange: (value: string) => void;
+  intervalUnit: string;
+  onIntervalUnitChange: (value: string) => void;
+  intervalCount: string;
+  onIntervalCountChange: (value: string) => void;
+  filters: LimitRuleFilterValue;
+  onFiltersChange: (value: LimitRuleFilterValue) => void;
+}) {
+  return (
+    <>
+      <div className="grid gap-3 sm:grid-cols-[8rem_minmax(0,1fr)]">
+        <Field label="Every">
+          <Input
+            type="number"
+            min={1}
+            value={intervalCount}
+            disabled={intervalUnit === "lifetime"}
+            onChange={(event) => onIntervalCountChange(event.target.value)}
+          />
+        </Field>
+        <SelectField
+          label="Interval"
+          value={intervalUnit}
+          onValueChange={onIntervalUnitChange}
+          options={["minute", "hour", "day", "week", "month", "lifetime"]}
+          labels={{
+            minute: "Minute",
+            hour: "Hour",
+            day: "Day",
+            week: "Week",
+            month: "Month",
+            lifetime: "Lifetime",
+          }}
+        />
+      </div>
+      <SelectField
+        label="Limit type"
+        value={limitType}
+        onValueChange={onLimitTypeChange}
+        options={limitTypeOptions.map((option) => option.value)}
+        labels={Object.fromEntries(limitTypeOptions.map((option) => [option.value, option.label]))}
+      />
+      <Field label={limitType === "budget_cents" ? "Amount ($)" : "Value"}>
+        <Input
+          type="number"
+          min={1}
+          value={limitValue}
+          onChange={(event) => onLimitValueChange(event.target.value)}
+        />
+      </Field>
+      <LimitRuleFilterFields value={filters} onChange={onFiltersChange} />
+    </>
   );
 }
 
