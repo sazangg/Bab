@@ -25,14 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DataTable } from "@/components/ui/data-table";
 import { Textarea } from "@/components/ui/textarea";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
@@ -44,6 +37,7 @@ import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
 import { useListVirtualKeyInventoryApiV1VirtualKeysGet } from "@/shared/api/generated/virtual-keys/virtual-keys";
 import type { VirtualKeyInventoryItem } from "@/shared/api/generated/schemas";
 import { EmptyState } from "@/shared/components/EmptyState";
+import { formatCents } from "@/shared/lib/format-currency";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { formatDateTime, formatRelativeFromNow } from "@/features/providers/lib/format";
@@ -215,87 +209,96 @@ export function VirtualKeysPage() {
                   ))}
                 </div>
               ) : (
-                <div className="overflow-hidden rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Project</TableHead>
-                        <TableHead>Team</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Creator</TableHead>
-                        <TableHead>Last used</TableHead>
-                        <TableHead className="w-12">
-                          <span className="sr-only">Actions</span>
-                        </TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {page.items.map((key) => (
-                        <TableRow
-                          key={key.id}
-                          className="cursor-pointer"
-                          onClick={() => navigate(`/projects/${key.project_id}/keys/${key.id}`)}
-                        >
-                          <TableCell>
-                            <Link
-                              to={`/projects/${key.project_id}/keys/${key.id}`}
-                              onClick={(event) => event.stopPropagation()}
-                              className="font-medium underline-offset-4 hover:underline"
-                            >
-                              {key.name}
-                            </Link>
-                            <div className="font-mono text-xs text-muted-foreground">
-                              {key.key_prefix}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Link
-                              to={`/projects/${key.project_id}`}
-                              onClick={(event) => event.stopPropagation()}
-                              className="hover:underline"
-                            >
-                              {key.project_name}
-                            </Link>
-                          </TableCell>
-                          <TableCell>
-                            <Link
-                              to={`/teams/${key.team_id}`}
-                              onClick={(event) => event.stopPropagation()}
-                              className="hover:underline"
-                            >
-                              {key.team_name}
-                            </Link>
-                          </TableCell>
-                          <TableCell>
-                            <KeyOperationalStatus status={key.status} />
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {key.creator_name ?? key.creator_email ?? "Legacy"}
-                          </TableCell>
-                          <TableCell
-                            className="text-muted-foreground"
-                            title={key.last_used_at ? formatDateTime(key.last_used_at) : undefined}
+                <DataTable
+                  columns={[
+                    {
+                      key: "name",
+                      header: "Name",
+                      cell: (key) => (
+                        <>
+                          <Link
+                            to={`/projects/${key.project_id}/keys/${key.id}`}
+                            onClick={(event) => event.stopPropagation()}
+                            className="font-medium underline-offset-4 hover:underline"
                           >
-                            {keyUsageLabel(key.last_used_at)}
-                          </TableCell>
-                          <TableCell onClick={(event) => event.stopPropagation()}>
-                            {key.can_manage && !key.revoked_at ? (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                aria-label={`Revoke ${key.name}`}
-                                onClick={() => setRevokeKey(key)}
-                              >
-                                <Trash2 />
-                              </Button>
-                            ) : null}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                            {key.name}
+                          </Link>
+                          <div className="font-mono text-xs text-muted-foreground">
+                            {key.key_prefix}
+                          </div>
+                        </>
+                      ),
+                    },
+                    {
+                      key: "project",
+                      header: "Project",
+                      cell: (key) => (
+                        <Link
+                          to={`/projects/${key.project_id}`}
+                          onClick={(event) => event.stopPropagation()}
+                          className="hover:underline"
+                        >
+                          {key.project_name}
+                        </Link>
+                      ),
+                    },
+                    {
+                      key: "team",
+                      header: "Team",
+                      cell: (key) => (
+                        <Link
+                          to={`/teams/${key.team_id}`}
+                          onClick={(event) => event.stopPropagation()}
+                          className="hover:underline"
+                        >
+                          {key.team_name}
+                        </Link>
+                      ),
+                    },
+                    {
+                      key: "status",
+                      header: "Status",
+                      cell: (key) => <KeyOperationalStatus status={key.status} />,
+                    },
+                    {
+                      key: "creator",
+                      header: "Creator",
+                      className: "text-muted-foreground",
+                      cell: (key) => key.creator_name ?? key.creator_email ?? "Legacy",
+                    },
+                    {
+                      key: "last_used",
+                      header: "Last used",
+                      className: "text-muted-foreground",
+                      cell: (key) => (
+                        <span title={key.last_used_at ? formatDateTime(key.last_used_at) : undefined}>
+                          {keyUsageLabel(key.last_used_at)}
+                        </span>
+                      ),
+                    },
+                    {
+                      key: "actions",
+                      header: <span className="sr-only">Actions</span>,
+                      headClassName: "w-12",
+                      cell: (key) =>
+                        key.can_manage && !key.revoked_at ? (
+                          <div onClick={(event) => event.stopPropagation()}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Revoke ${key.name}`}
+                              onClick={() => setRevokeKey(key)}
+                            >
+                              <Trash2 />
+                            </Button>
+                          </div>
+                        ) : null,
+                    },
+                  ]}
+                  data={page.items}
+                  getRowKey={(key) => key.id}
+                  onRowClick={(key) => navigate(`/projects/${key.project_id}/keys/${key.id}`)}
+                />
               )}
             </>
           )}
@@ -533,10 +536,6 @@ function ImpactFact({ label, value }: { label: string; value: string }) {
       <p className="truncate text-sm font-medium">{value}</p>
     </div>
   );
-}
-
-function formatCents(value: number | null | undefined) {
-  return `$${((value ?? 0) / 100).toFixed(2)}`;
 }
 
 function keyUsageLabel(lastUsedAt: string | null | undefined) {

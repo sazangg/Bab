@@ -6,6 +6,7 @@ import type {
   UsageBreakdownRow,
   UsageRecentError,
 } from "@/shared/api/generated/schemas";
+import { formatCents } from "@/shared/lib/format-currency";
 
 export function EntityUsageCard({
   title = "Usage",
@@ -166,8 +167,4 @@ function Breakdown({
       )}
     </div>
   );
-}
-
-function formatCents(value: number | null | undefined) {
-  return `$${((value ?? 0) / 100).toLocaleString()}`;
 }

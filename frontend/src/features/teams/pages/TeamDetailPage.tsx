@@ -55,6 +55,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { MembersCard } from "@/shared/components/MembersCard";
+import { formatCents } from "@/shared/lib/format-currency";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
@@ -678,6 +679,3 @@ function Fact({ label, value }: { label: string; value: string }) {
   );
 }
 
-function formatCents(value: number | null | undefined) {
-  return `$${((value ?? 0) / 100).toFixed(2)}`;
-}

@@ -54,6 +54,7 @@ import {
 } from "@/components/ui/sheet";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/shared/components/EmptyState";
+import { formatCents } from "@/shared/lib/format-currency";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { EffectiveAccessSummaryCard } from "@/features/projects/components/EffectiveAccessSummaryCard";
 import { keyStatusPresentation } from "@/features/projects/lib/key-status";
@@ -608,10 +609,6 @@ function Fact({ label, value }: { label: string; value: string }) {
       <p className="truncate text-sm font-medium">{value}</p>
     </div>
   );
-}
-
-function formatCents(value: number | null | undefined) {
-  return `$${((value ?? 0) / 100).toFixed(2)}`;
 }
 
 function keyUsageLabel(lastUsedAt: string | null | undefined) {

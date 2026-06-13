@@ -54,6 +54,7 @@ import { useGetOrganizationUsageSummaryApiV1UsageSummaryGet } from "@/shared/api
 import { useGetSettingsApiV1SettingsGet } from "@/shared/api/generated/settings/settings";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/shared/components/EmptyState";
+import { formatCents } from "@/shared/lib/format-currency";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { EditProviderSheet } from "@/features/providers/components/EditProviderSheet";
@@ -792,8 +793,4 @@ function lastCredentialFailure(
     sanitizeCredentialValidationMessage(failed.failure_message ?? failed.last_validation_error) ??
     "Credential validation failed."
   );
-}
-
-function formatCents(value: number) {
-  return `$${(value / 100).toLocaleString()}`;
 }

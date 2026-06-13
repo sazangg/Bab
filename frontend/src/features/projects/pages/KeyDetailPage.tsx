@@ -58,6 +58,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { PageHeader } from "@/shared/components/PageHeader";
+import { formatCents } from "@/shared/lib/format-currency";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import type {
   CreatedVirtualKeyResponse,
@@ -763,10 +764,6 @@ function toLocalInput(iso: string) {
   const d = new Date(iso);
   const offset = d.getTimezoneOffset() * 60_000;
   return new Date(d.getTime() - offset).toISOString().slice(0, 16);
-}
-
-function formatCents(value: number | null | undefined) {
-  return value == null ? "$0" : `$${(value / 100).toLocaleString()}`;
 }
 
 function keyUsageLabel(lastUsedAt: string | null | undefined) {

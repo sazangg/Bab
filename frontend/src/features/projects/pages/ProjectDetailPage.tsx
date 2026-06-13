@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/shared/components/PageHeader";
+import { formatCents } from "@/shared/lib/format-currency";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { ProjectAccessSection } from "@/features/projects/sections/ProjectAccessSection";
 import { ProjectKeysSection } from "@/features/projects/sections/ProjectKeysSection";
@@ -488,10 +489,6 @@ function Fact({ label, value }: { label: string; value: string }) {
       <p className="truncate text-sm font-medium">{value}</p>
     </div>
   );
-}
-
-function formatCents(value: number | null | undefined) {
-  return `$${((value ?? 0) / 100).toFixed(2)}`;
 }
 
 function effectiveAccessPolicyNames(summary: EffectiveAccessSummary) {

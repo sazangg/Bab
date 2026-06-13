@@ -13,6 +13,7 @@ import {
 import { useListUsageRecordsApiV1UsageRecordsGet } from "@/shared/api/generated/usage/usage";
 import { httpClient } from "@/shared/api/http-client";
 import type { UsageRecordResponse } from "@/shared/api/generated/schemas";
+import { formatCents } from "@/shared/lib/format-currency";
 
 type UsageRecordsDrilldownProps = {
   title?: string;
@@ -118,10 +119,6 @@ async function downloadCsv(filters: UsageRecordsDrilldownProps["filters"]) {
 
 function shortId(value: string | null | undefined) {
   return value ? value.slice(0, 8) : "-";
-}
-
-function formatCents(value: number | null | undefined) {
-  return `$${((value ?? 0) / 100).toLocaleString()}`;
 }
 
 function formatRecordSpend(record: UsageRecordResponse) {
