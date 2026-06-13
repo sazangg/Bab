@@ -52,14 +52,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { EffectiveAccessSummaryCard } from "@/features/projects/components/EffectiveAccessSummaryCard";
@@ -274,70 +267,76 @@ export function ProjectKeysSection({
                   ))}
                 </div>
               ) : (
-                <div className="overflow-hidden rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Label</TableHead>
-                        <TableHead>Prefix</TableHead>
-                        <TableHead>Policy</TableHead>
-                        <TableHead>Usage</TableHead>
-                        <TableHead>Expires</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="w-[1%]" />
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {keys.map((key) => (
-                        <TableRow
-                          key={key.id}
-                          className="cursor-pointer"
-                          onClick={() => onView(key.id)}
+                <DataTable
+                  columns={[
+                    {
+                      key: "label",
+                      header: "Label",
+                      className: "font-medium",
+                      cell: (key) => (
+                        <Link
+                          to={`/projects/${projectId}/keys/${key.id}`}
+                          onClick={(event) => event.stopPropagation()}
+                          className="underline-offset-4 hover:underline"
                         >
-                          <TableCell className="font-medium">
-                            <Link
-                              to={`/projects/${projectId}/keys/${key.id}`}
-                              onClick={(event) => event.stopPropagation()}
-                              className="underline-offset-4 hover:underline"
-                            >
-                              {key.name}
-                            </Link>
-                          </TableCell>
-                          <TableCell className="font-mono text-xs">{key.key_prefix}</TableCell>
-                          <TableCell className="text-muted-foreground">
-                            <div className="flex flex-col gap-1">
-                              <span>Policy governed</span>
-                              <span className="text-xs">
-                                Access and limits resolve at request time
-                              </span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">
-                            <KeyUsageInline lastUsedAt={key.last_used_at} />
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {key.expires_at
-                              ? new Date(key.expires_at).toLocaleDateString()
-                              : "Never"}
-                          </TableCell>
-                          <TableCell>
-                            <KeyStatusBadge virtualKey={key} />
-                          </TableCell>
-                          <TableCell
-                            className="text-right"
-                            onClick={(event) => event.stopPropagation()}
-                          >
-                            {canManage && !key.revoked_at ? (
-                              <Button variant="ghost" size="sm" onClick={() => setRevokeId(key.id)}>
-                                Revoke
-                              </Button>
-                            ) : null}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                          {key.name}
+                        </Link>
+                      ),
+                    },
+                    {
+                      key: "prefix",
+                      header: "Prefix",
+                      className: "font-mono text-xs",
+                      cell: (key) => key.key_prefix,
+                    },
+                    {
+                      key: "policy",
+                      header: "Policy",
+                      className: "text-muted-foreground",
+                      cell: () => (
+                        <div className="flex flex-col gap-1">
+                          <span>Policy governed</span>
+                          <span className="text-xs">Access and limits resolve at request time</span>
+                        </div>
+                      ),
+                    },
+                    {
+                      key: "usage",
+                      header: "Usage",
+                      className: "text-muted-foreground",
+                      cell: (key) => <KeyUsageInline lastUsedAt={key.last_used_at} />,
+                    },
+                    {
+                      key: "expires",
+                      header: "Expires",
+                      className: "text-muted-foreground",
+                      cell: (key) =>
+                        key.expires_at ? new Date(key.expires_at).toLocaleDateString() : "Never",
+                    },
+                    {
+                      key: "status",
+                      header: "Status",
+                      cell: (key) => <KeyStatusBadge virtualKey={key} />,
+                    },
+                    {
+                      key: "actions",
+                      header: <span className="sr-only">Actions</span>,
+                      align: "right",
+                      headClassName: "w-[1%]",
+                      cell: (key) =>
+                        canManage && !key.revoked_at ? (
+                          <div onClick={(event) => event.stopPropagation()}>
+                            <Button variant="ghost" size="sm" onClick={() => setRevokeId(key.id)}>
+                              Revoke
+                            </Button>
+                          </div>
+                        ) : null,
+                    },
+                  ]}
+                  data={keys}
+                  getRowKey={(key) => key.id}
+                  onRowClick={(key) => onView(key.id)}
+                />
               )}
             </>
           )}
