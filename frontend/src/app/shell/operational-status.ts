@@ -23,13 +23,13 @@ export function resolveGatewayStatus(statusCode?: number, readiness?: ReadinessR
     return {
       label: "Gateway ready",
       variant: "ready",
-      className: "bg-emerald-500",
+      className: "bg-success",
     } as const;
   }
   return {
     label: "Gateway degraded",
     variant: "degraded",
-    className: "bg-amber-500",
+    className: "bg-warning",
   } as const;
 }
 

@@ -530,7 +530,7 @@ export function TeamDetailPage() {
                   {editTeamForm.formState.errors.slug.message}
                 </p>
               ) : slugChanged && slugPreview ? (
-                <p className="text-xs text-amber-600 dark:text-amber-500">
+                <p className="text-xs text-warning">
                   Changing the slug will break links that reference{" "}
                   <span className="font-mono">{team.slug}</span>.
                 </p>
