@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import { Archive, MoreHorizontal, Pencil, Plus, RotateCcw, Trash2, UserPlus } from "lucide-react";
+import { Archive, MoreHorizontal, Pencil, Plus, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { useNavigate, useParams } from "react-router-dom";
@@ -35,13 +35,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Sheet,
   SheetClose,
   SheetContent,
@@ -61,6 +54,7 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { MembersCard } from "@/shared/components/MembersCard";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
@@ -87,7 +81,7 @@ import type {
 import { formatDateTime, formatRelativeFromNow } from "@/features/providers/lib/format";
 import { PolicyScopeSection } from "@/features/policies/components/PolicyScopeSection";
 import { hasPermission, isTeamAdmin } from "@/features/auth/lib/permissions";
-import { type MemberOption, useTeamMemberOptions } from "@/features/auth/lib/member-options";
+import { useTeamMemberOptions } from "@/features/auth/lib/member-options";
 import { ForbiddenPage } from "@/features/auth/components/ProtectedRoute";
 import { slugify } from "@/features/teams/lib/slug";
 import { EntityUsageCard } from "@/features/usage/components/EntityUsageCard";
@@ -344,17 +338,27 @@ export function TeamDetailPage() {
         </CardContent>
       </Card>
 
-      <TeamMembersCard
+      <MembersCard
+        title="Members"
+        description="Team roles are scoped to this team. Org owners and admins still keep their org-level access."
         orgMembers={orgMembers}
-        teamMembers={teamMembers}
-        currentUserId={currentUser?.id}
+        members={teamMembers}
+        roleOptions={[
+          { value: "team_admin", label: "Team admin" },
+          { value: "team_member", label: "Team member" },
+        ]}
+        defaultRole="team_member"
+        roleLabel="Team role"
+        getRole={(member) => member.team_role}
         canManage={canManageTeam}
         isLoading={memberOptionsQuery.isPending || teamMembersQuery.isPending}
         isPending={
           addTeamMember.isPending || updateTeamMember.isPending || removeTeamMember.isPending
         }
         onAdd={(userId, role) => addTeamMember.mutate({ teamId, data: { user_id: userId, role } })}
-        onRoleChange={(userId, role) => updateTeamMember.mutate({ teamId, userId, data: { role } })}
+        onRoleChange={(member, role) =>
+          updateTeamMember.mutate({ teamId, userId: member.user_id, data: { role } })
+        }
         onRemove={(member) => {
           if (member.user_id === currentUser?.id) {
             setSelfRemoval(member);
@@ -362,6 +366,11 @@ export function TeamDetailPage() {
           }
           removeTeamMember.mutate({ teamId, userId: member.user_id });
         }}
+        removeAriaLabel={(member) =>
+          member.user_id === currentUser?.id ? "Remove yourself from team" : "Remove team member"
+        }
+        emptyTitle="No team members assigned"
+        emptyDescription="Assign existing organization members to make team access explicit."
       />
 
       <EntityUsageCard
@@ -641,173 +650,6 @@ export function TeamDetailPage() {
   );
 }
 
-function TeamMembersCard({
-  orgMembers,
-  teamMembers,
-  currentUserId,
-  canManage,
-  isLoading,
-  isPending,
-  onAdd,
-  onRoleChange,
-  onRemove,
-}: {
-  orgMembers: MemberOption[];
-  teamMembers: TeamMemberResponse[];
-  currentUserId?: string;
-  canManage: boolean;
-  isLoading: boolean;
-  isPending: boolean;
-  onAdd: (userId: string, role: string) => void;
-  onRoleChange: (userId: string, role: string) => void;
-  onRemove: (member: TeamMemberResponse) => void;
-}) {
-  const [selectedUserId, setSelectedUserId] = useState("");
-  const [role, setRole] = useState("team_member");
-  const assignedIds = new Set(teamMembers.map((member) => member.user_id));
-  const assignableMembers = orgMembers.filter((member) => !assignedIds.has(member.user_id));
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Members</CardTitle>
-        <CardDescription>
-          Team roles are scoped to this team. Org owners and admins still keep their org-level
-          access.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-4">
-        {canManage ? (
-          <div className="grid gap-3 rounded-md border p-3 md:grid-cols-[minmax(0,1fr)_180px_auto]">
-            <div className="flex flex-col gap-1.5">
-              <Label>User</Label>
-              <Select value={selectedUserId} onValueChange={setSelectedUserId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select organization member" />
-                </SelectTrigger>
-                <SelectContent>
-                  {assignableMembers.length === 0 ? (
-                    <SelectItem value="none" disabled>
-                      No available members
-                    </SelectItem>
-                  ) : (
-                    assignableMembers.map((member) => (
-                      <SelectItem key={member.user_id} value={member.user_id}>
-                        {member.email}
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>Team role</Label>
-              <Select value={role} onValueChange={setRole}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="team_admin">Team admin</SelectItem>
-                  <SelectItem value="team_member">Team member</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-end">
-              <Button
-                type="button"
-                disabled={isPending || !selectedUserId || selectedUserId === "none"}
-                onClick={() => {
-                  onAdd(selectedUserId, role);
-                  setSelectedUserId("");
-                  setRole("team_member");
-                }}
-              >
-                <UserPlus data-icon="inline-start" />
-                Add member
-              </Button>
-            </div>
-          </div>
-        ) : null}
-
-        {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading team members...</p>
-        ) : teamMembers.length === 0 ? (
-          <div className="rounded-md border border-dashed p-6 text-center">
-            <p className="text-sm font-medium">No team members assigned</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Assign existing organization members to make team access explicit.
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-hidden rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>User</TableHead>
-                  <TableHead>Org role</TableHead>
-                  <TableHead>Team role</TableHead>
-                  <TableHead>Added</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {teamMembers.map((member) => (
-                  <TableRow key={member.user_id}>
-                    <TableCell>
-                      <div className="font-medium">{member.email}</div>
-                      {member.name ? (
-                        <div className="text-xs text-muted-foreground">{member.name}</div>
-                      ) : null}
-                    </TableCell>
-                    <TableCell>{formatOrgRole(member.org_role)}</TableCell>
-                    <TableCell>
-                      {canManage ? (
-                        <Select
-                          value={member.team_role}
-                          onValueChange={(value) => onRoleChange(member.user_id, value)}
-                          disabled={isPending}
-                        >
-                          <SelectTrigger className="w-36">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="team_admin">Team admin</SelectItem>
-                            <SelectItem value="team_member">Team member</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        formatTeamRole(member.team_role)
-                      )}
-                    </TableCell>
-                    <TableCell>{new Date(member.created_at).toLocaleDateString()}</TableCell>
-                    <TableCell className="text-right">
-                      {canManage ? (
-                        <Button
-                          type="button"
-                          size="icon-sm"
-                          variant="ghost"
-                          disabled={isPending}
-                          onClick={() => onRemove(member)}
-                          aria-label={
-                            member.user_id === currentUserId
-                              ? "Remove yourself from team"
-                              : "Remove team member"
-                          }
-                        >
-                          <Trash2 />
-                        </Button>
-                      ) : null}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
 function ProjectTableRow({ project, onOpen }: { project: ProjectResponse; onOpen: () => void }) {
   return (
     <TableRow className={cn("cursor-pointer", !project.is_active && "opacity-60")} onClick={onOpen}>
@@ -825,18 +667,6 @@ function ProjectTableRow({ project, onOpen }: { project: ProjectResponse; onOpen
       </TableCell>
     </TableRow>
   );
-}
-
-function formatOrgRole(value: string) {
-  if (value === "org_owner") return "Org owner";
-  if (value === "org_admin") return "Org admin";
-  if (value === "org_member") return "Org member";
-  return "Org viewer";
-}
-
-function formatTeamRole(value: string) {
-  if (value === "team_admin") return "Team admin";
-  return "Team member";
 }
 
 function Fact({ label, value }: { label: string; value: string }) {
