@@ -10,6 +10,12 @@ class InvalidRefreshTokenError(AuthError):
     pass
 
 
+class RefreshTokenReuseError(InvalidRefreshTokenError):
+    """Raised when an already-rotated/revoked refresh token is replayed."""
+
+    pass
+
+
 class InvalidAccessTokenError(AuthError):
     pass
 
@@ -23,6 +29,12 @@ class MemberNotFoundError(AuthError):
 
 
 class MemberAlreadyExistsError(AuthError):
+    pass
+
+
+class MemberOrganizationConflictError(AuthError):
+    """Raised when an account already belongs to a different organization."""
+
     pass
 
 

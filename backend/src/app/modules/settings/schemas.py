@@ -107,3 +107,21 @@ class UpdateOrganizationSettingsRequest(BaseModel):
         ):
             raise ValueError(f"{info.field_name} must be an origin URL")
         return stripped.rstrip("/")
+
+    @field_validator("organization_logo_url")
+    @classmethod
+    def validate_logo_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            return None
+        # An app-relative asset path (what the upload endpoint stores) is allowed;
+        # protocol-relative ("//host") is not. Otherwise require an http(s) URL so a
+        # javascript:/data: value can't be rendered as an <img src> in the console.
+        if stripped.startswith("/") and not stripped.startswith("//"):
+            return stripped
+        parsed = urlparse(stripped)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("organization_logo_url must be a relative path or an http(s) URL")
+        return stripped

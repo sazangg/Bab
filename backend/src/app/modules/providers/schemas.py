@@ -4,9 +4,22 @@ from enum import StrEnum
 from typing import Annotated, Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, StrictBool
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, StrictBool, field_validator
+
+from app.core.config import settings
+from app.core.ssrf import SsrfValidationError, assert_public_url
 
 StatusCode = Annotated[int, Field(ge=100, le=599, strict=True)]
+
+
+def _validate_provider_base_url(value: HttpUrl | None) -> HttpUrl | None:
+    if value is None or settings.allow_private_provider_urls:
+        return value
+    try:
+        assert_public_url(str(value))
+    except SsrfValidationError as exc:
+        raise ValueError(str(exc)) from exc
+    return value
 
 
 class ProviderCredentialRoutingPolicy(StrEnum):
@@ -68,6 +81,8 @@ class CreateProviderRequest(BaseModel):
     )
     max_concurrent_requests: int | None = Field(default=None, ge=1, strict=True)
 
+    _validate_base_url = field_validator("base_url")(_validate_provider_base_url)
+
 
 class UpdateProviderRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -85,6 +100,8 @@ class UpdateProviderRequest(BaseModel):
     max_concurrent_requests: int | None = Field(default=None, ge=1, strict=True)
     is_favorite: bool | None = None
     is_active: bool | None = None
+
+    _validate_base_url = field_validator("base_url")(_validate_provider_base_url)
 
 
 class CreateProviderCredentialRequest(BaseModel):

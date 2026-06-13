@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, get_scope
+from app.core.csv_safe import sanitize_csv_cell
 from app.core.database import Scope, get_db
 from app.modules.activity import facade
 from app.modules.activity.schemas import ActivityEventResponse
@@ -152,22 +153,25 @@ async def export_activity_events(
     for event in events:
         writer.writerow(
             [
-                event.id,
-                event.created_at,
-                event.request_id,
-                event.category,
-                event.severity,
-                event.action,
-                event.message,
-                event.actor_user_id,
-                event.actor_email,
-                event.team_id,
-                event.project_id,
-                event.virtual_key_id,
-                event.provider_id,
-                event.pool_id,
-                event.model_offering_id,
-                json.dumps(event.metadata, sort_keys=True, default=str),
+                sanitize_csv_cell(cell)
+                for cell in (
+                    event.id,
+                    event.created_at,
+                    event.request_id,
+                    event.category,
+                    event.severity,
+                    event.action,
+                    event.message,
+                    event.actor_user_id,
+                    event.actor_email,
+                    event.team_id,
+                    event.project_id,
+                    event.virtual_key_id,
+                    event.provider_id,
+                    event.pool_id,
+                    event.model_offering_id,
+                    json.dumps(event.metadata, sort_keys=True, default=str),
+                )
             ]
         )
     return Response(
@@ -208,10 +212,7 @@ async def _resolve_activity_scope(
         return _ActivityScope(allowed_team_ids=None, allowed_project_ids=None)
 
     allowed_team_ids = {membership.team_id for membership in user.team_memberships}
-    allowed_project_ids = {
-        membership.project_id
-        for membership in user.project_memberships
-    }
+    allowed_project_ids = {membership.project_id for membership in user.project_memberships}
     if not allowed_team_ids and not allowed_project_ids:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

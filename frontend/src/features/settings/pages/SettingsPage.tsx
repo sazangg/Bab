@@ -485,8 +485,12 @@ function toFormValues(settings: {
   };
 }
 
-function resolveAssetUrl(url: string) {
+function resolveAssetUrl(url: string): string | null {
+  // Defense in depth: only hand http(s)/app-relative URLs to <img src>, never
+  // javascript:/data:/protocol-relative values.
   if (/^https?:\/\//i.test(url)) return url;
+  if (url.startsWith("//")) return null;
+  if (!url.startsWith("/")) return null;
   const apiBaseUrl = import.meta.env.VITE_BAB_API_URL as string | undefined;
   return apiBaseUrl ? new URL(url, apiBaseUrl).toString() : url;
 }

@@ -3,6 +3,9 @@ from collections.abc import AsyncGenerator
 
 os.environ.setdefault("BAB_SECRET_KEY", "test-secret-key-with-more-than-32-chars")
 os.environ.setdefault("BAB_ENCRYPTION_KEY", "mC2XCkbSXUHnJS1bAgRZ1LMvw4mDhF-GqXFf0ySFyDw=")
+# Tests provision providers with non-resolvable example.com domains; allow them so the
+# SSRF base_url guard (exercised explicitly in test_security_fixes_providers) is off here.
+os.environ.setdefault("BAB_ALLOW_PRIVATE_PROVIDER_URLS", "true")
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine

@@ -56,18 +56,22 @@ async def list_activity_events(
     if end_at is not None:
         query = query.where(ActivityEvent.created_at <= end_at)
     if search:
-        pattern = f"%{search}%"
+        # autoescape escapes %/_ so a literal wildcard in the term matches verbatim.
         query = query.where(
             or_(
-                ActivityEvent.message.ilike(pattern),
-                ActivityEvent.action.ilike(pattern),
-                ActivityEvent.actor_email.ilike(pattern),
-                ActivityEvent.request_id.ilike(pattern),
-                ActivityEvent.metadata_["reason"].as_string().ilike(pattern),
-                ActivityEvent.metadata_["requested_model"].as_string().ilike(pattern),
-                ActivityEvent.metadata_["provider_model"].as_string().ilike(pattern),
-                ActivityEvent.metadata_["policy_id"].as_string().ilike(pattern),
-                ActivityEvent.metadata_["rule_id"].as_string().ilike(pattern),
+                ActivityEvent.message.icontains(search, autoescape=True),
+                ActivityEvent.action.icontains(search, autoescape=True),
+                ActivityEvent.actor_email.icontains(search, autoescape=True),
+                ActivityEvent.request_id.icontains(search, autoescape=True),
+                ActivityEvent.metadata_["reason"].as_string().icontains(search, autoescape=True),
+                ActivityEvent.metadata_["requested_model"]
+                .as_string()
+                .icontains(search, autoescape=True),
+                ActivityEvent.metadata_["provider_model"]
+                .as_string()
+                .icontains(search, autoescape=True),
+                ActivityEvent.metadata_["policy_id"].as_string().icontains(search, autoescape=True),
+                ActivityEvent.metadata_["rule_id"].as_string().icontains(search, autoescape=True),
             )
         )
     if before_at is not None:

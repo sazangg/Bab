@@ -43,6 +43,7 @@ from app.modules.usage import facade as usage_facade
 from app.modules.usage.accounting import (
     UsageAccounting,
     estimate_request_tokens,
+    subtract_months,
     unknown_usage,
     usage_from_provider_response,
     usage_from_stream_chunks,
@@ -105,9 +106,7 @@ async def create_completion(
     provider_id: ProviderIdHeader = None,
 ) -> Response:
     started_at = perf_counter()
-    _enforce_content_length(request, settings.proxy_max_body_bytes)
-    raw_body = await request.body()
-    _enforce_body_size(raw_body, settings.proxy_max_body_bytes)
+    raw_body = await _read_body_within_limit(request, settings.proxy_max_body_bytes)
     body = _decode_json_body(raw_body)
     if body.get("stream") is True:
         raise HTTPException(status_code=400, detail="streaming completions are not supported")
@@ -133,9 +132,7 @@ async def create_response(
     provider_id: ProviderIdHeader = None,
 ) -> Response:
     started_at = perf_counter()
-    _enforce_content_length(request, settings.proxy_max_body_bytes)
-    raw_body = await request.body()
-    _enforce_body_size(raw_body, settings.proxy_max_body_bytes)
+    raw_body = await _read_body_within_limit(request, settings.proxy_max_body_bytes)
     body = _decode_json_body(raw_body)
     if body.get("stream") is True:
         raise HTTPException(status_code=400, detail="streaming responses are not supported")
@@ -161,9 +158,7 @@ async def create_chat_completion(
     provider_id: ProviderIdHeader = None,
 ) -> Response:
     started_at = perf_counter()
-    _enforce_content_length(request, settings.proxy_max_body_bytes)
-    raw_body = await request.body()
-    _enforce_body_size(raw_body, settings.proxy_max_body_bytes)
+    raw_body = await _read_body_within_limit(request, settings.proxy_max_body_bytes)
     body = _decode_json_body(raw_body)
     is_streaming = body.get("stream") is True
 
@@ -269,6 +264,15 @@ async def create_chat_completion(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="invalid virtual key",
             headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+    except ProxyLimitExceededError as exc:
+        # A limit policy denied: release any reservations taken earlier in the
+        # pipeline (e.g. token/budget reservations from the first enforcement phase)
+        # so a request-count denial does not leak them until expiry.
+        await _release_reservations(reservation_ids=reservation_ids, db=db)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=exc.detail,
         ) from exc
     except AccessDeniedError as exc:
         await _release_reservations(reservation_ids=reservation_ids, db=db)
@@ -425,9 +429,7 @@ async def create_anthropic_message(
     anthropic_version: Annotated[str, Header(alias="anthropic-version")] = "2023-06-01",
 ) -> Response:
     started_at = perf_counter()
-    _enforce_content_length(request, settings.proxy_max_body_bytes)
-    raw_body = await request.body()
-    _enforce_body_size(raw_body, settings.proxy_max_body_bytes)
+    raw_body = await _read_body_within_limit(request, settings.proxy_max_body_bytes)
     body = _decode_json_body(raw_body)
     if body.get("stream") is True:
         raise HTTPException(status_code=400, detail="native Anthropic streaming is not supported")
@@ -509,6 +511,15 @@ async def create_anthropic_message(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="invalid virtual key",
             headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+    except ProxyLimitExceededError as exc:
+        # A limit policy denied: release any reservations taken earlier in the
+        # pipeline (e.g. token/budget reservations from the first enforcement phase)
+        # so a request-count denial does not leak them until expiry.
+        await _release_reservations(reservation_ids=reservation_ids, db=db)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=exc.detail,
         ) from exc
     except AccessDeniedError as exc:
         await _release_reservations(reservation_ids=reservation_ids, db=db)
@@ -763,6 +774,15 @@ async def _execute_chat_proxy(
             detail="invalid virtual key",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
+    except ProxyLimitExceededError as exc:
+        # A limit policy denied: release any reservations taken earlier in the
+        # pipeline (e.g. token/budget reservations from the first enforcement phase)
+        # so a request-count denial does not leak them until expiry.
+        await _release_reservations(reservation_ids=reservation_ids, db=db)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=exc.detail,
+        ) from exc
     except AccessDeniedError as exc:
         await _release_reservations(reservation_ids=reservation_ids, db=db)
         if resolved is not None:
@@ -981,16 +1001,27 @@ async def _stream_proxy_response(
             )
 
 
-def _enforce_content_length(request: Request, max_body_bytes: int) -> None:
+async def _read_body_within_limit(request: Request, max_body_bytes: int) -> bytes:
+    # Cheap reject when the client honestly declares an oversized body.
     content_length = request.headers.get("content-length")
-    if content_length is None:
-        return
-    try:
-        body_size = int(content_length)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail="invalid content-length header") from exc
-    if body_size > max_body_bytes:
-        raise HTTPException(status_code=413, detail="request body is too large")
+    if content_length is not None:
+        try:
+            declared = int(content_length)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="invalid content-length header") from exc
+        if declared > max_body_bytes:
+            raise HTTPException(status_code=413, detail="request body is too large")
+    # Stream with a running byte counter so a chunked or under-declared body is
+    # aborted before the whole payload is buffered into memory. This runs before
+    # virtual-key authentication, so it is the guard against unauthenticated OOM.
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > max_body_bytes:
+            raise HTTPException(status_code=413, detail="request body is too large")
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def _enforce_body_size(raw_body: bytes, max_body_bytes: int) -> None:
@@ -1315,6 +1346,7 @@ async def _record_proxy_request(
     provider_credential_id: UUID | None = None,
 ) -> int | None:
     cost_cents = _calculate_cost_cents(resolved=resolved, usage=usage)
+    cost_micro_cents = _calculate_cost_micro_cents(resolved=resolved, usage=usage)
     await usage_facade.record_usage(
         payload=RecordUsage(
             org_id=resolved.org_id,
@@ -1342,6 +1374,7 @@ async def _record_proxy_request(
             completion_tokens=usage.completion_tokens,
             total_tokens=usage.total_tokens,
             cost_cents=cost_cents,
+            cost_micro_cents=cost_micro_cents,
             usage_source=usage.usage_source,
             error_code=error_code,
         ),
@@ -1359,16 +1392,32 @@ async def _enforce_limit_policies(
     db: AsyncSession,
 ) -> list[UUID]:
     requested_total_tokens = estimated_input_tokens + (requested_output_tokens or 0)
-    estimated_cost_cents = _calculate_cost_cents(
-        resolved=resolved,
-        usage=UsageAccounting(
-            prompt_tokens=estimated_input_tokens,
-            completion_tokens=requested_output_tokens,
-            total_tokens=requested_total_tokens if requested_output_tokens is not None else None,
-            usage_source="estimated",
-        ),
+    estimated_usage = UsageAccounting(
+        prompt_tokens=estimated_input_tokens,
+        completion_tokens=requested_output_tokens,
+        total_tokens=requested_total_tokens if requested_output_tokens is not None else None,
+        usage_source="estimated",
     )
-    expires_at = datetime.now(UTC) + timedelta(minutes=5)
+    estimated_cost_cents = _calculate_cost_cents(resolved=resolved, usage=estimated_usage)
+    estimated_cost_micro_cents = _calculate_cost_micro_cents(
+        resolved=resolved, usage=estimated_usage
+    )
+    # Reservations expire well beyond the maximum request lifetime (provider timeout
+    # up to 300s plus retries and streaming drain) so a slow request is not silently
+    # under-counted by the active-reservation summary before it finalizes.
+    expires_at = datetime.now(UTC) + timedelta(minutes=15)
+    # Serialize the read-decide-reserve critical section per assignment so concurrent
+    # requests for the same limit cannot both pass the check and overshoot the cap.
+    # Locks are acquired in a stable order to avoid deadlocks and released at commit.
+    for assignment_id in sorted(
+        {
+            limit.limit_policy_assignment_id
+            for limit in resolved.limit_policies
+            if limit_types is None or limit.limit_type in limit_types
+        },
+        key=str,
+    ):
+        await usage_facade.acquire_limit_scope_lock(assignment_id=assignment_id, db=db)
     for limit in resolved.limit_policies:
         if limit_types is not None and limit.limit_type not in limit_types:
             continue
@@ -1416,6 +1465,7 @@ async def _enforce_limit_policies(
             prompt_tokens,
             completion_tokens,
             cost_cents,
+            cost_micro_cents,
         ) = await usage_facade.summarize_limit_policy_usage(
             limit_policy_id=limit.limit_policy_id,
             limit_policy_rule_id=limit.limit_policy_rule_id,
@@ -1487,21 +1537,36 @@ async def _enforce_limit_policies(
                 attempted_usage=requested_output_tokens,
                 db=db,
             )
-        if (
-            limit.limit_type == "budget_cents"
-            and estimated_cost_cents is not None
-            and cost_cents + reservations.cost_cents + estimated_cost_cents > limit.limit_value
-        ):
-            await _raise_proxy_denial(
-                resolved=resolved,
-                limit=limit,
-                detail="limit policy budget exceeded",
-                reason="budget_limit",
-                current_usage=cost_cents,
-                reserved_usage=reservations.cost_cents,
-                attempted_usage=estimated_cost_cents,
-                db=db,
-            )
+        if limit.limit_type == "budget_cents":
+            if estimated_cost_micro_cents is None:
+                # Fail closed: a budget cap cannot be honored for a model with no
+                # configured pricing, so deny rather than silently letting it pass.
+                await _raise_proxy_denial(
+                    resolved=resolved,
+                    limit=limit,
+                    detail="budget limit cannot be enforced: model has no configured pricing",
+                    reason="budget_unpriced",
+                    current_usage=cost_cents,
+                    reserved_usage=reservations.cost_cents,
+                    attempted_usage=None,
+                    db=db,
+                )
+            # Budget math is in exact micro-cents (1_000_000 == 1 cent) to avoid the
+            # per-request rounding drift that would otherwise mis-gate the cap.
+            elif (
+                cost_micro_cents + reservations.cost_micro_cents + estimated_cost_micro_cents
+                > limit.limit_value * 1_000_000
+            ):
+                await _raise_proxy_denial(
+                    resolved=resolved,
+                    limit=limit,
+                    detail="limit policy budget exceeded",
+                    reason="budget_limit",
+                    current_usage=cost_cents,
+                    reserved_usage=reservations.cost_cents,
+                    attempted_usage=estimated_cost_cents,
+                    db=db,
+                )
         if (
             limit.limit_type == "total_tokens"
             and prompt_tokens
@@ -1538,6 +1603,7 @@ async def _enforce_limit_policies(
                     reserved_completion_tokens=requested_output_tokens or 0,
                     reserved_total_tokens=requested_total_tokens,
                     reserved_cost_cents=estimated_cost_cents,
+                    reserved_cost_micro_cents=estimated_cost_micro_cents,
                     expires_at=expires_at,
                 ),
                 db=db,
@@ -1566,6 +1632,15 @@ async def _commit_reservations(
 async def _release_reservations(*, reservation_ids: list[UUID], db: AsyncSession) -> None:
     await usage_facade.release_limit_policy_reservations(reservation_ids=reservation_ids, db=db)
     await db.commit()
+
+
+class ProxyLimitExceededError(Exception):
+    """A limit policy denied the request. Carries the 429 detail for the handler,
+    which releases any reservations already taken before responding."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail)
+        self.detail = detail
 
 
 async def _raise_proxy_denial(
@@ -1611,7 +1686,9 @@ async def _raise_proxy_denial(
         metadata=metadata,
         db=db,
     )
-    raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=detail)
+    # Raise a domain error (not HTTPException) so the request handler can release
+    # any reservations taken in an earlier enforcement phase before returning 429.
+    raise ProxyLimitExceededError(detail)
 
 
 async def _record_proxy_activity(
@@ -1664,18 +1741,29 @@ def _limit_policy_window_start(interval_unit: str, interval_count: int) -> datet
     if interval_unit == "week":
         return now - timedelta(weeks=interval_count)
     if interval_unit == "month":
-        return now - timedelta(days=30 * interval_count)
+        return subtract_months(now, interval_count)
     return None
+
+
+def _costing_context(resolved) -> CostingContext:
+    return CostingContext(
+        provider_id=str(resolved.provider_id),
+        provider_model=resolved.provider_model,
+        input_price_per_million_tokens=resolved.input_price_per_million_tokens,
+        output_price_per_million_tokens=resolved.output_price_per_million_tokens,
+    )
 
 
 def _calculate_cost_cents(*, resolved, usage: UsageAccounting) -> int | None:
     return default_cost_calculator_registry.calculate_cents(
-        context=CostingContext(
-            provider_id=str(resolved.provider_id),
-            provider_model=resolved.provider_model,
-            input_price_per_million_tokens=resolved.input_price_per_million_tokens,
-            output_price_per_million_tokens=resolved.output_price_per_million_tokens,
-        ),
+        context=_costing_context(resolved),
+        usage=usage,
+    )
+
+
+def _calculate_cost_micro_cents(*, resolved, usage: UsageAccounting) -> int | None:
+    return default_cost_calculator_registry.calculate_micro_cents(
+        context=_costing_context(resolved),
         usage=usage,
     )
 

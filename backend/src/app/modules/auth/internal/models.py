@@ -84,7 +84,12 @@ class RefreshSession(Base):
 
 class OrganizationMembership(Base):
     __tablename__ = "organization_memberships"
-    __table_args__ = (UniqueConstraint("org_id", "user_id", name="uq_org_membership_user"),)
+    # A user belongs to exactly one organization: UNIQUE(user_id) guarantees a single
+    # membership row per account (it subsumes the org+user pair uniqueness).
+    __table_args__ = (
+        UniqueConstraint("org_id", "user_id", name="uq_org_membership_user"),
+        UniqueConstraint("user_id", name="uq_org_membership_single_org"),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     org_id: Mapped[UUID] = mapped_column(
@@ -223,6 +228,9 @@ class AuditEvent(Base):
     previous_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     event_hash: Mapped[str | None] = mapped_column(String(64), index=True)
     signature_algorithm: Mapped[str] = mapped_column(String(50), default="hmac-sha256")
+    # Fingerprint of the key that signed this event. NULL = signed with the legacy
+    # secret_key; lets verification pick the right key after a key rotation.
+    signing_key_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),

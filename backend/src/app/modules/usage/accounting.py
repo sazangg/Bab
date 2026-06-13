@@ -1,9 +1,21 @@
+import calendar
 import json
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel
 
 ESTIMATED_CHARS_PER_TOKEN = 4
+
+
+def subtract_months(value: datetime, months: int) -> datetime:
+    """Subtract whole calendar months (clamping the day for short months), so a
+    'monthly' limit window aligns to real months instead of a fixed 30 days."""
+    total = (value.year * 12 + value.month - 1) - months
+    year, month_index = divmod(total, 12)
+    month = month_index + 1
+    day = min(value.day, calendar.monthrange(year, month)[1])
+    return value.replace(year=year, month=month, day=day)
 
 
 class UsageAccounting(BaseModel):
@@ -199,5 +211,7 @@ def _int_or_none(value: Any) -> int | None:
     if isinstance(value, bool):
         return None
     if isinstance(value, int):
-        return value
+        # Clamp to >= 0: a negative token count from a buggy or hostile upstream would
+        # otherwise reduce the SUM-based token-limit accumulators and credit the budget.
+        return max(0, value)
     return None

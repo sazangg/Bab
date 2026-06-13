@@ -26,6 +26,7 @@ class RecordUsage(BaseModel):
     completion_tokens: int | None = None
     total_tokens: int | None = None
     cost_cents: int | None = None
+    cost_micro_cents: int | None = None
     usage_source: str = "unknown"
     error_code: str | None = None
 
@@ -71,6 +72,7 @@ class RecordLimitPolicyReservation(BaseModel):
     reserved_completion_tokens: int = 0
     reserved_total_tokens: int = 0
     reserved_cost_cents: int | None = None
+    reserved_cost_micro_cents: int | None = None
     expires_at: datetime
 
 
@@ -80,6 +82,7 @@ class LimitPolicyReservationSummary(BaseModel):
     completion_tokens: int = 0
     total_tokens: int = 0
     cost_cents: int = 0
+    cost_micro_cents: int = 0
 
 
 class UsageSummaryTotals(BaseModel):

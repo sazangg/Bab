@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String
+from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -60,6 +60,9 @@ class UsageRecord(Base):
     completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     cost_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Exact cost in micro-cents (1_000_000 == 1 cent); cost_cents is the rounded
+    # display value. Budget enforcement sums this to avoid per-request rounding drift.
+    cost_micro_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     usage_source: Mapped[str] = mapped_column(String(50), default="unknown")
     error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -102,10 +105,12 @@ class LimitPolicyReservation(Base):
     reserved_completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
     reserved_total_tokens: Mapped[int] = mapped_column(Integer, default=0)
     reserved_cost_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reserved_cost_micro_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     actual_prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     actual_completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     actual_total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     actual_cost_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    actual_cost_micro_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

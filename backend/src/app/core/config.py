@@ -17,6 +17,13 @@ class Settings(BaseSettings):
         validation_alias="DATABASE_URL",
     )
     secret_key: str = Field(min_length=32, validation_alias="BAB_SECRET_KEY")
+    # Dedicated key for the tamper-evident audit-log HMAC. Kept separate from
+    # secret_key so the JWT signing key can be rotated without invalidating the
+    # historical audit chain. Falls back to secret_key when unset (legacy behavior).
+    audit_signing_key: str | None = Field(
+        default=None,
+        validation_alias="BAB_AUDIT_SIGNING_KEY",
+    )
     encryption_key: str = Field(validation_alias="BAB_ENCRYPTION_KEY")
     environment: str = Field(
         default="development",
@@ -25,6 +32,13 @@ class Settings(BaseSettings):
     proxy_max_body_bytes: int = Field(
         default=1_000_000,
         validation_alias="BAB_PROXY_MAX_BODY_BYTES",
+    )
+    # When false (default), provider base URLs that resolve to private/loopback/
+    # link-local addresses are rejected (SSRF guard). Self-hosted single-tenant
+    # deployments that target an internal model server can opt in.
+    allow_private_provider_urls: bool = Field(
+        default=False,
+        validation_alias="BAB_ALLOW_PRIVATE_PROVIDER_URLS",
     )
     public_app_url: str | None = Field(default=None, validation_alias="BAB_PUBLIC_APP_URL")
     assets_dir: str = Field(

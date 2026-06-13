@@ -63,21 +63,19 @@ async def upload_organization_logo(
     scope: RequestScope,
     db: DatabaseSession,
 ) -> OrganizationSettingsResponse:
-    content_type = file.content_type or ""
-    extension_by_type = {
-        "image/png": ".png",
-        "image/jpeg": ".jpg",
-        "image/webp": ".webp",
-    }
-    extension = extension_by_type.get(content_type)
+    # Read at most the limit + 1 byte so an oversized upload is rejected without
+    # buffering the whole (potentially huge) body into memory.
+    content = await file.read(2_000_001)
+    if len(content) > 2_000_000:
+        raise HTTPException(status_code=413, detail="logo image is too large")
+    # Derive the type from the actual bytes (magic number), not the client-supplied
+    # content-type, so a non-image / polyglot payload cannot be stored as org_logo.*.
+    extension = _detect_image_extension(content)
     if extension is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="logo must be a png, jpg, or webp image",
+            detail="logo must be a valid png, jpg, or webp image",
         )
-    content = await file.read()
-    if len(content) > 2_000_000:
-        raise HTTPException(status_code=413, detail="logo image is too large")
     org_asset_dir = Path(settings.assets_dir) / "organizations" / str(scope.org_id)
     org_asset_dir.mkdir(parents=True, exist_ok=True)
     for existing in org_asset_dir.glob("org_logo.*"):
@@ -91,3 +89,13 @@ async def upload_organization_logo(
         scope=scope,
         db=db,
     )
+
+
+def _detect_image_extension(content: bytes) -> str | None:
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if content.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    if len(content) >= 12 and content[0:4] == b"RIFF" and content[8:12] == b"WEBP":
+        return ".webp"
+    return None

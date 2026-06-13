@@ -804,9 +804,11 @@ async def _ensure_model_offering_unique(
         if existing is not None and existing.id != current_model_offering_id:
             raise ProviderResourceConflictError
     if alias is not None:
-        existing = await repository.get_model_offering_by_alias(
+        # Aliases must be unique across the whole org (not just within a provider): the
+        # gateway resolves requested_model against any offering's alias, so a duplicate
+        # alias on another provider would make routing ambiguous.
+        existing = await repository.get_model_offering_by_alias_in_org(
             org_id=org_id,
-            provider_id=provider_id,
             alias=alias,
             db=db,
         )
@@ -1513,12 +1515,13 @@ async def _call_with_retries(
             async with asyncio.timeout(request_timeout_seconds):
                 return await call()
         except TimeoutError as exc:
-            last_error = ProviderUpstreamError(
+            # A client-side timeout leaves the upstream state unknown. Both callers are
+            # non-idempotent completion POSTs, so replaying could double-execute (and
+            # double-bill); a timeout is never retried regardless of retry_on_status.
+            raise ProviderUpstreamError(
                 status_code=504,
                 body={"error": "provider request timed out"},
-            )
-            if attempt >= max_attempts or 504 not in retry_policy["retry_on_status"]:
-                raise last_error from exc
+            ) from exc
         except httpx.RequestError as exc:
             last_error = ProviderUpstreamError(
                 status_code=502,
@@ -2162,10 +2165,20 @@ async def _resolve_provider_credential_route(
                 if membership.is_active and credential.is_active
             ]
             if active_pool_credentials:
-                return _route_pool_credentials(
+                routed = _route_pool_credentials(
                     active_pool_credentials,
                     routing_policy=routing_policy,
                 )
+                if routed and routing_policy in {
+                    ProviderCredentialRoutingPolicy.round_robin,
+                    ProviderCredentialRoutingPolicy.least_recently_used,
+                }:
+                    # Stamp selection time so rapid/concurrent requests rotate across the
+                    # pool instead of all landing on the same least-recently-used
+                    # credential (the timestamp previously only advanced on success).
+                    routed[0].last_used_at = repository.datetime_now()
+                    await db.flush()
+                return routed
             raise ProviderCredentialRequiredError
         else:
             provider_credentials = await repository.list_provider_credentials(
@@ -2276,11 +2289,27 @@ async def _api_key_for_routed_credential(
     credential: ProviderCredential | None,
     secret_registry: ProviderSecretBackendRegistry | None = None,
 ) -> str:
-    if credential is None:
-        return await resolve_legacy_provider_secret(provider=provider)
-    return await (secret_registry or get_default_secret_backend_registry()).resolve(
-        credential=credential
-    )
+    from app.core.security import SecurityError
+
+    try:
+        if credential is None:
+            return await resolve_legacy_provider_secret(provider=provider)
+        return await (secret_registry or get_default_secret_backend_registry()).resolve(
+            credential=credential
+        )
+    except SecurityError as exc:
+        # An unreadable ciphertext (rotated/restored encryption key, corruption) becomes
+        # a credential failure rather than an uncaught 500: this keeps the multi-credential
+        # fallback loop alive and lets credential health reflect the problem.
+        raise ProviderUpstreamError(
+            status_code=502,
+            body={
+                "error": {
+                    "message": "provider credential could not be decrypted",
+                    "type": "credential_error",
+                }
+            },
+        ) from exc
 
 
 async def _mark_provider_credential_failed(

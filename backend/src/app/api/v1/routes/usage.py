@@ -13,6 +13,7 @@ from app.api.v1.deps import (
     get_current_user,
     get_scope,
 )
+from app.core.csv_safe import sanitize_csv_cell
 from app.core.database import Scope, get_db
 from app.modules.activity import facade as activity_facade
 from app.modules.activity.schemas import ActivityEventResponse
@@ -294,7 +295,7 @@ def _csv_response(*, filename: str, header: list[str], rows: list[list[object]])
     output = StringIO()
     writer = csv.writer(output)
     writer.writerow(header)
-    writer.writerows(rows)
+    writer.writerows([sanitize_csv_cell(cell) for cell in row] for row in rows)
     return Response(
         content=output.getvalue(),
         media_type="text/csv; charset=utf-8",
@@ -403,10 +404,7 @@ async def _resolve_usage_scope(
         return _UsageScope(allowed_team_ids=None, allowed_project_ids=None)
 
     allowed_team_ids = {membership.team_id for membership in user.team_memberships}
-    allowed_project_ids = {
-        membership.project_id
-        for membership in user.project_memberships
-    }
+    allowed_project_ids = {membership.project_id for membership in user.project_memberships}
     if not allowed_team_ids and not allowed_project_ids:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

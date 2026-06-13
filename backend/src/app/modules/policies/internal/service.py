@@ -785,6 +785,22 @@ async def update_policy_assignment(
             assignment_id=assignment_id, scope=scope, db=db
         )
         if payload.is_active is not None:
+            if payload.is_active and not assignment.is_active:
+                # Reactivation must enforce the same single-active-assignment invariant
+                # the create path does, otherwise a duplicate active assignment can slip in.
+                duplicate = await repository.find_active_policy_assignment_for_scope(
+                    org_id=scope.org_id,
+                    policy_type=assignment.policy_type,
+                    access_policy_id=assignment.access_policy_id,
+                    limit_policy_id=assignment.limit_policy_id,
+                    scope_type=assignment.scope_type,
+                    team_id=assignment.team_id,
+                    project_id=assignment.project_id,
+                    virtual_key_id=assignment.virtual_key_id,
+                    db=db,
+                )
+                if duplicate is not None and duplicate.id != assignment.id:
+                    raise PolicyAssignmentConflictError
             assignment.is_active = payload.is_active
         await db.flush()
         activity_team_id, activity_project_id = await _assignment_activity_scope_ids(

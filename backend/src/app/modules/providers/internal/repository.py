@@ -447,6 +447,22 @@ async def get_model_offering_by_alias(
     )
 
 
+async def get_model_offering_by_alias_in_org(
+    *,
+    org_id: UUID,
+    alias: str,
+    db: AsyncSession,
+) -> ModelOffering | None:
+    # Org-wide alias lookup (across providers): an alias is the operator-chosen routing
+    # name, so it must be unique per org to avoid ambiguous requested_model resolution.
+    return await db.scalar(
+        select(ModelOffering).where(
+            ModelOffering.org_id == org_id,
+            ModelOffering.alias == alias,
+        )
+    )
+
+
 async def get_model_offering(
     *,
     org_id: UUID,
@@ -477,11 +493,12 @@ async def list_model_offerings(
         ModelOffering.provider_id == provider_id,
     ]
     if search:
-        normalized_search = f"%{search.strip().lower()}%"
+        # autoescape escapes %/_ so a literal wildcard in the term matches verbatim.
+        term = search.strip()
         filters.append(
             or_(
-                func.lower(ModelOffering.provider_model_name).like(normalized_search),
-                func.lower(ModelOffering.alias).like(normalized_search),
+                ModelOffering.provider_model_name.icontains(term, autoescape=True),
+                ModelOffering.alias.icontains(term, autoescape=True),
             )
         )
     if modalities:
