@@ -1,5 +1,6 @@
-import { ListRestart, Send, TerminalSquare } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { ListRestart, LoaderCircle, Send, TerminalSquare } from "lucide-react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -18,6 +19,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   type PlaygroundMode,
   validateMaxTokens,
@@ -56,6 +58,8 @@ type UsageRecordsResponse = {
   status: number;
   headers: Headers;
 };
+type ResponseView = "message" | "raw";
+type MessageFormat = "text" | "markdown" | "json";
 
 export function PlaygroundPage() {
   const [searchParams] = useSearchParams();
@@ -80,20 +84,25 @@ export function PlaygroundPage() {
     selectedProjectId ? { project_id: selectedProjectId, limit: 100 } : undefined,
     { query: { enabled: Boolean(selectedProjectId), retry: false } },
   );
+  const usageLookupRequestId = result?.requestId ?? requestId;
   const usageQuery = useQuery({
-    queryKey: ["playground-usage", requestId, selectedKeyId],
+    queryKey: ["playground-usage", usageLookupRequestId],
     queryFn: () => {
-      const params = new URLSearchParams({ window: "24h", limit: "1", request_id: requestId! });
-      if (selectedKeyId) params.set("virtual_key_id", selectedKeyId);
+      const params = new URLSearchParams({
+        window: "24h",
+        limit: "1",
+        request_id: usageLookupRequestId!,
+      });
       return apiMutator<UsageRecordsResponse>(`/api/v1/usage/records?${params}`, {
         method: "GET",
       });
     },
-    enabled: Boolean(requestId),
+    enabled: Boolean(usageLookupRequestId),
+    placeholderData: keepPreviousData,
     retry: false,
     refetchInterval: (query) => {
       if (query.state.status === "error") return false;
-      if (query.state.dataUpdateCount >= 10) return false;
+      if (query.state.dataUpdateCount >= 20) return false;
       return query.state.data?.status === 200 && query.state.data.data.length > 0 ? false : 500;
     },
   });
@@ -153,11 +162,27 @@ export function PlaygroundPage() {
         body: JSON.stringify(buildPayload({ mode, model, prompt, temperature, maxTokens, stream })),
       });
       if (mode === "chat" && stream) {
-        const streamed = await readOpenAIStream(response);
+        const responseRequestId = extractRequestId(response, null);
+        setResult({
+          status: response.status,
+          body: { content: "" },
+          requestId: responseRequestId,
+          streamedText: "",
+          rawStream: "",
+        });
+        const streamed = await readOpenAIStream(response, (next) => {
+          setResult({
+            status: response.status,
+            body: next.parsedError ?? { content: next.content },
+            requestId: responseRequestId ?? extractRequestId(response, next.parsedError ?? next.raw),
+            streamedText: next.content,
+            rawStream: next.raw,
+          });
+        });
         setResult({
           status: response.status,
           body: streamed.parsedError ?? { content: streamed.content },
-          requestId: extractRequestId(response, streamed.parsedError ?? streamed.raw),
+          requestId: responseRequestId ?? extractRequestId(response, streamed.parsedError ?? streamed.raw),
           streamedText: streamed.content,
           rawStream: streamed.raw,
         });
@@ -181,77 +206,92 @@ export function PlaygroundPage() {
         description="Test gateway-compatible endpoints with a virtual key."
       />
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Request</CardTitle>
-            <CardDescription>
-              Paste the secret value shown when the key was created.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Tabs value={mode} onValueChange={(value) => setMode(value as PlaygroundMode)}>
-              <TabsList>
-                <TabsTrigger value="chat">Chat</TabsTrigger>
-                <TabsTrigger value="responses">Responses</TabsTrigger>
-                <TabsTrigger value="completions">Completions</TabsTrigger>
-                <TabsTrigger value="embeddings" disabled>
-                  Embeddings (unavailable)
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value={mode} className="space-y-4 pt-2">
-                <SharedRequestControls
-                  virtualKey={virtualKey}
-                  projects={projects}
-                  projectKeys={projectKeys}
-                  selectedProjectId={selectedProjectId}
-                  selectedKeyId={selectedKeyId}
-                  selectedKey={selectedKey}
-                  model={model}
-                  providerId={providerId}
-                  models={models}
-                  prompt={prompt}
-                  temperature={temperature}
-                  maxTokens={maxTokens}
-                  temperatureError={temperatureError}
-                  maxTokensError={maxTokensError}
-                  stream={stream}
-                  supportsStream={supportsStream}
-                  isLoadingModels={isLoadingModels}
-                  onVirtualKeyChange={setVirtualKey}
-                  onProjectChange={(projectId) => {
-                    setSelectedProjectId(projectId);
-                    setSelectedKeyId("");
-                  }}
-                  onKeyChange={setSelectedKeyId}
-                  onModelChange={(value) => {
-                    setModel(value);
-                    const selectedModel = models.find((entry) => entry.id === value);
-                    if (selectedModel) setProviderId(selectedModel.provider_id);
-                  }}
-                  onProviderChange={setProviderId}
-                  onPromptChange={setPrompt}
-                  onTemperatureChange={setTemperature}
-                  onMaxTokensChange={setMaxTokens}
-                  onStreamChange={setStream}
-                  onLoadModels={loadModels}
-                  canLoadModels={canLoadModels}
-                />
-                <Button type="button" disabled={!canSend || isSending} onClick={sendRequest}>
-                  <Send data-icon="inline-start" />
-                  {isSending ? "Sending..." : `Send ${mode}`}
-                </Button>
-              </TabsContent>
-            </Tabs>
-          </CardContent>
-        </Card>
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+        <div className="flex flex-col gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Settings</CardTitle>
+              <CardDescription>
+                Choose the endpoint, key, model, and generation controls.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Tabs value={mode} onValueChange={(value) => setMode(value as PlaygroundMode)}>
+                <TabsList>
+                  <TabsTrigger value="chat">Chat</TabsTrigger>
+                  <TabsTrigger value="responses">Responses</TabsTrigger>
+                  <TabsTrigger value="completions">Completions</TabsTrigger>
+                  <TabsTrigger value="embeddings" disabled>
+                    Embeddings
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value={mode} className="space-y-4 pt-4">
+                  <PlaygroundSettings
+                    virtualKey={virtualKey}
+                    projects={projects}
+                    projectKeys={projectKeys}
+                    selectedProjectId={selectedProjectId}
+                    selectedKeyId={selectedKeyId}
+                    selectedKey={selectedKey}
+                    model={model}
+                    providerId={providerId}
+                    models={models}
+                    temperature={temperature}
+                    maxTokens={maxTokens}
+                    temperatureError={temperatureError}
+                    maxTokensError={maxTokensError}
+                    stream={stream}
+                    supportsStream={supportsStream}
+                    isLoadingModels={isLoadingModels}
+                    onVirtualKeyChange={setVirtualKey}
+                    onProjectChange={(projectId) => {
+                      setSelectedProjectId(projectId);
+                      setSelectedKeyId("");
+                    }}
+                    onKeyChange={setSelectedKeyId}
+                    onModelChange={(value) => {
+                      setModel(value);
+                      const selectedModel = models.find((entry) => entry.id === value);
+                      if (selectedModel) setProviderId(selectedModel.provider_id);
+                    }}
+                    onProviderChange={setProviderId}
+                    onTemperatureChange={setTemperature}
+                    onMaxTokensChange={setMaxTokens}
+                    onStreamChange={setStream}
+                    onLoadModels={loadModels}
+                    canLoadModels={canLoadModels}
+                  />
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+        </div>
 
         <div className="flex flex-col gap-6">
-          <ResponseCard result={result} mode={mode} />
+          <Card>
+            <CardHeader>
+              <CardTitle>Input</CardTitle>
+              <CardDescription>Prompt body sent to the selected gateway endpoint.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Textarea
+                id="playground-prompt"
+                rows={12}
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+              />
+              <Button type="button" disabled={!canSend || isSending} onClick={sendRequest}>
+                <Send data-icon="inline-start" />
+                {isSending ? "Sending..." : `Send ${mode}`}
+              </Button>
+            </CardContent>
+          </Card>
+          <ResponseCard result={result} mode={mode} isSending={isSending} />
           <LatestUsageCard
             latestUsage={latestUsage}
             isFetching={usageQuery.isFetching}
-            requestId={result?.requestId}
+            isWaiting={Boolean(usageLookupRequestId && !latestUsage && !usageQuery.isError)}
+            requestId={usageLookupRequestId}
           />
         </div>
       </div>
@@ -259,7 +299,7 @@ export function PlaygroundPage() {
   );
 }
 
-function SharedRequestControls({
+function PlaygroundSettings({
   virtualKey,
   projects,
   projectKeys,
@@ -269,7 +309,6 @@ function SharedRequestControls({
   model,
   providerId,
   models,
-  prompt,
   temperature,
   maxTokens,
   temperatureError,
@@ -283,7 +322,6 @@ function SharedRequestControls({
   onKeyChange,
   onModelChange,
   onProviderChange,
-  onPromptChange,
   onTemperatureChange,
   onMaxTokensChange,
   onStreamChange,
@@ -317,7 +355,6 @@ function SharedRequestControls({
   model: string;
   providerId: string;
   models: GatewayModel[];
-  prompt: string;
   temperature: string;
   maxTokens: string;
   temperatureError: string | null;
@@ -331,7 +368,6 @@ function SharedRequestControls({
   onKeyChange: (value: string) => void;
   onModelChange: (value: string) => void;
   onProviderChange: (value: string) => void;
-  onPromptChange: (value: string) => void;
   onTemperatureChange: (value: string) => void;
   onMaxTokensChange: (value: string) => void;
   onStreamChange: (value: boolean) => void;
@@ -520,29 +556,36 @@ function SharedRequestControls({
           onCheckedChange={onStreamChange}
         />
       </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="playground-prompt">Input</Label>
-        <Textarea
-          id="playground-prompt"
-          rows={7}
-          value={prompt}
-          onChange={(event) => onPromptChange(event.target.value)}
-        />
-      </div>
     </>
   );
 }
 
-function ResponseCard({ result, mode }: { result: PlaygroundResult | null; mode: PlaygroundMode }) {
+function ResponseCard({
+  result,
+  mode,
+  isSending,
+}: {
+  result: PlaygroundResult | null;
+  mode: PlaygroundMode;
+  isSending: boolean;
+}) {
+  const [view, setView] = useState<ResponseView>("message");
+  const [messageFormat, setMessageFormat] = useState<MessageFormat>("text");
+  const message = result ? extractResponseMessage(result, mode) : "";
+  const parsedMessageJson = parseJson(message);
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Response</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          Response
+          {isSending ? <LoaderCircle className="size-4 animate-spin text-muted-foreground" /> : null}
+        </CardTitle>
         <CardDescription>{mode} response or gateway error.</CardDescription>
       </CardHeader>
       <CardContent>
         {result ? (
-          <div className="space-y-3">
+          <div className="space-y-4">
             <div className="flex items-center gap-2 text-sm">
               Status:{" "}
               {result.status > 0 ? (
@@ -556,22 +599,54 @@ function ResponseCard({ result, mode }: { result: PlaygroundResult | null; mode:
                 Request ID: <span className="font-mono font-medium">{result.requestId}</span>
               </div>
             ) : null}
-            {result.streamedText !== undefined ? (
-              <div className="rounded-md border bg-background p-3 text-sm leading-6">
-                {result.streamedText || "No streamed content returned."}
+            <Tabs value={view} onValueChange={(value) => setView(value as ResponseView)}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <TabsList>
+                  <TabsTrigger value="message">Message</TabsTrigger>
+                  <TabsTrigger value="raw">Raw JSON</TabsTrigger>
+                </TabsList>
+                {view === "message" ? (
+                  <ToggleGroup
+                    type="single"
+                    value={messageFormat}
+                    onValueChange={(value) => value && setMessageFormat(value as MessageFormat)}
+                    className="w-fit"
+                  >
+                    <ToggleGroupItem value="text">Text</ToggleGroupItem>
+                    <ToggleGroupItem value="markdown">Markdown</ToggleGroupItem>
+                    <ToggleGroupItem value="json">JSON</ToggleGroupItem>
+                  </ToggleGroup>
+                ) : null}
               </div>
-            ) : null}
-            <pre className="max-h-[28rem] overflow-auto rounded-md bg-muted p-3 text-xs">
-              {JSON.stringify(result.body, null, 2)}
-            </pre>
-            {result.rawStream ? (
-              <details className="text-sm">
-                <summary className="cursor-pointer text-muted-foreground">Raw stream</summary>
-                <pre className="mt-2 max-h-64 overflow-auto rounded-md bg-muted p-3 text-xs">
-                  {result.rawStream}
+              <TabsContent value="message" className="pt-3">
+                <MessagePanel
+                  message={message}
+                  parsedJson={parsedMessageJson}
+                  format={messageFormat}
+                  isSending={isSending}
+                />
+              </TabsContent>
+              <TabsContent value="raw" className="space-y-3 pt-3">
+                <pre className="max-h-[32rem] overflow-auto rounded-md bg-muted p-3 text-xs">
+                  {JSON.stringify(result.body, null, 2)}
                 </pre>
-              </details>
-            ) : null}
+                {result.rawStream ? (
+                  <details className="text-sm">
+                    <summary className="cursor-pointer text-muted-foreground">Raw stream</summary>
+                    <pre className="mt-2 max-h-64 overflow-auto rounded-md bg-muted p-3 text-xs">
+                      {result.rawStream}
+                    </pre>
+                  </details>
+                ) : null}
+              </TabsContent>
+            </Tabs>
+          </div>
+        ) : isSending ? (
+          <div className="flex min-h-48 items-center justify-center rounded-md border bg-muted/20">
+            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+              <LoaderCircle className="size-5 animate-spin" />
+              Waiting for gateway response...
+            </div>
           </div>
         ) : (
           <EmptyState
@@ -585,9 +660,200 @@ function ResponseCard({ result, mode }: { result: PlaygroundResult | null; mode:
   );
 }
 
+function MessagePanel({
+  message,
+  parsedJson,
+  format,
+  isSending,
+}: {
+  message: string;
+  parsedJson: unknown;
+  format: MessageFormat;
+  isSending: boolean;
+}) {
+  if (!message && isSending) {
+    return (
+      <div className="min-h-24 rounded-md border bg-background p-3 text-sm leading-6">
+        <span className="inline-flex items-center gap-2 text-muted-foreground">
+          <LoaderCircle className="size-4 animate-spin" />
+          Waiting for streamed content...
+        </span>
+      </div>
+    );
+  }
+
+  if (format === "json") {
+    return (
+      <pre className="max-h-[32rem] min-h-24 overflow-auto rounded-md border bg-background p-3 text-xs">
+        {parsedJson !== null ? JSON.stringify(parsedJson, null, 2) : "Message is not valid JSON."}
+      </pre>
+    );
+  }
+
+  if (format === "markdown") {
+    return (
+      <div className="max-h-[32rem] min-h-24 overflow-auto rounded-md border bg-background p-3 text-sm leading-6">
+        {message ? renderBasicMarkdown(message) : "No message content returned."}
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-h-[32rem] min-h-24 overflow-auto whitespace-pre-wrap rounded-md border bg-background p-3 text-sm leading-6">
+      {message || "No message content returned."}
+    </div>
+  );
+}
+
+function extractResponseMessage(result: PlaygroundResult, mode: PlaygroundMode) {
+  if (typeof result.streamedText === "string") return result.streamedText;
+  const body = result.body;
+  if (!body || typeof body !== "object") return typeof body === "string" ? body : "";
+
+  if (mode === "responses") {
+    const outputText = getStringProperty(body, "output_text");
+    if (outputText) return outputText;
+    const output = getArrayProperty(body, "output");
+    const parts = output.flatMap((item) =>
+      getArrayProperty(item, "content").map((content) => getStringProperty(content, "text")),
+    );
+    return parts.filter(Boolean).join("\n");
+  }
+
+  const choices = getArrayProperty(body, "choices");
+  if (mode === "completions") {
+    return choices.map((choice) => getStringProperty(choice, "text")).filter(Boolean).join("\n");
+  }
+
+  return choices
+    .map((choice) => {
+      const message = getObjectProperty(choice, "message");
+      const content = message ? getProperty(message, "content") : null;
+      if (typeof content === "string") return content;
+      if (Array.isArray(content)) {
+        return content
+          .map((part) => getStringProperty(part, "text"))
+          .filter(Boolean)
+          .join("\n");
+      }
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function renderBasicMarkdown(markdown: string) {
+  const nodes: ReactNode[] = [];
+  const lines = markdown.split(/\r?\n/);
+  let codeLines: string[] = [];
+  let inCode = false;
+  let listItems: ReactNode[] = [];
+
+  const flushList = () => {
+    if (listItems.length === 0) return;
+    nodes.push(
+      <ul key={`list-${nodes.length}`} className="ml-5 list-disc space-y-1">
+        {listItems}
+      </ul>,
+    );
+    listItems = [];
+  };
+  const flushCode = () => {
+    if (!inCode) return;
+    nodes.push(
+      <pre
+        key={`code-${nodes.length}`}
+        className="my-2 overflow-auto rounded-md bg-muted p-3 text-xs"
+      >
+        <code>{codeLines.join("\n")}</code>
+      </pre>,
+    );
+    codeLines = [];
+    inCode = false;
+  };
+
+  lines.forEach((line, index) => {
+    if (line.startsWith("```")) {
+      if (inCode) {
+        flushCode();
+      } else {
+        flushList();
+        inCode = true;
+      }
+      return;
+    }
+    if (inCode) {
+      codeLines.push(line);
+      return;
+    }
+    if (!line.trim()) {
+      flushList();
+      return;
+    }
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      flushList();
+      const HeadingTag = (`h${heading[1].length + 2}` as "h3" | "h4" | "h5");
+      nodes.push(
+        <HeadingTag key={`heading-${index}`} className="mt-3 font-medium first:mt-0">
+          {heading[2]}
+        </HeadingTag>,
+      );
+      return;
+    }
+    const bullet = line.match(/^[-*]\s+(.+)$/);
+    if (bullet) {
+      listItems.push(<li key={`item-${index}`}>{renderInlineMarkdown(bullet[1])}</li>);
+      return;
+    }
+    flushList();
+    nodes.push(<p key={`p-${index}`}>{renderInlineMarkdown(line)}</p>);
+  });
+  flushCode();
+  flushList();
+  return nodes.length > 0 ? nodes : markdown;
+}
+
+function renderInlineMarkdown(value: string) {
+  const parts = value.split(/(`[^`]+`|\*\*[^*]+\*\*)/g).filter(Boolean);
+  return parts.map((part, index) => {
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return (
+        <code key={index} className="rounded bg-muted px-1 py-0.5 text-xs">
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={index}>{part.slice(2, -2)}</strong>;
+    }
+    return part;
+  });
+}
+
+function getProperty(value: unknown, key: string): unknown {
+  return value && typeof value === "object" ? (value as Record<string, unknown>)[key] : null;
+}
+
+function getObjectProperty(value: unknown, key: string) {
+  const property = getProperty(value, key);
+  return property && typeof property === "object" && !Array.isArray(property) ? property : null;
+}
+
+function getArrayProperty(value: unknown, key: string) {
+  const property = getProperty(value, key);
+  return Array.isArray(property) ? property : [];
+}
+
+function getStringProperty(value: unknown, key: string) {
+  const property = getProperty(value, key);
+  return typeof property === "string" ? property : "";
+}
+
 function LatestUsageCard({
   latestUsage,
   isFetching,
+  isWaiting,
   requestId,
 }: {
   latestUsage:
@@ -602,6 +868,7 @@ function LatestUsageCard({
     | null
     | undefined;
   isFetching: boolean;
+  isWaiting: boolean;
   requestId?: string | null;
 }) {
   const isMatchingRecord = Boolean(requestId && latestUsage?.request_id === requestId);
@@ -616,9 +883,7 @@ function LatestUsageCard({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {isFetching ? (
-          <p className="text-sm text-muted-foreground">Checking recent usage...</p>
-        ) : latestUsage ? (
+        {latestUsage ? (
           <dl className="grid gap-3 text-sm sm:grid-cols-2">
             <UsageItem label="Status" value={String(latestUsage.http_status)} />
             <UsageItem label="Model" value={latestUsage.requested_model} />
@@ -630,6 +895,11 @@ function LatestUsageCard({
             />
             <UsageItem label="Recorded" value={new Date(latestUsage.created_at).toLocaleString()} />
           </dl>
+        ) : isWaiting || isFetching ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <LoaderCircle className="size-4 animate-spin" />
+            Waiting for the usage record for this request...
+          </div>
         ) : (
           <p className="text-sm text-muted-foreground">
             No usage record is available for this role or request yet.
@@ -714,7 +984,10 @@ function resolveGatewayUrl(path: string) {
   return apiBaseUrl ? new URL(path, apiBaseUrl).toString() : path;
 }
 
-async function readOpenAIStream(response: Response) {
+async function readOpenAIStream(
+  response: Response,
+  onProgress?: (state: { content: string; raw: string; parsedError: unknown }) => void,
+) {
   if (!response.body) {
     const body = await response.text();
     return { content: "", raw: body, parsedError: parseJson(body) };
@@ -724,22 +997,27 @@ async function readOpenAIStream(response: Response) {
   let raw = "";
   let content = "";
   let parsedError: unknown;
+  let pending = "";
   while (true) {
     const { done, value } = await reader.read();
-    if (done) break;
-    const chunk = decoder.decode(value, { stream: true });
+    const chunk = done ? decoder.decode() : decoder.decode(value, { stream: true });
     raw += chunk;
-    const parsed = parseStreamChunk(chunk);
+    const combined = pending + chunk;
+    const lines = combined.split(/\r?\n/);
+    pending = done ? "" : (lines.pop() ?? "");
+    const parsed = parseStreamLines(lines);
     content += parsed.content;
     if (parsed.error) parsedError = parsed.error;
+    onProgress?.({ content, raw, parsedError });
+    if (done) break;
   }
   return { content, raw, parsedError };
 }
 
-function parseStreamChunk(chunk: string) {
+function parseStreamLines(lines: string[]) {
   let content = "";
   let error: unknown;
-  for (const line of chunk.split(/\r?\n/)) {
+  for (const line of lines) {
     if (!line.startsWith("data:")) continue;
     const data = line.slice(5).trim();
     if (!data || data === "[DONE]") continue;

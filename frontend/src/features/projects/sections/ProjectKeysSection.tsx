@@ -353,14 +353,14 @@ export function ProjectKeysSection({
           }
         }}
       >
-        <DialogContent>
+        <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Key created</DialogTitle>
             <DialogDescription>
               Copy the key now. It cannot be displayed again after this dialog closes.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-3 rounded-md border bg-muted/30 p-3 text-sm md:grid-cols-2">
+          <div className="grid gap-3 rounded-md border bg-muted/30 p-3 text-sm md:grid-cols-3">
             <Fact label="Project" value={project.name} />
             <Fact label="Team" value={teamName ?? "Organization owned"} />
             <Fact label="Gateway base URL" value={gatewayBaseUrl ?? "Not configured"} />

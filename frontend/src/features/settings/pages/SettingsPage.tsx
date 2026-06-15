@@ -30,6 +30,7 @@ import type { UpdateOrganizationSettingsRequest } from "@/shared/api/generated/s
 import { getProblemDetail } from "@/shared/api/problem-detail";
 import { MessageStateCard } from "@/shared/components/MessageStateCard";
 import { PageHeader } from "@/shared/components/PageHeader";
+import { resolveAssetUrl } from "@/shared/lib/asset-url";
 
 const settingsSchema = z.object({
   organization_name: z.string().min(1).max(255),
@@ -490,16 +491,6 @@ function toFormValues(settings: {
     virtual_key_prefix: settings.virtual_key_prefix,
     allow_secret_copy: settings.allow_secret_copy,
   };
-}
-
-function resolveAssetUrl(url: string): string | null {
-  // Defense in depth: only hand http(s)/app-relative URLs to <img src>, never
-  // javascript:/data:/protocol-relative values.
-  if (/^https?:\/\//i.test(url)) return url;
-  if (url.startsWith("//")) return null;
-  if (!url.startsWith("/")) return null;
-  const apiBaseUrl = import.meta.env.VITE_BAB_API_URL as string | undefined;
-  return apiBaseUrl ? new URL(url, apiBaseUrl).toString() : url;
 }
 
 function isAbsoluteHttpUrl(value: string) {

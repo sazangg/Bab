@@ -371,6 +371,12 @@ export function PoliciesPage() {
   const filteredAccessPolicies = accessPolicies.filter(matchesFilters);
   const filteredLimitPolicies = limitPolicies.filter(matchesFilters);
   const currentTabIsLimit = activeTab === "limits";
+  const activeRouteSheet = routeSheet
+    ? {
+        policy:
+          accessPolicies.find((policy) => policy.id === routeSheet.policy.id) ?? routeSheet.policy,
+      }
+    : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -477,7 +483,7 @@ export function PoliciesPage() {
         }}
       />
       <RouteSheet
-        state={routeSheet}
+        state={activeRouteSheet}
         onOpenChange={(open) => !open && setRouteSheet(null)}
         onChanged={invalidatePolicies}
       />
@@ -539,6 +545,7 @@ export function AccessPolicyDetailPage() {
   const routeCount = policy.routes?.length ?? 0;
   const modelCount = countRouteModels(policy);
   const canManageDefinition = canManagePolicyDefinition(currentUser, policy);
+  const activeRouteSheet = routeSheet ? { policy } : null;
 
   return (
     <>
@@ -594,7 +601,7 @@ export function AccessPolicyDetailPage() {
         canManageAssignments={canAssignPolicies}
       />
       <RouteSheet
-        state={routeSheet}
+        state={activeRouteSheet}
         onOpenChange={(open) => !open && setRouteSheet(null)}
         onChanged={invalidatePolicies}
       />
@@ -1824,7 +1831,7 @@ function CreatePolicySheet({
                   const pool = provider?.pools?.[0];
                   setProviderId(value);
                   setPoolId(pool?.id ?? "");
-                  setSelectedModels(pool?.models?.map((model) => model.id) ?? []);
+                  setSelectedModels([]);
                 }}
                 options={accessOptions.map((provider) => provider.id)}
                 labels={providerOptionLabels(accessOptions)}
@@ -1834,9 +1841,8 @@ function CreatePolicySheet({
                 label="Credential pool"
                 value={poolId}
                 onValueChange={(value) => {
-                  const pool = pools.find((option) => option.id === value);
                   setPoolId(value);
-                  setSelectedModels(pool?.models?.map((model) => model.id) ?? []);
+                  setSelectedModels([]);
                 }}
                 options={pools.map((pool) => pool.id)}
                 labels={Object.fromEntries(pools.map((pool) => [pool.id, pool.name]))}
@@ -1972,8 +1978,8 @@ function RouteSheet({
     mutation: {
       onSuccess: async () => {
         toast.success("Access route added.");
-        await onChanged();
         resetForm();
+        await onChanged();
       },
       onError: () => toast.error("Access route could not be added."),
     },
@@ -1991,8 +1997,8 @@ function RouteSheet({
     mutation: {
       onSuccess: async () => {
         toast.success("Access route updated.");
-        await onChanged();
         resetForm();
+        await onChanged();
       },
       onError: () => toast.error("Access route could not be updated."),
     },
@@ -2142,7 +2148,7 @@ function RouteSheet({
                     const pool = provider?.pools?.[0];
                     setProviderId(value);
                     setPoolId(pool?.id ?? "");
-                    setSelectedModels(pool?.models?.map((model) => model.id) ?? []);
+                    setSelectedModels([]);
                   }}
                   options={accessOptions.map((provider) => provider.id)}
                   labels={providerOptionLabels(accessOptions)}
@@ -2152,9 +2158,8 @@ function RouteSheet({
                   label="Credential pool"
                   value={poolId}
                   onValueChange={(value) => {
-                    const pool = pools.find((option) => option.id === value);
                     setPoolId(value);
-                    setSelectedModels(pool?.models?.map((model) => model.id) ?? []);
+                    setSelectedModels([]);
                   }}
                   options={pools.map((pool) => pool.id)}
                   labels={Object.fromEntries(pools.map((pool) => [pool.id, pool.name]))}
@@ -2168,7 +2173,7 @@ function RouteSheet({
                   isLoading={accessOptionsQuery.isLoading}
                   isError={accessOptionsQuery.isError}
                 />
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid items-start gap-3 sm:grid-cols-2">
                   <Field label="Priority">
                     <Input value={priority} onChange={(event) => setPriority(event.target.value)} />
                   </Field>

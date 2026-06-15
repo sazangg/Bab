@@ -1,6 +1,6 @@
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { Activity, ChevronDown, Plus, RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQueryState } from "nuqs";
 import { toast } from "sonner";
 
@@ -149,6 +149,7 @@ function ProviderResourcesContent({
     );
   const pools = poolsQuery.data?.status === 200 ? poolsQuery.data.data : [];
   const credentials = credentialsQuery.data?.status === 200 ? credentialsQuery.data.data : [];
+  const hasActivePool = pools.some((pool) => pool.is_active);
   const selectedPool = pools.find((pool) => pool.id === selectedPoolId) ?? pools[0] ?? null;
   const effectiveSelectedPoolId = selectedPool?.id ?? "";
   const poolCredentialsQuery =
@@ -163,11 +164,25 @@ function ProviderResourcesContent({
     modelsQuery.data?.status === 200
       ? modelsQuery.data.data
       : { items: [], total: 0, limit: modelPageSize, offset: modelOffset };
+  const shouldOpenConfigurePoolSheet =
+    canManage &&
+    resourceAction === "configure-pool" &&
+    !poolsQuery.isPending &&
+    !hasActivePool;
+  const poolSheetOpen = createPoolOpen || shouldOpenConfigurePoolSheet;
+
+  useEffect(() => {
+    if (resourceAction !== "configure-pool" || poolsQuery.isPending) return;
+    if (hasActivePool) {
+      void setResourceAction(null);
+    }
+  }, [hasActivePool, poolsQuery.isPending, resourceAction, setResourceAction]);
 
   const createPool = useCreateCredentialPoolApiV1ProvidersProviderIdPoolsPost({
     mutation: {
       onSuccess: async () => {
         setCreatePoolOpen(false);
+        if (resourceAction === "configure-pool") void setResourceAction(null);
         await queryClient.invalidateQueries();
       },
     },
@@ -191,6 +206,7 @@ function ProviderResourcesContent({
     mutation: {
       onSuccess: async () => {
         setCreateCredentialOpen(false);
+        if (resourceAction === "add-credential") void setResourceAction(null);
         await queryClient.invalidateQueries();
       },
     },
@@ -733,8 +749,11 @@ function ProviderResourcesContent({
       ) : null}
       {canManage ? (
         <CredentialPoolSheet
-          open={createPoolOpen}
-          onOpenChange={setCreatePoolOpen}
+          open={poolSheetOpen}
+          onOpenChange={(open) => {
+            setCreatePoolOpen(open);
+            if (!open && resourceAction === "configure-pool") void setResourceAction(null);
+          }}
           title="New credential pool"
           description={`Create a pool for ${provider.name}.`}
           submitLabel="Create pool"

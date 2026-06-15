@@ -168,95 +168,115 @@ export function ProvidersPage() {
 
   return (
     <>
-      <PageHeader
-        title="Providers"
-        description="Default and custom upstream providers for routing, credentials, and model catalogs."
-        actions={
-          canManageProviders ? (
-            <CreateProviderSheet
-              open={createOpen}
-              onOpenChange={setCreateOpen}
-              onSubmit={(values) =>
-                createMutation.mutate({
-                  data: {
-                    name: values.name,
-                    ...(values.slug ? { slug: values.slug } : {}),
-                    base_url: values.base_url,
-                  },
-                })
-              }
-              isPending={createMutation.isPending}
-              isError={createMutation.isError}
-            />
-          ) : null
-        }
-      />
+      <div className="space-y-6">
+        <PageHeader
+          title="Providers"
+          description="Default and custom upstream providers for routing, credentials, and model catalogs."
+          actions={
+            canManageProviders ? (
+              <CreateProviderSheet
+                open={createOpen}
+                onOpenChange={setCreateOpen}
+                onSubmit={(values) =>
+                  createMutation.mutate({
+                    data: {
+                      name: values.name,
+                      ...(values.slug ? { slug: values.slug } : {}),
+                      base_url: values.base_url,
+                    },
+                  })
+                }
+                isPending={createMutation.isPending}
+                isError={createMutation.isError}
+              />
+            ) : null
+          }
+        />
 
-      {providersQuery.isPending ? (
-        <p className="text-sm text-muted-foreground">Loading providers...</p>
-      ) : (
-        <div className="space-y-4">
-          <div className="rounded-md border bg-muted/20 p-3">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="relative flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  className="bg-background pl-9 pr-9"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search by provider, slug, or endpoint..."
-                />
-                {search ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    className="absolute right-1 top-1/2 -translate-y-1/2"
-                    onClick={() => setSearch("")}
-                    aria-label="Clear provider search"
-                  >
-                    <X />
-                  </Button>
-                ) : null}
-              </div>
-              <div className="flex flex-wrap items-center gap-1 rounded-md border bg-background p-0.5">
-                {(["all", "configured", "available", "custom", "ready"] as const).map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-label={`${formatSegmentLabel(value)} providers (${segmentCounts[value]})`}
-                    onClick={() => setSegment(value)}
-                    className={cn(
-                      "rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors",
-                      segment === value
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {formatSegmentLabel(value)}
-                    <span className="ml-1.5 text-muted-foreground">{segmentCounts[value]}</span>
-                  </button>
-                ))}
+        {providersQuery.isPending ? (
+          <p className="text-sm text-muted-foreground">Loading providers...</p>
+        ) : (
+          <div className="space-y-4">
+            <div className="rounded-md border bg-muted/20 p-3">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="relative flex-1">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    className="bg-background pl-9 pr-9"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Search by provider, slug, or endpoint..."
+                  />
+                  {search ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="absolute right-1 top-1/2 -translate-y-1/2"
+                      onClick={() => setSearch("")}
+                      aria-label="Clear provider search"
+                    >
+                      <X />
+                    </Button>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap items-center gap-1 rounded-md border bg-background p-0.5">
+                  {(["all", "configured", "available", "custom", "ready"] as const).map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      aria-label={`${formatSegmentLabel(value)} providers (${segmentCounts[value]})`}
+                      onClick={() => setSegment(value)}
+                      className={cn(
+                        "rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors",
+                        segment === value
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {formatSegmentLabel(value)}
+                      <span className="ml-1.5 text-muted-foreground">{segmentCounts[value]}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
-          {catalogEntries.length === 0 ? (
-            <EmptyState
-              icon={Plug}
-              title="No providers match"
-              description="Try another search, or add a custom provider."
-              action={
-                canManageProviders ? (
-                  <Button onClick={() => setCreateOpen(true)}>Add custom provider</Button>
-                ) : undefined
-              }
-            />
-          ) : (
-            <div className="space-y-5">
-              {favoriteEntries.length > 0 ? (
+            {catalogEntries.length === 0 ? (
+              <EmptyState
+                icon={Plug}
+                title="No providers match"
+                description="Try another search, or add a custom provider."
+                action={
+                  canManageProviders ? (
+                    <Button onClick={() => setCreateOpen(true)}>Add custom provider</Button>
+                  ) : undefined
+                }
+              />
+            ) : (
+              <div className="space-y-5">
+                {favoriteEntries.length > 0 ? (
+                  <ProviderGroup
+                    title="Favorites"
+                    providers={favoriteEntries}
+                    onAddKey={setAddKeyTarget}
+                    onEdit={setEditTarget}
+                    onDeactivate={setDeactivateTarget}
+                    onReactivate={(entry) =>
+                      updateMutation.mutate({ providerId: entry.id, data: { is_active: true } })
+                    }
+                    onToggleFavorite={(entry) =>
+                      updateMutation.mutate({
+                        providerId: entry.id,
+                        data: { is_favorite: !entry.is_favorite },
+                      })
+                    }
+                    isUpdating={updateMutation.isPending}
+                    canManage={canManageProviders}
+                  />
+                ) : null}
                 <ProviderGroup
-                  title="Favorites"
-                  providers={favoriteEntries}
+                  title={configuredEntries.length > 0 ? "Configured providers" : undefined}
+                  providers={configuredEntries}
                   onAddKey={setAddKeyTarget}
                   onEdit={setEditTarget}
                   onDeactivate={setDeactivateTarget}
@@ -272,81 +292,66 @@ export function ProvidersPage() {
                   isUpdating={updateMutation.isPending}
                   canManage={canManageProviders}
                 />
-              ) : null}
-              <ProviderGroup
-                title={configuredEntries.length > 0 ? "Configured providers" : undefined}
-                providers={configuredEntries}
-                onAddKey={setAddKeyTarget}
-                onEdit={setEditTarget}
-                onDeactivate={setDeactivateTarget}
-                onReactivate={(entry) =>
-                  updateMutation.mutate({ providerId: entry.id, data: { is_active: true } })
-                }
-                onToggleFavorite={(entry) =>
-                  updateMutation.mutate({
-                    providerId: entry.id,
-                    data: { is_favorite: !entry.is_favorite },
-                  })
-                }
-                isUpdating={updateMutation.isPending}
-                canManage={canManageProviders}
-              />
-              <ProviderGroup
-                title="Available providers"
-                providers={availableEntries}
-                onAddKey={setAddKeyTarget}
-                onEdit={setEditTarget}
-                onDeactivate={setDeactivateTarget}
-                onReactivate={(entry) =>
-                  updateMutation.mutate({ providerId: entry.id, data: { is_active: true } })
-                }
-                onToggleFavorite={(entry) =>
-                  updateMutation.mutate({
-                    providerId: entry.id,
-                    data: { is_favorite: !entry.is_favorite },
-                  })
-                }
-                isUpdating={updateMutation.isPending}
-                canManage={canManageProviders}
-              />
-              {disabledEntries.length > 0 ? (
-                <Collapsible open={disabledOpen} onOpenChange={setDisabledOpen}>
-                  <CollapsibleTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      className="w-full justify-between text-muted-foreground"
-                    >
-                      Disabled providers ({disabledEntries.length})
-                      <ChevronDown
-                        className={cn("transition-transform", disabledOpen && "rotate-180")}
+                <ProviderGroup
+                  title="Available providers"
+                  providers={availableEntries}
+                  onAddKey={setAddKeyTarget}
+                  onEdit={setEditTarget}
+                  onDeactivate={setDeactivateTarget}
+                  onReactivate={(entry) =>
+                    updateMutation.mutate({ providerId: entry.id, data: { is_active: true } })
+                  }
+                  onToggleFavorite={(entry) =>
+                    updateMutation.mutate({
+                      providerId: entry.id,
+                      data: { is_favorite: !entry.is_favorite },
+                    })
+                  }
+                  isUpdating={updateMutation.isPending}
+                  canManage={canManageProviders}
+                />
+                {disabledEntries.length > 0 ? (
+                  <Collapsible open={disabledOpen} onOpenChange={setDisabledOpen}>
+                    <CollapsibleTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        className="w-full justify-between text-muted-foreground"
+                      >
+                        Disabled providers ({disabledEntries.length})
+                        <ChevronDown
+                          className={cn("transition-transform", disabledOpen && "rotate-180")}
+                        />
+                      </Button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="pt-3">
+                      <ProviderGroup
+                        providers={disabledEntries}
+                        onAddKey={setAddKeyTarget}
+                        onEdit={setEditTarget}
+                        onDeactivate={setDeactivateTarget}
+                        onReactivate={(entry) =>
+                          updateMutation.mutate({
+                            providerId: entry.id,
+                            data: { is_active: true },
+                          })
+                        }
+                        onToggleFavorite={(entry) =>
+                          updateMutation.mutate({
+                            providerId: entry.id,
+                            data: { is_favorite: !entry.is_favorite },
+                          })
+                        }
+                        isUpdating={updateMutation.isPending}
+                        canManage={canManageProviders}
                       />
-                    </Button>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent className="pt-3">
-                    <ProviderGroup
-                      providers={disabledEntries}
-                      onAddKey={setAddKeyTarget}
-                      onEdit={setEditTarget}
-                      onDeactivate={setDeactivateTarget}
-                      onReactivate={(entry) =>
-                        updateMutation.mutate({ providerId: entry.id, data: { is_active: true } })
-                      }
-                      onToggleFavorite={(entry) =>
-                        updateMutation.mutate({
-                          providerId: entry.id,
-                          data: { is_favorite: !entry.is_favorite },
-                        })
-                      }
-                      isUpdating={updateMutation.isPending}
-                      canManage={canManageProviders}
-                    />
-                  </CollapsibleContent>
-                </Collapsible>
-              ) : null}
-            </div>
-          )}
-        </div>
-      )}
+                    </CollapsibleContent>
+                  </Collapsible>
+                ) : null}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       <EditProviderSheet
         provider={editTarget}
@@ -361,10 +366,7 @@ export function ProvidersPage() {
         key={addKeyTarget?.id ?? "closed"}
         entry={addKeyTarget}
         onClose={() => setAddKeyTarget(null)}
-        onCreated={async () => {
-          setAddKeyTarget(null);
-          await queryClient.invalidateQueries();
-        }}
+        onCreated={() => queryClient.invalidateQueries()}
       />
       <Dialog
         open={Boolean(deactivateTarget)}
@@ -671,6 +673,7 @@ function AddProviderCredentialDialog({
         throw new Error("Credential could not be created.");
       }
       toast.success(`Credential added to ${entry.name}.`);
+      onClose();
       await onCreated();
     } catch (error) {
       if (error instanceof Error) {

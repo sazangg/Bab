@@ -303,7 +303,7 @@ export function ProviderDetailPage() {
             onAddCredential={() =>
               navigate(`/providers/${provider.id}?tab=credentials&action=add-credential`)
             }
-            onOpenPools={() => navigate(`/providers/${provider.id}?tab=pools`)}
+            onOpenPools={() => navigate(`/providers/${provider.id}?tab=pools&action=configure-pool`)}
             onOpenModels={() => navigate(`/providers/${provider.id}?tab=models`)}
           />
         ) : null}
