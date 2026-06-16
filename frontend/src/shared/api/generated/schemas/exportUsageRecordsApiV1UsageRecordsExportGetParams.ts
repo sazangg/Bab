@@ -15,4 +15,6 @@ provider_id?: string | null;
 project_id?: string | null;
 virtual_key_id?: string | null;
 model?: string | null;
+request_id?: string | null;
+search?: string | null;
 };

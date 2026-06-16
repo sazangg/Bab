@@ -66,7 +66,11 @@ class OpenAICompatibleAdapter:
         if response.is_error:
             raise ProviderUpstreamError(status_code=response.status_code, body=body)
         if not isinstance(body, dict) or not isinstance(body.get("data"), list):
-            raise ProviderUpstreamError(status_code=response.status_code, body=body)
+            raise ProviderUpstreamError(
+                status_code=response.status_code,
+                body=body,
+                failure_reason="invalid_response",
+            )
 
         model_ids = []
         for item in body["data"]:
@@ -90,7 +94,11 @@ class OpenAICompatibleAdapter:
         if response.is_error:
             raise ProviderUpstreamError(status_code=response.status_code, body=body)
         if not isinstance(body, dict):
-            raise ProviderUpstreamError(status_code=response.status_code, body=body)
+            raise ProviderUpstreamError(
+                status_code=response.status_code,
+                body=body,
+                failure_reason="invalid_response",
+            )
         return ProviderChatCompletionResponse(status_code=response.status_code, body=body)
 
     async def stream_chat_completion(
@@ -136,7 +144,11 @@ class AnthropicMessagesAdapter:
         if response.is_error:
             raise ProviderUpstreamError(status_code=response.status_code, body=body)
         if not isinstance(body, dict) or not isinstance(body.get("data"), list):
-            raise ProviderUpstreamError(status_code=response.status_code, body=body)
+            raise ProviderUpstreamError(
+                status_code=response.status_code,
+                body=body,
+                failure_reason="invalid_response",
+            )
         return [
             item["id"]
             for item in body["data"]
@@ -167,7 +179,11 @@ class AnthropicMessagesAdapter:
         if response.is_error:
             raise ProviderUpstreamError(status_code=response.status_code, body=body)
         if not isinstance(body, dict):
-            raise ProviderUpstreamError(status_code=response.status_code, body=body)
+            raise ProviderUpstreamError(
+                status_code=response.status_code,
+                body=body,
+                failure_reason="invalid_response",
+            )
         return ProviderAnthropicMessagesResponse(status_code=response.status_code, body=body)
 
 

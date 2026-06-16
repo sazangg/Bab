@@ -4,19 +4,28 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-class AccessPolicyRouteInput(BaseModel):
+class AccessPolicyRouteCandidateInput(BaseModel):
     provider_id: UUID
     credential_pool_id: UUID
-    model_offering_ids: list[UUID] = Field(min_length=1)
+    model_offering_id: UUID
     priority: int = Field(default=100, ge=1)
     weight: int = Field(default=100, ge=1)
     is_active: bool = True
 
 
+class AccessPolicyPublicModelInput(BaseModel):
+    public_model_name: str = Field(min_length=1, max_length=255)
+    routing_mode: str = Field(default="single_route", pattern="^(single_route|ordered_fallback)$")
+    fallback_on: list[str] = Field(default_factory=list)
+    max_route_attempts: int | None = Field(default=None, ge=1)
+    is_active: bool = True
+    candidates: list[AccessPolicyRouteCandidateInput] = Field(min_length=1)
+
+
 class CreateAccessPolicyRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=1000)
-    routes: list[AccessPolicyRouteInput] = Field(default_factory=list)
+    public_models: list[AccessPolicyPublicModelInput] = Field(default_factory=list)
     is_active: bool = True
 
 
@@ -24,33 +33,37 @@ class UpdateAccessPolicyRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=1000)
     is_active: bool | None = None
+    public_models: list[AccessPolicyPublicModelInput] | None = None
 
 
-class CreateAccessPolicyRouteRequest(AccessPolicyRouteInput):
-    pass
+class AccessPolicyRouteCandidateResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    org_id: UUID
+    public_model_id: UUID
+    provider_id: UUID
+    credential_pool_id: UUID
+    model_offering_id: UUID
+    priority: int
+    weight: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
 
 
-class UpdateAccessPolicyRouteRequest(BaseModel):
-    provider_id: UUID | None = None
-    credential_pool_id: UUID | None = None
-    model_offering_ids: list[UUID] | None = Field(default=None, min_length=1)
-    priority: int | None = Field(default=None, ge=1)
-    weight: int | None = Field(default=None, ge=1)
-    is_active: bool | None = None
-
-
-class AccessPolicyRouteResponse(BaseModel):
+class AccessPolicyPublicModelResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     org_id: UUID
     access_policy_id: UUID
-    provider_id: UUID
-    credential_pool_id: UUID
-    model_offering_ids: list[UUID]
-    priority: int
-    weight: int
+    public_model_name: str
+    routing_mode: str
+    fallback_on: list[str]
+    max_route_attempts: int | None
     is_active: bool
+    candidates: list[AccessPolicyRouteCandidateResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -66,7 +79,7 @@ class AccessPolicyResponse(BaseModel):
     owning_team_id: UUID | None
     owning_project_id: UUID | None
     owning_virtual_key_id: UUID | None
-    routes: list[AccessPolicyRouteResponse] = Field(default_factory=list)
+    public_models: list[AccessPolicyPublicModelResponse] = Field(default_factory=list)
     is_active: bool
     created_at: datetime
     updated_at: datetime

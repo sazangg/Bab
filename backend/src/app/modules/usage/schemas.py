@@ -10,6 +10,9 @@ class RecordUsage(BaseModel):
     project_id: UUID
     access_policy_id: UUID | None = None
     access_policy_route_id: UUID | None = None
+    gateway_request_id: UUID | None = None
+    public_model_id: UUID | None = None
+    route_candidate_id: UUID | None = None
     limit_policy_ids: list[str] | None = None
     limit_policy_rule_ids: list[str] | None = None
     limit_policy_assignment_ids: list[str] | None = None
@@ -20,6 +23,15 @@ class RecordUsage(BaseModel):
     request_id: str | None = None
     requested_model: str
     provider_model: str
+    public_model_name: str | None = None
+    routing_mode: str | None = None
+    routing_attempt_index: int = 0
+    is_final_attempt: bool = True
+    primary_route_candidate_id: UUID | None = None
+    fallback_from_candidate_id: UUID | None = None
+    fallback_trigger_reason: str | None = None
+    attempt_failure_reason: str | None = None
+    gateway_endpoint: str | None = None
     http_status: int
     latency_ms: int
     prompt_tokens: int | None = None
@@ -29,6 +41,32 @@ class RecordUsage(BaseModel):
     cost_micro_cents: int | None = None
     usage_source: str = "unknown"
     error_code: str | None = None
+
+
+class CreateGatewayRequest(BaseModel):
+    org_id: UUID
+    team_id: UUID
+    project_id: UUID
+    virtual_key_id: UUID
+    request_id: str | None = None
+    gateway_endpoint: str
+    requested_model: str
+    public_model_name: str | None = None
+    routing_mode: str | None = None
+
+
+class FinalizeGatewayRequest(BaseModel):
+    final_http_status: int
+    final_access_policy_id: UUID | None = None
+    final_public_model_id: UUID | None = None
+    final_candidate_id: UUID | None = None
+    final_provider_id: UUID | None = None
+    final_credential_pool_id: UUID | None = None
+    final_model_offering_id: UUID | None = None
+    final_provider_model: str | None = None
+    attempt_count: int
+    fallback_attempted: bool = False
+    final_error_code: str | None = None
 
 
 class UsageRecordResponse(RecordUsage):

@@ -24,10 +24,12 @@ import type {
   GetOrganizationUsageSummaryApiV1UsageSummaryGetParams,
   GetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetParams,
   GetSpendInsightsApiV1UsageSpendInsightsGetParams,
+  GetUsageFilterOptionsApiV1UsageFilterOptionsGetParams,
   HTTPValidationError,
   ListUsageRecordsApiV1UsageRecordsGetParams,
   OrganizationUsagePage,
   SpendInsights,
+  UsageFilterOptions,
   UsageRecordResponse,
   UsageTimeSeriesPoint
 } from '../schemas';
@@ -530,6 +532,132 @@ export function useGetOrganizationUsageTimeseriesApiV1UsageTimeseriesGet<TData =
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export type getUsageFilterOptionsApiV1UsageFilterOptionsGetResponse200 = {
+  data: UsageFilterOptions
+  status: 200
+}
+
+export type getUsageFilterOptionsApiV1UsageFilterOptionsGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type getUsageFilterOptionsApiV1UsageFilterOptionsGetResponseSuccess = (getUsageFilterOptionsApiV1UsageFilterOptionsGetResponse200) & {
+  headers: Headers;
+};
+export type getUsageFilterOptionsApiV1UsageFilterOptionsGetResponseError = (getUsageFilterOptionsApiV1UsageFilterOptionsGetResponse422) & {
+  headers: Headers;
+};
+
+export type getUsageFilterOptionsApiV1UsageFilterOptionsGetResponse = (getUsageFilterOptionsApiV1UsageFilterOptionsGetResponseSuccess | getUsageFilterOptionsApiV1UsageFilterOptionsGetResponseError)
+
+export const getGetUsageFilterOptionsApiV1UsageFilterOptionsGetUrl = (params?: GetUsageFilterOptionsApiV1UsageFilterOptionsGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/usage/filter-options?${stringifiedParams}` : `/api/v1/usage/filter-options`
+}
+
+/**
+ * @summary Get Usage Filter Options
+ */
+export const getUsageFilterOptionsApiV1UsageFilterOptionsGet = async (params?: GetUsageFilterOptionsApiV1UsageFilterOptionsGetParams, options?: RequestInit): Promise<getUsageFilterOptionsApiV1UsageFilterOptionsGetResponse> => {
+
+  return apiMutator<getUsageFilterOptionsApiV1UsageFilterOptionsGetResponse>(getGetUsageFilterOptionsApiV1UsageFilterOptionsGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetUsageFilterOptionsApiV1UsageFilterOptionsGetQueryKey = (params?: GetUsageFilterOptionsApiV1UsageFilterOptionsGetParams,) => {
+    return [
+    `/api/v1/usage/filter-options`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetUsageFilterOptionsApiV1UsageFilterOptionsGetQueryOptions = <TData = Awaited<ReturnType<typeof getUsageFilterOptionsApiV1UsageFilterOptionsGet>>, TError = HTTPValidationError>(params?: GetUsageFilterOptionsApiV1UsageFilterOptionsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUsageFilterOptionsApiV1UsageFilterOptionsGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetUsageFilterOptionsApiV1UsageFilterOptionsGetQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getUsageFilterOptionsApiV1UsageFilterOptionsGet>>> = ({ signal }) => getUsageFilterOptionsApiV1UsageFilterOptionsGet(params, { signal });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getUsageFilterOptionsApiV1UsageFilterOptionsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetUsageFilterOptionsApiV1UsageFilterOptionsGetQueryResult = NonNullable<Awaited<ReturnType<typeof getUsageFilterOptionsApiV1UsageFilterOptionsGet>>>
+export type GetUsageFilterOptionsApiV1UsageFilterOptionsGetQueryError = HTTPValidationError
+
+
+export function useGetUsageFilterOptionsApiV1UsageFilterOptionsGet<TData = Awaited<ReturnType<typeof getUsageFilterOptionsApiV1UsageFilterOptionsGet>>, TError = HTTPValidationError>(
+ params: undefined |  GetUsageFilterOptionsApiV1UsageFilterOptionsGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUsageFilterOptionsApiV1UsageFilterOptionsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getUsageFilterOptionsApiV1UsageFilterOptionsGet>>,
+          TError,
+          Awaited<ReturnType<typeof getUsageFilterOptionsApiV1UsageFilterOptionsGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetUsageFilterOptionsApiV1UsageFilterOptionsGet<TData = Awaited<ReturnType<typeof getUsageFilterOptionsApiV1UsageFilterOptionsGet>>, TError = HTTPValidationError>(
+ params?: GetUsageFilterOptionsApiV1UsageFilterOptionsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUsageFilterOptionsApiV1UsageFilterOptionsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getUsageFilterOptionsApiV1UsageFilterOptionsGet>>,
+          TError,
+          Awaited<ReturnType<typeof getUsageFilterOptionsApiV1UsageFilterOptionsGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetUsageFilterOptionsApiV1UsageFilterOptionsGet<TData = Awaited<ReturnType<typeof getUsageFilterOptionsApiV1UsageFilterOptionsGet>>, TError = HTTPValidationError>(
+ params?: GetUsageFilterOptionsApiV1UsageFilterOptionsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUsageFilterOptionsApiV1UsageFilterOptionsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get Usage Filter Options
+ */
+
+export function useGetUsageFilterOptionsApiV1UsageFilterOptionsGet<TData = Awaited<ReturnType<typeof getUsageFilterOptionsApiV1UsageFilterOptionsGet>>, TError = HTTPValidationError>(
+ params?: GetUsageFilterOptionsApiV1UsageFilterOptionsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUsageFilterOptionsApiV1UsageFilterOptionsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetUsageFilterOptionsApiV1UsageFilterOptionsGetQueryOptions(params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

@@ -5,11 +5,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface CreateAccessPolicyRouteRequest {
+export interface AccessPolicyRouteCandidateInput {
   provider_id: string;
   credential_pool_id: string;
-  /** @minItems 1 */
-  model_offering_ids: string[];
+  model_offering_id: string;
   /** @minimum 1 */
   priority?: number;
   /** @minimum 1 */

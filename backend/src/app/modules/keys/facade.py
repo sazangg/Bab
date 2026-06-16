@@ -14,8 +14,9 @@ from app.modules.keys.schemas import (
     ProjectArchiveImpactResponse,
     ProjectResponse,
     ResolveAccessRequest,
-    RotateVirtualKeyRequest,
     ResolvedAccess,
+    ResolvedAccessPlan,
+    RotateVirtualKeyRequest,
     TeamArchiveImpactResponse,
     UpdateProjectRequest,
     UpdateVirtualKeyRequest,
@@ -251,6 +252,12 @@ async def revoke_virtual_key(
 
 async def resolve_access(*, payload: ResolveAccessRequest, db: AsyncSession) -> ResolvedAccess:
     return await service.resolve_access(payload=payload, db=db)
+
+
+async def resolve_access_plan(
+    *, payload: ResolveAccessRequest, db: AsyncSession
+) -> ResolvedAccessPlan:
+    return await service.resolve_access_plan(payload=payload, db=db)
 
 
 async def list_accessible_models(*, raw_key: str, db: AsyncSession) -> list[AccessibleModel]:

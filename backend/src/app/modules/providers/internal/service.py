@@ -828,7 +828,11 @@ async def sync_model_offerings(
     secret_registry: ProviderSecretBackendRegistry | None = None,
 ) -> SyncModelOfferingsResponse:
     if sync_mode == "disabled":
-        raise ProviderUpstreamError(status_code=409, body={"error": "model sync is disabled"})
+        raise ProviderUpstreamError(
+            status_code=409,
+            body={"error": "model sync is disabled"},
+            failure_reason="provider_error",
+        )
     async with transaction(db):
         provider = await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
         provider_credentials = await repository.list_provider_credentials(
@@ -1521,11 +1525,13 @@ async def _call_with_retries(
             raise ProviderUpstreamError(
                 status_code=504,
                 body={"error": "provider request timed out"},
+                failure_reason="timeout",
             ) from exc
         except httpx.RequestError as exc:
             last_error = ProviderUpstreamError(
                 status_code=502,
                 body={"error": "provider upstream connection failed"},
+                failure_reason="connection_failed",
             )
             if attempt >= max_attempts or 502 not in retry_policy["retry_on_status"]:
                 raise last_error from exc
@@ -1604,7 +1610,11 @@ def _raise_if_circuit_open(provider: Provider) -> None:
     now = datetime.now(UTC)
     open_until = _provider_circuit_open_until.get(provider.id)
     if open_until and open_until > now:
-        raise ProviderUpstreamError(status_code=503, body={"error": "provider circuit is open"})
+        raise ProviderUpstreamError(
+            status_code=503,
+            body={"error": "provider circuit is open"},
+            failure_reason="circuit_open",
+        )
     if open_until:
         _provider_circuit_open_until.pop(provider.id, None)
 
@@ -1783,6 +1793,7 @@ async def stream_chat_completion(
                             else ProviderUpstreamError(
                                 status_code=502,
                                 body={"error": "provider stream failed"},
+                                failure_reason="stream_failed",
                             )
                         )
                         _record_circuit_failure(provider)
@@ -1806,6 +1817,7 @@ async def stream_chat_completion(
                 last_error = ProviderUpstreamError(
                     status_code=504,
                     body={"error": "provider request timed out"},
+                    failure_reason="timeout",
                 )
                 _record_circuit_failure(provider)
                 if credential is not None:
@@ -1820,6 +1832,7 @@ async def stream_chat_completion(
                 last_error = ProviderUpstreamError(
                     status_code=502,
                     body={"error": "provider upstream connection failed"},
+                    failure_reason="connection_failed",
                 )
                 _record_circuit_failure(provider)
                 if credential is not None:
@@ -2309,6 +2322,7 @@ async def _api_key_for_routed_credential(
                     "type": "credential_error",
                 }
             },
+            failure_reason="credential_error",
         ) from exc
 
 
@@ -2330,13 +2344,16 @@ async def _mark_provider_credential_failed(
 
 def _credential_failure_details(error: Exception) -> tuple[str, str]:
     if isinstance(error, ProviderUpstreamError):
-        if error.status_code in {401, 403}:
+        if error.failure_reason in {
+            "connection_failed",
+            "credential_error",
+            "rate_limited",
+            "timeout",
+        }:
+            reason = error.failure_reason
+        elif error.status_code in {401, 403}:
             reason = "authentication_failed"
-        elif error.status_code == 429:
-            reason = "rate_limited"
-        elif error.status_code == 504:
-            reason = "timeout"
-        elif error.status_code >= 500:
+        elif error.failure_reason == "provider_5xx":
             reason = "upstream_unavailable"
         else:
             reason = "upstream_error"

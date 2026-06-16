@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.usage.accounting import UsageAccounting
 from app.modules.usage.internal import repository
 from app.modules.usage.schemas import (
+    CreateGatewayRequest,
+    FinalizeGatewayRequest,
     LimitPolicyReservationSummary,
     OrganizationUsageSummary,
     RecordLimitPolicyReservation,
@@ -20,6 +22,30 @@ from app.modules.usage.schemas import (
 
 async def record_usage(*, payload: RecordUsage, db: AsyncSession) -> None:
     await repository.create_usage_record(payload=payload, db=db)
+    await db.commit()
+
+
+async def create_gateway_request(
+    *,
+    payload: CreateGatewayRequest,
+    db: AsyncSession,
+) -> UUID:
+    gateway_request = await repository.create_gateway_request(payload=payload, db=db)
+    await db.commit()
+    return gateway_request.id
+
+
+async def finalize_gateway_request(
+    *,
+    gateway_request_id: UUID,
+    payload: FinalizeGatewayRequest,
+    db: AsyncSession,
+) -> None:
+    await repository.finalize_gateway_request(
+        gateway_request_id=gateway_request_id,
+        payload=payload,
+        db=db,
+    )
     await db.commit()
 
 

@@ -4,7 +4,7 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { AccessPolicyRouteResponse } from './accessPolicyRouteResponse';
+import type { AccessPolicyPublicModelResponse } from './accessPolicyPublicModelResponse';
 
 export interface AccessPolicyResponse {
   id: string;
@@ -15,7 +15,7 @@ export interface AccessPolicyResponse {
   owning_team_id: string | null;
   owning_project_id: string | null;
   owning_virtual_key_id: string | null;
-  routes?: AccessPolicyRouteResponse[];
+  public_models?: AccessPolicyPublicModelResponse[];
   is_active: boolean;
   created_at: string;
   updated_at: string;

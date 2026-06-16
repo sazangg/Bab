@@ -44,6 +44,11 @@ type GatewayModel = {
   provider_id: string;
   provider_name: string;
   alias?: string | null;
+  candidates?: {
+    provider_id: string;
+    provider_name: string;
+    provider_model: string;
+  }[];
 };
 type UsageRecord = {
   http_status: number;
@@ -60,6 +65,7 @@ type UsageRecordsResponse = {
 };
 type ResponseView = "message" | "raw";
 type MessageFormat = "text" | "markdown" | "json";
+const AUTO_PROVIDER = "__auto__";
 
 export function PlaygroundPage() {
   const [searchParams] = useSearchParams();
@@ -116,7 +122,6 @@ export function PlaygroundPage() {
   const canLoadModels = virtualKey.trim().length > 0;
   const canSend =
     canLoadModels &&
-    providerId.length > 0 &&
     model.trim().length > 0 &&
     prompt.trim().length > 0 &&
     !temperatureError &&
@@ -136,7 +141,6 @@ export function PlaygroundPage() {
       setModels(nextModels);
       if (!model && nextModels[0]?.id) {
         setModel(nextModels[0].id);
-        setProviderId(nextModels[0].provider_id);
       }
       toast.success(`Loaded ${nextModels.length} model${nextModels.length === 1 ? "" : "s"}.`);
     } catch (error) {
@@ -153,12 +157,15 @@ export function PlaygroundPage() {
     const nextRequestId = crypto.randomUUID();
     setRequestId(nextRequestId);
     try {
+      const headers: Record<string, string> = {
+        "X-Request-ID": nextRequestId,
+      };
+      if (providerId) {
+        headers["X-Bab-Provider-Id"] = providerId;
+      }
       const response = await gatewayFetch(endpointForMode(mode), virtualKey, {
         method: "POST",
-        headers: {
-          "X-Request-ID": nextRequestId,
-          "X-Bab-Provider-Id": providerId,
-        },
+        headers,
         body: JSON.stringify(buildPayload({ mode, model, prompt, temperature, maxTokens, stream })),
       });
       if (mode === "chat" && stream) {
@@ -251,8 +258,6 @@ export function PlaygroundPage() {
                     onKeyChange={setSelectedKeyId}
                     onModelChange={(value) => {
                       setModel(value);
-                      const selectedModel = models.find((entry) => entry.id === value);
-                      if (selectedModel) setProviderId(selectedModel.provider_id);
                     }}
                     onProviderChange={setProviderId}
                     onTemperatureChange={setTemperature}
@@ -459,8 +464,11 @@ function PlaygroundSettings({
             </SelectTrigger>
             <SelectContent className="w-[min(34rem,var(--radix-select-trigger-width))]">
               {models.map((entry) => (
-                <SelectItem key={`${entry.provider_id}-${entry.id}`} value={entry.id}>
-                  {entry.provider_name} / {entry.alias ?? entry.id}
+                <SelectItem key={entry.id} value={entry.id}>
+                  {entry.alias ?? entry.id}
+                  {entry.candidates && entry.candidates.length > 1
+                    ? ` (${entry.candidates.length} candidates)`
+                    : ""}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -483,14 +491,16 @@ function PlaygroundSettings({
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="playground-provider">Provider</Label>
-        <Select value={providerId} onValueChange={onProviderChange}>
+        <Select
+          value={providerId || AUTO_PROVIDER}
+          onValueChange={(value) => onProviderChange(value === AUTO_PROVIDER ? "" : value)}
+        >
           <SelectTrigger id="playground-provider">
             <SelectValue placeholder="Select an explicit provider" />
           </SelectTrigger>
           <SelectContent>
-            {Array.from(
-              new Map(models.map((entry) => [entry.provider_id, entry.provider_name])).entries(),
-            ).map(([id, name]) => (
+            <SelectItem value={AUTO_PROVIDER}>Auto</SelectItem>
+            {providerOptions(models).map(([id, name]) => (
               <SelectItem key={id} value={id}>
                 {name}
               </SelectItem>
@@ -498,7 +508,7 @@ function PlaygroundSettings({
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">
-          Requests send this choice in the X-Bab-Provider-Id header.
+          Explicit provider mode pins the request to that provider.
         </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -1067,6 +1077,21 @@ function keyStateLabel(key: {
   if (key.expires_at && new Date(key.expires_at).getTime() <= Date.now()) return "expired";
   if (!key.is_usable) return key.status || "not usable";
   return "usable";
+}
+
+function providerOptions(models: GatewayModel[]) {
+  return Array.from(
+    new Map(
+      models.flatMap((entry) =>
+        entry.candidates?.length
+          ? entry.candidates.map((candidate) => [
+              candidate.provider_id,
+              candidate.provider_name,
+            ])
+          : [[entry.provider_id, entry.provider_name]],
+      ),
+    ).entries(),
+  );
 }
 
 function extractRequestId(response: Response, body: unknown) {

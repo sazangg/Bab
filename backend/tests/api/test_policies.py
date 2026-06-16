@@ -85,6 +85,21 @@ async def _create_team_fixture(db_session: AsyncSession, *, name: str) -> Team:
     return team
 
 
+def _public_model_payload(provider_id, pool_id, model_id, *, name: str | None = None, priority=100):
+    return {
+        "public_model_name": name or str(model_id),
+        "routing_mode": "single_route",
+        "candidates": [
+            {
+                "provider_id": str(provider_id),
+                "credential_pool_id": str(pool_id),
+                "model_offering_id": str(model_id),
+                "priority": priority,
+            }
+        ],
+    }
+
+
 @pytest.mark.asyncio
 async def test_limit_policy_can_be_created_and_assigned_to_org(
     app_client,
@@ -395,12 +410,8 @@ async def test_scoped_access_policy_creation_cannot_widen_inherited_access(
             headers=admin_headers,
             json={
                 "name": "Org access",
-                "routes": [
-                    {
-                        "provider_id": str(allowed_provider.id),
-                        "credential_pool_id": str(allowed_pool.id),
-                        "model_offering_ids": [str(allowed_model.id)],
-                    }
+                "public_models": [
+                    _public_model_payload(allowed_provider.id, allowed_pool.id, allowed_model.id)
                 ],
             },
         )
@@ -441,12 +452,8 @@ async def test_scoped_access_policy_creation_cannot_widen_inherited_access(
                 "team_id": str(default_team.id),
                 "access_policy": {
                     "name": "Wider team access",
-                    "routes": [
-                        {
-                            "provider_id": str(wider_provider.id),
-                            "credential_pool_id": str(wider_pool.id),
-                            "model_offering_ids": [str(wider_model.id)],
-                        }
+                    "public_models": [
+                        _public_model_payload(wider_provider.id, wider_pool.id, wider_model.id)
                     ],
                 },
             },
@@ -460,12 +467,10 @@ async def test_scoped_access_policy_creation_cannot_widen_inherited_access(
                 "team_id": str(default_team.id),
                 "access_policy": {
                     "name": "Narrow team access",
-                    "routes": [
-                        {
-                            "provider_id": str(allowed_provider.id),
-                            "credential_pool_id": str(allowed_pool.id),
-                            "model_offering_ids": [str(allowed_model.id)],
-                        }
+                    "public_models": [
+                        _public_model_payload(
+                            allowed_provider.id, allowed_pool.id, allowed_model.id
+                        )
                     ],
                 },
             },
@@ -596,9 +601,6 @@ async def test_scoped_admin_route_update_cannot_widen_inherited_access(
     allowed_provider, allowed_pool, allowed_model = await _create_provider_fixture(
         db_session, name="route-update-allowed"
     )
-    wider_provider, wider_pool, wider_model = await _create_provider_fixture(
-        db_session, name="route-update-wider"
-    )
 
     async with AsyncClient(
         transport=ASGITransport(app=app_client),
@@ -610,12 +612,8 @@ async def test_scoped_admin_route_update_cannot_widen_inherited_access(
             headers=admin_headers,
             json={
                 "name": "Org route parent",
-                "routes": [
-                    {
-                        "provider_id": str(allowed_provider.id),
-                        "credential_pool_id": str(allowed_pool.id),
-                        "model_offering_ids": [str(allowed_model.id)],
-                    }
+                "public_models": [
+                    _public_model_payload(allowed_provider.id, allowed_pool.id, allowed_model.id)
                 ],
             },
         )
@@ -659,18 +657,15 @@ async def test_scoped_admin_route_update_cannot_widen_inherited_access(
                 "team_id": str(team.id),
                 "access_policy": {
                     "name": "Team route child",
-                    "routes": [
-                        {
-                            "provider_id": str(allowed_provider.id),
-                            "credential_pool_id": str(allowed_pool.id),
-                            "model_offering_ids": [str(allowed_model.id)],
-                        }
+                    "public_models": [
+                        _public_model_payload(
+                            allowed_provider.id, allowed_pool.id, allowed_model.id
+                        )
                     ],
                 },
             },
         )
         policy = create_response.json()["access_policy"]
-        route = policy["routes"][0]
 
         detail_response = await client.get(
             f"/api/v1/policies/access/{policy['id']}", headers=scoped_headers
@@ -678,38 +673,20 @@ async def test_scoped_admin_route_update_cannot_widen_inherited_access(
         policy_update_response = await client.patch(
             f"/api/v1/policies/access/{policy['id']}",
             headers=scoped_headers,
-            json={"description": "Team scoped route policy"},
+            json={"description": "Team scoped public model policy"},
         )
         org_update_response = await client.patch(
             f"/api/v1/policies/access/{parent_policy.json()['id']}",
             headers=scoped_headers,
             json={"description": "Scoped user cannot edit org parent"},
         )
-        wider_route_response = await client.patch(
-            f"/api/v1/policies/access/routes/{route['id']}",
-            headers=scoped_headers,
-            json={
-                "provider_id": str(wider_provider.id),
-                "credential_pool_id": str(wider_pool.id),
-                "model_offering_ids": [str(wider_model.id)],
-            },
-        )
-        narrowed_route_response = await client.patch(
-            f"/api/v1/policies/access/routes/{route['id']}",
-            headers=scoped_headers,
-            json={"priority": 50, "is_active": False},
-        )
 
     assert parent_policy.status_code == 201
     assert create_response.status_code == 201
     assert detail_response.status_code == 200
     assert policy_update_response.status_code == 200
-    assert policy_update_response.json()["description"] == "Team scoped route policy"
+    assert policy_update_response.json()["description"] == "Team scoped public model policy"
     assert org_update_response.status_code == 403
-    assert wider_route_response.status_code == 400
-    assert narrowed_route_response.status_code == 200
-    assert narrowed_route_response.json()["priority"] == 50
-    assert narrowed_route_response.json()["is_active"] is False
 
 
 @pytest.mark.asyncio
@@ -737,19 +714,104 @@ async def test_access_policy_creation_payload_accepts_multiple_routes(
             "/api/v1/policies/access",
             headers=headers,
             json={
-                "name": "Multi-route access",
-                "routes": [
+                "name": "Multi-public-model access",
+                "public_models": [
+                    _public_model_payload(
+                        first_provider.id,
+                        first_pool.id,
+                        first_model.id,
+                        name=first_model.provider_model_name,
+                        priority=10,
+                    ),
+                    _public_model_payload(
+                        second_provider.id,
+                        second_pool.id,
+                        second_model.id,
+                        name=second_model.provider_model_name,
+                        priority=20,
+                    ),
+                ],
+            },
+        )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["name"] == "Multi-public-model access"
+    candidates = [public_model["candidates"][0] for public_model in body["public_models"]]
+    assert [candidate["priority"] for candidate in candidates] == [10, 20]
+    assert {candidate["provider_id"] for candidate in candidates} == {
+        str(first_provider.id),
+        str(second_provider.id),
+    }
+    assert {public_model["public_model_name"] for public_model in body["public_models"]} == {
+        first_model.provider_model_name,
+        second_model.provider_model_name,
+    }
+
+
+@pytest.mark.asyncio
+async def test_access_policy_public_models_are_created_and_returned(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "admin@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    await bootstrap.sync_default_workspace(db_session)
+    provider, pool, model = await _create_provider_fixture(db_session, name="public-model")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        headers = await _login(client)
+        response = await client.post(
+            "/api/v1/policies/access",
+            headers=headers,
+            json={
+                "name": "Logical models",
+                "public_models": [
                     {
-                        "provider_id": str(first_provider.id),
-                        "credential_pool_id": str(first_pool.id),
-                        "model_offering_ids": [str(first_model.id)],
-                        "priority": 10,
+                        "public_model_name": "chat-large",
+                        "routing_mode": "ordered_fallback",
+                        "fallback_on": ["timeout", "provider_5xx"],
+                        "candidates": [
+                            {
+                                "provider_id": str(provider.id),
+                                "credential_pool_id": str(pool.id),
+                                "model_offering_id": str(model.id),
+                                "priority": 10,
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+        duplicate_response = await client.post(
+            "/api/v1/policies/access",
+            headers=headers,
+            json={
+                "name": "Duplicate logical models",
+                "public_models": [
+                    {
+                        "public_model_name": "chat-large",
+                        "candidates": [
+                            {
+                                "provider_id": str(provider.id),
+                                "credential_pool_id": str(pool.id),
+                                "model_offering_id": str(model.id),
+                            }
+                        ],
                     },
                     {
-                        "provider_id": str(second_provider.id),
-                        "credential_pool_id": str(second_pool.id),
-                        "model_offering_ids": [str(second_model.id)],
-                        "priority": 20,
+                        "public_model_name": "chat-large",
+                        "candidates": [
+                            {
+                                "provider_id": str(provider.id),
+                                "credential_pool_id": str(pool.id),
+                                "model_offering_id": str(model.id),
+                            }
+                        ],
                     },
                 ],
             },
@@ -757,12 +819,273 @@ async def test_access_policy_creation_payload_accepts_multiple_routes(
 
     assert response.status_code == 201
     body = response.json()
-    assert body["name"] == "Multi-route access"
-    assert [route["priority"] for route in body["routes"]] == [10, 20]
-    assert {route["provider_id"] for route in body["routes"]} == {
-        str(first_provider.id),
-        str(second_provider.id),
-    }
+    assert body["public_models"][0]["public_model_name"] == "chat-large"
+    assert body["public_models"][0]["routing_mode"] == "ordered_fallback"
+    assert body["public_models"][0]["fallback_on"] == ["timeout", "provider_5xx"]
+    assert body["public_models"][0]["candidates"][0]["model_offering_id"] == str(model.id)
+    assert duplicate_response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_access_policy_update_replaces_public_models(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "admin@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    await bootstrap.sync_default_workspace(db_session)
+    first_provider, first_pool, first_model = await _create_provider_fixture(
+        db_session, name="initial-public-model"
+    )
+    second_provider, second_pool, second_model = await _create_provider_fixture(
+        db_session, name="replacement-public-model"
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        headers = await _login(client)
+        create_response = await client.post(
+            "/api/v1/policies/access",
+            headers=headers,
+            json={
+                "name": "Editable logical models",
+                "public_models": [
+                    _public_model_payload(
+                        first_provider.id,
+                        first_pool.id,
+                        first_model.id,
+                        name="chat-initial",
+                    )
+                ],
+            },
+        )
+        policy_id = create_response.json()["id"]
+        update_response = await client.patch(
+            f"/api/v1/policies/access/{policy_id}",
+            headers=headers,
+            json={
+                "name": "Editable logical models",
+                "public_models": [
+                    _public_model_payload(
+                        second_provider.id,
+                        second_pool.id,
+                        second_model.id,
+                        name="chat-replacement",
+                    )
+                ],
+            },
+        )
+
+    assert create_response.status_code == 201
+    assert update_response.status_code == 200
+    public_models = update_response.json()["public_models"]
+    assert len(public_models) == 1
+    assert public_models[0]["public_model_name"] == "chat-replacement"
+    assert public_models[0]["candidates"][0]["model_offering_id"] == str(second_model.id)
+
+
+@pytest.mark.asyncio
+async def test_access_policy_assignment_rejects_same_scope_duplicate_public_model(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "admin@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    await bootstrap.sync_default_workspace(db_session)
+    provider, pool, model = await _create_provider_fixture(db_session, name="duplicate-public")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        headers = await _login(client)
+        first_policy = await client.post(
+            "/api/v1/policies/access",
+            headers=headers,
+            json={
+                "name": "First duplicate public model",
+                "public_models": [
+                    _public_model_payload(
+                        provider.id,
+                        pool.id,
+                        model.id,
+                        name="chat-shared",
+                    )
+                ],
+            },
+        )
+        second_policy = await client.post(
+            "/api/v1/policies/access",
+            headers=headers,
+            json={
+                "name": "Second duplicate public model",
+                "public_models": [
+                    _public_model_payload(
+                        provider.id,
+                        pool.id,
+                        model.id,
+                        name="chat-shared",
+                    )
+                ],
+            },
+        )
+        first_assignment = await client.post(
+            "/api/v1/policies/assignments",
+            headers=headers,
+            json={
+                "policy_type": "access",
+                "access_policy_id": first_policy.json()["id"],
+                "scope_type": "org",
+            },
+        )
+        duplicate_assignment = await client.post(
+            "/api/v1/policies/assignments",
+            headers=headers,
+            json={
+                "policy_type": "access",
+                "access_policy_id": second_policy.json()["id"],
+                "scope_type": "org",
+            },
+        )
+
+    assert first_policy.status_code == 201
+    assert second_policy.status_code == 201
+    assert first_assignment.status_code == 201
+    assert duplicate_assignment.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_access_policy_update_rejects_assigned_same_scope_duplicate_public_model(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "admin@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    await bootstrap.sync_default_workspace(db_session)
+    provider, pool, model = await _create_provider_fixture(db_session, name="update-duplicate")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        headers = await _login(client)
+        first_policy = await client.post(
+            "/api/v1/policies/access",
+            headers=headers,
+            json={
+                "name": "First update duplicate",
+                "public_models": [
+                    _public_model_payload(provider.id, pool.id, model.id, name="chat-first")
+                ],
+            },
+        )
+        second_policy = await client.post(
+            "/api/v1/policies/access",
+            headers=headers,
+            json={
+                "name": "Second update duplicate",
+                "public_models": [
+                    _public_model_payload(provider.id, pool.id, model.id, name="chat-second")
+                ],
+            },
+        )
+        for policy in (first_policy, second_policy):
+            assignment = await client.post(
+                "/api/v1/policies/assignments",
+                headers=headers,
+                json={
+                    "policy_type": "access",
+                    "access_policy_id": policy.json()["id"],
+                    "scope_type": "org",
+                },
+            )
+            assert assignment.status_code == 201
+        update_response = await client.patch(
+            f"/api/v1/policies/access/{second_policy.json()['id']}",
+            headers=headers,
+            json={
+                "public_models": [
+                    _public_model_payload(provider.id, pool.id, model.id, name="chat-first")
+                ],
+            },
+        )
+
+    assert first_policy.status_code == 201
+    assert second_policy.status_code == 201
+    assert update_response.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_access_policy_update_allows_duplicate_from_inactive_assigned_policy(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "admin@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    await bootstrap.sync_default_workspace(db_session)
+    provider, pool, model = await _create_provider_fixture(db_session, name="inactive-duplicate")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        headers = await _login(client)
+        first_policy = await client.post(
+            "/api/v1/policies/access",
+            headers=headers,
+            json={
+                "name": "Inactive duplicate source",
+                "public_models": [
+                    _public_model_payload(provider.id, pool.id, model.id, name="chat-shared")
+                ],
+            },
+        )
+        second_policy = await client.post(
+            "/api/v1/policies/access",
+            headers=headers,
+            json={
+                "name": "Active duplicate target",
+                "public_models": [
+                    _public_model_payload(provider.id, pool.id, model.id, name="chat-second")
+                ],
+            },
+        )
+        for policy in (first_policy, second_policy):
+            assignment = await client.post(
+                "/api/v1/policies/assignments",
+                headers=headers,
+                json={
+                    "policy_type": "access",
+                    "access_policy_id": policy.json()["id"],
+                    "scope_type": "org",
+                },
+            )
+            assert assignment.status_code == 201
+        deactivate_response = await client.patch(
+            f"/api/v1/policies/access/{first_policy.json()['id']}",
+            headers=headers,
+            json={"is_active": False},
+        )
+        update_response = await client.patch(
+            f"/api/v1/policies/access/{second_policy.json()['id']}",
+            headers=headers,
+            json={
+                "public_models": [
+                    _public_model_payload(provider.id, pool.id, model.id, name="chat-shared")
+                ],
+            },
+        )
+
+    assert first_policy.status_code == 201
+    assert second_policy.status_code == 201
+    assert deactivate_response.status_code == 200
+    assert update_response.status_code == 200
 
 
 @pytest.mark.asyncio
@@ -795,17 +1118,9 @@ async def test_scoped_access_policy_creation_supports_multiple_narrowed_routes(
             headers=admin_headers,
             json={
                 "name": "Org multi-route parent",
-                "routes": [
-                    {
-                        "provider_id": str(first_provider.id),
-                        "credential_pool_id": str(first_pool.id),
-                        "model_offering_ids": [str(first_model.id)],
-                    },
-                    {
-                        "provider_id": str(second_provider.id),
-                        "credential_pool_id": str(second_pool.id),
-                        "model_offering_ids": [str(second_model.id)],
-                    },
+                "public_models": [
+                    _public_model_payload(first_provider.id, first_pool.id, first_model.id),
+                    _public_model_payload(second_provider.id, second_pool.id, second_model.id),
                 ],
             },
         )
@@ -849,17 +1164,9 @@ async def test_scoped_access_policy_creation_supports_multiple_narrowed_routes(
                 "team_id": str(team.id),
                 "access_policy": {
                     "name": "Team multi-route child",
-                    "routes": [
-                        {
-                            "provider_id": str(first_provider.id),
-                            "credential_pool_id": str(first_pool.id),
-                            "model_offering_ids": [str(first_model.id)],
-                        },
-                        {
-                            "provider_id": str(second_provider.id),
-                            "credential_pool_id": str(second_pool.id),
-                            "model_offering_ids": [str(second_model.id)],
-                        },
+                    "public_models": [
+                        _public_model_payload(first_provider.id, first_pool.id, first_model.id),
+                        _public_model_payload(second_provider.id, second_pool.id, second_model.id),
                     ],
                 },
             },
@@ -873,17 +1180,9 @@ async def test_scoped_access_policy_creation_supports_multiple_narrowed_routes(
                 "team_id": str(team.id),
                 "access_policy": {
                     "name": "Team widened child",
-                    "routes": [
-                        {
-                            "provider_id": str(first_provider.id),
-                            "credential_pool_id": str(first_pool.id),
-                            "model_offering_ids": [str(first_model.id)],
-                        },
-                        {
-                            "provider_id": str(wider_provider.id),
-                            "credential_pool_id": str(wider_pool.id),
-                            "model_offering_ids": [str(wider_model.id)],
-                        },
+                    "public_models": [
+                        _public_model_payload(first_provider.id, first_pool.id, first_model.id),
+                        _public_model_payload(wider_provider.id, wider_pool.id, wider_model.id),
                     ],
                 },
             },
@@ -891,5 +1190,291 @@ async def test_scoped_access_policy_creation_supports_multiple_narrowed_routes(
 
     assert parent_policy.status_code == 201
     assert narrowed_response.status_code == 201
-    assert len(narrowed_response.json()["access_policy"]["routes"]) == 2
+    assert len(narrowed_response.json()["access_policy"]["public_models"]) == 2
     assert wider_response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_scoped_access_policy_cannot_widen_single_route_to_ordered_public_model(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "admin@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    await bootstrap.sync_default_workspace(db_session)
+    team = await _create_team_fixture(db_session, name="Scoped Public Model Team")
+    provider, pool, model = await _create_provider_fixture(db_session, name="scoped-public-model")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        admin_headers = await _login(client)
+        parent_policy = await client.post(
+            "/api/v1/policies/access",
+            headers=admin_headers,
+            json={
+                "name": "Org single-route parent",
+                "public_models": [
+                    _public_model_payload(
+                        provider.id, pool.id, model.id, name=model.provider_model_name
+                    )
+                ],
+            },
+        )
+        await client.post(
+            "/api/v1/policies/assignments",
+            headers=admin_headers,
+            json={
+                "policy_type": "access",
+                "access_policy_id": parent_policy.json()["id"],
+                "scope_type": "org",
+            },
+        )
+        member_response = await client.post(
+            "/api/v1/auth/members",
+            headers=admin_headers,
+            json={
+                "email": "public-model-team-admin@example.com",
+                "password": "team-admin-password",
+                "role": "org_member",
+            },
+        )
+        await client.post(
+            f"/api/v1/teams/{team.id}/members",
+            headers=admin_headers,
+            json={"user_id": member_response.json()["user_id"], "role": "team_admin"},
+        )
+        scoped_login = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "public-model-team-admin@example.com",
+                "password": "team-admin-password",
+            },
+        )
+        scoped_headers = {"Authorization": f"Bearer {scoped_login.json()['access_token']}"}
+        widened_response = await client.post(
+            "/api/v1/policies/assignments/scoped-policy",
+            headers=scoped_headers,
+            json={
+                "policy_type": "access",
+                "scope_type": "team",
+                "team_id": str(team.id),
+                "access_policy": {
+                    "name": "Team public model child",
+                    "public_models": [
+                        {
+                                "public_model_name": "chat-large",
+                            "routing_mode": "ordered_fallback",
+                            "fallback_on": ["provider_5xx"],
+                            "candidates": [
+                                {
+                                    "provider_id": str(provider.id),
+                                    "credential_pool_id": str(pool.id),
+                                    "model_offering_id": str(model.id),
+                                }
+                            ],
+                        }
+                    ],
+                },
+            },
+        )
+
+    assert parent_policy.status_code == 201
+    assert widened_response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_scoped_access_policy_can_create_narrowed_public_model(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "admin@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    await bootstrap.sync_default_workspace(db_session)
+    team = await _create_team_fixture(db_session, name="Scoped Narrow Public Model Team")
+    provider, pool, model = await _create_provider_fixture(
+        db_session, name="scoped-narrow-public-model"
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        admin_headers = await _login(client)
+        parent_policy = await client.post(
+            "/api/v1/policies/access",
+            headers=admin_headers,
+            json={
+                "name": "Org public model parent",
+                "public_models": [
+                    _public_model_payload(provider.id, pool.id, model.id, name="chat-large")
+                ],
+            },
+        )
+        await client.post(
+            "/api/v1/policies/assignments",
+            headers=admin_headers,
+            json={
+                "policy_type": "access",
+                "access_policy_id": parent_policy.json()["id"],
+                "scope_type": "org",
+            },
+        )
+        member_response = await client.post(
+            "/api/v1/auth/members",
+            headers=admin_headers,
+            json={
+                "email": "narrow-public-model-team-admin@example.com",
+                "password": "team-admin-password",
+                "role": "org_member",
+            },
+        )
+        await client.post(
+            f"/api/v1/teams/{team.id}/members",
+            headers=admin_headers,
+            json={"user_id": member_response.json()["user_id"], "role": "team_admin"},
+        )
+        scoped_login = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "narrow-public-model-team-admin@example.com",
+                "password": "team-admin-password",
+            },
+        )
+        scoped_headers = {"Authorization": f"Bearer {scoped_login.json()['access_token']}"}
+        narrowed_response = await client.post(
+            "/api/v1/policies/assignments/scoped-policy",
+            headers=scoped_headers,
+            json={
+                "policy_type": "access",
+                "scope_type": "team",
+                "team_id": str(team.id),
+                "access_policy": {
+                    "name": "Team narrowed public model child",
+                    "public_models": [
+                        {
+                                "public_model_name": "chat-large",
+                            "routing_mode": "single_route",
+                            "candidates": [
+                                {
+                                    "provider_id": str(provider.id),
+                                    "credential_pool_id": str(pool.id),
+                                    "model_offering_id": str(model.id),
+                                }
+                            ],
+                        }
+                    ],
+                },
+            },
+        )
+
+    assert parent_policy.status_code == 201
+    assert narrowed_response.status_code == 201
+    public_models = narrowed_response.json()["access_policy"]["public_models"]
+    assert public_models[0]["public_model_name"] == "chat-large"
+    assert public_models[0]["routing_mode"] == "single_route"
+
+
+@pytest.mark.asyncio
+async def test_scoped_access_policy_cannot_add_parent_public_model_fallback_reason(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "admin@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    await bootstrap.sync_default_workspace(db_session)
+    team = await _create_team_fixture(db_session, name="Scoped Fallback Reason Team")
+    provider, pool, model = await _create_provider_fixture(
+        db_session, name="scoped-fallback-reason"
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        admin_headers = await _login(client)
+        parent_policy = await client.post(
+            "/api/v1/policies/access",
+            headers=admin_headers,
+            json={
+                "name": "Org ordered parent",
+                "public_models": [
+                    {
+                        "public_model_name": "chat-parent",
+                        "routing_mode": "ordered_fallback",
+                        "fallback_on": ["provider_5xx"],
+                        "candidates": [
+                            {
+                                "provider_id": str(provider.id),
+                                "credential_pool_id": str(pool.id),
+                                "model_offering_id": str(model.id),
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+        await client.post(
+            "/api/v1/policies/assignments",
+            headers=admin_headers,
+            json={
+                "policy_type": "access",
+                "access_policy_id": parent_policy.json()["id"],
+                "scope_type": "org",
+            },
+        )
+        member_response = await client.post(
+            "/api/v1/auth/members",
+            headers=admin_headers,
+            json={
+                "email": "fallback-reason-team-admin@example.com",
+                "password": "team-admin-password",
+                "role": "org_member",
+            },
+        )
+        await client.post(
+            f"/api/v1/teams/{team.id}/members",
+            headers=admin_headers,
+            json={"user_id": member_response.json()["user_id"], "role": "team_admin"},
+        )
+        scoped_login = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "fallback-reason-team-admin@example.com",
+                "password": "team-admin-password",
+            },
+        )
+        scoped_headers = {"Authorization": f"Bearer {scoped_login.json()['access_token']}"}
+        widened_response = await client.post(
+            "/api/v1/policies/assignments/scoped-policy",
+            headers=scoped_headers,
+            json={
+                "policy_type": "access",
+                "scope_type": "team",
+                "team_id": str(team.id),
+                "access_policy": {
+                    "name": "Team widened fallback reason",
+                    "public_models": [
+                        {
+                            "public_model_name": "chat-parent",
+                            "routing_mode": "ordered_fallback",
+                            "fallback_on": ["provider_5xx", "rate_limited"],
+                            "candidates": [
+                                {
+                                    "provider_id": str(provider.id),
+                                    "credential_pool_id": str(pool.id),
+                                    "model_offering_id": str(model.id),
+                                }
+                            ],
+                        }
+                    ],
+                },
+            },
+        )
+
+    assert parent_policy.status_code == 201
+    assert widened_response.status_code == 400

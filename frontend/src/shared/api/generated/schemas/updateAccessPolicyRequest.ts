@@ -4,9 +4,11 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
+import type { AccessPolicyPublicModelInput } from './accessPolicyPublicModelInput';
 
 export interface UpdateAccessPolicyRequest {
   name?: string | null;
   description?: string | null;
   is_active?: boolean | null;
+  public_models?: AccessPolicyPublicModelInput[] | null;
 }

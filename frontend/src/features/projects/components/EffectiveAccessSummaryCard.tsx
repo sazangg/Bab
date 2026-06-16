@@ -55,7 +55,7 @@ export function EffectiveAccessSummaryCard({
           ) : null}
         </div>
         <div className="space-y-2 text-sm">
-          <p>{summary.routes.length} routable provider/model route(s)</p>
+          <p>{summary.routes.length} routable provider/model candidate(s)</p>
           {summary.routes.slice(0, 3).map((route) => (
             <div key={`${route.credential_pool_id}-${route.model_offering_id}`}>
               <Link className="hover:underline" to={`/providers/${route.provider_id}`}>

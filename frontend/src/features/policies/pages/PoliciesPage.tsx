@@ -49,16 +49,13 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import {
   getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet,
-  getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet,
   getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet,
   getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet,
   useCreateAccessPolicyApiV1PoliciesAccessPost,
-  useCreateAccessPolicyRouteApiV1PoliciesAccessPolicyIdRoutesPost,
   useCreateLimitPolicyApiV1PoliciesLimitsPost,
   useCreateLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPost,
   useCreatePolicyAssignmentApiV1PoliciesAssignmentsPost,
   useDeleteAccessPolicyApiV1PoliciesAccessPolicyIdDelete,
-  useDeleteAccessPolicyRouteApiV1PoliciesAccessRoutesRouteIdDelete,
   useDeleteLimitPolicyApiV1PoliciesLimitsPolicyIdDelete,
   useDeleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDelete,
   useDeletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDelete,
@@ -69,7 +66,6 @@ import {
   useListLimitPoliciesApiV1PoliciesLimitsGet,
   useListPolicyAssignmentsApiV1PoliciesAssignmentsGet,
   useUpdateAccessPolicyApiV1PoliciesAccessPolicyIdPatch,
-  useUpdateAccessPolicyRouteApiV1PoliciesAccessRoutesRouteIdPatch,
   useUpdateLimitPolicyApiV1PoliciesLimitsPolicyIdPatch,
   useUpdateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatch,
   useUpdatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatch,
@@ -86,16 +82,12 @@ import {
   hasPermission,
 } from "@/features/auth/lib/permissions";
 import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
-import {
-  useListCredentialPoolsApiV1ProvidersProviderIdPoolsGet,
-  useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet,
-  useListProvidersApiV1ProvidersGet,
-} from "@/shared/api/generated/providers/providers";
 import type {
   AccessPolicyResponse,
+  AccessPolicyPublicModelResponse,
+  AccessPolicyRouteCandidateResponse,
   AccessPolicyProviderOption,
-  AccessPolicyRouteInput,
-  AccessPolicyRouteResponse,
+  AccessPolicyPublicModelInput,
   LimitPolicyResponse,
   LimitPolicyRuleResponse,
   PolicyAssignmentResponse,
@@ -116,7 +108,6 @@ import { StatCard } from "@/shared/components/StatCard";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 
 type SheetKind = "access" | "limit" | null;
-type RouteSheetState = { policy: AccessPolicyResponse } | null;
 type LimitRulesSheetState = { policy: LimitPolicyResponse } | null;
 type PolicySettingsSheetState =
   | { kind: "access"; policy: AccessPolicyResponse }
@@ -135,13 +126,17 @@ type DraftLimitRule = {
   intervalCount: string;
   filters: LimitRuleFilterValue;
 };
+type DraftAccessModel = {
+  offeringId: string;
+  publicModelName: string;
+};
 type DraftAccessRoute = {
   id: string;
   providerId: string;
   providerLabel: string;
   poolId: string;
   poolLabel: string;
-  modelIds: string[];
+  models: DraftAccessModel[];
 };
 
 const limitTypeOptions = [
@@ -172,8 +167,8 @@ function limitRuleFiltersPayload(filters: LimitRuleFilterValue) {
 function accessPolicyStatus(policy: AccessPolicyResponse, assignments: number) {
   if (!policy.is_active) return { label: "Inactive", variant: "inactive" as const };
   if (assignments === 0) return { label: "Unassigned", variant: "muted" as const };
-  if ((policy.routes ?? []).length === 0) {
-    return { label: "No routable routes", variant: "expired" as const };
+  if (countPublicModels(policy) === 0) {
+    return { label: "No routable models", variant: "expired" as const };
   }
   return { label: "Active", variant: "active" as const };
 }
@@ -324,7 +319,6 @@ export function PoliciesPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [sheetKind, setSheetKind] = useState<SheetKind>(null);
-  const [routeSheet, setRouteSheet] = useState<RouteSheetState>(null);
   const [limitRulesSheet, setLimitRulesSheet] = useState<LimitRulesSheetState>(null);
   const [policySettingsSheet, setPolicySettingsSheet] = useState<PolicySettingsSheetState>(null);
   const [assignmentSheet, setAssignmentSheet] = useState<AssignmentSheetState>(null);
@@ -371,18 +365,11 @@ export function PoliciesPage() {
   const filteredAccessPolicies = accessPolicies.filter(matchesFilters);
   const filteredLimitPolicies = limitPolicies.filter(matchesFilters);
   const currentTabIsLimit = activeTab === "limits";
-  const activeRouteSheet = routeSheet
-    ? {
-        policy:
-          accessPolicies.find((policy) => policy.id === routeSheet.policy.id) ?? routeSheet.policy,
-      }
-    : null;
-
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Policies"
-        description="Access policies define where traffic can route. Limit policies define budgets and caps that compose across org, team, project, and key scopes."
+        description="Access policies define public models and provider candidates. Limit policies define budgets and caps that compose across org, team, project, and key scopes."
         actions={
           <div className="flex items-center gap-2">
             {canManagePolicies ? (
@@ -440,7 +427,7 @@ export function PoliciesPage() {
           description={
             currentTabIsLimit
               ? "Reusable budgets, request caps, and token caps."
-              : "Reusable provider, pool, and model route sets."
+              : "Reusable public model and provider candidate sets."
           }
           icon={currentTabIsLimit ? ShieldCheck : GitBranch}
         >
@@ -462,7 +449,6 @@ export function PoliciesPage() {
               policies={filteredAccessPolicies}
               assignmentCount={assignmentCount}
               isLoading={accessQuery.isPending}
-              onConfigureRoutes={(policy) => setRouteSheet({ policy })}
               onEditPolicy={(policy) => setPolicySettingsSheet({ kind: "access", policy })}
               onAssign={(policy) =>
                 setAssignmentSheet({ policyType: "access", policyId: policy.id })
@@ -481,11 +467,6 @@ export function PoliciesPage() {
           setSheetKind(null);
           await invalidatePolicies();
         }}
-      />
-      <RouteSheet
-        state={activeRouteSheet}
-        onOpenChange={(open) => !open && setRouteSheet(null)}
-        onChanged={invalidatePolicies}
       />
       <LimitRulesSheet
         state={limitRulesSheet}
@@ -510,7 +491,6 @@ export function PoliciesPage() {
 export function AccessPolicyDetailPage() {
   const { policyId = "" } = useParams();
   const queryClient = useQueryClient();
-  const [routeSheet, setRouteSheet] = useState<RouteSheetState>(null);
   const [policySettingsSheet, setPolicySettingsSheet] = useState<PolicySettingsSheetState>(null);
   const [assignmentSheet, setAssignmentSheet] = useState<AssignmentSheetState>(null);
   const policyQuery = useGetAccessPolicyApiV1PoliciesAccessPolicyIdGet(policyId, {
@@ -542,16 +522,14 @@ export function AccessPolicyDetailPage() {
     );
   }
 
-  const routeCount = policy.routes?.length ?? 0;
-  const modelCount = countRouteModels(policy);
+  const publicModelCount = countPublicModels(policy);
+  const candidateCount = countPublicModelCandidates(policy);
   const canManageDefinition = canManagePolicyDefinition(currentUser, policy);
-  const activeRouteSheet = routeSheet ? { policy } : null;
-
   return (
     <>
       <PolicyDetailLayout
         title={policy.name}
-        description={policy.description || "Access policy route configuration."}
+        description={policy.description || "Access policy public model configuration."}
         actions={
           <div className="flex items-center gap-2">
             <Button variant="outline" asChild>
@@ -578,32 +556,21 @@ export function AccessPolicyDetailPage() {
                 Edit policy
               </Button>
             ) : null}
-            {canManageDefinition ? (
-              <Button onClick={() => setRouteSheet({ policy })}>
-                <Route />
-                Configure routes
-              </Button>
-            ) : null}
           </div>
         }
         metrics={[
-          { label: "Routes", value: routeCount },
-          { label: "Models", value: modelCount },
+          { label: "Public models", value: publicModelCount },
+          { label: "Candidates", value: candidateCount },
           { label: "Assignments", value: assignments.length },
           { label: "Status", value: policy.is_active ? "Active" : "Inactive" },
         ]}
-        detailTitle="Access routes"
-        detailDescription="Routes decide which provider pool can serve selected models."
+        detailTitle="Public models"
+        detailDescription="Public models are the client-facing names and fallback order for this policy."
         detailIcon={Route}
-        detailContent={<AccessRoutesDetailTable routes={policy.routes ?? []} />}
+        detailContent={<AccessPublicModelsDetailTable publicModels={policy.public_models ?? []} />}
         assignments={assignments}
         onChanged={invalidatePolicies}
         canManageAssignments={canAssignPolicies}
-      />
-      <RouteSheet
-        state={activeRouteSheet}
-        onOpenChange={(open) => !open && setRouteSheet(null)}
-        onChanged={invalidatePolicies}
       />
       <PolicySettingsSheet
         state={policySettingsSheet}
@@ -805,31 +772,73 @@ function PolicyDetailLayout({
   );
 }
 
-function AccessRoutesDetailTable({ routes }: { routes: AccessPolicyRouteResponse[] }) {
-  const columns: DataTableColumn<AccessPolicyRouteResponse>[] = [
-    { key: "route", header: "Route", cell: (route) => <RouteProviderPool route={route} /> },
+function AccessPublicModelsDetailTable({
+  publicModels,
+}: {
+  publicModels: AccessPolicyPublicModelResponse[];
+}) {
+  const columns: DataTableColumn<AccessPolicyPublicModelResponse>[] = [
     {
-      key: "models",
-      header: "Model offerings",
-      cell: (route) => <RouteModelNames route={route} />,
+      key: "name",
+      header: "Public model",
+      className: "font-medium",
+      cell: (publicModel) => publicModel.public_model_name,
     },
     {
       key: "routing",
       header: "Routing",
-      className: "text-sm",
-      cell: (route) => (
+      cell: (publicModel) => (
         <>
-          Priority {route.priority}
-          <div className="text-xs text-muted-foreground">Tie-break weight {route.weight}</div>
+          {formatRoutingMode(publicModel.routing_mode)}
+          {publicModel.fallback_on.length ? (
+            <div className="text-xs text-muted-foreground">
+              {publicModel.fallback_on.map(formatFallbackReason).join(", ")}
+            </div>
+          ) : null}
         </>
       ),
     },
     {
+      key: "candidates",
+      header: "Candidates",
+      cell: (publicModel) => {
+        const activeCandidates = (publicModel.candidates ?? []).filter(
+          (candidate) => candidate.is_active,
+        );
+        const orderedCandidates = [...(publicModel.candidates ?? [])].sort(
+          (left, right) => left.priority - right.priority || right.weight - left.weight,
+        );
+        return (
+          <div className="grid gap-1">
+            <div>
+              {activeCandidates.length} active{" "}
+              <span className="text-xs text-muted-foreground">
+                / {(publicModel.candidates ?? []).length} configured
+              </span>
+            </div>
+            <div className="grid gap-0.5 text-xs text-muted-foreground">
+              {orderedCandidates.slice(0, 3).map((candidate) => (
+                <span
+                  key={`${candidate.provider_id}:${candidate.credential_pool_id}:${candidate.model_offering_id}`}
+                  className="truncate"
+                >
+                  #{candidate.priority} model {candidate.model_offering_id.slice(0, 8)}
+                </span>
+              ))}
+              {orderedCandidates.length > 3 ? (
+                <span>+{orderedCandidates.length - 3} more</span>
+              ) : null}
+            </div>
+          </div>
+        );
+      },
+    },
+    {
       key: "status",
       header: "Status",
-      cell: (route) => (
-        <StatusBadge variant={route.is_active ? "active" : "inactive"}>
-          {route.is_active ? "Active" : "Inactive"}
+      cell: (publicModel) => (
+        <StatusBadge variant={publicModel.is_active ? "active" : "inactive"}>
+          {publicModel.is_active ? "Active" : "Inactive"}
         </StatusBadge>
       ),
     },
@@ -837,60 +846,13 @@ function AccessRoutesDetailTable({ routes }: { routes: AccessPolicyRouteResponse
   return (
     <DataTable
       columns={columns}
-      data={routes}
-      getRowKey={(route) => route.id}
+      data={publicModels}
+      getRowKey={(publicModel) => publicModel.id}
       empty={{
-        title: "No routes configured",
-        description:
-          "Add at least one provider pool and model route before assigning this policy.",
+        title: "No public models configured",
+        description: "Add at least one public model before assigning this policy.",
       }}
     />
-  );
-}
-
-function RouteProviderPool({ route }: { route: AccessPolicyRouteResponse }) {
-  const providersQuery = useListProvidersApiV1ProvidersGet();
-  const poolsQuery = useListCredentialPoolsApiV1ProvidersProviderIdPoolsGet(route.provider_id, {
-    query: { enabled: Boolean(route.provider_id) },
-  });
-  const providers = providersQuery.data?.status === 200 ? providersQuery.data.data : [];
-  const pools = poolsQuery.data?.status === 200 ? poolsQuery.data.data : [];
-  const provider = providers.find((item) => item.id === route.provider_id);
-  const pool = pools.find((item) => item.id === route.credential_pool_id);
-  return (
-    <div>
-      <div className="font-medium">{provider?.display_name ?? route.provider_id.slice(0, 8)}</div>
-      <div className="text-xs text-muted-foreground">
-        {pool?.name ?? route.credential_pool_id.slice(0, 8)}
-      </div>
-    </div>
-  );
-}
-
-function RouteModelNames({ route }: { route: AccessPolicyRouteResponse }) {
-  const modelsQuery = useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet(
-    route.provider_id,
-    { limit: 1000 },
-    { query: { enabled: Boolean(route.provider_id) } },
-  );
-  const models = modelsQuery.data?.status === 200 ? modelsQuery.data.data.items : [];
-  const labels = route.model_offering_ids
-    .map((id) => models.find((model) => model.id === id)?.provider_model_name ?? id.slice(0, 8))
-    .sort((left, right) => left.localeCompare(right));
-  if (labels.length === 0) return <span className="text-sm text-muted-foreground">No models</span>;
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {labels.slice(0, 8).map((label) => (
-        <span key={label} className="rounded-md border bg-muted px-2 py-1 text-xs">
-          {label}
-        </span>
-      ))}
-      {labels.length > 8 ? (
-        <span className="rounded-md border bg-muted px-2 py-1 text-xs">
-          +{labels.length - 8} more
-        </span>
-      ) : null}
-    </div>
   );
 }
 
@@ -1082,7 +1044,6 @@ function AccessPoliciesTable({
   policies,
   assignmentCount,
   isLoading,
-  onConfigureRoutes,
   onEditPolicy,
   onAssign,
   canManageDefinition,
@@ -1091,7 +1052,6 @@ function AccessPoliciesTable({
   policies: AccessPolicyResponse[];
   assignmentCount: (policyId: string, type: "access") => number;
   isLoading: boolean;
-  onConfigureRoutes: (policy: AccessPolicyResponse) => void;
   onEditPolicy: (policy: AccessPolicyResponse) => void;
   onAssign: (policy: AccessPolicyResponse) => void;
   canManageDefinition: (policy: AccessPolicyResponse) => boolean;
@@ -1133,12 +1093,14 @@ function AccessPoliciesTable({
       ),
     },
     {
-      key: "routes",
-      header: "Routes",
+      key: "public-models",
+      header: "Models",
       cell: (policy) => (
         <>
-          <div>{policy.routes?.length ?? 0} routes</div>
-          <div className="text-xs text-muted-foreground">{countRouteModels(policy)} models</div>
+          <div>{countPublicModels(policy)} public models</div>
+          <div className="text-xs text-muted-foreground">
+            {countPublicModelCandidates(policy)} candidates
+          </div>
         </>
       ),
     },
@@ -1174,16 +1136,6 @@ function AccessPoliciesTable({
                 <Pencil />
               </Button>
             ) : null}
-            {canManage ? (
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={`Configure routes for ${policy.name}`}
-                onClick={() => onConfigureRoutes(policy)}
-              >
-                <Route />
-              </Button>
-            ) : null}
             {canAssign ? (
               <Button
                 variant="ghost"
@@ -1217,7 +1169,7 @@ function AccessPoliciesTable({
         data={policies}
         loading={isLoading}
         getRowKey={(policy) => policy.id}
-        empty={{ title: "No access policies", description: "Create a route policy first." }}
+        empty={{ title: "No access policies", description: "Create an access policy first." }}
       />
       {impactConfirmationDialog}
     </>
@@ -1408,6 +1360,30 @@ function PolicySettingsSheetContent({
   const [name, setName] = useState(state.policy.name);
   const [description, setDescription] = useState(state.policy.description ?? "");
   const [isActive, setIsActive] = useState(state.policy.is_active);
+  const [publicModels, setPublicModels] = useState<AccessPolicyPublicModelInput[]>(
+    state.kind === "access"
+      ? (state.policy.public_models ?? []).map(publicModelResponseToInput)
+      : [],
+  );
+  const [publicModelName, setPublicModelName] = useState("");
+  const [providerId, setProviderId] = useState("");
+  const [poolId, setPoolId] = useState("");
+  const [selectedModels, setSelectedModels] = useState<string[]>([]);
+  const accessOptionsQuery = useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet(
+    state.kind === "access"
+      ? createAccessOptionsParams(
+          state.policy.owning_scope_type ?? "none",
+          state.policy.owning_team_id ?? "",
+          state.policy.owning_project_id ?? "",
+          state.policy.owning_virtual_key_id ?? "",
+        )
+      : createAccessOptionsParams("none", "", "", ""),
+    { query: { enabled: state.kind === "access" } },
+  );
+  const accessOptions =
+    accessOptionsQuery.data?.status === 200 ? (accessOptionsQuery.data.data.providers ?? []) : [];
+  const pools = accessOptions.find((provider) => provider.id === providerId)?.pools ?? [];
+  const models = pools.find((pool) => pool.id === poolId)?.models ?? [];
   const updateAccessPolicy = useUpdateAccessPolicyApiV1PoliciesAccessPolicyIdPatch({
     mutation: {
       onSuccess: async () => {
@@ -1435,6 +1411,7 @@ function PolicySettingsSheetContent({
       name: name.trim(),
       description: description.trim() || null,
       is_active: isActive,
+      ...(state.kind === "access" ? { public_models: publicModels } : {}),
     };
     if (state.kind === "access") {
       updateAccessPolicy.mutate({ policyId: state.policy.id, data });
@@ -1468,11 +1445,98 @@ function PolicySettingsSheetContent({
           </div>
           <Switch checked={isActive} onCheckedChange={setIsActive} />
         </div>
+        {state.kind === "access" ? (
+          <div className="grid gap-3 rounded-md border bg-muted/20 p-3">
+            <div>
+              <div className="text-sm font-medium">Public models</div>
+              <p className="text-xs text-muted-foreground">
+                Public model names are the client-facing model IDs. Candidate order controls
+                fallback priority.
+              </p>
+            </div>
+            <EditablePublicModelsList
+              publicModels={publicModels}
+              onChange={setPublicModels}
+            />
+            <Field label="Public model name">
+              <Input
+                value={publicModelName}
+                onChange={(event) => setPublicModelName(event.target.value)}
+                placeholder="Defaults to selected model name"
+              />
+            </Field>
+            <SelectField
+              label="Provider"
+              value={providerId}
+              onValueChange={(value) => {
+                const provider = accessOptions.find((option) => option.id === value);
+                const pool = provider?.pools?.[0];
+                setProviderId(value);
+                setPoolId(pool?.id ?? "");
+                setSelectedModels([]);
+              }}
+              options={accessOptions.map((provider) => provider.id)}
+              labels={providerOptionLabels(accessOptions)}
+              placeholder={accessOptionsQuery.isLoading ? "Loading providers" : "Choose provider"}
+            />
+            <SelectField
+              label="Credential pool"
+              value={poolId}
+              onValueChange={(value) => {
+                setPoolId(value);
+                setSelectedModels([]);
+              }}
+              options={pools.map((pool) => pool.id)}
+              labels={Object.fromEntries(pools.map((pool) => [pool.id, pool.name]))}
+            />
+            <ModelMultiselect
+              models={models}
+              selected={selectedModels}
+              onChange={setSelectedModels}
+              disabled={!poolId}
+              isLoading={accessOptionsQuery.isLoading}
+              isError={accessOptionsQuery.isError}
+              placeholderHint="Choose a provider and pool to load model offerings."
+              emptyHint="No model offerings are available for this pool."
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                const selectedOfferings = models.filter((model) => selectedModels.includes(model.id));
+                if (!providerId || !poolId || selectedOfferings.length === 0) return;
+                setPublicModels((current) =>
+                  addCandidatesToPublicModels({
+                    publicModels: current,
+                    publicModelName,
+                    providerId,
+                    poolId,
+                    models: selectedOfferings.map((model) => ({
+                      offeringId: model.id,
+                      publicModelName: model.provider_model_name,
+                    })),
+                  }),
+                );
+                setPublicModelName("");
+                setSelectedModels([]);
+              }}
+              disabled={!providerId || !poolId || selectedModels.length === 0}
+            >
+              <Plus />
+              Add candidates
+            </Button>
+          </div>
+        ) : null}
       </div>
       <SheetFooter>
         <Button
           onClick={submit}
-          disabled={!name.trim() || updateAccessPolicy.isPending || updateLimitPolicy.isPending}
+          disabled={
+            !name.trim() ||
+            (state.kind === "access" && publicModels.length === 0) ||
+            updateAccessPolicy.isPending ||
+            updateLimitPolicy.isPending
+          }
         >
           Save policy
         </Button>
@@ -1481,6 +1545,95 @@ function PolicySettingsSheetContent({
         </SheetClose>
       </SheetFooter>
     </SheetContent>
+  );
+}
+
+function EditablePublicModelsList({
+  publicModels,
+  onChange,
+}: {
+  publicModels: AccessPolicyPublicModelInput[];
+  onChange: (publicModels: AccessPolicyPublicModelInput[]) => void;
+}) {
+  if (publicModels.length === 0) {
+    return (
+      <div className="rounded-md border border-dashed bg-background px-3 py-4 text-sm text-muted-foreground">
+        No public models configured.
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-2">
+      {publicModels.map((publicModel) => (
+        <div key={publicModel.public_model_name} className="rounded-md border bg-background p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="truncate text-sm font-medium">{publicModel.public_model_name}</div>
+              <div className="text-xs text-muted-foreground">
+                {formatRoutingMode(publicModel.routing_mode ?? "single_route")} ·{" "}
+                {publicModel.candidates.length}{" "}
+                candidate{publicModel.candidates.length === 1 ? "" : "s"}
+              </div>
+            </div>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              aria-label="Remove public model"
+              onClick={() =>
+                onChange(
+                  publicModels.filter(
+                    (candidate) =>
+                      candidate.public_model_name !== publicModel.public_model_name,
+                  ),
+                )
+              }
+            >
+              <Trash2 />
+            </Button>
+          </div>
+          <div className="mt-2 grid gap-1">
+            {publicModel.candidates.map((candidate) => (
+              <div
+                key={`${candidate.provider_id}:${candidate.credential_pool_id}:${candidate.model_offering_id}`}
+                className="flex items-center justify-between gap-2 rounded bg-muted/40 px-2 py-1 text-xs"
+              >
+                <span className="min-w-0 truncate">
+                  Priority {candidate.priority} · model {String(candidate.model_offering_id).slice(0, 8)}
+                </span>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  aria-label="Remove candidate"
+                  onClick={() =>
+                    onChange(
+                      publicModels
+                        .map((item) =>
+                          item.public_model_name === publicModel.public_model_name
+                            ? {
+                                ...item,
+                                candidates: item.candidates.filter(
+                                  (existing) =>
+                                    existing.model_offering_id !== candidate.model_offering_id ||
+                                    existing.provider_id !== candidate.provider_id ||
+                                    existing.credential_pool_id !== candidate.credential_pool_id,
+                                ),
+                              }
+                            : item,
+                        )
+                        .filter((item) => item.candidates.length > 0),
+                    )
+                  }
+                >
+                  <Trash2 />
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -1601,14 +1754,20 @@ function CreatePolicySheet({
   const currentAccessRoute = (): DraftAccessRoute | null => {
     const provider = accessOptions.find((option) => option.id === providerId);
     const pool = pools.find((option) => option.id === poolId);
-    if (!provider || !pool || selectedModels.length === 0) return null;
+    const routeModels = models
+      .filter((model) => selectedModels.includes(model.id))
+      .map((model) => ({
+        offeringId: model.id,
+        publicModelName: model.provider_model_name,
+      }));
+    if (!provider || !pool || routeModels.length === 0) return null;
     return {
       id: crypto.randomUUID(),
       providerId,
       providerLabel: provider.display_name,
       poolId,
       poolLabel: pool.name,
-      modelIds: selectedModels,
+      models: routeModels,
     };
   };
   const accessRoutesForSubmit = () => {
@@ -1651,7 +1810,7 @@ function CreatePolicySheet({
           data: {
             name,
             description: description || null,
-            routes: routes.map(toAccessRouteInput),
+            public_models: routes.flatMap(toPublicModelInputs),
           },
         });
         if (response.status !== 201) return;
@@ -1701,7 +1860,7 @@ function CreatePolicySheet({
           <SheetDescription>
             {isLimit
               ? "Create reusable caps and optionally assign them immediately."
-              : "Create an initial route and optionally assign the policy immediately."}
+              : "Create initial public models and optionally assign the policy immediately."}
           </SheetDescription>
         </SheetHeader>
         <div className="grid gap-4 overflow-y-auto px-6 py-5">
@@ -1786,9 +1945,10 @@ function CreatePolicySheet({
           {!isLimit ? (
             <div className="grid gap-3 rounded-md border bg-muted/20 p-3">
               <div>
-                <div className="text-sm font-medium">Initial route</div>
+                <div className="text-sm font-medium">Initial public models</div>
                 <p className="text-xs text-muted-foreground">
-                  Add one or more provider pool and model routes.
+                  Add provider model candidates. The provider model name becomes the public model
+                  name by default.
                 </p>
               </div>
               {draftRoutes.length > 0 ? (
@@ -1803,8 +1963,8 @@ function CreatePolicySheet({
                           {route.providerLabel} / {route.poolLabel}
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          {route.modelIds.length} model
-                          {route.modelIds.length === 1 ? "" : "s"}
+                          {route.models.length} public model
+                          {route.models.length === 1 ? "" : "s"}
                         </div>
                       </div>
                       <Button
@@ -1864,7 +2024,7 @@ function CreatePolicySheet({
                 disabled={!providerId || !poolId || selectedModels.length === 0}
               >
                 <Plus />
-                Add route
+                Add candidates
               </Button>
             </div>
           ) : null}
@@ -1945,281 +2105,6 @@ function CreatePolicySheet({
             <Button variant="outline">Cancel</Button>
           </SheetClose>
         </SheetFooter>
-      </SheetContent>
-    </Sheet>
-  );
-}
-
-function RouteSheet({
-  state,
-  onOpenChange,
-  onChanged,
-}: {
-  state: RouteSheetState;
-  onOpenChange: (open: boolean) => void;
-  onChanged: () => Promise<void>;
-}) {
-  const [providerId, setProviderId] = useState("");
-  const [poolId, setPoolId] = useState("");
-  const [selectedModels, setSelectedModels] = useState<string[]>([]);
-  const [editingRoute, setEditingRoute] = useState<AccessPolicyRouteResponse | null>(null);
-  const [priority, setPriority] = useState("100");
-  const [weight, setWeight] = useState("100");
-  const [routeIsActive, setRouteIsActive] = useState(true);
-  const accessOptionsQuery = useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet(
-    accessOptionsParamsForPolicy(state?.policy),
-    { query: { enabled: Boolean(state) } },
-  );
-  const accessOptions =
-    accessOptionsQuery.data?.status === 200 ? (accessOptionsQuery.data.data.providers ?? []) : [];
-  const pools = accessOptions.find((provider) => provider.id === providerId)?.pools ?? [];
-  const models = pools.find((pool) => pool.id === poolId)?.models ?? [];
-  const createRoute = useCreateAccessPolicyRouteApiV1PoliciesAccessPolicyIdRoutesPost({
-    mutation: {
-      onSuccess: async () => {
-        toast.success("Access route added.");
-        resetForm();
-        await onChanged();
-      },
-      onError: () => toast.error("Access route could not be added."),
-    },
-  });
-  const deleteRoute = useDeleteAccessPolicyRouteApiV1PoliciesAccessRoutesRouteIdDelete({
-    mutation: {
-      onSuccess: async () => {
-        toast.success("Access route removed.");
-        await onChanged();
-      },
-      onError: () => toast.error("Access route could not be removed."),
-    },
-  });
-  const updateRoute = useUpdateAccessPolicyRouteApiV1PoliciesAccessRoutesRouteIdPatch({
-    mutation: {
-      onSuccess: async () => {
-        toast.success("Access route updated.");
-        resetForm();
-        await onChanged();
-      },
-      onError: () => toast.error("Access route could not be updated."),
-    },
-  });
-  const routeModelLabels = Object.fromEntries(
-    models.map((model) => [model.id, model.provider_model_name]),
-  );
-  const resetForm = () => {
-    setProviderId("");
-    setPoolId("");
-    setSelectedModels([]);
-    setEditingRoute(null);
-    setPriority("100");
-    setWeight("100");
-    setRouteIsActive(true);
-  };
-  const startEditRoute = (route: AccessPolicyRouteResponse) => {
-    setEditingRoute(route);
-    setProviderId(route.provider_id);
-    setPoolId(route.credential_pool_id);
-    setSelectedModels(route.model_offering_ids);
-    setPriority(String(route.priority));
-    setWeight(String(route.weight));
-    setRouteIsActive(route.is_active);
-  };
-  const handleDeleteRoute = async (route: AccessPolicyRouteResponse) => {
-    await requestImpactConfirmation(
-      "Delete this access route?",
-      () => getAccessPolicyRouteImpactApiV1PoliciesAccessRoutesRouteIdImpactGet(route.id),
-      () => deleteRoute.mutate({ routeId: route.id }),
-    );
-  };
-  const submit = () => {
-    if (!state || !providerId || !poolId || selectedModels.length === 0) return;
-    if (editingRoute) {
-      updateRoute.mutate({
-        routeId: editingRoute.id,
-        data: {
-          provider_id: providerId,
-          credential_pool_id: poolId,
-          model_offering_ids: selectedModels,
-          priority: Number(priority) || 100,
-          weight: Number(weight) || 100,
-          is_active: routeIsActive,
-        },
-      });
-      return;
-    }
-    createRoute.mutate({
-      policyId: state.policy.id,
-      data: {
-        provider_id: providerId,
-        credential_pool_id: poolId,
-        model_offering_ids: selectedModels,
-        priority: Number(priority) || 100,
-        weight: Number(weight) || 100,
-        is_active: routeIsActive,
-      },
-    });
-  };
-  const {
-    requestImpactConfirmation,
-    isLoadingImpact,
-    dialog: impactConfirmationDialog,
-  } = useImpactConfirmation();
-  return (
-    <Sheet open={Boolean(state)} onOpenChange={onOpenChange}>
-      <SheetContent>
-        <SheetHeader>
-          <SheetTitle>Configure access routes</SheetTitle>
-          <SheetDescription>
-            Routes choose a provider, one credential pool, and the model offerings this policy can
-            serve.
-          </SheetDescription>
-        </SheetHeader>
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-          {state ? (
-            <div className="grid gap-5">
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Route</TableHead>
-                      <TableHead>Priority</TableHead>
-                      <TableHead>Tie-break weight</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="w-12" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {(state.policy.routes ?? []).map((route) => (
-                      <TableRow key={route.id}>
-                        <TableCell>
-                          <div className="text-sm font-medium">
-                            {route.model_offering_ids.length} models
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {route.model_offering_ids
-                              .map((id) => routeModelLabels[id] ?? id.slice(0, 8))
-                              .join(", ")}
-                          </div>
-                        </TableCell>
-                        <TableCell>{route.priority}</TableCell>
-                        <TableCell>{route.weight}</TableCell>
-                        <TableCell>
-                          <StatusBadge variant={route.is_active ? "active" : "inactive"}>
-                            {route.is_active ? "Active" : "Inactive"}
-                          </StatusBadge>
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label="Edit route"
-                            onClick={() => startEditRoute(route)}
-                          >
-                            <SlidersHorizontal />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label="Delete route"
-                            disabled={isLoadingImpact || deleteRoute.isPending}
-                            onClick={() => void handleDeleteRoute(route)}
-                          >
-                            <Trash2 />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-
-              <div className="grid gap-4 rounded-md border bg-muted/20 p-3">
-                <div>
-                  <div className="font-medium">{editingRoute ? "Edit route" : "Add route"}</div>
-                  <p className="text-sm text-muted-foreground">
-                    Routes can be reused anywhere this access policy is assigned.
-                  </p>
-                </div>
-                <SelectField
-                  label="Provider"
-                  value={providerId}
-                  onValueChange={(value) => {
-                    const provider = accessOptions.find((option) => option.id === value);
-                    const pool = provider?.pools?.[0];
-                    setProviderId(value);
-                    setPoolId(pool?.id ?? "");
-                    setSelectedModels([]);
-                  }}
-                  options={accessOptions.map((provider) => provider.id)}
-                  labels={providerOptionLabels(accessOptions)}
-                  placeholder="Choose provider"
-                />
-                <SelectField
-                  label="Credential pool"
-                  value={poolId}
-                  onValueChange={(value) => {
-                    setPoolId(value);
-                    setSelectedModels([]);
-                  }}
-                  options={pools.map((pool) => pool.id)}
-                  labels={Object.fromEntries(pools.map((pool) => [pool.id, pool.name]))}
-                  placeholder="Choose pool"
-                />
-                <ModelMultiselect
-                  models={models}
-                  selected={selectedModels}
-                  onChange={setSelectedModels}
-                  disabled={!providerId}
-                  isLoading={accessOptionsQuery.isLoading}
-                  isError={accessOptionsQuery.isError}
-                />
-                <div className="grid items-start gap-3 sm:grid-cols-2">
-                  <Field label="Priority">
-                    <Input value={priority} onChange={(event) => setPriority(event.target.value)} />
-                  </Field>
-                  <Field label="Weight">
-                    <Input value={weight} onChange={(event) => setWeight(event.target.value)} />
-                    <p className="text-xs text-muted-foreground">
-                      Higher weight wins when priority ties; it does not split traffic.
-                    </p>
-                  </Field>
-                </div>
-                <div className="flex items-center justify-between gap-3 rounded-md border bg-background p-3">
-                  <div>
-                    <div className="text-sm font-medium">Active</div>
-                    <p className="text-xs text-muted-foreground">
-                      Inactive routes remain configured but are skipped at runtime.
-                    </p>
-                  </div>
-                  <Switch checked={routeIsActive} onCheckedChange={setRouteIsActive} />
-                </div>
-              </div>
-            </div>
-          ) : null}
-        </div>
-        <SheetFooter>
-          <Button
-            onClick={submit}
-            disabled={
-              !providerId ||
-              !poolId ||
-              selectedModels.length === 0 ||
-              createRoute.isPending ||
-              updateRoute.isPending
-            }
-          >
-            {editingRoute ? "Save route" : "Add route"}
-          </Button>
-          {editingRoute ? (
-            <Button type="button" variant="outline" onClick={resetForm}>
-              Cancel edit
-            </Button>
-          ) : null}
-          <SheetClose asChild>
-            <Button variant="outline">Close</Button>
-          </SheetClose>
-        </SheetFooter>
-        {impactConfirmationDialog}
       </SheetContent>
     </Sheet>
   );
@@ -2737,12 +2622,106 @@ function formatDraftRuleSummary(rule: DraftLimitRule) {
   return `${typeLabel}: ${value} ${formatInterval(rule.intervalUnit, rule.intervalCount)}${filterSummary ? ` · ${filterSummary}` : ""}`;
 }
 
-function toAccessRouteInput(route: DraftAccessRoute): AccessPolicyRouteInput {
+function toPublicModelInputs(route: DraftAccessRoute): AccessPolicyPublicModelInput[] {
+  return route.models.map((model, index) => ({
+    public_model_name: model.publicModelName,
+    routing_mode: "single_route",
+    fallback_on: [],
+    max_route_attempts: 1,
+    is_active: true,
+    candidates: [
+      {
+        provider_id: route.providerId,
+        credential_pool_id: route.poolId,
+        model_offering_id: model.offeringId,
+        priority: index + 1,
+        weight: 1,
+        is_active: true,
+      },
+    ],
+  }));
+}
+
+function publicModelResponseToInput(
+  publicModel: AccessPolicyPublicModelResponse,
+): AccessPolicyPublicModelInput {
   return {
-    provider_id: route.providerId,
-    credential_pool_id: route.poolId,
-    model_offering_ids: route.modelIds,
+    public_model_name: publicModel.public_model_name,
+    routing_mode: publicModel.routing_mode,
+    fallback_on: publicModel.fallback_on,
+    max_route_attempts: publicModel.max_route_attempts,
+    is_active: publicModel.is_active,
+    candidates: (publicModel.candidates ?? []).map(candidateResponseToInput),
   };
+}
+
+function candidateResponseToInput(candidate: AccessPolicyRouteCandidateResponse) {
+  return {
+    provider_id: candidate.provider_id,
+    credential_pool_id: candidate.credential_pool_id,
+    model_offering_id: candidate.model_offering_id,
+    priority: candidate.priority,
+    weight: candidate.weight,
+    is_active: candidate.is_active,
+  };
+}
+
+function addCandidatesToPublicModels({
+  publicModels,
+  publicModelName,
+  providerId,
+  poolId,
+  models,
+}: {
+  publicModels: AccessPolicyPublicModelInput[];
+  publicModelName: string;
+  providerId: string;
+  poolId: string;
+  models: DraftAccessModel[];
+}) {
+  const explicitName = publicModelName.trim();
+  const next = [...publicModels];
+  for (const model of models) {
+    const name = explicitName || model.publicModelName;
+    const existingIndex = next.findIndex((item) => item.public_model_name === name);
+    const existing = existingIndex >= 0 ? next[existingIndex] : null;
+    const priority = (existing?.candidates.length ?? 0) + 1;
+    const candidate = {
+      provider_id: providerId,
+      credential_pool_id: poolId,
+      model_offering_id: model.offeringId,
+      priority,
+      weight: 1,
+      is_active: true,
+    };
+    if (existing) {
+      const isDuplicate = existing.candidates.some(
+        (item) =>
+          item.provider_id === candidate.provider_id &&
+          item.credential_pool_id === candidate.credential_pool_id &&
+          item.model_offering_id === candidate.model_offering_id,
+      );
+      if (!isDuplicate) {
+        next[existingIndex] = {
+          ...existing,
+          routing_mode: "ordered_fallback",
+          fallback_on: existing.fallback_on?.length ? existing.fallback_on : ["provider_5xx"],
+          max_route_attempts: Math.max(existing.max_route_attempts ?? 1, priority),
+          candidates: [...existing.candidates, candidate],
+        };
+      }
+      continue;
+    }
+    next.push({
+      public_model_name: name,
+      routing_mode: "single_route",
+      fallback_on: [],
+      max_route_attempts: 1,
+      is_active: true,
+      candidates: [candidate],
+    });
+  }
+  return next;
 }
 
 function formatDraftRuleFilters(filters: LimitRuleFilterValue) {
@@ -2755,8 +2734,26 @@ function formatDraftRuleFilters(filters: LimitRuleFilterValue) {
   return activeFilters.length ? `filtered by ${activeFilters.join(", ")}` : "";
 }
 
-function countRouteModels(policy: AccessPolicyResponse) {
-  return (policy.routes ?? []).reduce((total, route) => total + route.model_offering_ids.length, 0);
+function countPublicModels(policy: AccessPolicyResponse) {
+  return (policy.public_models ?? []).length;
+}
+
+function countPublicModelCandidates(policy: AccessPolicyResponse) {
+  return (policy.public_models ?? []).reduce(
+    (total, publicModel) => total + (publicModel.candidates ?? []).length,
+    0,
+  );
+}
+
+function formatRoutingMode(value: string) {
+  if (value === "ordered_fallback") return "Ordered fallback";
+  if (value === "single_route") return "Single route";
+  return value.replaceAll("_", " ");
+}
+
+function formatFallbackReason(value: string) {
+  if (value === "provider_5xx") return "5xx";
+  return value.replaceAll("_", " ");
 }
 
 function teamLabels(teams: TeamResponse[]) {
@@ -2799,33 +2796,6 @@ function createAccessOptionsParams(
     };
   }
   return { scope_type: "org" };
-}
-
-function accessOptionsParamsForPolicy(policy?: AccessPolicyResponse) {
-  if (!policy) return { scope_type: "org" };
-  if (policy.owning_scope_type === "team" && policy.owning_team_id) {
-    return {
-      scope_type: "team",
-      team_id: policy.owning_team_id,
-      exclude_policy_id: policy.id,
-    };
-  }
-  if (policy.owning_scope_type === "project" && policy.owning_project_id) {
-    return {
-      scope_type: "project",
-      project_id: policy.owning_project_id,
-      exclude_policy_id: policy.id,
-    };
-  }
-  if (policy.owning_scope_type === "virtual_key" && policy.owning_virtual_key_id) {
-    return {
-      scope_type: "virtual_key",
-      project_id: policy.owning_project_id ?? undefined,
-      virtual_key_id: policy.owning_virtual_key_id,
-      exclude_policy_id: policy.id,
-    };
-  }
-  return { scope_type: "org", exclude_policy_id: policy.id };
 }
 
 function formatInterval(intervalUnit: string, intervalCount: string | number) {

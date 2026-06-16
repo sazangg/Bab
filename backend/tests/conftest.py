@@ -34,7 +34,8 @@ from app.modules.guardrails.internal.models import (  # noqa: F401
 from app.modules.keys.internal.models import Project, VirtualKey  # noqa: F401
 from app.modules.policies.internal.models import (  # noqa: F401
     AccessPolicy,
-    AccessPolicyRoute,
+    AccessPolicyPublicModel,
+    AccessPolicyRouteCandidate,
     LimitPolicy,
     PolicyAssignment,
 )

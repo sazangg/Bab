@@ -40,20 +40,20 @@ from app.modules.policies.errors import (
     PolicyValidationError,
 )
 from app.modules.policies.schemas import (
-    AccessPolicyRouteInput,
+    AccessPolicyPublicModelInput,
+    AccessPolicyRouteCandidateInput,
     CreateAccessPolicyRequest,
-    CreateAccessPolicyRouteRequest,
     CreateLimitPolicyRequest,
     CreateLimitPolicyRuleRequest,
     CreatePolicyAssignmentRequest,
     LimitPolicyRuleInput,
     UpdateAccessPolicyRequest,
-    UpdateAccessPolicyRouteRequest,
     UpdateLimitPolicyRequest,
     UpdateLimitPolicyRuleRequest,
     UpdatePolicyAssignmentRequest,
 )
 from app.modules.providers import facade as providers_facade
+from app.modules.providers.internal.models import Provider
 from app.modules.providers.schemas import (
     AddCredentialPoolCredentialRequest,
     CreateCredentialPoolRequest,
@@ -70,6 +70,35 @@ from app.modules.teams.errors import TeamInactiveError
 from app.modules.usage import facade as usage_facade
 from app.modules.usage.schemas import RecordUsage
 
+
+def _public_model_route(
+    *,
+    provider_id,
+    credential_pool_id,
+    model_offering_id,
+    public_model_name: str | None = None,
+    priority: int = 100,
+    weight: int = 100,
+    is_active: bool = True,
+) -> AccessPolicyPublicModelInput:
+    if isinstance(model_offering_id, list):
+        if len(model_offering_id) != 1:
+            raise ValueError("Use one public model input per model offering.")
+        model_offering_id = model_offering_id[0]
+    return AccessPolicyPublicModelInput(
+        public_model_name=public_model_name or str(model_offering_id),
+        routing_mode="single_route",
+        candidates=[
+            AccessPolicyRouteCandidateInput(
+                provider_id=provider_id,
+                credential_pool_id=credential_pool_id,
+                model_offering_id=model_offering_id,
+                priority=priority,
+                weight=weight,
+                is_active=is_active,
+            )
+        ],
+    )
 
 async def _create_project_pool_and_models(db_session: AsyncSession):
     org = Organization(name=f"Policy {uuid4()}", slug=f"policy-{uuid4()}")
@@ -163,12 +192,14 @@ async def _assign_access_and_limit(
     access = await policies_facade.create_access_policy(
         payload=CreateAccessPolicyRequest(
             name=f"{scope_type} access",
-            routes=[
-                AccessPolicyRouteInput(
+            public_models=[
+                _public_model_route(
                     provider_id=provider_id,
                     credential_pool_id=pool_id,
-                    model_offering_ids=model_ids,
+                    model_offering_id=model_id,
+                    public_model_name="fast" if index == 0 else str(model_id),
                 )
+                for index, model_id in enumerate(model_ids)
             ],
         ),
         scope=scope,
@@ -1060,11 +1091,11 @@ async def test_empty_credential_pool_route_is_not_routable(
         await policies_facade.create_access_policy(
             payload=CreateAccessPolicyRequest(
                 name="Empty route access",
-                routes=[
-                    AccessPolicyRouteInput(
+                public_models=[
+                    _public_model_route(
                         provider_id=provider.id,
                         credential_pool_id=empty_pool.id,
-                        model_offering_ids=[fast_model.id],
+                        model_offering_id=[fast_model.id],
                     )
                 ],
             ),
@@ -1091,11 +1122,11 @@ async def test_access_route_validation_blocks_inactive_provider_pool_and_model(
         await policies_facade.create_access_policy(
             payload=CreateAccessPolicyRequest(
                 name="Inactive provider access",
-                routes=[
-                    AccessPolicyRouteInput(
+                public_models=[
+                    _public_model_route(
                         provider_id=provider.id,
                         credential_pool_id=pool.id,
-                        model_offering_ids=[fast_model.id],
+                        model_offering_id=[fast_model.id],
                     )
                 ],
             ),
@@ -1122,11 +1153,11 @@ async def test_access_route_validation_blocks_inactive_provider_pool_and_model(
         await policies_facade.create_access_policy(
             payload=CreateAccessPolicyRequest(
                 name="Inactive pool access",
-                routes=[
-                    AccessPolicyRouteInput(
+                public_models=[
+                    _public_model_route(
                         provider_id=provider.id,
                         credential_pool_id=pool.id,
-                        model_offering_ids=[fast_model.id],
+                        model_offering_id=[fast_model.id],
                     )
                 ],
             ),
@@ -1154,11 +1185,11 @@ async def test_access_route_validation_blocks_inactive_provider_pool_and_model(
         await policies_facade.create_access_policy(
             payload=CreateAccessPolicyRequest(
                 name="Inactive model access",
-                routes=[
-                    AccessPolicyRouteInput(
+                public_models=[
+                    _public_model_route(
                         provider_id=provider.id,
                         credential_pool_id=pool.id,
-                        model_offering_ids=[fast_model.id],
+                        model_offering_id=[fast_model.id],
                     )
                 ],
             ),
@@ -1494,7 +1525,7 @@ async def test_project_access_policy_is_capped_by_team_policy(
         db=db_session,
     )
 
-    assert [model.id for model in accessible_models] == ["gpt-5.4-mini"]
+    assert [model.id for model in accessible_models] == ["fast"]
     with pytest.raises(AccessDeniedError):
         await keys_facade.resolve_access(
             payload=ResolveAccessRequest(
@@ -1516,11 +1547,12 @@ async def test_same_project_access_policies_union_routes(
         access = await policies_facade.create_access_policy(
             payload=CreateAccessPolicyRequest(
                 name=f"Project access {model.provider_model_name}",
-                routes=[
-                    AccessPolicyRouteInput(
+                public_models=[
+                    _public_model_route(
                         provider_id=provider.id,
                         credential_pool_id=pool.id,
-                        model_offering_ids=[model.id],
+                        model_offering_id=[model.id],
+                        public_model_name=model.alias or model.provider_model_name,
                     )
                 ],
             ),
@@ -1552,7 +1584,7 @@ async def test_same_project_access_policies_union_routes(
         db=db_session,
     )
 
-    assert {model.id for model in accessible_models} == {"gpt-5.4-mini", "gpt-5.5"}
+    assert {model.id for model in accessible_models} == {"fast", "gpt-5.5"}
     summary = await keys_facade.get_project_effective_access(
         project_id=project.id,
         scope=scope,
@@ -1578,6 +1610,321 @@ async def test_same_project_access_policies_union_routes(
     ).provider_model == "gpt-5.5"
 
 
+async def test_public_model_name_resolves_to_route_candidate(
+    db_session: AsyncSession,
+) -> None:
+    actor, scope, _team, project, provider, pool, fast_model, _large_model = (
+        await _create_project_pool_and_models(db_session)
+    )
+    access = await policies_facade.create_access_policy(
+        payload=CreateAccessPolicyRequest(
+            name="Logical access",
+            public_models=[
+                AccessPolicyPublicModelInput(
+                    public_model_name="chat-large",
+                    routing_mode="ordered_fallback",
+                    fallback_on=["timeout", "provider_5xx"],
+                    candidates=[
+                        AccessPolicyRouteCandidateInput(
+                            provider_id=provider.id,
+                            credential_pool_id=pool.id,
+                            model_offering_id=fast_model.id,
+                            priority=10,
+                        )
+                    ],
+                )
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    await policies_facade.create_policy_assignment(
+        payload=CreatePolicyAssignmentRequest(
+            policy_type="access",
+            access_policy_id=access.id,
+            scope_type="project",
+            project_id=project.id,
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Logical key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    accessible_models = await keys_facade.list_accessible_models(
+        raw_key=created_key.key,
+        db=db_session,
+    )
+    resolved = await keys_facade.resolve_access(
+        payload=ResolveAccessRequest(raw_key=created_key.key, requested_model="chat-large"),
+        db=db_session,
+    )
+    summary = await keys_facade.get_project_effective_access(
+        project_id=project.id,
+        scope=scope,
+        db=db_session,
+    )
+
+    assert [model.id for model in accessible_models] == ["chat-large"]
+    assert resolved.public_model_name == "chat-large"
+    assert resolved.routing_mode == "ordered_fallback"
+    assert resolved.provider_model == fast_model.provider_model_name
+    assert resolved.route_candidate_id is not None
+    assert resolved.access_policy_route_id is None
+    assert summary.routes[0].public_model_name == "chat-large"
+    assert summary.routes[0].routing_mode == "ordered_fallback"
+    assert summary.routes[0].route_candidate_id == resolved.route_candidate_id
+
+
+async def test_resolve_access_plan_orders_candidates_and_handles_streaming_and_pin(
+    db_session: AsyncSession,
+) -> None:
+    actor, scope, _team, project, provider, pool, fast_model, _large_model = (
+        await _create_project_pool_and_models(db_session)
+    )
+    fallback_provider = await providers_facade.create_provider(
+        payload=CreateProviderRequest(
+            name="Fallback OpenAI",
+            base_url="https://fallback.example.test/v1",
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    fallback_pool = await providers_facade.create_credential_pool(
+        provider_id=fallback_provider.id,
+        payload=CreateCredentialPoolRequest(name="Fallback production"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    fallback_credential = await providers_facade.create_provider_credential(
+        provider_id=fallback_provider.id,
+        payload=CreateProviderCredentialRequest(name="Fallback", api_key="fallback-secret"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    await providers_facade.add_credential_pool_credential(
+        provider_id=fallback_provider.id,
+        pool_id=fallback_pool.id,
+        payload=AddCredentialPoolCredentialRequest(
+            provider_credential_id=fallback_credential.id
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    fallback_model = await providers_facade.create_model_offering(
+        provider_id=fallback_provider.id,
+        payload=CreateModelOfferingRequest(provider_model_name="fallback-chat"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    access = await policies_facade.create_access_policy(
+        payload=CreateAccessPolicyRequest(
+            name="Fallback access",
+            public_models=[
+                AccessPolicyPublicModelInput(
+                    public_model_name="chat-large",
+                    routing_mode="ordered_fallback",
+                    candidates=[
+                        AccessPolicyRouteCandidateInput(
+                            provider_id=provider.id,
+                            credential_pool_id=pool.id,
+                            model_offering_id=fast_model.id,
+                            priority=10,
+                        ),
+                        AccessPolicyRouteCandidateInput(
+                            provider_id=fallback_provider.id,
+                            credential_pool_id=fallback_pool.id,
+                            model_offering_id=fallback_model.id,
+                            priority=20,
+                        ),
+                    ],
+                )
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    await policies_facade.create_policy_assignment(
+        payload=CreatePolicyAssignmentRequest(
+            policy_type="access",
+            access_policy_id=access.id,
+            scope_type="project",
+            project_id=project.id,
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    primary_limits = await policies_facade.create_limit_policy(
+        payload=CreateLimitPolicyRequest(
+            name="Primary provider limit",
+            rules=[
+                LimitPolicyRuleInput(
+                    name="Primary requests",
+                    limit_type="requests",
+                    limit_value=10,
+                    provider_id=provider.id,
+                )
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    fallback_limits = await policies_facade.create_limit_policy(
+        payload=CreateLimitPolicyRequest(
+            name="Fallback provider limit",
+            rules=[
+                LimitPolicyRuleInput(
+                    name="Fallback requests",
+                    limit_type="requests",
+                    limit_value=10,
+                    provider_id=fallback_provider.id,
+                )
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    for limit in (primary_limits, fallback_limits):
+        await policies_facade.create_policy_assignment(
+            payload=CreatePolicyAssignmentRequest(
+                policy_type="limit",
+                limit_policy_id=limit.id,
+                scope_type="project",
+                project_id=project.id,
+            ),
+            scope=scope,
+            db=db_session,
+        )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Fallback key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    plan = await keys_facade.resolve_access_plan(
+        payload=ResolveAccessRequest(raw_key=created_key.key, requested_model="chat-large"),
+        db=db_session,
+    )
+    streaming_plan = await keys_facade.resolve_access_plan(
+        payload=ResolveAccessRequest(
+            raw_key=created_key.key,
+            requested_model="chat-large",
+            streaming=True,
+        ),
+        db=db_session,
+    )
+    pinned_plan = await keys_facade.resolve_access_plan(
+        payload=ResolveAccessRequest(
+            raw_key=created_key.key,
+            requested_model="chat-large",
+            provider_id=fallback_provider.id,
+        ),
+        db=db_session,
+    )
+
+    assert [attempt.provider_id for attempt in plan.attempts] == [
+        provider.id,
+        fallback_provider.id,
+    ]
+    assert [attempt.limit_policy_ids for attempt in plan.attempts] == [
+        [primary_limits.id],
+        [fallback_limits.id],
+    ]
+    assert [candidate.provider_id for candidate in (await keys_facade.list_accessible_models(
+        raw_key=created_key.key,
+        db=db_session,
+    ))[0].candidates] == [provider.id, fallback_provider.id]
+    assert [attempt.provider_id for attempt in streaming_plan.attempts] == [provider.id]
+    assert streaming_plan.fallback_disabled_reason == "streaming_fallback_phase_2"
+    assert [attempt.provider_id for attempt in pinned_plan.attempts] == [fallback_provider.id]
+    assert pinned_plan.provider_pinned is True
+    assert pinned_plan.fallback_disabled_reason == "provider_pinned"
+    resolved_streaming = await keys_facade.resolve_access(
+        payload=ResolveAccessRequest(
+            raw_key=created_key.key,
+            requested_model="chat-large",
+            streaming=True,
+        ),
+        db=db_session,
+    )
+    assert resolved_streaming.fallback_disabled_reason == "streaming_fallback_phase_2"
+
+
+async def test_resolve_access_plan_filters_candidates_by_gateway_endpoint(
+    db_session: AsyncSession,
+) -> None:
+    actor, scope, _team, project, provider, pool, fast_model, _large_model = (
+        await _create_project_pool_and_models(db_session)
+    )
+    provider_row = await db_session.get(Provider, provider.id)
+    assert provider_row is not None
+    provider_row.supported_integration = "anthropic_messages"
+    await db_session.commit()
+    access = await policies_facade.create_access_policy(
+        payload=CreateAccessPolicyRequest(
+            name="Anthropic-only access",
+            public_models=[
+                _public_model_route(
+                    provider_id=provider.id,
+                    credential_pool_id=pool.id,
+                    model_offering_id=fast_model.id,
+                    public_model_name="chat-large",
+                )
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    await policies_facade.create_policy_assignment(
+        payload=CreatePolicyAssignmentRequest(
+            policy_type="access",
+            access_policy_id=access.id,
+            scope_type="project",
+            project_id=project.id,
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Endpoint key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    with pytest.raises(AccessDeniedError):
+        await keys_facade.resolve_access_plan(
+            payload=ResolveAccessRequest(
+                raw_key=created_key.key,
+                requested_model="chat-large",
+                gateway_endpoint="chat_completions",
+            ),
+            db=db_session,
+        )
+    anthropic_plan = await keys_facade.resolve_access_plan(
+        payload=ResolveAccessRequest(
+            raw_key=created_key.key,
+            requested_model="chat-large",
+            gateway_endpoint="anthropic_messages",
+        ),
+        db=db_session,
+    )
+    assert [attempt.provider_id for attempt in anthropic_plan.attempts] == [provider.id]
+
+
 async def test_access_narrows_through_org_team_project_and_virtual_key(
     db_session: AsyncSession,
 ) -> None:
@@ -1587,12 +1934,19 @@ async def test_access_narrows_through_org_team_project_and_virtual_key(
     org_access = await policies_facade.create_access_policy(
         payload=CreateAccessPolicyRequest(
             name="Org access",
-            routes=[
-                AccessPolicyRouteInput(
-                    provider_id=provider.id,
-                    credential_pool_id=pool.id,
-                    model_offering_ids=[fast_model.id, large_model.id],
-                )
+            public_models=[
+                    _public_model_route(
+                        provider_id=provider.id,
+                        credential_pool_id=pool.id,
+                        model_offering_id=[fast_model.id],
+                        public_model_name="fast",
+                    ),
+                    _public_model_route(
+                        provider_id=provider.id,
+                        credential_pool_id=pool.id,
+                        model_offering_id=[large_model.id],
+                        public_model_name="gpt-5.5",
+                    ),
             ],
         ),
         scope=scope,
@@ -1601,12 +1955,13 @@ async def test_access_narrows_through_org_team_project_and_virtual_key(
     team_access = await policies_facade.create_access_policy(
         payload=CreateAccessPolicyRequest(
             name="Team access",
-            routes=[
-                AccessPolicyRouteInput(
-                    provider_id=provider.id,
-                    credential_pool_id=pool.id,
-                    model_offering_ids=[fast_model.id],
-                )
+            public_models=[
+                    _public_model_route(
+                        provider_id=provider.id,
+                        credential_pool_id=pool.id,
+                        model_offering_id=[fast_model.id],
+                        public_model_name="fast",
+                    )
             ],
         ),
         scope=scope,
@@ -1615,12 +1970,19 @@ async def test_access_narrows_through_org_team_project_and_virtual_key(
     project_access = await policies_facade.create_access_policy(
         payload=CreateAccessPolicyRequest(
             name="Project tries to broaden",
-            routes=[
-                AccessPolicyRouteInput(
-                    provider_id=provider.id,
-                    credential_pool_id=pool.id,
-                    model_offering_ids=[fast_model.id, large_model.id],
-                )
+            public_models=[
+                    _public_model_route(
+                        provider_id=provider.id,
+                        credential_pool_id=pool.id,
+                        model_offering_id=[fast_model.id],
+                        public_model_name="fast",
+                    ),
+                    _public_model_route(
+                        provider_id=provider.id,
+                        credential_pool_id=pool.id,
+                        model_offering_id=[large_model.id],
+                        public_model_name="gpt-5.5",
+                    ),
             ],
         ),
         scope=scope,
@@ -1629,12 +1991,13 @@ async def test_access_narrows_through_org_team_project_and_virtual_key(
     key_access = await policies_facade.create_access_policy(
         payload=CreateAccessPolicyRequest(
             name="Key access",
-            routes=[
-                AccessPolicyRouteInput(
-                    provider_id=provider.id,
-                    credential_pool_id=pool.id,
-                    model_offering_ids=[fast_model.id],
-                )
+            public_models=[
+                    _public_model_route(
+                        provider_id=provider.id,
+                        credential_pool_id=pool.id,
+                        model_offering_id=[fast_model.id],
+                        public_model_name="fast",
+                    )
             ],
         ),
         scope=scope,
@@ -1690,7 +2053,7 @@ async def test_access_narrows_through_org_team_project_and_virtual_key(
         db=db_session,
     )
 
-    assert [model.id for model in key_models] == ["gpt-5.4-mini"]
+    assert [model.id for model in key_models] == ["fast"]
     assert key_models[0].provider_name == provider.name
     assert key_models[0].pool_name == pool.name
     assert key_models[0].access_policy_name == key_access.name
@@ -1723,11 +2086,12 @@ async def test_multiple_parent_and_child_policies_do_not_broaden_access(
         access = await policies_facade.create_access_policy(
             payload=CreateAccessPolicyRequest(
                 name=name,
-                routes=[
-                    AccessPolicyRouteInput(
+                public_models=[
+                    _public_model_route(
                         provider_id=provider.id,
                         credential_pool_id=pool.id,
-                        model_offering_ids=[model.id],
+                        model_offering_id=[model.id],
+                        public_model_name=model.alias or model.provider_model_name,
                     )
                 ],
             ),
@@ -1774,11 +2138,12 @@ async def test_policy_assignment_validates_targets_and_rejects_duplicate_active_
     access = await policies_facade.create_access_policy(
         payload=CreateAccessPolicyRequest(
             name="Scoped access",
-            routes=[
-                AccessPolicyRouteInput(
+            public_models=[
+                _public_model_route(
                     provider_id=provider.id,
                     credential_pool_id=pool.id,
-                    model_offering_ids=[fast_model.id],
+                    model_offering_id=[fast_model.id],
+                    public_model_name="fast",
                 )
             ],
         ),
@@ -1903,11 +2268,12 @@ async def test_reused_limit_policy_counts_per_assignment(db_session: AsyncSessio
     access = await policies_facade.create_access_policy(
         payload=CreateAccessPolicyRequest(
             name="Shared access",
-            routes=[
-                AccessPolicyRouteInput(
+            public_models=[
+                _public_model_route(
                     provider_id=provider.id,
                     credential_pool_id=pool.id,
-                    model_offering_ids=[fast_model.id],
+                    model_offering_id=[fast_model.id],
+                    public_model_name="fast",
                 )
             ],
         ),
@@ -2024,7 +2390,17 @@ async def test_policy_activity_events_cover_mutations(db_session: AsyncSession) 
         await _create_project_pool_and_models(db_session)
     )
     access = await policies_facade.create_access_policy(
-        payload=CreateAccessPolicyRequest(name="Activity access"),
+        payload=CreateAccessPolicyRequest(
+            name="Activity access",
+            public_models=[
+                _public_model_route(
+                    provider_id=provider.id,
+                    credential_pool_id=pool.id,
+                    model_offering_id=[fast_model.id],
+                    public_model_name="fast",
+                )
+            ],
+        ),
         actor=actor,
         scope=scope,
         db=db_session,
@@ -2032,24 +2408,6 @@ async def test_policy_activity_events_cover_mutations(db_session: AsyncSession) 
     access = await policies_facade.update_access_policy(
         policy_id=access.id,
         payload=UpdateAccessPolicyRequest(description="updated"),
-        actor=actor,
-        scope=scope,
-        db=db_session,
-    )
-    route = await policies_facade.create_access_policy_route(
-        policy_id=access.id,
-        payload=CreateAccessPolicyRouteRequest(
-            provider_id=provider.id,
-            credential_pool_id=pool.id,
-            model_offering_ids=[fast_model.id],
-        ),
-        actor=actor,
-        scope=scope,
-        db=db_session,
-    )
-    await policies_facade.update_access_policy_route(
-        route_id=route.id,
-        payload=UpdateAccessPolicyRouteRequest(priority=25),
         actor=actor,
         scope=scope,
         db=db_session,
@@ -2116,12 +2474,6 @@ async def test_policy_activity_events_cover_mutations(db_session: AsyncSession) 
         scope=scope,
         db=db_session,
     )
-    await policies_facade.delete_access_policy_route(
-        route_id=route.id,
-        actor=actor,
-        scope=scope,
-        db=db_session,
-    )
     await policies_facade.delete_limit_policy(
         policy_id=limit.id,
         actor=actor,
@@ -2147,9 +2499,6 @@ async def test_policy_activity_events_cover_mutations(db_session: AsyncSession) 
         "access_policy.created",
         "access_policy.updated",
         "access_policy.deleted",
-        "access_route.created",
-        "access_route.updated",
-        "access_route.deleted",
         "limit_policy.created",
         "limit_policy.updated",
         "limit_policy.deleted",
@@ -2171,11 +2520,11 @@ async def test_policy_impact_reports_affected_targets_and_unusable_keys(
     access = await policies_facade.create_access_policy(
         payload=CreateAccessPolicyRequest(
             name="Project access",
-            routes=[
-                AccessPolicyRouteInput(
+            public_models=[
+                _public_model_route(
                     provider_id=provider.id,
                     credential_pool_id=pool.id,
-                    model_offering_ids=[fast_model.id],
+                    model_offering_id=[fast_model.id],
                 )
             ],
         ),

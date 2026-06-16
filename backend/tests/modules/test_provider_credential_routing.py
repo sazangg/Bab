@@ -859,6 +859,7 @@ async def test_provider_connection_failure_returns_upstream_error(
             )
 
     assert exc_info.value.status_code == 502
+    assert exc_info.value.failure_reason == "connection_failed"
     assert exc_info.value.body == {"error": "provider upstream connection failed"}
 
 
@@ -1127,6 +1128,7 @@ async def test_provider_failure_does_not_route_to_another_provider(
             )
 
     assert exc_info.value.status_code == 502
+    assert exc_info.value.failure_reason == "provider_5xx"
     assert seen_urls == ["https://api.example.test/v1/chat/completions"]
 
 
@@ -1201,6 +1203,7 @@ async def test_circuit_breaker_opens_after_configured_failure_rate(
 
     assert attempts == 2
     assert exc_info.value.status_code == 503
+    assert exc_info.value.failure_reason == "circuit_open"
     assert exc_info.value.body == {"error": "provider circuit is open"}
 
 

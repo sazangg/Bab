@@ -52,7 +52,7 @@ import {
 } from "@/features/policies/components/LimitRuleFilterFields";
 import type {
   AccessPolicyResponse,
-  AccessPolicyRouteInput,
+  AccessPolicyPublicModelInput,
   AccessPolicyProviderOption,
   LimitPolicyResponse,
   LimitPolicyRuleInput,
@@ -75,13 +75,17 @@ type DraftLimitRule = {
   intervalCount: string;
   filters: LimitRuleFilterValue;
 };
+type DraftAccessModel = {
+  offeringId: string;
+  publicModelName: string;
+};
 type DraftAccessRoute = {
   id: string;
   providerId: string;
   providerLabel: string;
   poolId: string;
   poolLabel: string;
-  modelIds: string[];
+  models: DraftAccessModel[];
 };
 
 const limitTypeOptions = [
@@ -479,17 +483,26 @@ function ScopedPolicySheet({
     filters: ruleFilters,
   });
   const currentLimitRuleHasLimits = hasLimitRuleValues(currentLimitRule());
+  const pools = accessOptions.find((provider) => provider.id === providerId)?.pools ?? [];
+  const models = pools.find((pool) => pool.id === poolId)?.models ?? [];
+  const effectiveSelectedModels = selectedModels;
   const currentAccessRoute = (): DraftAccessRoute | null => {
     const provider = accessOptions.find((option) => option.id === providerId);
     const pool = pools.find((option) => option.id === poolId);
-    if (!provider || !pool || effectiveSelectedModels.length === 0) return null;
+    const routeModels = models
+      .filter((model) => effectiveSelectedModels.includes(model.id))
+      .map((model) => ({
+        offeringId: model.id,
+        publicModelName: model.provider_model_name,
+      }));
+    if (!provider || !pool || routeModels.length === 0) return null;
     return {
       id: crypto.randomUUID(),
       providerId,
       providerLabel: provider.display_name,
       poolId,
       poolLabel: pool.name,
-      modelIds: effectiveSelectedModels,
+      models: routeModels,
     };
   };
   const accessRoutesForSubmit = () => {
@@ -525,7 +538,7 @@ function ScopedPolicySheet({
             access_policy: {
               name,
               description: description || null,
-              routes: routes.map(toAccessRouteInput),
+              public_models: routes.flatMap(toPublicModelInputs),
             },
             ...assignTarget,
           },
@@ -539,8 +552,6 @@ function ScopedPolicySheet({
       toast.error("Policy could not be created.");
     }
   };
-  const pools = accessOptions.find((provider) => provider.id === providerId)?.pools ?? [];
-  const effectiveSelectedModels = selectedModels;
   const canSubmit =
     Boolean(name.trim()) &&
     ((kind === "limit" && (draftRules.length > 0 || currentLimitRuleHasLimits)) ||
@@ -696,8 +707,8 @@ function ScopedPolicySheet({
                       className="flex items-center justify-between gap-3 rounded-md bg-muted/40 px-3 py-2 text-xs"
                     >
                       <span className="min-w-0 truncate">
-                        {route.providerLabel} / {route.poolLabel} · {route.modelIds.length} model
-                        {route.modelIds.length === 1 ? "" : "s"}
+                        {route.providerLabel} / {route.poolLabel} · {route.models.length} public model
+                        {route.models.length === 1 ? "" : "s"}
                       </span>
                       <Button
                         type="button"
@@ -741,7 +752,7 @@ function ScopedPolicySheet({
                 disabled={!providerId || !poolId || effectiveSelectedModels.length === 0}
               >
                 <Plus />
-                Add route
+                Add candidates
               </Button>
             </div>
           ) : null}
@@ -778,12 +789,24 @@ function toLimitRuleInput(rule: DraftLimitRule): LimitPolicyRuleInput {
   };
 }
 
-function toAccessRouteInput(route: DraftAccessRoute): AccessPolicyRouteInput {
-  return {
-    provider_id: route.providerId,
-    credential_pool_id: route.poolId,
-    model_offering_ids: route.modelIds,
-  };
+function toPublicModelInputs(route: DraftAccessRoute): AccessPolicyPublicModelInput[] {
+  return route.models.map((model, index) => ({
+    public_model_name: model.publicModelName,
+    routing_mode: "single_route",
+    fallback_on: [],
+    max_route_attempts: 1,
+    is_active: true,
+    candidates: [
+      {
+        provider_id: route.providerId,
+        credential_pool_id: route.poolId,
+        model_offering_id: model.offeringId,
+        priority: index + 1,
+        weight: 1,
+        is_active: true,
+      },
+    ],
+  }));
 }
 
 function formatDraftLimitRule(rule: DraftLimitRule) {
@@ -809,13 +832,13 @@ function formatInterval(intervalUnit: string, intervalCount: string | number) {
 }
 
 function summarizeAccessPolicy(policy: AccessPolicyResponse | LimitPolicyResponse) {
-  if (!("routes" in policy)) return "";
-  const routeCount = policy.routes?.length ?? 0;
-  const modelCount = (policy.routes ?? []).reduce(
-    (total, route) => total + route.model_offering_ids.length,
+  if (!("public_models" in policy)) return "";
+  const publicModelCount = policy.public_models?.length ?? 0;
+  const candidateCount = (policy.public_models ?? []).reduce(
+    (total, publicModel) => total + (publicModel.candidates ?? []).length,
     0,
   );
-  return `${routeCount} route${routeCount === 1 ? "" : "s"} · ${modelCount} model${modelCount === 1 ? "" : "s"}`;
+  return `${publicModelCount} public model${publicModelCount === 1 ? "" : "s"} · ${candidateCount} candidate${candidateCount === 1 ? "" : "s"}`;
 }
 
 function summarizeLimitPolicy(policy: AccessPolicyResponse | LimitPolicyResponse) {

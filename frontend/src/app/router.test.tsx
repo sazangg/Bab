@@ -50,7 +50,7 @@ describe("AppRoutes", () => {
   it("renders the dashboard home route", async () => {
     renderRoute("/");
 
-    expect(await screen.findByRole("heading", { name: "Gateway home" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Home" })).toBeInTheDocument();
   });
 
   it("redirects unknown routes to login", async () => {

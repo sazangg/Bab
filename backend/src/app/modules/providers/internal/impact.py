@@ -4,7 +4,12 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.policies.internal.models import AccessPolicy, AccessPolicyRoute, LimitPolicyRule
+from app.modules.policies.internal.models import (
+    AccessPolicy,
+    AccessPolicyPublicModel,
+    AccessPolicyRouteCandidate,
+    LimitPolicyRule,
+)
 from app.modules.providers.internal.models import (
     CredentialPool,
     CredentialPoolCredential,
@@ -27,13 +32,21 @@ async def get_provider_impact(
     db: AsyncSession,
 ) -> ProviderImpactResponse:
     policy_rows = await db.execute(
-        select(AccessPolicy.id, AccessPolicy.name, AccessPolicyRoute.id)
-        .join(AccessPolicyRoute, AccessPolicyRoute.access_policy_id == AccessPolicy.id)
+        select(AccessPolicy.id, AccessPolicy.name, AccessPolicyRouteCandidate.id)
+        .join(
+            AccessPolicyPublicModel,
+            AccessPolicyPublicModel.access_policy_id == AccessPolicy.id,
+        )
+        .join(
+            AccessPolicyRouteCandidate,
+            AccessPolicyRouteCandidate.public_model_id == AccessPolicyPublicModel.id,
+        )
         .where(
             AccessPolicy.org_id == org_id,
-            AccessPolicyRoute.provider_id == provider_id,
+            AccessPolicyRouteCandidate.provider_id == provider_id,
             AccessPolicy.is_active.is_(True),
-            AccessPolicyRoute.is_active.is_(True),
+            AccessPolicyPublicModel.is_active.is_(True),
+            AccessPolicyRouteCandidate.is_active.is_(True),
         )
         .order_by(AccessPolicy.name)
     )
@@ -135,7 +148,9 @@ async def get_credential_impact(*, org_id: UUID, credential: ProviderCredential,
 
 async def get_pool_impact(*, org_id: UUID, pool: CredentialPool, db: AsyncSession):
     policies = await _policy_routes(
-        org_id=org_id, filter_clause=AccessPolicyRoute.credential_pool_id == pool.id, db=db
+        org_id=org_id,
+        filter_clause=AccessPolicyRouteCandidate.credential_pool_id == pool.id,
+        db=db,
     )
     rules = int(
         await db.scalar(
@@ -167,18 +182,26 @@ async def get_pool_impact(*, org_id: UUID, pool: CredentialPool, db: AsyncSessio
 
 async def get_model_impact(*, org_id: UUID, model: ModelOffering, db: AsyncSession):
     rows = await db.execute(
-        select(AccessPolicy, AccessPolicyRoute)
-        .join(AccessPolicyRoute, AccessPolicyRoute.access_policy_id == AccessPolicy.id)
+        select(AccessPolicy, AccessPolicyRouteCandidate)
+        .join(
+            AccessPolicyPublicModel,
+            AccessPolicyPublicModel.access_policy_id == AccessPolicy.id,
+        )
+        .join(
+            AccessPolicyRouteCandidate,
+            AccessPolicyRouteCandidate.public_model_id == AccessPolicyPublicModel.id,
+        )
         .where(
             AccessPolicy.org_id == org_id,
             AccessPolicy.is_active.is_(True),
-            AccessPolicyRoute.is_active.is_(True),
+            AccessPolicyPublicModel.is_active.is_(True),
+            AccessPolicyRouteCandidate.is_active.is_(True),
+            AccessPolicyRouteCandidate.model_offering_id == model.id,
         )
     )
     policies = [
-        ProviderImpactPolicy(id=policy.id, name=policy.name, route_id=route.id)
-        for policy, route in rows
-        if str(model.id) in (route.model_offering_ids or [])
+        ProviderImpactPolicy(id=policy.id, name=policy.name, route_id=candidate.id)
+        for policy, candidate in rows
     ]
     rules = int(
         await db.scalar(
@@ -281,12 +304,20 @@ async def _provider_is_routable(
 
 async def _policy_routes(*, org_id: UUID, filter_clause, db: AsyncSession):
     rows = await db.execute(
-        select(AccessPolicy.id, AccessPolicy.name, AccessPolicyRoute.id)
-        .join(AccessPolicyRoute, AccessPolicyRoute.access_policy_id == AccessPolicy.id)
+        select(AccessPolicy.id, AccessPolicy.name, AccessPolicyRouteCandidate.id)
+        .join(
+            AccessPolicyPublicModel,
+            AccessPolicyPublicModel.access_policy_id == AccessPolicy.id,
+        )
+        .join(
+            AccessPolicyRouteCandidate,
+            AccessPolicyRouteCandidate.public_model_id == AccessPolicyPublicModel.id,
+        )
         .where(
             AccessPolicy.org_id == org_id,
             AccessPolicy.is_active.is_(True),
-            AccessPolicyRoute.is_active.is_(True),
+            AccessPolicyPublicModel.is_active.is_(True),
+            AccessPolicyRouteCandidate.is_active.is_(True),
             filter_clause,
         )
     )

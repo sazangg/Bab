@@ -8,9 +8,7 @@ from app.modules.policies.internal import service
 from app.modules.policies.schemas import (
     AccessPolicyOptionsResponse,
     AccessPolicyResponse,
-    AccessPolicyRouteResponse,
     CreateAccessPolicyRequest,
-    CreateAccessPolicyRouteRequest,
     CreateLimitPolicyRequest,
     CreateLimitPolicyRuleRequest,
     CreatePolicyAssignmentRequest,
@@ -21,7 +19,6 @@ from app.modules.policies.schemas import (
     PolicyImpactResponse,
     ScopedPolicyAssignmentResponse,
     UpdateAccessPolicyRequest,
-    UpdateAccessPolicyRouteRequest,
     UpdateLimitPolicyRequest,
     UpdateLimitPolicyRuleRequest,
     UpdatePolicyAssignmentRequest,
@@ -75,38 +72,6 @@ async def delete_access_policy(
     await service.delete_access_policy(policy_id=policy_id, scope=scope, db=db, actor=actor)
 
 
-async def create_access_policy_route(
-    *,
-    policy_id: UUID,
-    payload: CreateAccessPolicyRouteRequest,
-    scope: Scope,
-    db: AsyncSession,
-    actor: AuthenticatedUser | None = None,
-) -> AccessPolicyRouteResponse:
-    return await service.create_access_policy_route(
-        policy_id=policy_id, payload=payload, scope=scope, db=db, actor=actor
-    )
-
-
-async def update_access_policy_route(
-    *,
-    route_id: UUID,
-    payload: UpdateAccessPolicyRouteRequest,
-    scope: Scope,
-    db: AsyncSession,
-    actor: AuthenticatedUser | None = None,
-) -> AccessPolicyRouteResponse:
-    return await service.update_access_policy_route(
-        route_id=route_id, payload=payload, scope=scope, db=db, actor=actor
-    )
-
-
-async def delete_access_policy_route(
-    *, route_id: UUID, scope: Scope, db: AsyncSession, actor: AuthenticatedUser | None = None
-) -> None:
-    await service.delete_access_policy_route(route_id=route_id, scope=scope, db=db, actor=actor)
-
-
 async def get_access_policy_impact(
     *,
     policy_id: UUID,
@@ -116,18 +81,6 @@ async def get_access_policy_impact(
 ) -> PolicyImpactResponse:
     return await service.get_access_policy_impact(
         policy_id=policy_id, scope=scope, db=db, actor=actor
-    )
-
-
-async def get_access_policy_route_impact(
-    *,
-    route_id: UUID,
-    scope: Scope,
-    db: AsyncSession,
-    actor: AuthenticatedUser | None = None,
-) -> PolicyImpactResponse:
-    return await service.get_access_policy_route_impact(
-        route_id=route_id, scope=scope, db=db, actor=actor
     )
 
 

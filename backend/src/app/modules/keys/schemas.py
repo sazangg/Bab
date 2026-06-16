@@ -141,6 +141,10 @@ class EffectiveRouteSummary(BaseModel):
     provider_id: UUID
     credential_pool_id: UUID
     model_offering_id: UUID
+    public_model_id: UUID | None = None
+    route_candidate_id: UUID | None = None
+    public_model_name: str | None = None
+    routing_mode: str | None = None
     provider_model: str
     alias: str | None = None
     access_policy_id: UUID | None = None
@@ -196,6 +200,9 @@ class VirtualKeyRevokeImpactResponse(BaseModel):
 class ResolveAccessRequest(BaseModel):
     raw_key: str = Field(min_length=1)
     requested_model: str = Field(min_length=1, max_length=255)
+    provider_id: UUID | None = None
+    streaming: bool = False
+    gateway_endpoint: str | None = None
 
 
 class ResolvedLimitPolicy(BaseModel):
@@ -215,7 +222,12 @@ class ResolvedAccess(BaseModel):
     team_id: UUID
     project_id: UUID
     access_policy_id: UUID
-    access_policy_route_id: UUID
+    access_policy_route_id: UUID | None
+    public_model_id: UUID | None = None
+    route_candidate_id: UUID | None = None
+    primary_route_candidate_id: UUID | None = None
+    public_model_name: str | None = None
+    routing_mode: str | None = None
     model_offering_id: UUID
     limit_policy_ids: list[UUID]
     limit_policies: list[ResolvedLimitPolicy]
@@ -227,6 +239,62 @@ class ResolvedAccess(BaseModel):
     provider_model: str
     input_price_per_million_tokens: int | None = None
     output_price_per_million_tokens: int | None = None
+    fallback_disabled_reason: str | None = None
+
+
+class ResolvedRouteAttempt(BaseModel):
+    org_id: UUID
+    team_id: UUID
+    project_id: UUID
+    access_policy_id: UUID
+    access_policy_route_id: UUID | None
+    public_model_id: UUID
+    route_candidate_id: UUID
+    public_model_name: str
+    routing_mode: str
+    model_offering_id: UUID
+    virtual_key_id: UUID
+    provider_id: UUID
+    pool_id: UUID
+    provider_key_id: UUID | None = None
+    requested_model: str
+    provider_model: str
+    routing_attempt_index: int
+    primary_route_candidate_id: UUID
+    input_price_per_million_tokens: int | None = None
+    output_price_per_million_tokens: int | None = None
+    limit_policy_ids: list[UUID] = Field(default_factory=list)
+    limit_policies: list[ResolvedLimitPolicy] = Field(default_factory=list)
+
+
+class ResolvedAccessPlan(BaseModel):
+    org_id: UUID
+    team_id: UUID
+    project_id: UUID
+    virtual_key_id: UUID
+    requested_model: str
+    public_model_name: str
+    routing_mode: str
+    fallback_on: list[str] = Field(default_factory=list)
+    max_route_attempts: int | None = None
+    provider_pinned: bool = False
+    fallback_disabled_reason: str | None = None
+    limit_policy_ids: list[UUID]
+    limit_policies: list[ResolvedLimitPolicy]
+    attempts: list[ResolvedRouteAttempt]
+
+
+class AccessibleModelCandidate(BaseModel):
+    provider_id: UUID
+    provider_name: str
+    pool_id: UUID
+    pool_name: str
+    model_offering_id: UUID
+    provider_model: str
+    route_candidate_id: UUID | None = None
+    access_policy_route_id: UUID | None = None
+    priority: int
+    weight: int
 
 
 class AccessibleModel(BaseModel):
@@ -239,7 +307,12 @@ class AccessibleModel(BaseModel):
     access_policy_id: UUID | None = None
     access_policy_name: str | None = None
     access_policy_route_id: UUID | None = None
+    public_model_id: UUID | None = None
+    route_candidate_id: UUID | None = None
+    public_model_name: str | None = None
+    routing_mode: str | None = None
     pool_id: UUID
     pool_name: str
     source_scope: str | None = None
     alias: str | None = None
+    candidates: list[AccessibleModelCandidate] = Field(default_factory=list)

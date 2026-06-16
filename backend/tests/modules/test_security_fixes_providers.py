@@ -6,7 +6,6 @@ from app.core.ssrf import SsrfValidationError, assert_public_url
 from app.modules.providers.errors import ProviderUpstreamError
 from app.modules.providers.internal.service import _call_with_retries
 
-
 # --- #1 SSRF: provider base_url must resolve to a public address -------------
 
 
@@ -59,4 +58,5 @@ async def test_call_with_retries_does_not_replay_on_timeout() -> None:
             retry_policy=retry_policy,
         )
     assert excinfo.value.status_code == 504
+    assert excinfo.value.failure_reason == "timeout"
     assert calls == 1

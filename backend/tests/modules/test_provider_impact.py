@@ -8,7 +8,8 @@ from app.modules.auth.internal.models import Organization
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.policies.internal.models import (
     AccessPolicy,
-    AccessPolicyRoute,
+    AccessPolicyPublicModel,
+    AccessPolicyRouteCandidate,
     LimitPolicy,
     LimitPolicyRule,
 )
@@ -66,12 +67,21 @@ async def test_provider_impact_detects_policy_routes_and_recent_usage(
         pool_id=pool.id,
         provider_credential_id=credential.id,
     )
-    route = AccessPolicyRoute(
+    public_model = AccessPolicyPublicModel(
         org_id=org.id,
         access_policy_id=policy.id,
+        public_model_name="model-a",
+        routing_mode="single_route",
+        fallback_on=[],
+    )
+    db_session.add(public_model)
+    await db_session.flush()
+    candidate = AccessPolicyRouteCandidate(
+        org_id=org.id,
+        public_model_id=public_model.id,
         provider_id=provider.id,
         credential_pool_id=pool.id,
-        model_offering_ids=[str(model.id)],
+        model_offering_id=model.id,
     )
     rule = LimitPolicyRule(
         org_id=org.id,
@@ -96,7 +106,7 @@ async def test_provider_impact_detects_policy_routes_and_recent_usage(
         created_at=datetime.now(UTC),
     )
     usage.provider_credential_id = credential.id
-    db_session.add_all([membership, route, rule, usage])
+    db_session.add_all([membership, candidate, rule, usage])
     await db_session.commit()
 
     impact = await providers_facade.get_provider_impact(
@@ -106,7 +116,7 @@ async def test_provider_impact_detects_policy_routes_and_recent_usage(
     )
 
     assert [(item.name, item.route_id) for item in impact.access_policies] == [
-        ("Production access", route.id)
+        ("Production access", candidate.id)
     ]
     assert impact.active_limit_rule_count == 1
     assert impact.active_pool_count == 1
@@ -136,8 +146,8 @@ async def test_provider_impact_detects_policy_routes_and_recent_usage(
     assert credential_impact.active_pool_membership_count == 1
     assert credential_impact.recent_request_count == 1
     assert credential_impact.leaves_provider_unroutable is True
-    assert [item.route_id for item in pool_impact.access_policies] == [route.id]
-    assert [item.route_id for item in model_impact.access_policies] == [route.id]
+    assert [item.route_id for item in pool_impact.access_policies] == [candidate.id]
+    assert [item.route_id for item in model_impact.access_policies] == [candidate.id]
     assert model_impact.recent_request_count == 1
 
 

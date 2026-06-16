@@ -15,7 +15,7 @@ from app.modules.policies.errors import (
 from app.modules.policies.internal import repository
 from app.modules.policies.internal.models import (
     AccessPolicy,
-    AccessPolicyRoute,
+    AccessPolicyPublicModel,
     LimitPolicy,
     LimitPolicyRule,
     PolicyAssignment,
@@ -25,11 +25,12 @@ from app.modules.policies.schemas import (
     AccessPolicyOptionsResponse,
     AccessPolicyPoolOption,
     AccessPolicyProviderOption,
+    AccessPolicyPublicModelInput,
+    AccessPolicyPublicModelResponse,
     AccessPolicyResponse,
-    AccessPolicyRouteInput,
-    AccessPolicyRouteResponse,
+    AccessPolicyRouteCandidateInput,
+    AccessPolicyRouteCandidateResponse,
     CreateAccessPolicyRequest,
-    CreateAccessPolicyRouteRequest,
     CreateLimitPolicyRequest,
     CreateLimitPolicyRuleRequest,
     CreatePolicyAssignmentRequest,
@@ -43,13 +44,20 @@ from app.modules.policies.schemas import (
     PolicyImpactVirtualKey,
     ScopedPolicyAssignmentResponse,
     UpdateAccessPolicyRequest,
-    UpdateAccessPolicyRouteRequest,
     UpdateLimitPolicyRequest,
     UpdateLimitPolicyRuleRequest,
     UpdatePolicyAssignmentRequest,
 )
 from app.modules.providers import facade as providers_facade
 from app.modules.providers.errors import ProviderNotFoundError
+
+_FALLBACKABLE_PROVIDER_REASONS = {
+    "timeout",
+    "connection_failed",
+    "circuit_open",
+    "rate_limited",
+    "provider_5xx",
+}
 
 
 async def list_access_policies(
@@ -83,6 +91,7 @@ async def create_access_policy(
     db: AsyncSession,
     actor: AuthenticatedUser | None = None,
 ) -> AccessPolicyResponse:
+    await _validate_access_policy_public_models(payload.public_models, scope=scope, db=db)
     async with transaction(db):
         policy = await repository.create_access_policy(
             org_id=scope.org_id,
@@ -91,17 +100,11 @@ async def create_access_policy(
             is_active=payload.is_active,
             db=db,
         )
-        for route in payload.routes:
-            await _validate_access_route(route=route, scope=scope, db=db)
-            await repository.create_access_policy_route(
-                org_id=scope.org_id,
-                access_policy_id=policy.id,
-                provider_id=route.provider_id,
-                credential_pool_id=route.credential_pool_id,
-                model_offering_ids=[str(model_id) for model_id in route.model_offering_ids],
-                priority=route.priority,
-                weight=route.weight,
-                is_active=route.is_active,
+        for public_model in payload.public_models:
+            await _create_public_model_from_input(
+                policy_id=policy.id,
+                public_model=public_model,
+                scope=scope,
                 db=db,
             )
         await _record_policy_activity(
@@ -135,6 +138,39 @@ async def update_access_policy(
             policy.description = payload.description
         if payload.is_active is not None:
             policy.is_active = payload.is_active
+        if payload.public_models is not None:
+            await _validate_access_policy_public_models(
+                payload.public_models, scope=scope, db=db
+            )
+            await _validate_update_public_model_assignment_conflicts(
+                policy_id=policy.id,
+                public_models=payload.public_models,
+                scope=scope,
+                db=db,
+            )
+            if policy.owning_scope_type:
+                await _validate_scoped_access_policy_narrowing(
+                    public_models=payload.public_models,
+                    scope_type=policy.owning_scope_type,
+                    team_id=policy.owning_team_id,
+                    project_id=policy.owning_project_id,
+                    virtual_key_id=policy.owning_virtual_key_id,
+                    exclude_policy_id=policy.id,
+                    scope=scope,
+                    db=db,
+                )
+            await repository.delete_access_policy_public_models(
+                org_id=scope.org_id,
+                access_policy_id=policy.id,
+                db=db,
+            )
+            for public_model in payload.public_models:
+                await _create_public_model_from_input(
+                    policy_id=policy.id,
+                    public_model=public_model,
+                    scope=scope,
+                    db=db,
+                )
         await db.flush()
         await _record_policy_activity(
             actor=actor,
@@ -169,153 +205,6 @@ async def delete_access_policy(
             action="access_policy.deleted",
             message=f"Deleted access policy {policy.name}.",
             metadata={"access_policy_id": str(policy.id)},
-            db=db,
-        )
-
-
-async def create_access_policy_route(
-    *,
-    policy_id: UUID,
-    payload: CreateAccessPolicyRouteRequest,
-    scope: Scope,
-    db: AsyncSession,
-    actor: AuthenticatedUser | None = None,
-) -> AccessPolicyRouteResponse:
-    async with transaction(db):
-        policy = await _get_access_policy_or_raise(policy_id=policy_id, scope=scope, db=db)
-        if not await _can_manage_policy_definition(
-            policy=policy, actor=actor, scope=scope, db=db
-        ):
-            raise PolicyPermissionError
-        await _validate_access_route(route=payload, scope=scope, db=db)
-        await _validate_scoped_access_policy_routes(
-            policy=policy,
-            routes=[payload],
-            scope=scope,
-            db=db,
-        )
-        route = await repository.create_access_policy_route(
-            org_id=scope.org_id,
-            access_policy_id=policy_id,
-            provider_id=payload.provider_id,
-            credential_pool_id=payload.credential_pool_id,
-            model_offering_ids=[str(model_id) for model_id in payload.model_offering_ids],
-            priority=payload.priority,
-            weight=payload.weight,
-            is_active=payload.is_active,
-            db=db,
-        )
-        await _record_policy_activity(
-            actor=actor,
-            scope=scope,
-            action="access_route.created",
-            message="Created access policy route.",
-            metadata={
-                "access_policy_id": str(policy_id),
-                "access_policy_route_id": str(route.id),
-                "provider_id": str(route.provider_id),
-                "credential_pool_id": str(route.credential_pool_id),
-            },
-            db=db,
-        )
-    return AccessPolicyRouteResponse.model_validate(route)
-
-
-async def update_access_policy_route(
-    *,
-    route_id: UUID,
-    payload: UpdateAccessPolicyRouteRequest,
-    scope: Scope,
-    db: AsyncSession,
-    actor: AuthenticatedUser | None = None,
-) -> AccessPolicyRouteResponse:
-    async with transaction(db):
-        route = await repository.get_access_policy_route(
-            route_id=route_id, org_id=scope.org_id, db=db
-        )
-        if route is None:
-            raise PolicyNotFoundError
-        policy = await _get_access_policy_or_raise(
-            policy_id=route.access_policy_id, scope=scope, db=db
-        )
-        if not await _can_manage_policy_definition(
-            policy=policy, actor=actor, scope=scope, db=db
-        ):
-            raise PolicyPermissionError
-        provider_id = payload.provider_id or route.provider_id
-        pool_id = payload.credential_pool_id or route.credential_pool_id
-        model_ids = payload.model_offering_ids or [
-            UUID(str(item)) for item in route.model_offering_ids
-        ]
-        candidate = AccessPolicyRouteInput(
-            provider_id=provider_id,
-            credential_pool_id=pool_id,
-            model_offering_ids=model_ids,
-            priority=payload.priority or route.priority,
-            weight=payload.weight or route.weight,
-            is_active=payload.is_active if payload.is_active is not None else route.is_active,
-        )
-        await _validate_access_route(route=candidate, scope=scope, db=db)
-        await _validate_scoped_access_policy_routes(
-            policy=policy,
-            routes=[candidate],
-            scope=scope,
-            db=db,
-        )
-        if payload.provider_id is not None:
-            route.provider_id = payload.provider_id
-        if payload.credential_pool_id is not None:
-            route.credential_pool_id = payload.credential_pool_id
-        if payload.model_offering_ids is not None:
-            route.model_offering_ids = [str(model_id) for model_id in payload.model_offering_ids]
-        if payload.priority is not None:
-            route.priority = payload.priority
-        if payload.weight is not None:
-            route.weight = payload.weight
-        if payload.is_active is not None:
-            route.is_active = payload.is_active
-        await db.flush()
-        await _record_policy_activity(
-            actor=actor,
-            scope=scope,
-            action="access_route.updated",
-            message="Updated access policy route.",
-            metadata={
-                "access_policy_id": str(route.access_policy_id),
-                "access_policy_route_id": str(route.id),
-                "changed_fields": sorted(payload.model_fields_set),
-            },
-            db=db,
-        )
-    return AccessPolicyRouteResponse.model_validate(route)
-
-
-async def delete_access_policy_route(
-    *, route_id: UUID, scope: Scope, db: AsyncSession, actor: AuthenticatedUser | None = None
-) -> None:
-    async with transaction(db):
-        route = await repository.get_access_policy_route(
-            route_id=route_id, org_id=scope.org_id, db=db
-        )
-        if route is None:
-            raise PolicyNotFoundError
-        policy = await _get_access_policy_or_raise(
-            policy_id=route.access_policy_id, scope=scope, db=db
-        )
-        if not await _can_manage_policy_definition(
-            policy=policy, actor=actor, scope=scope, db=db
-        ):
-            raise PolicyPermissionError
-        await db.delete(route)
-        await _record_policy_activity(
-            actor=actor,
-            scope=scope,
-            action="access_route.deleted",
-            message="Deleted access policy route.",
-            metadata={
-                "access_policy_id": str(route.access_policy_id),
-                "access_policy_route_id": str(route.id),
-            },
             db=db,
         )
 
@@ -551,7 +440,7 @@ async def get_access_policy_options(
     scope: Scope,
     db: AsyncSession,
 ) -> AccessPolicyOptionsResponse:
-    parent_routes = await _parent_access_route_options(
+    parent_public_models = await _parent_access_public_model_options(
         scope_type=scope_type,
         team_id=team_id,
         project_id=project_id,
@@ -560,9 +449,9 @@ async def get_access_policy_options(
         scope=scope,
         db=db,
     )
-    if parent_routes:
-        return await _options_from_route_candidates(
-            route_candidates=parent_routes,
+    if parent_public_models:
+        return await _options_from_public_models(
+            public_models=parent_public_models,
             scope=scope,
             db=db,
         )
@@ -618,6 +507,12 @@ async def create_policy_assignment(
         )
         if existing is not None and payload.is_active:
             raise PolicyAssignmentConflictError
+        if normalized_payload.policy_type == "access" and normalized_payload.is_active:
+            await _validate_no_same_scope_public_model_conflicts(
+                payload=normalized_payload,
+                scope=scope,
+                db=db,
+            )
         values = normalized_payload.model_dump()
         values.update(
             {
@@ -666,8 +561,13 @@ async def create_scoped_policy_assignment(
     async with transaction(db):
         if payload.policy_type == "access":
             assert payload.access_policy is not None
+            await _validate_access_policy_public_models(
+                payload.access_policy.public_models,
+                scope=scope,
+                db=db,
+            )
             await _validate_scoped_access_policy_narrowing(
-                routes=payload.access_policy.routes,
+                public_models=payload.access_policy.public_models,
                 scope_type=payload.scope_type,
                 team_id=team_id,
                 project_id=project_id,
@@ -686,17 +586,11 @@ async def create_scoped_policy_assignment(
                 owning_virtual_key_id=virtual_key_id,
                 db=db,
             )
-            for route in payload.access_policy.routes:
-                await _validate_access_route(route=route, scope=scope, db=db)
-                await repository.create_access_policy_route(
-                    org_id=scope.org_id,
-                    access_policy_id=access_policy.id,
-                    provider_id=route.provider_id,
-                    credential_pool_id=route.credential_pool_id,
-                    model_offering_ids=[str(model_id) for model_id in route.model_offering_ids],
-                    priority=route.priority,
-                    weight=route.weight,
-                    is_active=route.is_active,
+            for public_model in payload.access_policy.public_models:
+                await _create_public_model_from_input(
+                    policy_id=access_policy.id,
+                    public_model=public_model,
+                    scope=scope,
                     db=db,
                 )
             assignment_payload = CreatePolicyAssignmentRequest(
@@ -745,6 +639,12 @@ async def create_scoped_policy_assignment(
             policy_response = None
             limit_response = await _limit_policy_response(policy=limit_policy, scope=scope, db=db)
         await _validate_assignment_policy(payload=assignment_payload, scope=scope, db=db)
+        if assignment_payload.policy_type == "access" and assignment_payload.is_active:
+            await _validate_no_same_scope_public_model_conflicts(
+                payload=assignment_payload,
+                scope=scope,
+                db=db,
+            )
         assignment = await repository.create_policy_assignment(
             org_id=scope.org_id,
             values=assignment_payload.model_dump(),
@@ -801,6 +701,20 @@ async def update_policy_assignment(
                 )
                 if duplicate is not None and duplicate.id != assignment.id:
                     raise PolicyAssignmentConflictError
+                if assignment.policy_type == "access":
+                    await _validate_no_same_scope_public_model_conflicts(
+                        payload=CreatePolicyAssignmentRequest(
+                            policy_type="access",
+                            access_policy_id=assignment.access_policy_id,
+                            scope_type=assignment.scope_type,
+                            team_id=assignment.team_id,
+                            project_id=assignment.project_id,
+                            virtual_key_id=assignment.virtual_key_id,
+                            is_active=True,
+                        ),
+                        scope=scope,
+                        db=db,
+                    )
             assignment.is_active = payload.is_active
         await db.flush()
         activity_team_id, activity_project_id = await _assignment_activity_scope_ids(
@@ -873,37 +787,6 @@ async def get_access_policy_impact(
         scope=scope,
         db=db,
         exclude_access_policy_id=policy_id,
-        exclude_access_route_id=None,
-    )
-
-
-async def get_access_policy_route_impact(
-    *,
-    route_id: UUID,
-    scope: Scope,
-    db: AsyncSession,
-    actor: AuthenticatedUser | None = None,
-) -> PolicyImpactResponse:
-    route = await repository.get_access_policy_route(route_id=route_id, org_id=scope.org_id, db=db)
-    if route is None:
-        raise PolicyNotFoundError
-    policy = await _get_access_policy_or_raise(
-        policy_id=route.access_policy_id, scope=scope, db=db
-    )
-    if not await _can_view_policy(policy=policy, actor=actor, scope=scope, db=db):
-        raise PolicyNotFoundError
-    assignments = await repository.list_policy_assignments_for_access_policy(
-        org_id=scope.org_id,
-        access_policy_id=route.access_policy_id,
-        active_only=True,
-        db=db,
-    )
-    return await _policy_impact_from_assignments(
-        assignments=assignments,
-        scope=scope,
-        db=db,
-        exclude_access_policy_id=None,
-        exclude_access_route_id=route_id,
     )
 
 
@@ -959,11 +842,29 @@ async def get_limit_policy_rule_impact(
 async def _access_policy_response(
     *, policy: AccessPolicy, scope: Scope, db: AsyncSession
 ) -> AccessPolicyResponse:
-    routes = await repository.list_access_policy_routes(
+    public_models = await repository.list_access_policy_public_models(
         org_id=scope.org_id, access_policy_id=policy.id, db=db
     )
     response = AccessPolicyResponse.model_validate(policy)
-    response.routes = [AccessPolicyRouteResponse.model_validate(route) for route in routes]
+    response.public_models = [
+        await _public_model_response(public_model=public_model, scope=scope, db=db)
+        for public_model in public_models
+    ]
+    return response
+
+
+async def _public_model_response(
+    *, public_model: AccessPolicyPublicModel, scope: Scope, db: AsyncSession
+) -> AccessPolicyPublicModelResponse:
+    candidates = await repository.list_access_policy_route_candidates(
+        org_id=scope.org_id,
+        public_model_id=public_model.id,
+        db=db,
+    )
+    response = AccessPolicyPublicModelResponse.model_validate(public_model)
+    response.candidates = [
+        AccessPolicyRouteCandidateResponse.model_validate(candidate) for candidate in candidates
+    ]
     return response
 
 
@@ -1016,150 +917,6 @@ async def _get_policy_assignment_or_raise(
     return assignment
 
 
-async def _parent_access_route_options(
-    *,
-    scope_type: str,
-    team_id: UUID | None,
-    project_id: UUID | None,
-    virtual_key_id: UUID | None,
-    exclude_policy_id: UUID | None,
-    scope: Scope,
-    db: AsyncSession,
-) -> list[tuple[AccessPolicyRoute, UUID]]:
-    if scope_type == "org":
-        return []
-    parent_scopes = ["org"] if scope_type == "team" else ["org", "team"]
-    if scope_type == "virtual_key":
-        parent_scopes.append("project")
-    resolved_team_id = team_id
-    if project_id is not None:
-        project = await keys_facade.get_project(project_id=project_id, scope=scope, db=db)
-        resolved_team_id = project.team_id
-    if virtual_key_id is not None:
-        if project_id is None:
-            virtual_key = await repository.get_virtual_key(
-                org_id=scope.org_id, virtual_key_id=virtual_key_id, db=db
-            )
-            if virtual_key is None:
-                raise PolicyNotFoundError
-            project_id = virtual_key.project_id
-        project = await keys_facade.get_project(project_id=project_id, scope=scope, db=db)
-        resolved_team_id = project.team_id
-    assignments: list[PolicyAssignment] = []
-    for parent_scope in parent_scopes:
-        scoped = await repository.list_active_policy_assignments_for_scope(
-            org_id=scope.org_id,
-            scope_type=parent_scope,
-            policy_type="access",
-            db=db,
-        )
-        assignments.extend(
-            assignment
-            for assignment in scoped
-            if _assignment_applies_to_parent(
-                assignment=assignment,
-                team_id=resolved_team_id,
-                project_id=project_id,
-            )
-        )
-    return await _effective_access_route_candidates(
-        assignments=assignments,
-        exclude_policy_id=exclude_policy_id,
-        scope=scope,
-        db=db,
-    )
-
-
-def _assignment_applies_to_parent(
-    *,
-    assignment: PolicyAssignment,
-    team_id: UUID | None,
-    project_id: UUID | None,
-) -> bool:
-    if assignment.scope_type == "org":
-        return True
-    if assignment.scope_type == "team":
-        return team_id is not None and assignment.team_id == team_id
-    if assignment.scope_type == "project":
-        return project_id is not None and assignment.project_id == project_id
-    return False
-
-
-async def _effective_access_route_candidates(
-    *,
-    assignments: list[PolicyAssignment],
-    exclude_policy_id: UUID | None,
-    scope: Scope,
-    db: AsyncSession,
-) -> list[tuple[AccessPolicyRoute, UUID]]:
-    effective: list[tuple[AccessPolicyRoute, UUID]] | None = None
-    for scope_type in ("org", "team", "project"):
-        candidates = await _access_route_candidates(
-            assignments=[
-                assignment
-                for assignment in assignments
-                if assignment.scope_type == scope_type
-                and assignment.access_policy_id != exclude_policy_id
-            ],
-            scope=scope,
-            db=db,
-        )
-        if not candidates:
-            continue
-        if effective is None:
-            effective = candidates
-            continue
-        effective = [
-            candidate
-            for candidate in candidates
-            if any(_route_candidate_matches(candidate, parent) for parent in effective)
-        ]
-    return effective or []
-
-
-async def _access_route_candidates(
-    *,
-    assignments: list[PolicyAssignment],
-    scope: Scope,
-    db: AsyncSession,
-) -> list[tuple[AccessPolicyRoute, UUID]]:
-    candidates: list[tuple[AccessPolicyRoute, UUID]] = []
-    for assignment in assignments:
-        if assignment.access_policy_id is None:
-            continue
-        policy = await repository.get_access_policy(
-            policy_id=assignment.access_policy_id,
-            org_id=scope.org_id,
-            db=db,
-        )
-        if policy is None or not policy.is_active:
-            continue
-        routes = await repository.list_access_policy_routes(
-            org_id=scope.org_id,
-            access_policy_id=policy.id,
-            db=db,
-        )
-        for route in routes:
-            if route.is_active:
-                candidates.extend(
-                    (route, UUID(str(model_id))) for model_id in route.model_offering_ids
-                )
-    return candidates
-
-
-def _route_candidate_matches(
-    child: tuple[AccessPolicyRoute, UUID],
-    parent: tuple[AccessPolicyRoute, UUID],
-) -> bool:
-    child_route, child_model_id = child
-    parent_route, parent_model_id = parent
-    return (
-        child_route.provider_id == parent_route.provider_id
-        and child_route.credential_pool_id == parent_route.credential_pool_id
-        and child_model_id == parent_model_id
-    )
-
-
 async def _all_access_options(*, scope: Scope, db: AsyncSession) -> AccessPolicyOptionsResponse:
     providers = await providers_facade.list_providers(scope=scope, db=db)
     groups: dict[UUID, AccessPolicyProviderOption] = {}
@@ -1209,79 +966,102 @@ async def _all_access_options(*, scope: Scope, db: AsyncSession) -> AccessPolicy
     return AccessPolicyOptionsResponse(providers=list(groups.values()))
 
 
-async def _options_from_route_candidates(
+async def _options_from_public_models(
     *,
-    route_candidates: list[tuple[AccessPolicyRoute, UUID]],
+    public_models: dict[str, "_EffectivePublicModel"],
     scope: Scope,
     db: AsyncSession,
 ) -> AccessPolicyOptionsResponse:
     providers: dict[UUID, AccessPolicyProviderOption] = {}
     pools: dict[tuple[UUID, UUID], AccessPolicyPoolOption] = {}
     seen_models: set[tuple[UUID, UUID, UUID]] = set()
-    for route, model_id in route_candidates:
-        try:
-            provider = await providers_facade.get_provider(
-                provider_id=route.provider_id,
+    for public_model in public_models.values():
+        for candidate in public_model.candidates:
+            await _add_candidate_access_option(
+                candidate=candidate,
+                providers=providers,
+                pools=pools,
+                seen_models=seen_models,
                 scope=scope,
                 db=db,
             )
-            pool = await providers_facade.get_credential_pool(
-                pool_id=route.credential_pool_id,
-                scope=scope,
-                db=db,
-            )
-            model = await providers_facade.get_model_offering(
-                model_offering_id=model_id,
-                scope=scope,
-                db=db,
-            )
-        except ProviderNotFoundError:
-            continue
-        if not await _is_routable_provider_pool_model(
-            provider_id=route.provider_id,
-            pool_id=route.credential_pool_id,
-            model_id=model_id,
-            scope=scope,
-            db=db,
-        ):
-            continue
-        provider_option = providers.setdefault(
-            provider.id,
-            AccessPolicyProviderOption(
-                id=provider.id,
-                display_name=provider.display_name or provider.name,
-                pools=[],
-            ),
-        )
-        pool_key = (provider.id, pool.id)
-        pool_option = pools.get(pool_key)
-        if pool_option is None:
-            pool_option = AccessPolicyPoolOption(id=pool.id, name=pool.name, models=[])
-            pools[pool_key] = pool_option
-            provider_option.pools.append(pool_option)
-        model_key = (provider.id, pool.id, model.id)
-        if model_key in seen_models:
-            continue
-        seen_models.add(model_key)
-        pool_option.models.append(
-            AccessPolicyModelOption(
-                id=model.id,
-                provider_model_name=model.provider_model_name,
-                alias=model.alias,
-            )
-        )
     return AccessPolicyOptionsResponse(providers=list(providers.values()))
 
 
-async def _validate_access_route(
-    *, route: AccessPolicyRouteInput, scope: Scope, db: AsyncSession
+async def _add_candidate_access_option(
+    *,
+    candidate: "_EffectivePublicModelCandidate",
+    providers: dict[UUID, AccessPolicyProviderOption],
+    pools: dict[tuple[UUID, UUID], AccessPolicyPoolOption],
+    seen_models: set[tuple[UUID, UUID, UUID]],
+    scope: Scope,
+    db: AsyncSession,
 ) -> None:
     try:
         provider = await providers_facade.get_provider(
-            provider_id=route.provider_id, scope=scope, db=db
+            provider_id=candidate.provider_id,
+            scope=scope,
+            db=db,
         )
         pool = await providers_facade.get_credential_pool(
-            pool_id=route.credential_pool_id, scope=scope, db=db
+            pool_id=candidate.credential_pool_id,
+            scope=scope,
+            db=db,
+        )
+        model = await providers_facade.get_model_offering(
+            model_offering_id=candidate.model_id,
+            scope=scope,
+            db=db,
+        )
+    except ProviderNotFoundError:
+        return
+    if not await _is_routable_provider_pool_model(
+        provider_id=candidate.provider_id,
+        pool_id=candidate.credential_pool_id,
+        model_id=candidate.model_id,
+        scope=scope,
+        db=db,
+    ):
+        return
+    provider_option = providers.setdefault(
+        provider.id,
+        AccessPolicyProviderOption(
+            id=provider.id,
+            display_name=provider.display_name or provider.name,
+            pools=[],
+        ),
+    )
+    pool_key = (provider.id, pool.id)
+    pool_option = pools.get(pool_key)
+    if pool_option is None:
+        pool_option = AccessPolicyPoolOption(id=pool.id, name=pool.name, models=[])
+        pools[pool_key] = pool_option
+        provider_option.pools.append(pool_option)
+    model_key = (provider.id, pool.id, model.id)
+    if model_key in seen_models:
+        return
+    seen_models.add(model_key)
+    pool_option.models.append(
+        AccessPolicyModelOption(
+            id=model.id,
+            provider_model_name=model.provider_model_name,
+            alias=model.alias,
+        )
+    )
+
+
+async def _validate_access_route_candidate(
+    *, candidate: AccessPolicyRouteCandidateInput, scope: Scope, db: AsyncSession
+) -> None:
+    try:
+        provider = await providers_facade.get_provider(
+            provider_id=candidate.provider_id, scope=scope, db=db
+        )
+        pool = await providers_facade.get_credential_pool(
+            pool_id=candidate.credential_pool_id, scope=scope, db=db
+        )
+        model = await providers_facade.get_model_offering(
+            model_offering_id=candidate.model_offering_id, scope=scope, db=db
         )
         if not provider.is_active or not pool.is_active or pool.provider_id != provider.id:
             raise PolicyValidationError
@@ -1289,19 +1069,98 @@ async def _validate_access_route(
             provider_id=provider.id, pool_id=pool.id, scope=scope, db=db
         ):
             raise PolicyValidationError
-        for model_id in route.model_offering_ids:
-            model = await providers_facade.get_model_offering(
-                model_offering_id=model_id, scope=scope, db=db
-            )
-            if not model.is_active or model.provider_id != provider.id:
-                raise PolicyValidationError
+        if not model.is_active or model.provider_id != provider.id:
+            raise PolicyValidationError
     except ProviderNotFoundError as exc:
         raise PolicyValidationError from exc
+
+async def _validate_access_policy_public_models(
+    public_models: list[AccessPolicyPublicModelInput],
+    *,
+    scope: Scope,
+    db: AsyncSession,
+) -> None:
+    seen_names: set[str] = set()
+    for public_model in public_models:
+        normalized_name = public_model.public_model_name.strip()
+        if normalized_name in seen_names:
+            raise PolicyValidationError
+        seen_names.add(normalized_name)
+        if public_model.routing_mode == "single_route" and public_model.fallback_on:
+            raise PolicyValidationError
+        if public_model.routing_mode == "ordered_fallback":
+            invalid_reasons = set(public_model.fallback_on) - _FALLBACKABLE_PROVIDER_REASONS
+            if invalid_reasons:
+                raise PolicyValidationError
+        seen_candidates: set[tuple[UUID, UUID, UUID]] = set()
+        for candidate in public_model.candidates:
+            candidate_key = (
+                candidate.provider_id,
+                candidate.credential_pool_id,
+                candidate.model_offering_id,
+            )
+            if candidate_key in seen_candidates:
+                raise PolicyValidationError
+            seen_candidates.add(candidate_key)
+            await _validate_access_route_candidate(candidate=candidate, scope=scope, db=db)
+
+
+async def _create_public_model_from_input(
+    *,
+    policy_id: UUID,
+    public_model: AccessPolicyPublicModelInput,
+    scope: Scope,
+    db: AsyncSession,
+) -> AccessPolicyPublicModel:
+    created = await repository.create_access_policy_public_model(
+        org_id=scope.org_id,
+        access_policy_id=policy_id,
+        public_model_name=public_model.public_model_name.strip(),
+        routing_mode=public_model.routing_mode,
+        fallback_on=_fallback_on_values(public_model),
+        max_route_attempts=public_model.max_route_attempts,
+        is_active=public_model.is_active,
+        db=db,
+    )
+    for candidate in public_model.candidates:
+        await repository.create_access_policy_route_candidate(
+            org_id=scope.org_id,
+            public_model_id=created.id,
+            provider_id=candidate.provider_id,
+            credential_pool_id=candidate.credential_pool_id,
+            model_offering_id=candidate.model_offering_id,
+            priority=candidate.priority,
+            weight=candidate.weight,
+            is_active=candidate.is_active,
+            db=db,
+        )
+    return created
+
+
+def _fallback_on_values(public_model: AccessPolicyPublicModelInput) -> list[str]:
+    if public_model.routing_mode != "ordered_fallback":
+        return []
+    return public_model.fallback_on or sorted(_FALLBACKABLE_PROVIDER_REASONS)
+
+
+def _assignment_applies_to_parent(
+    *,
+    assignment: PolicyAssignment,
+    team_id: UUID | None,
+    project_id: UUID | None,
+) -> bool:
+    if assignment.scope_type == "org":
+        return True
+    if assignment.scope_type == "team":
+        return team_id is not None and assignment.team_id == team_id
+    if assignment.scope_type == "project":
+        return project_id is not None and assignment.project_id == project_id
+    return False
 
 
 async def _validate_scoped_access_policy_narrowing(
     *,
-    routes: list[AccessPolicyRouteInput],
+    public_models: list[AccessPolicyPublicModelInput],
     scope_type: str,
     team_id: UUID | None,
     project_id: UUID | None,
@@ -1310,7 +1169,7 @@ async def _validate_scoped_access_policy_narrowing(
     scope: Scope,
     db: AsyncSession,
 ) -> None:
-    parent_routes = await _parent_access_route_options(
+    parent_public_models = await _parent_access_public_model_options(
         scope_type=scope_type,
         team_id=team_id,
         project_id=project_id,
@@ -1319,57 +1178,246 @@ async def _validate_scoped_access_policy_narrowing(
         scope=scope,
         db=db,
     )
-    if not parent_routes:
+    if not parent_public_models:
         return
-    for route in routes:
-        for model_id in route.model_offering_ids:
-            candidate = _SubmittedAccessRouteCandidate(
-                provider_id=route.provider_id,
-                credential_pool_id=route.credential_pool_id,
-                model_id=model_id,
-            )
-            if not any(_submitted_route_matches(candidate, parent) for parent in parent_routes):
-                raise PolicyValidationError
-
-
-async def _validate_scoped_access_policy_routes(
-    *,
-    policy: AccessPolicy,
-    routes: list[AccessPolicyRouteInput],
-    scope: Scope,
-    db: AsyncSession,
-) -> None:
-    if policy.owning_scope_type is None:
-        return
-    await _validate_scoped_access_policy_narrowing(
-        routes=routes,
-        scope_type=policy.owning_scope_type,
-        team_id=policy.owning_team_id,
-        project_id=policy.owning_project_id,
-        virtual_key_id=policy.owning_virtual_key_id,
-        exclude_policy_id=policy.id,
+    await _validate_scoped_access_policy_public_models(
+        public_models=public_models,
+        parent_public_models=parent_public_models,
         scope=scope,
         db=db,
     )
 
 
-class _SubmittedAccessRouteCandidate:
+async def _parent_access_public_model_options(
+    *,
+    scope_type: str,
+    team_id: UUID | None,
+    project_id: UUID | None,
+    virtual_key_id: UUID | None,
+    exclude_policy_id: UUID | None,
+    scope: Scope,
+    db: AsyncSession,
+) -> dict[str, "_EffectivePublicModel"]:
+    if scope_type == "org":
+        return {}
+    parent_scopes = ["org"] if scope_type == "team" else ["org", "team"]
+    if scope_type == "virtual_key":
+        parent_scopes.append("project")
+    resolved_team_id = team_id
+    if project_id is not None:
+        project = await keys_facade.get_project(project_id=project_id, scope=scope, db=db)
+        resolved_team_id = project.team_id
+    if virtual_key_id is not None:
+        if project_id is None:
+            virtual_key = await repository.get_virtual_key(
+                org_id=scope.org_id, virtual_key_id=virtual_key_id, db=db
+            )
+            if virtual_key is None:
+                raise PolicyNotFoundError
+            project_id = virtual_key.project_id
+        project = await keys_facade.get_project(project_id=project_id, scope=scope, db=db)
+        resolved_team_id = project.team_id
+
+    effective: dict[str, _EffectivePublicModel] | None = None
+    for parent_scope in parent_scopes:
+        assignments = await repository.list_active_policy_assignments_for_scope(
+            org_id=scope.org_id,
+            scope_type=parent_scope,
+            policy_type="access",
+            db=db,
+        )
+        scoped = [
+            assignment
+            for assignment in assignments
+            if assignment.access_policy_id != exclude_policy_id
+            and _assignment_applies_to_parent(
+                assignment=assignment,
+                team_id=resolved_team_id,
+                project_id=project_id,
+            )
+        ]
+        options = await _public_model_options_from_assignments(
+            assignments=scoped,
+            scope=scope,
+            db=db,
+        )
+        if not options:
+            continue
+        if effective is None:
+            effective = options
+            continue
+        narrowed: dict[str, _EffectivePublicModel] = {}
+        for name, child_model in options.items():
+            parent_model = effective.get(name)
+            if parent_model is None:
+                continue
+            parent_keys = {candidate.key for candidate in parent_model.candidates}
+            candidates = [
+                candidate for candidate in child_model.candidates if candidate.key in parent_keys
+            ]
+            if candidates:
+                narrowed[name] = child_model.with_candidates(candidates)
+        effective = narrowed
+    return effective or {}
+
+
+async def _effective_access_public_model_options(
+    *,
+    assignments: list[PolicyAssignment],
+    scope: Scope,
+    db: AsyncSession,
+) -> dict[str, "_EffectivePublicModel"]:
+    effective: dict[str, _EffectivePublicModel] | None = None
+    for scope_type in ("org", "team", "project", "virtual_key"):
+        options = await _public_model_options_from_assignments(
+            assignments=[
+                assignment for assignment in assignments if assignment.scope_type == scope_type
+            ],
+            scope=scope,
+            db=db,
+        )
+        if not options:
+            continue
+        if effective is None:
+            effective = options
+            continue
+        narrowed: dict[str, _EffectivePublicModel] = {}
+        for name, child_model in options.items():
+            parent_model = effective.get(name)
+            if parent_model is None:
+                continue
+            parent_keys = {candidate.key for candidate in parent_model.candidates}
+            candidates = [
+                candidate for candidate in child_model.candidates if candidate.key in parent_keys
+            ]
+            if candidates:
+                narrowed[name] = child_model.with_candidates(candidates)
+        effective = narrowed
+    return effective or {}
+
+
+async def _public_model_options_from_assignments(
+    *,
+    assignments: list[PolicyAssignment],
+    scope: Scope,
+    db: AsyncSession,
+) -> dict[str, "_EffectivePublicModel"]:
+    options: dict[str, _EffectivePublicModel] = {}
+    for assignment in assignments:
+        if assignment.access_policy_id is None:
+            continue
+        policy = await repository.get_access_policy(
+            policy_id=assignment.access_policy_id,
+            org_id=scope.org_id,
+            db=db,
+        )
+        if policy is None or not policy.is_active:
+            continue
+        public_models = await repository.list_access_policy_public_models(
+            org_id=scope.org_id,
+            access_policy_id=policy.id,
+            db=db,
+        )
+        for public_model in public_models:
+            if not public_model.is_active:
+                continue
+            candidates = [
+                _EffectivePublicModelCandidate(
+                    provider_id=candidate.provider_id,
+                    credential_pool_id=candidate.credential_pool_id,
+                    model_id=candidate.model_offering_id,
+                )
+                for candidate in await repository.list_access_policy_route_candidates(
+                    org_id=scope.org_id,
+                    public_model_id=public_model.id,
+                    db=db,
+                )
+                if candidate.is_active
+            ]
+            if candidates:
+                options[public_model.public_model_name] = _EffectivePublicModel(
+                    routing_mode=public_model.routing_mode,
+                    fallback_on=list(public_model.fallback_on),
+                    max_route_attempts=public_model.max_route_attempts,
+                    candidates=candidates,
+                )
+    return options
+
+
+async def _validate_scoped_access_policy_public_models(
+    *,
+    public_models: list[AccessPolicyPublicModelInput],
+    parent_public_models: dict[str, "_EffectivePublicModel"],
+    scope: Scope,
+    db: AsyncSession,
+) -> None:
+    for public_model in public_models:
+        parent = parent_public_models.get(public_model.public_model_name)
+        if parent is None:
+            raise PolicyValidationError
+        if parent.routing_mode == "single_route" and public_model.routing_mode != "single_route":
+            raise PolicyValidationError
+        if public_model.routing_mode == "ordered_fallback":
+            if parent.routing_mode != "ordered_fallback":
+                raise PolicyValidationError
+            if set(_fallback_on_values(public_model)) - set(parent.fallback_on):
+                raise PolicyValidationError
+            if (
+                public_model.max_route_attempts is not None
+                and parent.max_route_attempts is not None
+                and public_model.max_route_attempts > parent.max_route_attempts
+            ):
+                raise PolicyValidationError
+        parent_candidate_positions = {
+            candidate.key: index for index, candidate in enumerate(parent.candidates)
+        }
+        previous_position = -1
+        for candidate in public_model.candidates:
+            submitted = _EffectivePublicModelCandidate(
+                provider_id=candidate.provider_id,
+                credential_pool_id=candidate.credential_pool_id,
+                model_id=candidate.model_offering_id,
+            )
+            position = parent_candidate_positions.get(submitted.key)
+            if position is None or position < previous_position:
+                raise PolicyValidationError
+            previous_position = position
+
+
+class _EffectivePublicModelCandidate:
     def __init__(self, *, provider_id: UUID, credential_pool_id: UUID, model_id: UUID) -> None:
         self.provider_id = provider_id
         self.credential_pool_id = credential_pool_id
         self.model_id = model_id
 
+    @property
+    def key(self) -> tuple[UUID, UUID, UUID]:
+        return (self.provider_id, self.credential_pool_id, self.model_id)
 
-def _submitted_route_matches(
-    child: _SubmittedAccessRouteCandidate,
-    parent: tuple[AccessPolicyRoute, UUID],
-) -> bool:
-    parent_route, parent_model_id = parent
-    return (
-        child.provider_id == parent_route.provider_id
-        and child.credential_pool_id == parent_route.credential_pool_id
-        and child.model_id == parent_model_id
-    )
+
+class _EffectivePublicModel:
+    def __init__(
+        self,
+        *,
+        routing_mode: str,
+        fallback_on: list[str],
+        max_route_attempts: int | None,
+        candidates: list[_EffectivePublicModelCandidate],
+    ) -> None:
+        self.routing_mode = routing_mode
+        self.fallback_on = fallback_on
+        self.max_route_attempts = max_route_attempts
+        self.candidates = candidates
+
+    def with_candidates(
+        self, candidates: list[_EffectivePublicModelCandidate]
+    ) -> "_EffectivePublicModel":
+        return _EffectivePublicModel(
+            routing_mode=self.routing_mode,
+            fallback_on=self.fallback_on,
+            max_route_attempts=self.max_route_attempts,
+            candidates=candidates,
+        )
 
 
 async def _validate_limit_rule_filters(
@@ -1410,6 +1458,100 @@ async def _validate_assignment_policy(
         _validate_policy_assignment_scope(policy=policy, payload=payload)
         return
     raise PolicyValidationError
+
+
+async def _validate_no_same_scope_public_model_conflicts(
+    *,
+    payload: CreatePolicyAssignmentRequest,
+    scope: Scope,
+    db: AsyncSession,
+) -> None:
+    if payload.access_policy_id is None:
+        raise PolicyValidationError
+    new_models = await repository.list_access_policy_public_models(
+        org_id=scope.org_id,
+        access_policy_id=payload.access_policy_id,
+        db=db,
+    )
+    new_names = {model.public_model_name for model in new_models if model.is_active}
+    if not new_names:
+        return
+    assignments = await repository.list_policy_assignments(org_id=scope.org_id, db=db)
+    for assignment in assignments:
+        if (
+            not assignment.is_active
+            or assignment.policy_type != "access"
+            or assignment.access_policy_id is None
+            or assignment.access_policy_id == payload.access_policy_id
+            or assignment.scope_type != payload.scope_type
+            or assignment.team_id != payload.team_id
+            or assignment.project_id != payload.project_id
+            or assignment.virtual_key_id != payload.virtual_key_id
+        ):
+            continue
+        existing_models = await repository.list_access_policy_public_models(
+            org_id=scope.org_id,
+            access_policy_id=assignment.access_policy_id,
+            db=db,
+        )
+        existing_names = {model.public_model_name for model in existing_models if model.is_active}
+        if new_names & existing_names:
+            raise PolicyAssignmentConflictError
+
+
+async def _validate_update_public_model_assignment_conflicts(
+    *,
+    policy_id: UUID,
+    public_models: list[AccessPolicyPublicModelInput],
+    scope: Scope,
+    db: AsyncSession,
+) -> None:
+    proposed_names = {
+        public_model.public_model_name.strip()
+        for public_model in public_models
+        if public_model.is_active
+    }
+    if not proposed_names:
+        return
+    assignments = await repository.list_policy_assignments_for_access_policy(
+        org_id=scope.org_id,
+        access_policy_id=policy_id,
+        active_only=True,
+        db=db,
+    )
+    all_assignments = await repository.list_policy_assignments(org_id=scope.org_id, db=db)
+    for assignment in assignments:
+        for existing in all_assignments:
+            if (
+                not existing.is_active
+                or existing.policy_type != "access"
+                or existing.access_policy_id is None
+                or existing.access_policy_id == policy_id
+                or existing.scope_type != assignment.scope_type
+                or existing.team_id != assignment.team_id
+                or existing.project_id != assignment.project_id
+                or existing.virtual_key_id != assignment.virtual_key_id
+            ):
+                continue
+            existing_policy = await repository.get_access_policy(
+                org_id=scope.org_id,
+                policy_id=existing.access_policy_id,
+                db=db,
+            )
+            if existing_policy is None or not existing_policy.is_active:
+                continue
+            existing_models = await repository.list_access_policy_public_models(
+                org_id=scope.org_id,
+                access_policy_id=existing.access_policy_id,
+                db=db,
+            )
+            existing_names = {
+                public_model.public_model_name
+                for public_model in existing_models
+                if public_model.is_active
+            }
+            if proposed_names & existing_names:
+                raise PolicyAssignmentConflictError
 
 
 def _validate_policy_assignment_scope(
@@ -1574,7 +1716,6 @@ async def _policy_impact_from_assignments(
     scope: Scope,
     db: AsyncSession,
     exclude_access_policy_id: UUID | None = None,
-    exclude_access_route_id: UUID | None = None,
 ) -> PolicyImpactResponse:
     teams: dict[UUID, PolicyImpactTarget] = {}
     projects: dict[UUID, PolicyImpactTarget] = {}
@@ -1615,14 +1756,13 @@ async def _policy_impact_from_assignments(
         projects.setdefault(project.id, PolicyImpactTarget(id=project.id, name=project.name))
 
     unusable: dict[UUID, PolicyImpactVirtualKey] = {}
-    if exclude_access_policy_id is not None or exclude_access_route_id is not None:
+    if exclude_access_policy_id is not None:
         for key_id, key in virtual_keys.items():
             has_access = await _target_has_routable_access_after_exclusion(
                 org_id=scope.org_id,
                 virtual_key_id=key_id,
                 project_id=key.project_id,
                 exclude_access_policy_id=exclude_access_policy_id,
-                exclude_access_route_id=exclude_access_route_id,
                 db=db,
             )
             if not has_access:
@@ -1690,7 +1830,6 @@ async def _target_has_routable_access_after_exclusion(
     virtual_key_id: UUID,
     project_id: UUID,
     exclude_access_policy_id: UUID | None,
-    exclude_access_route_id: UUID | None,
     db: AsyncSession,
 ) -> bool:
     project = await repository.get_project(org_id=org_id, project_id=project_id, db=db)
@@ -1704,41 +1843,25 @@ async def _target_has_routable_access_after_exclusion(
         policy_type="access",
         db=db,
     )
-    effective: list[tuple[AccessPolicyRoute, UUID]] | None = None
-    for scope_type in ("org", "team", "project", "virtual_key"):
-        candidates = await _access_route_candidates(
-            assignments=[
-                assignment
-                for assignment in assignments
-                if assignment.scope_type == scope_type
-                and assignment.access_policy_id != exclude_access_policy_id
-            ],
-            scope=Scope(org_id=org_id),
-            db=db,
-        )
-        if exclude_access_route_id is not None:
-            candidates = [
-                candidate for candidate in candidates if candidate[0].id != exclude_access_route_id
-            ]
-        if not candidates:
-            continue
-        if effective is None:
-            effective = candidates
-            continue
-        effective = [
-            candidate
-            for candidate in candidates
-            if any(_route_candidate_matches(candidate, parent) for parent in effective)
-        ]
-    for route, model_id in effective or []:
-        if await _is_routable_provider_pool_model(
-            provider_id=route.provider_id,
-            pool_id=route.credential_pool_id,
-            model_id=model_id,
-            scope=Scope(org_id=org_id),
-            db=db,
-        ):
-            return True
+    effective = await _effective_access_public_model_options(
+        assignments=[
+            assignment
+            for assignment in assignments
+            if assignment.access_policy_id != exclude_access_policy_id
+        ],
+        scope=Scope(org_id=org_id),
+        db=db,
+    )
+    for public_model in effective.values():
+        for candidate in public_model.candidates:
+            if await _is_routable_provider_pool_model(
+                provider_id=candidate.provider_id,
+                pool_id=candidate.credential_pool_id,
+                model_id=candidate.model_id,
+                scope=Scope(org_id=org_id),
+                db=db,
+            ):
+                return True
     return False
 
 

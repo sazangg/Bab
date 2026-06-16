@@ -9,6 +9,10 @@ export interface EffectiveRouteSummary {
   provider_id: string;
   credential_pool_id: string;
   model_offering_id: string;
+  public_model_id?: string | null;
+  route_candidate_id?: string | null;
+  public_model_name?: string | null;
+  routing_mode?: string | null;
   provider_model: string;
   alias?: string | null;
   access_policy_id?: string | null;

@@ -5,13 +5,13 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface AccessPolicyRouteResponse {
+export interface AccessPolicyRouteCandidateResponse {
   id: string;
   org_id: string;
-  access_policy_id: string;
+  public_model_id: string;
   provider_id: string;
   credential_pool_id: string;
-  model_offering_ids: string[];
+  model_offering_id: string;
   priority: number;
   weight: number;
   is_active: boolean;

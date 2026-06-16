@@ -15,5 +15,9 @@ entity_id?: string | null;
 q?: string | null;
 before_at?: string | null;
 before_id?: string | null;
+/**
+ * @minimum 1
+ * @maximum 500
+ */
 limit?: number;
 };

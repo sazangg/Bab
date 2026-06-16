@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -46,8 +46,15 @@ class AccessPolicy(Base):
     )
 
 
-class AccessPolicyRoute(Base):
-    __tablename__ = "access_policy_routes"
+class AccessPolicyPublicModel(Base):
+    __tablename__ = "access_policy_public_models"
+    __table_args__ = (
+        UniqueConstraint(
+            "access_policy_id",
+            "public_model_name",
+            name="uq_access_policy_public_models_policy_name",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     org_id: Mapped[UUID] = mapped_column(
@@ -58,6 +65,43 @@ class AccessPolicyRoute(Base):
         ForeignKey("access_policies.id", ondelete="CASCADE"),
         index=True,
     )
+    public_model_name: Mapped[str] = mapped_column(String(255), index=True)
+    routing_mode: Mapped[str] = mapped_column(String(50), default="single_route")
+    fallback_on: Mapped[list[str]] = mapped_column(JSON, default=list)
+    max_route_attempts: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+
+class AccessPolicyRouteCandidate(Base):
+    __tablename__ = "access_policy_route_candidates"
+    __table_args__ = (
+        UniqueConstraint(
+            "public_model_id",
+            "provider_id",
+            "credential_pool_id",
+            "model_offering_id",
+            name="uq_access_policy_route_candidates_route",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        index=True,
+    )
+    public_model_id: Mapped[UUID] = mapped_column(
+        ForeignKey("access_policy_public_models.id", ondelete="CASCADE"),
+        index=True,
+    )
     provider_id: Mapped[UUID] = mapped_column(
         ForeignKey("providers.id", ondelete="RESTRICT"),
         index=True,
@@ -66,7 +110,10 @@ class AccessPolicyRoute(Base):
         ForeignKey("credential_pools.id", ondelete="RESTRICT"),
         index=True,
     )
-    model_offering_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    model_offering_id: Mapped[UUID] = mapped_column(
+        ForeignKey("model_offerings.id", ondelete="RESTRICT"),
+        index=True,
+    )
     priority: Mapped[int] = mapped_column(Integer, default=100)
     weight: Mapped[int] = mapped_column(Integer, default=100)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

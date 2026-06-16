@@ -7,7 +7,8 @@ from app.modules.auth.internal.models import Team
 from app.modules.keys.internal.models import Project, VirtualKey
 from app.modules.policies.internal.models import (
     AccessPolicy,
-    AccessPolicyRoute,
+    AccessPolicyPublicModel,
+    AccessPolicyRouteCandidate,
     LimitPolicy,
     LimitPolicyRule,
     PolicyAssignment,
@@ -58,56 +59,116 @@ async def get_access_policy(
     )
 
 
-async def create_access_policy_route(
+async def create_access_policy_public_model(
     *,
     org_id: UUID,
     access_policy_id: UUID,
-    provider_id: UUID,
-    credential_pool_id: UUID,
-    model_offering_ids: list[str],
-    priority: int,
-    weight: int,
+    public_model_name: str,
+    routing_mode: str,
+    fallback_on: list[str],
+    max_route_attempts: int | None,
     is_active: bool,
     db: AsyncSession,
-) -> AccessPolicyRoute:
-    route = AccessPolicyRoute(
+) -> AccessPolicyPublicModel:
+    public_model = AccessPolicyPublicModel(
         org_id=org_id,
         access_policy_id=access_policy_id,
-        provider_id=provider_id,
-        credential_pool_id=credential_pool_id,
-        model_offering_ids=model_offering_ids,
-        priority=priority,
-        weight=weight,
+        public_model_name=public_model_name,
+        routing_mode=routing_mode,
+        fallback_on=fallback_on,
+        max_route_attempts=max_route_attempts,
         is_active=is_active,
     )
-    db.add(route)
+    db.add(public_model)
     await db.flush()
-    return route
+    return public_model
 
 
-async def list_access_policy_routes(
-    *, org_id: UUID, access_policy_id: UUID, db: AsyncSession
-) -> list[AccessPolicyRoute]:
-    result = await db.scalars(
-        select(AccessPolicyRoute)
-        .where(
-            AccessPolicyRoute.org_id == org_id,
-            AccessPolicyRoute.access_policy_id == access_policy_id,
+async def get_access_policy_public_model_by_name(
+    *,
+    org_id: UUID,
+    access_policy_id: UUID,
+    public_model_name: str,
+    db: AsyncSession,
+) -> AccessPolicyPublicModel | None:
+    return await db.scalar(
+        select(AccessPolicyPublicModel).where(
+            AccessPolicyPublicModel.org_id == org_id,
+            AccessPolicyPublicModel.access_policy_id == access_policy_id,
+            AccessPolicyPublicModel.public_model_name == public_model_name,
         )
-        .order_by(AccessPolicyRoute.priority, AccessPolicyRoute.created_at)
+    )
+
+
+async def list_access_policy_public_models(
+    *, org_id: UUID, access_policy_id: UUID, db: AsyncSession
+) -> list[AccessPolicyPublicModel]:
+    result = await db.scalars(
+        select(AccessPolicyPublicModel)
+        .where(
+            AccessPolicyPublicModel.org_id == org_id,
+            AccessPolicyPublicModel.access_policy_id == access_policy_id,
+        )
+        .order_by(AccessPolicyPublicModel.created_at.asc())
     )
     return list(result)
 
 
-async def get_access_policy_route(
-    *, route_id: UUID, org_id: UUID, db: AsyncSession
-) -> AccessPolicyRoute | None:
-    return await db.scalar(
-        select(AccessPolicyRoute).where(
-            AccessPolicyRoute.id == route_id,
-            AccessPolicyRoute.org_id == org_id,
+async def delete_access_policy_public_models(
+    *, org_id: UUID, access_policy_id: UUID, db: AsyncSession
+) -> None:
+    await db.execute(
+        delete(AccessPolicyPublicModel).where(
+            AccessPolicyPublicModel.org_id == org_id,
+            AccessPolicyPublicModel.access_policy_id == access_policy_id,
         )
     )
+    await db.flush()
+
+
+async def create_access_policy_route_candidate(
+    *,
+    org_id: UUID,
+    public_model_id: UUID,
+    provider_id: UUID,
+    credential_pool_id: UUID,
+    model_offering_id: UUID,
+    priority: int,
+    weight: int,
+    is_active: bool,
+    db: AsyncSession,
+) -> AccessPolicyRouteCandidate:
+    candidate = AccessPolicyRouteCandidate(
+        org_id=org_id,
+        public_model_id=public_model_id,
+        provider_id=provider_id,
+        credential_pool_id=credential_pool_id,
+        model_offering_id=model_offering_id,
+        priority=priority,
+        weight=weight,
+        is_active=is_active,
+    )
+    db.add(candidate)
+    await db.flush()
+    return candidate
+
+
+async def list_access_policy_route_candidates(
+    *, org_id: UUID, public_model_id: UUID, db: AsyncSession
+) -> list[AccessPolicyRouteCandidate]:
+    result = await db.scalars(
+        select(AccessPolicyRouteCandidate)
+        .where(
+            AccessPolicyRouteCandidate.org_id == org_id,
+            AccessPolicyRouteCandidate.public_model_id == public_model_id,
+        )
+        .order_by(
+            AccessPolicyRouteCandidate.priority,
+            AccessPolicyRouteCandidate.weight.desc(),
+            AccessPolicyRouteCandidate.created_at,
+        )
+    )
+    return list(result)
 
 
 async def create_limit_policy(

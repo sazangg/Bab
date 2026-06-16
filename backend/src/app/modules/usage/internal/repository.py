@@ -12,8 +12,10 @@ from app.modules.keys.internal.models import Project, VirtualKey
 from app.modules.policies.internal.models import AccessPolicy, LimitPolicy, LimitPolicyRule
 from app.modules.providers.internal.models import CredentialPool, Provider, ProviderCredential
 from app.modules.usage.accounting import UsageAccounting, subtract_months
-from app.modules.usage.internal.models import LimitPolicyReservation, UsageRecord
+from app.modules.usage.internal.models import GatewayRequest, LimitPolicyReservation, UsageRecord
 from app.modules.usage.schemas import (
+    CreateGatewayRequest,
+    FinalizeGatewayRequest,
     LimitPolicyBudgetBurnRow,
     LimitPolicyReservationSummary,
     OrganizationUsageSummary,
@@ -37,6 +39,32 @@ async def create_usage_record(*, payload: RecordUsage, db: AsyncSession) -> Usag
     db.add(usage_record)
     await db.flush()
     return usage_record
+
+
+async def create_gateway_request(
+    *,
+    payload: CreateGatewayRequest,
+    db: AsyncSession,
+) -> GatewayRequest:
+    data = payload.model_dump()
+    data["request_id"] = data["request_id"] or current_request_id()
+    gateway_request = GatewayRequest(**data)
+    db.add(gateway_request)
+    await db.flush()
+    return gateway_request
+
+
+async def finalize_gateway_request(
+    *,
+    gateway_request_id: UUID,
+    payload: FinalizeGatewayRequest,
+    db: AsyncSession,
+) -> None:
+    await db.execute(
+        update(GatewayRequest)
+        .where(GatewayRequest.id == gateway_request_id)
+        .values(**payload.model_dump(), completed_at=datetime.now(UTC))
+    )
 
 
 async def acquire_limit_scope_lock(*, assignment_id: UUID, db: AsyncSession) -> None:
@@ -436,13 +464,31 @@ async def get_organization_usage_timeseries(
         await db.execute(
             select(
                 bucket_expr.label("bucket"),
-                func.count(UsageRecord.id),
+                _logical_request_count_expression(),
                 func.coalesce(
-                    func.sum(case((UsageRecord.http_status < 400, 1), else_=0)),
+                    func.sum(
+                        case(
+                            (
+                                (UsageRecord.is_final_attempt.is_(True))
+                                & (UsageRecord.http_status < 400),
+                                1,
+                            ),
+                            else_=0,
+                        )
+                    ),
                     0,
                 ),
                 func.coalesce(
-                    func.sum(case((UsageRecord.http_status >= 400, 1), else_=0)),
+                    func.sum(
+                        case(
+                            (
+                                (UsageRecord.is_final_attempt.is_(True))
+                                & (UsageRecord.http_status >= 400),
+                                1,
+                            ),
+                            else_=0,
+                        )
+                    ),
                     0,
                 ),
                 func.coalesce(func.sum(UsageRecord.prompt_tokens), 0),
@@ -839,13 +885,31 @@ async def _totals(*filters, db: AsyncSession) -> UsageSummaryTotals:
     row = (
         await db.execute(
             select(
-                func.count(UsageRecord.id),
+                _logical_request_count_expression(),
                 func.coalesce(
-                    func.sum(case((UsageRecord.http_status < 400, 1), else_=0)),
+                    func.sum(
+                        case(
+                            (
+                                (UsageRecord.is_final_attempt.is_(True))
+                                & (UsageRecord.http_status < 400),
+                                1,
+                            ),
+                            else_=0,
+                        )
+                    ),
                     0,
                 ),
                 func.coalesce(
-                    func.sum(case((UsageRecord.http_status >= 400, 1), else_=0)),
+                    func.sum(
+                        case(
+                            (
+                                (UsageRecord.is_final_attempt.is_(True))
+                                & (UsageRecord.http_status >= 400),
+                                1,
+                            ),
+                            else_=0,
+                        )
+                    ),
                     0,
                 ),
                 func.coalesce(func.sum(UsageRecord.prompt_tokens), 0),
@@ -859,6 +923,12 @@ async def _totals(*filters, db: AsyncSession) -> UsageSummaryTotals:
         )
     ).one()
     return _row_to_totals(row)
+
+
+def _logical_request_count_expression():
+    return func.count(
+        func.distinct(func.coalesce(UsageRecord.gateway_request_id, UsageRecord.id))
+    )
 
 
 async def _breakdown(

@@ -6,7 +6,7 @@ import httpx
 import pytest
 from alembic.config import Config
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect, select, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from alembic import command
@@ -16,6 +16,7 @@ from app.core.config import settings
 from app.core.migrations import run_database_migrations
 from app.modules.keys import facade as keys_facade
 from app.modules.keys.schemas import ResolveAccessRequest
+from app.modules.usage.internal.models import GatewayRequest
 
 
 async def _login(client: AsyncClient) -> dict[str, str]:
@@ -107,11 +108,17 @@ async def _provision_gateway_path(
         headers=headers,
         json={
             "name": "Integration access",
-            "routes": [
+            "public_models": [
                 {
-                    "provider_id": provider_id,
-                    "credential_pool_id": pool_id,
-                    "model_offering_ids": [offering_id],
+                    "public_model_name": model,
+                    "routing_mode": "single_route",
+                    "candidates": [
+                        {
+                            "provider_id": provider_id,
+                            "credential_pool_id": pool_id,
+                            "model_offering_id": offering_id,
+                        }
+                    ],
                 }
             ],
         },
@@ -336,6 +343,28 @@ async def test_migrations_create_current_schema(tmp_path) -> None:
                 item["name"] for item in inspect(sync_connection).get_unique_constraints("projects")
             }
         )
+        public_model_columns = await connection.run_sync(
+            lambda sync_connection: {
+                item["name"]
+                for item in inspect(sync_connection).get_columns("access_policy_public_models")
+            }
+        )
+        route_candidate_columns = await connection.run_sync(
+            lambda sync_connection: {
+                item["name"]
+                for item in inspect(sync_connection).get_columns("access_policy_route_candidates")
+            }
+        )
+        gateway_request_columns = await connection.run_sync(
+            lambda sync_connection: {
+                item["name"] for item in inspect(sync_connection).get_columns("gateway_requests")
+            }
+        )
+        usage_record_columns = await connection.run_sync(
+            lambda sync_connection: {
+                item["name"] for item in inspect(sync_connection).get_columns("usage_records")
+            }
+        )
         policy_owner_schema = await connection.run_sync(_policy_owner_schema)
 
     await engine.dispose()
@@ -344,6 +373,9 @@ async def test_migrations_create_current_schema(tmp_path) -> None:
     assert "provider_credentials" in table_names
     assert "credential_pool_credentials" in table_names
     assert "usage_records" in table_names
+    assert "access_policy_public_models" in table_names
+    assert "access_policy_route_candidates" in table_names
+    assert "gateway_requests" in table_names
     assert "fallback_policy" not in provider_columns
     assert {"secret_backend", "secret_reference"} <= credential_columns
     assert {
@@ -360,6 +392,34 @@ async def test_migrations_create_current_schema(tmp_path) -> None:
     assert "slug" in project_columns
     assert "ix_projects_slug" in project_indexes
     assert "uq_projects_org_team_slug" in project_unique_constraints
+    assert {
+        "public_model_name",
+        "routing_mode",
+        "fallback_on",
+        "max_route_attempts",
+    } <= public_model_columns
+    assert {
+        "public_model_id",
+        "provider_id",
+        "credential_pool_id",
+        "model_offering_id",
+        "priority",
+    } <= route_candidate_columns
+    assert {
+        "gateway_endpoint",
+        "requested_model",
+        "attempt_count",
+        "fallback_attempted",
+        "final_candidate_id",
+    } <= gateway_request_columns
+    assert {
+        "gateway_request_id",
+        "public_model_id",
+        "route_candidate_id",
+        "routing_attempt_index",
+        "is_final_attempt",
+        "attempt_failure_reason",
+    } <= usage_record_columns
     for table_schema in policy_owner_schema.values():
         assert {
             "owning_scope_type",
@@ -810,6 +870,153 @@ async def test_native_anthropic_messages_records_upstream_failure(app_client, db
 
 
 @pytest.mark.asyncio
+async def test_native_anthropic_messages_falls_back_to_second_candidate(
+    app_client,
+    db_session,
+) -> None:
+    await sync_default_workspace(db_session)
+    calls: list[str] = []
+
+    async def upstream_handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        calls.append(body["model"])
+        if body["model"] == "claude-primary":
+            return httpx.Response(503, json={"type": "error", "error": {"type": "overloaded"}})
+        return httpx.Response(
+            200,
+            json={
+                "id": "msg_fallback",
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "text", "text": "anthropic-fallback-ok"}],
+                "model": "claude-secondary",
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 5, "output_tokens": 4},
+            },
+        )
+
+    async def override_proxy_http_client() -> AsyncGenerator[httpx.AsyncClient]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(upstream_handler)) as client:
+            yield client
+
+    app_client.dependency_overrides[get_proxy_http_client] = override_proxy_http_client
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client), base_url="http://test"
+    ) as client:
+        admin_headers = await _login(client)
+        providers = (await client.get("/api/v1/providers", headers=admin_headers)).json()
+        provider_id = next(
+            provider["id"] for provider in providers if provider["slug"] == "anthropic"
+        )
+        primary_pool_id, primary_model_id = await _create_provider_resources(
+            client=client,
+            headers=admin_headers,
+            provider_id=provider_id,
+            model="claude-primary",
+        )
+        secondary_pool_id, secondary_model_id = await _create_provider_resources(
+            client=client,
+            headers=admin_headers,
+            provider_id=provider_id,
+            model="claude-secondary",
+        )
+        team = await client.post(
+            "/api/v1/teams",
+            headers=admin_headers,
+            json={"name": "Anthropic Fallback Team", "slug": "anthropic-fallback-team"},
+        )
+        project = await client.post(
+            f"/api/v1/teams/{team.json()['id']}/projects",
+            headers=admin_headers,
+            json={"name": "Anthropic Fallback Project"},
+        )
+        access = await client.post(
+            "/api/v1/policies/access",
+            headers=admin_headers,
+            json={
+                "name": "Anthropic fallback access",
+                "public_models": [
+                    {
+                        "public_model_name": "claude-large",
+                        "routing_mode": "ordered_fallback",
+                        "fallback_on": ["provider_5xx"],
+                        "candidates": [
+                            {
+                                "provider_id": provider_id,
+                                "credential_pool_id": primary_pool_id,
+                                "model_offering_id": primary_model_id,
+                                "priority": 10,
+                            },
+                            {
+                                "provider_id": provider_id,
+                                "credential_pool_id": secondary_pool_id,
+                                "model_offering_id": secondary_model_id,
+                                "priority": 20,
+                            },
+                        ],
+                    }
+                ],
+            },
+        )
+        limits = await client.post(
+            "/api/v1/policies/limits",
+            headers=admin_headers,
+            json={"name": "Anthropic fallback limits", "rules": []},
+        )
+        assert access.status_code == 201
+        assert limits.status_code == 201
+        for payload in (
+            {
+                "policy_type": "access",
+                "access_policy_id": access.json()["id"],
+                "scope_type": "project",
+                "project_id": project.json()["id"],
+            },
+            {
+                "policy_type": "limit",
+                "limit_policy_id": limits.json()["id"],
+                "scope_type": "project",
+                "project_id": project.json()["id"],
+            },
+        ):
+            assignment = await client.post(
+                "/api/v1/policies/assignments",
+                headers=admin_headers,
+                json=payload,
+            )
+            assert assignment.status_code == 201
+        key = await client.post(
+            f"/api/v1/projects/{project.json()['id']}/keys",
+            headers=admin_headers,
+            json={"name": "Anthropic fallback key"},
+        )
+        response = await client.post(
+            "/v1/messages",
+            headers={"x-api-key": key.json()["key"]},
+            json={
+                "model": "claude-large",
+                "messages": [{"role": "user", "content": "Hello"}],
+                "max_tokens": 16,
+            },
+        )
+        usage_response = await client.get("/api/v1/usage/records", headers=admin_headers)
+
+    assert response.status_code == 200
+    assert response.json()["content"][0]["text"] == "anthropic-fallback-ok"
+    assert calls == ["claude-primary", "claude-secondary"]
+    records = usage_response.json()
+    assert [record["provider_model"] for record in records[:2]] == [
+        "claude-secondary",
+        "claude-primary",
+    ]
+    assert records[0]["error_code"] is None
+    assert records[0]["is_final_attempt"] is True
+    assert records[1]["attempt_failure_reason"] == "provider_5xx"
+    assert records[1]["is_final_attempt"] is False
+    app_client.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
 async def test_project_key_creation_without_limit_policy_succeeds(
     app_client,
     db_session,
@@ -874,11 +1081,17 @@ async def test_project_key_creation_without_limit_policy_succeeds(
             headers=admin_headers,
             json={
                 "name": "Access without limits",
-                "routes": [
+                "public_models": [
                     {
-                        "provider_id": provider_id,
-                        "credential_pool_id": pool_id,
-                        "model_offering_ids": [offering_id],
+                            "public_model_name": "gpt-access-only",
+                        "routing_mode": "single_route",
+                        "candidates": [
+                            {
+                                "provider_id": provider_id,
+                                "credential_pool_id": pool_id,
+                                "model_offering_id": offering_id,
+                            }
+                        ],
                     }
                 ],
             },
@@ -999,6 +1212,8 @@ async def test_gateway_enforces_virtual_key_request_rate_limit(app_client, db_se
         limit_record = usage_response.json()[0]
         assert limit_record["http_status"] == 429
         assert limit_record["error_code"] == "limit_policy_denied"
+        assert limit_record["gateway_endpoint"] == "chat_completions"
+        assert limit_record["gateway_request_id"] is not None
 
 
 @pytest.mark.asyncio
@@ -1511,6 +1726,767 @@ async def test_openai_compatible_gateway_contract(app_client, db_session) -> Non
             json={"model": "text-embedding-3-small", "input": "hello"},
         )
         assert embeddings_response.status_code == 501
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_falls_back_to_second_public_model_candidate(
+    app_client,
+    db_session,
+) -> None:
+    await sync_default_workspace(db_session)
+    calls: list[str] = []
+
+    async def upstream_handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        if "primary.example.test" in str(request.url):
+            return httpx.Response(503, json={"error": "primary down"})
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl_fallback",
+                "object": "chat.completion",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "fallback-ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
+            },
+        )
+
+    async def override_proxy_http_client() -> AsyncGenerator[httpx.AsyncClient]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(upstream_handler)) as client:
+            yield client
+
+    app_client.dependency_overrides[get_proxy_http_client] = override_proxy_http_client
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://test",
+    ) as client:
+        admin_headers = await _login(client)
+        primary_provider = await client.post(
+            "/api/v1/providers",
+            headers=admin_headers,
+            json={"name": "Primary fallback", "base_url": "https://primary.example.test/v1"},
+        )
+        secondary_provider = await client.post(
+            "/api/v1/providers",
+            headers=admin_headers,
+            json={"name": "Secondary fallback", "base_url": "https://secondary.example.test/v1"},
+        )
+        assert primary_provider.status_code == 201
+        assert secondary_provider.status_code == 201
+        primary_pool_id, primary_model_id = await _create_provider_resources(
+            client=client,
+            headers=admin_headers,
+            provider_id=primary_provider.json()["id"],
+            model="primary-chat",
+        )
+        secondary_pool_id, secondary_model_id = await _create_provider_resources(
+            client=client,
+            headers=admin_headers,
+            provider_id=secondary_provider.json()["id"],
+            model="secondary-chat",
+        )
+        team = await client.post(
+            "/api/v1/teams",
+            headers=admin_headers,
+            json={"name": "Fallback Team", "slug": "fallback-team"},
+        )
+        project = await client.post(
+            f"/api/v1/teams/{team.json()['id']}/projects",
+            headers=admin_headers,
+            json={"name": "Fallback Project"},
+        )
+        assert team.status_code == 201
+        assert project.status_code == 201
+        access = await client.post(
+            "/api/v1/policies/access",
+            headers=admin_headers,
+            json={
+                "name": "Fallback access",
+                "public_models": [
+                    {
+                        "public_model_name": "chat-large",
+                        "routing_mode": "ordered_fallback",
+                        "fallback_on": ["provider_5xx"],
+                        "candidates": [
+                            {
+                                "provider_id": primary_provider.json()["id"],
+                                "credential_pool_id": primary_pool_id,
+                                "model_offering_id": primary_model_id,
+                                "priority": 10,
+                            },
+                            {
+                                "provider_id": secondary_provider.json()["id"],
+                                "credential_pool_id": secondary_pool_id,
+                                "model_offering_id": secondary_model_id,
+                                "priority": 20,
+                            },
+                        ],
+                    }
+                ],
+            },
+        )
+        limits = await client.post(
+            "/api/v1/policies/limits",
+            headers=admin_headers,
+            json={"name": "Fallback limits", "rules": []},
+        )
+        assert access.status_code == 201
+        assert limits.status_code == 201
+        for payload in (
+            {
+                "policy_type": "access",
+                "access_policy_id": access.json()["id"],
+                "scope_type": "project",
+                "project_id": project.json()["id"],
+            },
+            {
+                "policy_type": "limit",
+                "limit_policy_id": limits.json()["id"],
+                "scope_type": "project",
+                "project_id": project.json()["id"],
+            },
+        ):
+            assignment = await client.post(
+                "/api/v1/policies/assignments",
+                headers=admin_headers,
+                json=payload,
+            )
+            assert assignment.status_code == 201
+        key = await client.post(
+            f"/api/v1/projects/{project.json()['id']}/keys",
+            headers=admin_headers,
+            json={"name": "Fallback key"},
+        )
+        assert key.status_code == 201
+
+        response = await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": f"Bearer {key.json()['key']}"},
+            json={"model": "chat-large", "messages": [{"role": "user", "content": "hello"}]},
+        )
+        usage = await client.get("/api/v1/usage/records", headers=admin_headers)
+        summary = await client.get("/api/v1/usage/summary", headers=admin_headers)
+
+    assert response.status_code == 200
+    assert response.json()["choices"][0]["message"]["content"] == "fallback-ok"
+    assert len(calls) == 2
+    assert "primary.example.test" in calls[0]
+    assert "secondary.example.test" in calls[1]
+    records = usage.json()
+    assert [record["provider_model"] for record in records[:2]] == [
+        "secondary-chat",
+        "primary-chat",
+    ]
+    assert records[0]["error_code"] is None
+    assert records[0]["is_final_attempt"] is True
+    assert records[0]["primary_route_candidate_id"] == records[1]["route_candidate_id"]
+    assert records[0]["gateway_request_id"] == records[1]["gateway_request_id"]
+    assert records[1]["attempt_failure_reason"] == "provider_5xx"
+    assert records[1]["is_final_attempt"] is False
+    totals = summary.json()["totals"]
+    assert totals["requests"] == 1
+    assert totals["successful_requests"] == 1
+    assert totals["failed_requests"] == 0
+    db_session.expire_all()
+    gateway_requests = (await db_session.execute(select(GatewayRequest))).scalars().all()
+    assert len(gateway_requests) == 1
+    assert gateway_requests[0].attempt_count == 2
+    assert gateway_requests[0].fallback_attempted is True
+    assert gateway_requests[0].final_http_status == 200
+    assert gateway_requests[0].final_provider_model == "secondary-chat"
+    app_client.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_returns_primary_error_when_fallback_exhausts(
+    app_client,
+    db_session,
+) -> None:
+    await sync_default_workspace(db_session)
+    calls: list[str] = []
+
+    async def upstream_handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        if "primary-exhausted.example.test" in str(request.url):
+            return httpx.Response(503, json={"error": {"message": "primary unavailable"}})
+        return httpx.Response(503, json={"error": {"message": "secondary unavailable"}})
+
+    async def override_proxy_http_client() -> AsyncGenerator[httpx.AsyncClient]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(upstream_handler)) as client:
+            yield client
+
+    app_client.dependency_overrides[get_proxy_http_client] = override_proxy_http_client
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://test",
+    ) as client:
+        admin_headers = await _login(client)
+        primary_provider = await client.post(
+            "/api/v1/providers",
+            headers=admin_headers,
+            json={
+                "name": "Primary exhausted",
+                "base_url": "https://primary-exhausted.example.test/v1",
+            },
+        )
+        secondary_provider = await client.post(
+            "/api/v1/providers",
+            headers=admin_headers,
+            json={
+                "name": "Secondary exhausted",
+                "base_url": "https://secondary-exhausted.example.test/v1",
+            },
+        )
+        assert primary_provider.status_code == 201
+        assert secondary_provider.status_code == 201
+        primary_pool_id, primary_model_id = await _create_provider_resources(
+            client=client,
+            headers=admin_headers,
+            provider_id=primary_provider.json()["id"],
+            model="primary-exhausted-chat",
+        )
+        secondary_pool_id, secondary_model_id = await _create_provider_resources(
+            client=client,
+            headers=admin_headers,
+            provider_id=secondary_provider.json()["id"],
+            model="secondary-exhausted-chat",
+        )
+        team = await client.post(
+            "/api/v1/teams",
+            headers=admin_headers,
+            json={"name": "Fallback Exhausted Team", "slug": "fallback-exhausted-team"},
+        )
+        project = await client.post(
+            f"/api/v1/teams/{team.json()['id']}/projects",
+            headers=admin_headers,
+            json={"name": "Fallback Exhausted Project"},
+        )
+        access = await client.post(
+            "/api/v1/policies/access",
+            headers=admin_headers,
+            json={
+                "name": "Fallback exhausted access",
+                "public_models": [
+                    {
+                        "public_model_name": "chat-exhausted",
+                        "routing_mode": "ordered_fallback",
+                        "fallback_on": ["provider_5xx"],
+                        "candidates": [
+                            {
+                                "provider_id": primary_provider.json()["id"],
+                                "credential_pool_id": primary_pool_id,
+                                "model_offering_id": primary_model_id,
+                                "priority": 10,
+                            },
+                            {
+                                "provider_id": secondary_provider.json()["id"],
+                                "credential_pool_id": secondary_pool_id,
+                                "model_offering_id": secondary_model_id,
+                                "priority": 20,
+                            },
+                        ],
+                    }
+                ],
+            },
+        )
+        assert access.status_code == 201
+        assignment = await client.post(
+            "/api/v1/policies/assignments",
+            headers=admin_headers,
+            json={
+                "policy_type": "access",
+                "access_policy_id": access.json()["id"],
+                "scope_type": "project",
+                "project_id": project.json()["id"],
+            },
+        )
+        assert assignment.status_code == 201
+        key = await client.post(
+            f"/api/v1/projects/{project.json()['id']}/keys",
+            headers=admin_headers,
+            json={"name": "Fallback exhausted key"},
+        )
+
+        response = await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": f"Bearer {key.json()['key']}"},
+            json={
+                "model": "chat-exhausted",
+                "messages": [{"role": "user", "content": "hello"}],
+            },
+        )
+        usage = await client.get("/api/v1/usage/records", headers=admin_headers)
+
+    assert response.status_code == 503
+    assert response.json()["error"]["message"] == "secondary unavailable"
+    assert len(calls) == 2
+    records = usage.json()
+    assert [record["provider_model"] for record in records[:2]] == [
+        "secondary-exhausted-chat",
+        "primary-exhausted-chat",
+    ]
+    assert records[0]["is_final_attempt"] is True
+    assert records[0]["attempt_failure_reason"] == "provider_5xx"
+    assert records[0]["routing_attempt_index"] == 1
+    assert records[1]["is_final_attempt"] is False
+    assert records[1]["routing_attempt_index"] == 0
+    assert records[0]["gateway_request_id"] == records[1]["gateway_request_id"]
+    db_session.expire_all()
+    gateway_requests = (await db_session.execute(select(GatewayRequest))).scalars().all()
+    assert len(gateway_requests) == 1
+    assert gateway_requests[0].attempt_count == 2
+    assert gateway_requests[0].fallback_attempted is True
+    assert gateway_requests[0].final_http_status == 503
+    assert gateway_requests[0].final_provider_model == "secondary-exhausted-chat"
+    assert gateway_requests[0].final_error_code == "provider_upstream_error"
+    app_client.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_does_not_fallback_for_nonfallbackable_status(
+    app_client,
+    db_session,
+) -> None:
+    await sync_default_workspace(db_session)
+    calls: list[str] = []
+
+    async def upstream_handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        return httpx.Response(400, json={"error": {"message": "bad request"}})
+
+    async def override_proxy_http_client() -> AsyncGenerator[httpx.AsyncClient]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(upstream_handler)) as client:
+            yield client
+
+    app_client.dependency_overrides[get_proxy_http_client] = override_proxy_http_client
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://test",
+    ) as client:
+        admin_headers = await _login(client)
+        virtual_key, _primary_provider_id, _secondary_provider_id = (
+            await _provision_ordered_fallback_gateway_path(
+                client=client,
+                headers=admin_headers,
+                slug_suffix="nonfallbackable",
+                public_model_name="chat-no-fallback",
+            )
+        )
+        response = await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": f"Bearer {virtual_key}"},
+            json={"model": "chat-no-fallback", "messages": [{"role": "user", "content": "hello"}]},
+        )
+        usage = await client.get("/api/v1/usage/records", headers=admin_headers)
+
+    assert response.status_code == 400
+    assert response.json()["error"]["message"] == "bad request"
+    assert len(calls) == 1
+    records = usage.json()
+    assert len(records) == 1
+    assert records[0]["is_final_attempt"] is True
+    assert records[0]["attempt_failure_reason"] == "provider_error"
+    app_client.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_falls_back_for_configured_rate_limit(
+    app_client,
+    db_session,
+) -> None:
+    await sync_default_workspace(db_session)
+    calls: list[str] = []
+
+    async def upstream_handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        if "primary-rate-limit.example.test" in str(request.url):
+            return httpx.Response(429, json={"error": {"message": "rate limited"}})
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl_rate_limit_fallback",
+                "object": "chat.completion",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "rate-limit-fallback-ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
+            },
+        )
+
+    async def override_proxy_http_client() -> AsyncGenerator[httpx.AsyncClient]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(upstream_handler)) as client:
+            yield client
+
+    app_client.dependency_overrides[get_proxy_http_client] = override_proxy_http_client
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://test",
+    ) as client:
+        admin_headers = await _login(client)
+        virtual_key, _primary_provider_id, _secondary_provider_id = (
+            await _provision_ordered_fallback_gateway_path(
+                client=client,
+                headers=admin_headers,
+                slug_suffix="rate-limit",
+                public_model_name="chat-rate-limit",
+                fallback_on=["rate_limited"],
+            )
+        )
+        response = await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": f"Bearer {virtual_key}"},
+            json={"model": "chat-rate-limit", "messages": [{"role": "user", "content": "hello"}]},
+        )
+        usage = await client.get("/api/v1/usage/records", headers=admin_headers)
+
+    assert response.status_code == 200
+    assert response.json()["choices"][0]["message"]["content"] == "rate-limit-fallback-ok"
+    assert len(calls) == 2
+    records = usage.json()
+    assert records[1]["attempt_failure_reason"] == "rate_limited"
+    assert records[1]["is_final_attempt"] is False
+    app_client.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_responses_and_completions_fall_back_to_second_candidate(
+    app_client,
+    db_session,
+) -> None:
+    await sync_default_workspace(db_session)
+    calls: list[str] = []
+
+    async def upstream_handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        calls.append(f"{request.url.host}:{body['model']}")
+        if "primary-openai-compatible.example.test" in str(request.url):
+            return httpx.Response(503, json={"error": {"message": "primary unavailable"}})
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl_openai_compatible_fallback",
+                "object": "chat.completion",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "compatible-fallback-ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
+            },
+        )
+
+    async def override_proxy_http_client() -> AsyncGenerator[httpx.AsyncClient]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(upstream_handler)) as client:
+            yield client
+
+    app_client.dependency_overrides[get_proxy_http_client] = override_proxy_http_client
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://test",
+    ) as client:
+        admin_headers = await _login(client)
+        virtual_key, _primary_provider_id, _secondary_provider_id = (
+            await _provision_ordered_fallback_gateway_path(
+                client=client,
+                headers=admin_headers,
+                slug_suffix="openai-compatible",
+                public_model_name="chat-compatible",
+            )
+        )
+        responses_response = await client.post(
+            "/v1/responses",
+            headers={"Authorization": f"Bearer {virtual_key}"},
+            json={"model": "chat-compatible", "input": "hello"},
+        )
+        completions_response = await client.post(
+            "/v1/completions",
+            headers={"Authorization": f"Bearer {virtual_key}"},
+            json={"model": "chat-compatible", "prompt": "hello"},
+        )
+        usage = await client.get("/api/v1/usage/records", headers=admin_headers)
+
+    assert responses_response.status_code == 200
+    assert responses_response.json()["output_text"] == "compatible-fallback-ok"
+    assert completions_response.status_code == 200
+    assert completions_response.json()["choices"][0]["text"] == "compatible-fallback-ok"
+    assert calls == [
+        "primary-openai-compatible.example.test:primary-openai-compatible-chat",
+        "secondary-openai-compatible.example.test:secondary-openai-compatible-chat",
+        "primary-openai-compatible.example.test:primary-openai-compatible-chat",
+        "secondary-openai-compatible.example.test:secondary-openai-compatible-chat",
+    ]
+    records = usage.json()
+    assert [record["gateway_endpoint"] for record in records[:4]] == [
+        "completions",
+        "completions",
+        "responses",
+        "responses",
+    ]
+    app_client.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_responses_exhausted_fallback_records_response_endpoint(
+    app_client,
+    db_session,
+) -> None:
+    await sync_default_workspace(db_session)
+
+    async def upstream_handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        return httpx.Response(
+            503,
+            json={
+                "error": {
+                    "message": f"{request.url.host}:{body['model']} unavailable",
+                    "type": "unavailable",
+                }
+            },
+        )
+
+    async def override_proxy_http_client() -> AsyncGenerator[httpx.AsyncClient]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(upstream_handler)) as client:
+            yield client
+
+    app_client.dependency_overrides[get_proxy_http_client] = override_proxy_http_client
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://test",
+    ) as client:
+        admin_headers = await _login(client)
+        virtual_key, _primary_provider_id, _secondary_provider_id = (
+            await _provision_ordered_fallback_gateway_path(
+                client=client,
+                headers=admin_headers,
+                slug_suffix="responses-exhausted",
+                public_model_name="chat-responses-exhausted",
+            )
+        )
+        response = await client.post(
+            "/v1/responses",
+            headers={"Authorization": f"Bearer {virtual_key}"},
+            json={"model": "chat-responses-exhausted", "input": "hello"},
+        )
+        usage = await client.get("/api/v1/usage/records", headers=admin_headers)
+
+    assert response.status_code == 503
+    records = usage.json()
+    assert [record["gateway_endpoint"] for record in records[:2]] == [
+        "responses",
+        "responses",
+    ]
+    assert records[0]["error_code"] == "provider_upstream_error"
+    assert records[0]["is_final_attempt"] is True
+    assert records[1]["is_final_attempt"] is False
+    assert records[0]["gateway_request_id"] == records[1]["gateway_request_id"]
+    app_client.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_provider_pin_disables_fallback(
+    app_client,
+    db_session,
+) -> None:
+    await sync_default_workspace(db_session)
+    calls: list[str] = []
+
+    async def upstream_handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        return httpx.Response(503, json={"error": {"message": "pinned provider down"}})
+
+    async def override_proxy_http_client() -> AsyncGenerator[httpx.AsyncClient]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(upstream_handler)) as client:
+            yield client
+
+    app_client.dependency_overrides[get_proxy_http_client] = override_proxy_http_client
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://test",
+    ) as client:
+        admin_headers = await _login(client)
+        virtual_key, primary_provider_id, _secondary_provider_id = (
+            await _provision_ordered_fallback_gateway_path(
+                client=client,
+                headers=admin_headers,
+                slug_suffix="provider-pin",
+                public_model_name="chat-pinned",
+            )
+        )
+        response = await client.post(
+            "/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {virtual_key}",
+                "X-Bab-Provider-Id": primary_provider_id,
+            },
+            json={"model": "chat-pinned", "messages": [{"role": "user", "content": "hello"}]},
+        )
+        usage = await client.get("/api/v1/usage/records", headers=admin_headers)
+
+    assert response.status_code == 503
+    assert response.json()["error"]["message"] == "pinned provider down"
+    assert len(calls) == 1
+    records = usage.json()
+    assert len(records) == 1
+    assert records[0]["provider_id"] == primary_provider_id
+    assert records[0]["is_final_attempt"] is True
+    assert records[0]["attempt_failure_reason"] == "provider_5xx"
+    app_client.dependency_overrides.clear()
+
+
+async def _provision_ordered_fallback_gateway_path(
+    *,
+    client: AsyncClient,
+    headers: dict[str, str],
+    slug_suffix: str,
+    public_model_name: str,
+    fallback_on: list[str] | None = None,
+) -> tuple[str, str, str]:
+    primary_provider = await client.post(
+        "/api/v1/providers",
+        headers=headers,
+        json={
+            "name": f"Primary {slug_suffix}",
+            "base_url": f"https://primary-{slug_suffix}.example.test/v1",
+        },
+    )
+    secondary_provider = await client.post(
+        "/api/v1/providers",
+        headers=headers,
+        json={
+            "name": f"Secondary {slug_suffix}",
+            "base_url": f"https://secondary-{slug_suffix}.example.test/v1",
+        },
+    )
+    assert primary_provider.status_code == 201
+    assert secondary_provider.status_code == 201
+    primary_pool_id, primary_model_id = await _create_provider_resources(
+        client=client,
+        headers=headers,
+        provider_id=primary_provider.json()["id"],
+        model=f"primary-{slug_suffix}-chat",
+    )
+    secondary_pool_id, secondary_model_id = await _create_provider_resources(
+        client=client,
+        headers=headers,
+        provider_id=secondary_provider.json()["id"],
+        model=f"secondary-{slug_suffix}-chat",
+    )
+    team = await client.post(
+        "/api/v1/teams",
+        headers=headers,
+        json={"name": f"Fallback {slug_suffix} Team", "slug": f"fallback-{slug_suffix}-team"},
+    )
+    project = await client.post(
+        f"/api/v1/teams/{team.json()['id']}/projects",
+        headers=headers,
+        json={"name": f"Fallback {slug_suffix} Project"},
+    )
+    access = await client.post(
+        "/api/v1/policies/access",
+        headers=headers,
+        json={
+            "name": f"Fallback {slug_suffix} access",
+            "public_models": [
+                {
+                    "public_model_name": public_model_name,
+                    "routing_mode": "ordered_fallback",
+                    "fallback_on": fallback_on or ["provider_5xx"],
+                    "candidates": [
+                        {
+                            "provider_id": primary_provider.json()["id"],
+                            "credential_pool_id": primary_pool_id,
+                            "model_offering_id": primary_model_id,
+                            "priority": 10,
+                        },
+                        {
+                            "provider_id": secondary_provider.json()["id"],
+                            "credential_pool_id": secondary_pool_id,
+                            "model_offering_id": secondary_model_id,
+                            "priority": 20,
+                        },
+                    ],
+                }
+            ],
+        },
+    )
+    assert access.status_code == 201
+    assignment = await client.post(
+        "/api/v1/policies/assignments",
+        headers=headers,
+        json={
+            "policy_type": "access",
+            "access_policy_id": access.json()["id"],
+            "scope_type": "project",
+            "project_id": project.json()["id"],
+        },
+    )
+    assert assignment.status_code == 201
+    key = await client.post(
+        f"/api/v1/projects/{project.json()['id']}/keys",
+        headers=headers,
+        json={"name": f"Fallback {slug_suffix} key"},
+    )
+    assert key.status_code == 201
+    return key.json()["key"], primary_provider.json()["id"], secondary_provider.json()["id"]
+
+
+async def _create_provider_resources(
+    *,
+    client: AsyncClient,
+    headers: dict[str, str],
+    provider_id: str,
+    model: str,
+) -> tuple[str, str]:
+    credential = await client.post(
+        f"/api/v1/providers/{provider_id}/credentials",
+        headers=headers,
+        json={"name": f"{model} key", "api_key": f"sk-{model}"},
+    )
+    assert credential.status_code == 201
+    pool = await client.post(
+        f"/api/v1/providers/{provider_id}/pools",
+        headers=headers,
+        json={"name": f"{model} pool", "selection_policy": "priority"},
+    )
+    assert pool.status_code == 201
+    pool_credential = await client.post(
+        f"/api/v1/providers/{provider_id}/pools/{pool.json()['id']}/credentials",
+        headers=headers,
+        json={"provider_credential_id": credential.json()["id"]},
+    )
+    assert pool_credential.status_code == 201
+    offering = await client.post(
+        f"/api/v1/providers/{provider_id}/offerings",
+        headers=headers,
+        json={
+            "provider_model_name": model,
+            "input_modalities": ["text"],
+            "output_modalities": ["text"],
+            "capabilities": {"chat": True, "streaming": True},
+            "input_price_per_million_tokens": 100,
+            "output_price_per_million_tokens": 200,
+        },
+    )
+    assert offering.status_code == 201
+    return pool.json()["id"], offering.json()["id"]
 
 
 def json_loads(content: bytes) -> dict:

@@ -4,6 +4,7 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
+import type { AccessibleModelCandidate } from './accessibleModelCandidate';
 
 export interface AccessibleModel {
   id: string;
@@ -15,8 +16,13 @@ export interface AccessibleModel {
   access_policy_id?: string | null;
   access_policy_name?: string | null;
   access_policy_route_id?: string | null;
+  public_model_id?: string | null;
+  route_candidate_id?: string | null;
+  public_model_name?: string | null;
+  routing_mode?: string | null;
   pool_id: string;
   pool_name: string;
   source_scope?: string | null;
   alias?: string | null;
+  candidates?: AccessibleModelCandidate[];
 }

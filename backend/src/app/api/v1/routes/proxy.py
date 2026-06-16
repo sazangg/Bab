@@ -26,7 +26,7 @@ from app.modules.keys.errors import (
     AccessDeniedError,
     InvalidVirtualKeyError,
 )
-from app.modules.keys.schemas import ResolveAccessRequest
+from app.modules.keys.schemas import ResolveAccessRequest, ResolvedAccess, ResolvedAccessPlan
 from app.modules.providers import facade as providers_facade
 from app.modules.providers.errors import (
     ProviderAdapterNotFoundError,
@@ -50,7 +50,12 @@ from app.modules.usage.accounting import (
 )
 from app.modules.usage.costing.base import CostingContext
 from app.modules.usage.costing.registry import default_cost_calculator_registry
-from app.modules.usage.schemas import RecordLimitPolicyReservation, RecordUsage
+from app.modules.usage.schemas import (
+    CreateGatewayRequest,
+    FinalizeGatewayRequest,
+    RecordLimitPolicyReservation,
+    RecordUsage,
+)
 
 router = APIRouter(prefix="/v1", tags=["proxy"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
@@ -115,6 +120,7 @@ async def create_completion(
         body=chat_body,
         raw_body=raw_body,
         started_at=started_at,
+        gateway_endpoint="completions",
         db=db,
         http_client=http_client,
         authorization=authorization,
@@ -141,6 +147,7 @@ async def create_response(
         body=chat_body,
         raw_body=raw_body,
         started_at=started_at,
+        gateway_endpoint="responses",
         db=db,
         http_client=http_client,
         authorization=authorization,
@@ -161,10 +168,23 @@ async def create_chat_completion(
     raw_body = await _read_body_within_limit(request, settings.proxy_max_body_bytes)
     body = _decode_json_body(raw_body)
     is_streaming = body.get("stream") is True
+    if not is_streaming:
+        return await _execute_chat_proxy(
+            body=body,
+            raw_body=raw_body,
+            started_at=started_at,
+            gateway_endpoint="chat_completions",
+            db=db,
+            http_client=http_client,
+            authorization=authorization,
+            provider_id=provider_id,
+            response_transform=lambda response_body: response_body,
+        )
 
     provider_payload = _to_provider_payload(body)
     raw_key = _extract_bearer_token(authorization)
     resolved = None
+    gateway_request_id: UUID | None = None
     estimated_tokens = 0
     reservation_ids: list[UUID] = []
     try:
@@ -172,6 +192,9 @@ async def create_chat_completion(
             payload=ResolveAccessRequest(
                 raw_key=raw_key,
                 requested_model=provider_payload.model,
+                provider_id=provider_id,
+                streaming=is_streaming,
+                gateway_endpoint="chat_completions",
             ),
             db=db,
         )
@@ -194,6 +217,8 @@ async def create_chat_completion(
             estimated_input_tokens=estimated_tokens,
             requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
             limit_types=ESTIMATED_LIMIT_TYPES,
+            gateway_request_id=gateway_request_id,
+            gateway_endpoint="chat_completions",
             db=db,
         )
         guardrail_context = _guardrail_context(resolved=resolved, provider_payload=provider_payload)
@@ -204,6 +229,8 @@ async def create_chat_completion(
                 estimated_input_tokens=estimated_tokens,
                 requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
                 limit_types=REQUEST_LIMIT_TYPES,
+                gateway_request_id=gateway_request_id,
+                gateway_endpoint="chat_completions",
                 db=db,
             )
         )
@@ -217,6 +244,15 @@ async def create_chat_completion(
             extra_body=upstream_extra_body,
         )
         if is_streaming:
+            if resolved.fallback_disabled_reason is not None:
+                await _record_proxy_activity(
+                    resolved=resolved,
+                    action="proxy.streaming_fallback_disabled",
+                    message="Streaming fallback is disabled for this phase.",
+                    severity="info",
+                    metadata={"reason": resolved.fallback_disabled_reason},
+                    db=db,
+                )
             if await guardrails_facade.has_enforced_response_guardrails(
                 context=guardrail_context,
                 db=db,
@@ -343,10 +379,13 @@ async def create_chat_completion(
         if resolved is not None:
             await _record_proxy_request(
                 resolved=resolved,
+                gateway_request_id=gateway_request_id,
                 http_status=exc.status_code,
                 latency_ms=_elapsed_ms(started_at),
                 usage=unknown_usage(),
                 error_code="provider_upstream_error",
+                attempt_failure_reason=exc.failure_reason,
+                gateway_endpoint="chat_completions",
                 db=db,
             )
             await _release_reservations(reservation_ids=reservation_ids, db=db)
@@ -373,6 +412,7 @@ async def create_chat_completion(
     except GuardrailDeniedError as exc:
         actual_cost_cents = await _record_proxy_request(
             resolved=resolved,
+            gateway_request_id=gateway_request_id,
             http_status=status.HTTP_403_FORBIDDEN,
             latency_ms=_elapsed_ms(started_at),
             usage=usage,
@@ -440,72 +480,140 @@ async def create_anthropic_message(
         api_key=anthropic_api_key,
     )
     resolved = None
+    plan: ResolvedAccessPlan | None = None
+    gateway_request_id: UUID | None = None
+    attempted_routes = 0
+    fallback_attempted = False
     reservation_ids: list[UUID] = []
     guardrail_context: GuardrailEvaluationContext | None = None
+    selected_attempt_index = 0
     try:
-        resolved = await keys_facade.resolve_access(
-            payload=ResolveAccessRequest(raw_key=raw_key, requested_model=provider_payload.model),
+        plan = await keys_facade.resolve_access_plan(
+            payload=ResolveAccessRequest(
+                raw_key=raw_key,
+                requested_model=provider_payload.model,
+                provider_id=provider_id,
+                gateway_endpoint="anthropic_messages",
+            ),
             db=db,
         )
+        resolved = _resolved_access_from_attempt(plan=plan, attempt_index=0)
         org_settings = await settings_facade.get_organization_settings(
             scope=Scope(org_id=resolved.org_id),
             db=db,
         )
         _enforce_body_size(raw_body, org_settings.default_max_body_bytes)
-        if provider_id is not None and provider_id != resolved.provider_id:
-            raise AccessDeniedError
-        resolved_provider = await providers_facade.get_provider(
-            provider_id=resolved.provider_id,
-            scope=Scope(org_id=resolved.org_id),
-            db=db,
-        )
-        if not resolved_provider.integration_capabilities.get("native_anthropic_messages"):
-            raise AccessDeniedError
-        _enforce_provider_body_size(raw_body, resolved_provider.max_body_bytes)
-        estimated_tokens = estimate_request_tokens(provider_payload.messages)
-        reservation_ids = await _enforce_limit_policies(
+        gateway_request_id = await _create_gateway_request(
             resolved=resolved,
-            estimated_input_tokens=estimated_tokens,
-            requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
-            limit_types=ESTIMATED_LIMIT_TYPES,
+            gateway_endpoint="anthropic_messages",
             db=db,
         )
+        estimated_tokens = estimate_request_tokens(provider_payload.messages)
         guardrail_payload = ProviderChatCompletionRequest(
             model=provider_payload.model,
             messages=provider_payload.messages,
             extra_body=provider_payload.extra_body,
         )
-        guardrail_context = _guardrail_context(
-            resolved=resolved,
-            provider_payload=guardrail_payload,
-        )
-        await guardrails_facade.evaluate_request(
-            context=guardrail_context,
-            db=db,
-        )
-        reservation_ids.extend(
-            await _enforce_limit_policies(
-                resolved=resolved,
-                estimated_input_tokens=estimated_tokens,
-                requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
-                limit_types=REQUEST_LIMIT_TYPES,
-                db=db,
-            )
-        )
-        upstream = await providers_facade.create_anthropic_message(
-            provider_id=resolved.provider_id,
-            pool_id=resolved.pool_id,
-            provider_credential_id=resolved.provider_key_id,
-            payload=ProviderAnthropicMessagesRequest(
-                model=resolved.provider_model,
-                messages=provider_payload.messages,
-                extra_body=provider_payload.extra_body,
-            ),
-            anthropic_version=anthropic_version,
-            scope=Scope(org_id=resolved.org_id),
-            db=db,
-            http_client=http_client,
-        )
+        last_upstream_error: ProviderUpstreamError | None = None
+        for attempt_index, _attempt in enumerate(plan.attempts):
+            resolved = _resolved_access_from_attempt(plan=plan, attempt_index=attempt_index)
+            selected_attempt_index = attempt_index
+            attempted_routes = max(attempted_routes, attempt_index + 1)
+            reservation_ids = []
+            try:
+                resolved_provider = await providers_facade.get_provider(
+                    provider_id=resolved.provider_id,
+                    scope=Scope(org_id=resolved.org_id),
+                    db=db,
+                )
+                if not resolved_provider.integration_capabilities.get(
+                    "native_anthropic_messages"
+                ):
+                    raise AccessDeniedError
+                _enforce_provider_body_size(raw_body, resolved_provider.max_body_bytes)
+                guardrail_context = _guardrail_context(
+                    resolved=resolved,
+                    provider_payload=guardrail_payload,
+                )
+                await guardrails_facade.evaluate_request(
+                    context=guardrail_context,
+                    db=db,
+                )
+                reservation_ids = await _enforce_limit_policies(
+                    resolved=resolved,
+                    estimated_input_tokens=estimated_tokens,
+                    requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
+                    limit_types=ESTIMATED_LIMIT_TYPES,
+                    gateway_request_id=gateway_request_id,
+                    gateway_endpoint="anthropic_messages",
+                    db=db,
+                )
+                reservation_ids.extend(
+                    await _enforce_limit_policies(
+                        resolved=resolved,
+                        estimated_input_tokens=estimated_tokens,
+                        requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
+                        limit_types=REQUEST_LIMIT_TYPES,
+                        gateway_request_id=gateway_request_id,
+                        gateway_endpoint="anthropic_messages",
+                        db=db,
+                    )
+                )
+                upstream = await providers_facade.create_anthropic_message(
+                    provider_id=resolved.provider_id,
+                    pool_id=resolved.pool_id,
+                    provider_credential_id=resolved.provider_key_id,
+                    payload=ProviderAnthropicMessagesRequest(
+                        model=resolved.provider_model,
+                        messages=provider_payload.messages,
+                        extra_body=provider_payload.extra_body,
+                    ),
+                    anthropic_version=anthropic_version,
+                    scope=Scope(org_id=resolved.org_id),
+                    db=db,
+                    http_client=http_client,
+                )
+                break
+            except ProviderUpstreamError as exc:
+                last_upstream_error = exc
+                if not _should_try_next_route(
+                    plan=plan,
+                    attempt_index=attempt_index,
+                    failure_reason=exc.failure_reason,
+                ):
+                    raise
+                fallback_attempted = True
+                await _record_proxy_request(
+                    resolved=resolved,
+                    gateway_request_id=gateway_request_id,
+                    http_status=exc.status_code,
+                    latency_ms=_elapsed_ms(started_at),
+                    usage=unknown_usage(),
+                    error_code="provider_upstream_error",
+                    routing_attempt_index=attempt_index,
+                    is_final_attempt=False,
+                    attempt_failure_reason=exc.failure_reason,
+                    gateway_endpoint="anthropic_messages",
+                    db=db,
+                )
+                await _release_reservations(reservation_ids=reservation_ids, db=db)
+                await _record_proxy_activity(
+                    resolved=resolved,
+                    action="proxy.routing_fallback_attempted",
+                    message="Native Anthropic provider failed; trying the next route candidate.",
+                    severity="warning",
+                    metadata={
+                        "reason": exc.failure_reason,
+                        "http_status": exc.status_code,
+                        "route_candidate_id": str(resolved.route_candidate_id)
+                        if resolved.route_candidate_id
+                        else None,
+                    },
+                    db=db,
+                )
+        else:
+            assert last_upstream_error is not None
+            raise last_upstream_error
     except InvalidVirtualKeyError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -517,6 +625,15 @@ async def create_anthropic_message(
         # pipeline (e.g. token/budget reservations from the first enforcement phase)
         # so a request-count denial does not leak them until expiry.
         await _release_reservations(reservation_ids=reservation_ids, db=db)
+        await _finalize_gateway_request(
+            gateway_request_id=gateway_request_id,
+            resolved=resolved,
+            http_status=status.HTTP_429_TOO_MANY_REQUESTS,
+            attempt_count=attempted_routes or 1,
+            fallback_attempted=fallback_attempted,
+            error_code="limit_exceeded",
+            db=db,
+        )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=exc.detail,
@@ -526,9 +643,19 @@ async def create_anthropic_message(
         if resolved is not None:
             await _record_proxy_request(
                 resolved=resolved,
+                gateway_request_id=gateway_request_id,
                 http_status=status.HTTP_403_FORBIDDEN,
                 latency_ms=_elapsed_ms(started_at),
                 usage=unknown_usage(),
+                error_code="access_denied",
+                db=db,
+            )
+            await _finalize_gateway_request(
+                gateway_request_id=gateway_request_id,
+                resolved=resolved,
+                http_status=status.HTTP_403_FORBIDDEN,
+                attempt_count=attempted_routes or 1,
+                fallback_attempted=fallback_attempted,
                 error_code="access_denied",
                 db=db,
             )
@@ -549,9 +676,19 @@ async def create_anthropic_message(
         if resolved is not None:
             await _record_proxy_request(
                 resolved=resolved,
+                gateway_request_id=gateway_request_id,
                 http_status=status.HTTP_403_FORBIDDEN,
                 latency_ms=_elapsed_ms(started_at),
                 usage=unknown_usage(),
+                error_code="guardrail_denied",
+                db=db,
+            )
+            await _finalize_gateway_request(
+                gateway_request_id=gateway_request_id,
+                resolved=resolved,
+                http_status=status.HTTP_403_FORBIDDEN,
+                attempt_count=attempted_routes or 1,
+                fallback_attempted=fallback_attempted,
                 error_code="guardrail_denied",
                 db=db,
             )
@@ -573,9 +710,19 @@ async def create_anthropic_message(
         if resolved is not None:
             await _record_proxy_request(
                 resolved=resolved,
+                gateway_request_id=gateway_request_id,
                 http_status=status.HTTP_502_BAD_GATEWAY,
                 latency_ms=_elapsed_ms(started_at),
                 usage=unknown_usage(),
+                error_code="provider_unavailable",
+                db=db,
+            )
+            await _finalize_gateway_request(
+                gateway_request_id=gateway_request_id,
+                resolved=resolved,
+                http_status=status.HTTP_502_BAD_GATEWAY,
+                attempt_count=attempted_routes or 1,
+                fallback_attempted=fallback_attempted,
                 error_code="provider_unavailable",
                 db=db,
             )
@@ -599,8 +746,32 @@ async def create_anthropic_message(
                 latency_ms=_elapsed_ms(started_at),
                 usage=unknown_usage(),
                 error_code="provider_upstream_error",
+                routing_attempt_index=selected_attempt_index,
+                attempt_failure_reason=exc.failure_reason,
+                gateway_endpoint="anthropic_messages",
                 db=db,
             )
+            await _finalize_gateway_request(
+                gateway_request_id=gateway_request_id,
+                resolved=resolved,
+                http_status=exc.status_code,
+                attempt_count=attempted_routes or 1,
+                fallback_attempted=fallback_attempted,
+                error_code="provider_upstream_error",
+                db=db,
+            )
+            if fallback_attempted:
+                await _record_proxy_activity(
+                    resolved=resolved,
+                    action="proxy.routing_fallback_exhausted",
+                    message="Native Anthropic fallback candidates were exhausted.",
+                    severity="error",
+                    metadata={
+                        "reason": exc.failure_reason,
+                        "http_status": exc.status_code,
+                    },
+                    db=db,
+                )
             await _record_proxy_activity(
                 resolved=resolved,
                 action="proxy.upstream_failed",
@@ -641,6 +812,17 @@ async def create_anthropic_message(
             usage=usage,
             error_code="guardrail_output_denied",
             provider_credential_id=upstream.provider_credential_id,
+            routing_attempt_index=selected_attempt_index,
+            gateway_endpoint="anthropic_messages",
+            db=db,
+        )
+        await _finalize_gateway_request(
+            gateway_request_id=gateway_request_id,
+            resolved=resolved,
+            http_status=status.HTTP_403_FORBIDDEN,
+            attempt_count=attempted_routes or 1,
+            fallback_attempted=fallback_attempted,
+            error_code="guardrail_output_denied",
             db=db,
         )
         await _commit_reservations(
@@ -664,13 +846,39 @@ async def create_anthropic_message(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.detail) from exc
     actual_cost_cents = await _record_proxy_request(
         resolved=resolved,
+        gateway_request_id=gateway_request_id,
         http_status=upstream.status_code,
         latency_ms=_elapsed_ms(started_at),
         usage=usage,
         error_code=None,
         provider_credential_id=upstream.provider_credential_id,
+        routing_attempt_index=selected_attempt_index,
+        gateway_endpoint="anthropic_messages",
         db=db,
     )
+    await _finalize_gateway_request(
+        gateway_request_id=gateway_request_id,
+        resolved=resolved,
+        http_status=upstream.status_code,
+        attempt_count=attempted_routes or 1,
+        fallback_attempted=fallback_attempted,
+        error_code=None,
+        db=db,
+    )
+    if fallback_attempted:
+        await _record_proxy_activity(
+            resolved=resolved,
+            action="proxy.routing_fallback_succeeded",
+            message="Native Anthropic request succeeded after fallback.",
+            severity="info",
+            metadata={
+                "attempt_count": attempted_routes,
+                "route_candidate_id": str(resolved.route_candidate_id)
+                if resolved.route_candidate_id
+                else None,
+            },
+            db=db,
+        )
     await _commit_reservations(
         reservation_ids=reservation_ids,
         usage=usage,
@@ -699,6 +907,7 @@ async def _execute_chat_proxy(
     body: dict[str, Any],
     raw_body: bytes,
     started_at: float,
+    gateway_endpoint: str,
     db: AsyncSession,
     http_client: httpx.AsyncClient,
     authorization: str | None,
@@ -708,66 +917,132 @@ async def _execute_chat_proxy(
     provider_payload = _to_provider_payload(body)
     raw_key = _extract_bearer_token(authorization)
     resolved = None
+    plan: ResolvedAccessPlan | None = None
+    gateway_request_id: UUID | None = None
+    attempted_routes = 0
+    fallback_attempted = False
     reservation_ids: list[UUID] = []
+    selected_attempt_index = 0
     try:
-        resolved = await keys_facade.resolve_access(
+        plan = await keys_facade.resolve_access_plan(
             payload=ResolveAccessRequest(
                 raw_key=raw_key,
                 requested_model=provider_payload.model,
+                provider_id=provider_id,
+                gateway_endpoint=gateway_endpoint,
             ),
             db=db,
         )
+        resolved = _resolved_access_from_attempt(plan=plan, attempt_index=0)
         org_settings = await settings_facade.get_organization_settings(
             scope=Scope(org_id=resolved.org_id),
             db=db,
         )
         _enforce_body_size(raw_body, org_settings.default_max_body_bytes)
-        if provider_id is not None and provider_id != resolved.provider_id:
-            raise AccessDeniedError
-        resolved_provider = await providers_facade.get_provider(
-            provider_id=resolved.provider_id,
-            scope=Scope(org_id=resolved.org_id),
-            db=db,
-        )
-        _enforce_provider_body_size(raw_body, resolved_provider.max_body_bytes)
-        estimated_tokens = estimate_request_tokens(provider_payload.messages)
-        reservation_ids = await _enforce_limit_policies(
+        gateway_request_id = await _create_gateway_request(
             resolved=resolved,
-            estimated_input_tokens=estimated_tokens,
-            requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
-            limit_types=ESTIMATED_LIMIT_TYPES,
+            gateway_endpoint=gateway_endpoint,
             db=db,
         )
-        await guardrails_facade.evaluate_request(
-            context=_guardrail_context(resolved=resolved, provider_payload=provider_payload),
-            db=db,
-        )
-        reservation_ids.extend(
-            await _enforce_limit_policies(
-                resolved=resolved,
-                estimated_input_tokens=estimated_tokens,
-                requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
-                limit_types=REQUEST_LIMIT_TYPES,
-                db=db,
-            )
-        )
-        upstream_extra_body = _normalize_provider_extra_body(
-            extra_body=provider_payload.extra_body,
-            provider_model=resolved.provider_model,
-        )
-        upstream = await providers_facade.create_chat_completion(
-            provider_id=resolved.provider_id,
-            pool_id=resolved.pool_id,
-            provider_credential_id=resolved.provider_key_id,
-            payload=ProviderChatCompletionRequest(
-                model=resolved.provider_model,
-                messages=provider_payload.messages,
-                extra_body=upstream_extra_body,
-            ),
-            scope=Scope(org_id=resolved.org_id),
-            db=db,
-            http_client=http_client,
-        )
+        estimated_tokens = estimate_request_tokens(provider_payload.messages)
+        last_upstream_error: ProviderUpstreamError | None = None
+        for attempt_index, _attempt in enumerate(plan.attempts):
+            resolved = _resolved_access_from_attempt(plan=plan, attempt_index=attempt_index)
+            selected_attempt_index = attempt_index
+            attempted_routes = max(attempted_routes, attempt_index + 1)
+            reservation_ids = []
+            try:
+                resolved_provider = await providers_facade.get_provider(
+                    provider_id=resolved.provider_id,
+                    scope=Scope(org_id=resolved.org_id),
+                    db=db,
+                )
+                _enforce_provider_body_size(raw_body, resolved_provider.max_body_bytes)
+                await guardrails_facade.evaluate_request(
+                    context=_guardrail_context(
+                        resolved=resolved, provider_payload=provider_payload
+                    ),
+                    db=db,
+                )
+                reservation_ids = await _enforce_limit_policies(
+                    resolved=resolved,
+                    estimated_input_tokens=estimated_tokens,
+                    requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
+                    limit_types=ESTIMATED_LIMIT_TYPES,
+                    gateway_request_id=gateway_request_id,
+                    gateway_endpoint=gateway_endpoint,
+                    db=db,
+                )
+                reservation_ids.extend(
+                    await _enforce_limit_policies(
+                        resolved=resolved,
+                        estimated_input_tokens=estimated_tokens,
+                        requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
+                        limit_types=REQUEST_LIMIT_TYPES,
+                        gateway_request_id=gateway_request_id,
+                        gateway_endpoint=gateway_endpoint,
+                        db=db,
+                    )
+                )
+                upstream_extra_body = _normalize_provider_extra_body(
+                    extra_body=provider_payload.extra_body,
+                    provider_model=resolved.provider_model,
+                )
+                upstream = await providers_facade.create_chat_completion(
+                    provider_id=resolved.provider_id,
+                    pool_id=resolved.pool_id,
+                    provider_credential_id=resolved.provider_key_id,
+                    payload=ProviderChatCompletionRequest(
+                        model=resolved.provider_model,
+                        messages=provider_payload.messages,
+                        extra_body=upstream_extra_body,
+                    ),
+                    scope=Scope(org_id=resolved.org_id),
+                    db=db,
+                    http_client=http_client,
+                )
+                selected_attempt_index = attempt_index
+                break
+            except ProviderUpstreamError as exc:
+                last_upstream_error = exc
+                if not _should_try_next_route(
+                    plan=plan,
+                    attempt_index=attempt_index,
+                    failure_reason=exc.failure_reason,
+                ):
+                    raise
+                fallback_attempted = True
+                await _record_proxy_request(
+                    resolved=resolved,
+                    gateway_request_id=gateway_request_id,
+                    http_status=exc.status_code,
+                    latency_ms=_elapsed_ms(started_at),
+                    usage=unknown_usage(),
+                    error_code="provider_upstream_error",
+                    routing_attempt_index=attempt_index,
+                    is_final_attempt=False,
+                    attempt_failure_reason=exc.failure_reason,
+                    gateway_endpoint=gateway_endpoint,
+                    db=db,
+                )
+                await _release_reservations(reservation_ids=reservation_ids, db=db)
+                await _record_proxy_activity(
+                    resolved=resolved,
+                    action="proxy.routing_fallback_attempted",
+                    message="Provider request failed; trying the next route candidate.",
+                    severity="warning",
+                    metadata={
+                        "reason": exc.failure_reason,
+                        "http_status": exc.status_code,
+                        "route_candidate_id": str(resolved.route_candidate_id)
+                        if resolved.route_candidate_id
+                        else None,
+                    },
+                    db=db,
+                )
+        else:
+            assert last_upstream_error is not None
+            raise last_upstream_error
     except InvalidVirtualKeyError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -779,6 +1054,15 @@ async def _execute_chat_proxy(
         # pipeline (e.g. token/budget reservations from the first enforcement phase)
         # so a request-count denial does not leak them until expiry.
         await _release_reservations(reservation_ids=reservation_ids, db=db)
+        await _finalize_gateway_request(
+            gateway_request_id=gateway_request_id,
+            resolved=resolved,
+            http_status=status.HTTP_429_TOO_MANY_REQUESTS,
+            attempt_count=attempted_routes or 1,
+            fallback_attempted=fallback_attempted,
+            error_code="limit_exceeded",
+            db=db,
+        )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=exc.detail,
@@ -802,13 +1086,24 @@ async def _execute_chat_proxy(
         if resolved is not None:
             await _record_proxy_request(
                 resolved=resolved,
+                gateway_request_id=gateway_request_id,
                 http_status=status.HTTP_403_FORBIDDEN,
                 latency_ms=_elapsed_ms(started_at),
                 usage=unknown_usage(),
                 error_code="guardrail_denied",
+                gateway_endpoint=gateway_endpoint,
                 db=db,
             )
             await _release_reservations(reservation_ids=reservation_ids, db=db)
+            await _finalize_gateway_request(
+                gateway_request_id=gateway_request_id,
+                resolved=resolved,
+                http_status=status.HTTP_403_FORBIDDEN,
+                attempt_count=attempted_routes or 1,
+                fallback_attempted=fallback_attempted,
+                error_code="guardrail_denied",
+                db=db,
+            )
             await _record_proxy_activity(
                 resolved=resolved,
                 action="proxy.guardrail_denied",
@@ -826,13 +1121,24 @@ async def _execute_chat_proxy(
         if resolved is not None:
             await _record_proxy_request(
                 resolved=resolved,
+                gateway_request_id=gateway_request_id,
                 http_status=status.HTTP_502_BAD_GATEWAY,
                 latency_ms=_elapsed_ms(started_at),
                 usage=unknown_usage(),
                 error_code="provider_unavailable",
+                gateway_endpoint=gateway_endpoint,
                 db=db,
             )
             await _release_reservations(reservation_ids=reservation_ids, db=db)
+            await _finalize_gateway_request(
+                gateway_request_id=gateway_request_id,
+                resolved=resolved,
+                http_status=status.HTTP_502_BAD_GATEWAY,
+                attempt_count=attempted_routes or 1,
+                fallback_attempted=fallback_attempted,
+                error_code="provider_unavailable",
+                db=db,
+            )
             await _record_proxy_activity(
                 resolved=resolved,
                 action="proxy.provider_unavailable",
@@ -849,12 +1155,37 @@ async def _execute_chat_proxy(
         if resolved is not None:
             await _record_proxy_request(
                 resolved=resolved,
+                gateway_request_id=gateway_request_id,
                 http_status=exc.status_code,
                 latency_ms=_elapsed_ms(started_at),
                 usage=unknown_usage(),
                 error_code="provider_upstream_error",
+                routing_attempt_index=selected_attempt_index,
+                attempt_failure_reason=exc.failure_reason,
+                gateway_endpoint=gateway_endpoint,
                 db=db,
             )
+            await _finalize_gateway_request(
+                gateway_request_id=gateway_request_id,
+                resolved=resolved,
+                http_status=exc.status_code,
+                attempt_count=attempted_routes or 1,
+                fallback_attempted=fallback_attempted,
+                error_code="provider_upstream_error",
+                db=db,
+            )
+            if fallback_attempted:
+                await _record_proxy_activity(
+                    resolved=resolved,
+                    action="proxy.routing_fallback_exhausted",
+                    message="Fallback candidates were exhausted.",
+                    severity="error",
+                    metadata={
+                        "reason": exc.failure_reason,
+                        "http_status": exc.status_code,
+                    },
+                    db=db,
+                )
             await _release_reservations(reservation_ids=reservation_ids, db=db)
             await _record_proxy_activity(
                 resolved=resolved,
@@ -882,11 +1213,23 @@ async def _execute_chat_proxy(
     except GuardrailDeniedError as exc:
         actual_cost_cents = await _record_proxy_request(
             resolved=resolved,
+            gateway_request_id=gateway_request_id,
             http_status=status.HTTP_403_FORBIDDEN,
             latency_ms=_elapsed_ms(started_at),
             usage=usage,
             error_code="guardrail_output_denied",
             provider_credential_id=upstream.provider_credential_id,
+            routing_attempt_index=selected_attempt_index,
+            gateway_endpoint=gateway_endpoint,
+            db=db,
+        )
+        await _finalize_gateway_request(
+            gateway_request_id=gateway_request_id,
+            resolved=resolved,
+            http_status=status.HTTP_403_FORBIDDEN,
+            attempt_count=attempted_routes or 1,
+            fallback_attempted=fallback_attempted,
+            error_code="guardrail_output_denied",
             db=db,
         )
         await _commit_reservations(
@@ -910,13 +1253,39 @@ async def _execute_chat_proxy(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.detail) from exc
     actual_cost_cents = await _record_proxy_request(
         resolved=resolved,
+        gateway_request_id=gateway_request_id,
         http_status=upstream.status_code,
         latency_ms=_elapsed_ms(started_at),
         usage=usage,
         error_code=None,
         provider_credential_id=upstream.provider_credential_id,
+        routing_attempt_index=selected_attempt_index,
+        gateway_endpoint=gateway_endpoint,
         db=db,
     )
+    await _finalize_gateway_request(
+        gateway_request_id=gateway_request_id,
+        resolved=resolved,
+        http_status=upstream.status_code,
+        attempt_count=attempted_routes or 1,
+        fallback_attempted=fallback_attempted,
+        error_code=None,
+        db=db,
+    )
+    if fallback_attempted:
+        await _record_proxy_activity(
+            resolved=resolved,
+            action="proxy.routing_fallback_succeeded",
+            message="Provider request succeeded after fallback.",
+            severity="info",
+            metadata={
+                "attempt_count": attempted_routes,
+                "route_candidate_id": str(resolved.route_candidate_id)
+                if resolved.route_candidate_id
+                else None,
+            },
+            db=db,
+        )
     await _commit_reservations(
         reservation_ids=reservation_ids,
         usage=usage,
@@ -1303,6 +1672,53 @@ def _uses_completion_token_limit(provider_model: str) -> bool:
     return normalized_model.startswith(("gpt-5", "o1", "o3", "o4"))
 
 
+def _should_try_next_route(
+    *,
+    plan: ResolvedAccessPlan,
+    attempt_index: int,
+    failure_reason: str,
+) -> bool:
+    if plan.provider_pinned or plan.fallback_disabled_reason is not None:
+        return False
+    if plan.routing_mode != "ordered_fallback":
+        return False
+    if failure_reason not in set(plan.fallback_on):
+        return False
+    return attempt_index + 1 < len(plan.attempts)
+
+
+def _resolved_access_from_attempt(
+    *,
+    plan: ResolvedAccessPlan,
+    attempt_index: int,
+) -> ResolvedAccess:
+    attempt = plan.attempts[attempt_index]
+    return ResolvedAccess(
+        org_id=attempt.org_id,
+        team_id=attempt.team_id,
+        project_id=attempt.project_id,
+        access_policy_id=attempt.access_policy_id,
+        access_policy_route_id=attempt.access_policy_route_id,
+        public_model_id=attempt.public_model_id,
+        route_candidate_id=attempt.route_candidate_id,
+        primary_route_candidate_id=attempt.primary_route_candidate_id,
+        public_model_name=attempt.public_model_name,
+        routing_mode=attempt.routing_mode,
+        model_offering_id=attempt.model_offering_id,
+        limit_policy_ids=attempt.limit_policy_ids,
+        limit_policies=attempt.limit_policies,
+        virtual_key_id=attempt.virtual_key_id,
+        provider_id=attempt.provider_id,
+        pool_id=attempt.pool_id,
+        provider_key_id=attempt.provider_key_id,
+        requested_model=attempt.requested_model,
+        provider_model=attempt.provider_model,
+        input_price_per_million_tokens=attempt.input_price_per_million_tokens,
+        output_price_per_million_tokens=attempt.output_price_per_million_tokens,
+        fallback_disabled_reason=plan.fallback_disabled_reason,
+    )
+
+
 def _extract_bearer_token(authorization: str | None) -> str:
     if authorization is None:
         raise HTTPException(
@@ -1337,13 +1753,20 @@ def _extract_anthropic_virtual_key(*, authorization: str | None, api_key: str | 
 
 async def _record_proxy_request(
     *,
-    resolved,
+    resolved: ResolvedAccess,
+    gateway_request_id: UUID | None = None,
     http_status: int,
     latency_ms: int,
     usage: UsageAccounting,
     error_code: str | None,
     db: AsyncSession,
     provider_credential_id: UUID | None = None,
+    routing_attempt_index: int = 0,
+    is_final_attempt: bool = True,
+    fallback_from_candidate_id: UUID | None = None,
+    fallback_trigger_reason: str | None = None,
+    attempt_failure_reason: str | None = None,
+    gateway_endpoint: str | None = None,
 ) -> int | None:
     cost_cents = _calculate_cost_cents(resolved=resolved, usage=usage)
     cost_micro_cents = _calculate_cost_micro_cents(resolved=resolved, usage=usage)
@@ -1354,6 +1777,9 @@ async def _record_proxy_request(
             project_id=resolved.project_id,
             access_policy_id=resolved.access_policy_id,
             access_policy_route_id=resolved.access_policy_route_id,
+            gateway_request_id=gateway_request_id,
+            public_model_id=resolved.public_model_id,
+            route_candidate_id=resolved.route_candidate_id,
             limit_policy_ids=[str(limit_id) for limit_id in resolved.limit_policy_ids],
             limit_policy_rule_ids=[
                 str(limit.limit_policy_rule_id) for limit in resolved.limit_policies
@@ -1368,6 +1794,15 @@ async def _record_proxy_request(
             request_id=current_request_id(),
             requested_model=resolved.requested_model,
             provider_model=resolved.provider_model,
+            public_model_name=resolved.public_model_name,
+            routing_mode=resolved.routing_mode,
+            routing_attempt_index=routing_attempt_index,
+            is_final_attempt=is_final_attempt,
+            primary_route_candidate_id=resolved.primary_route_candidate_id,
+            fallback_from_candidate_id=fallback_from_candidate_id,
+            fallback_trigger_reason=fallback_trigger_reason,
+            attempt_failure_reason=attempt_failure_reason,
+            gateway_endpoint=gateway_endpoint,
             http_status=http_status,
             latency_ms=latency_ms,
             prompt_tokens=usage.prompt_tokens,
@@ -1383,12 +1818,67 @@ async def _record_proxy_request(
     return cost_cents
 
 
+async def _create_gateway_request(
+    *,
+    resolved: ResolvedAccess,
+    gateway_endpoint: str,
+    db: AsyncSession,
+) -> UUID:
+    return await usage_facade.create_gateway_request(
+        payload=CreateGatewayRequest(
+            org_id=resolved.org_id,
+            team_id=resolved.team_id,
+            project_id=resolved.project_id,
+            virtual_key_id=resolved.virtual_key_id,
+            request_id=current_request_id(),
+            gateway_endpoint=gateway_endpoint,
+            requested_model=resolved.requested_model,
+            public_model_name=resolved.public_model_name,
+            routing_mode=resolved.routing_mode,
+        ),
+        db=db,
+    )
+
+
+async def _finalize_gateway_request(
+    *,
+    gateway_request_id: UUID | None,
+    resolved: ResolvedAccess | None,
+    http_status: int,
+    attempt_count: int,
+    fallback_attempted: bool,
+    error_code: str | None,
+    db: AsyncSession,
+) -> None:
+    if gateway_request_id is None or resolved is None:
+        return
+    await usage_facade.finalize_gateway_request(
+        gateway_request_id=gateway_request_id,
+        payload=FinalizeGatewayRequest(
+            final_http_status=http_status,
+            final_access_policy_id=resolved.access_policy_id,
+            final_public_model_id=resolved.public_model_id,
+            final_candidate_id=resolved.route_candidate_id,
+            final_provider_id=resolved.provider_id,
+            final_credential_pool_id=resolved.pool_id,
+            final_model_offering_id=resolved.model_offering_id,
+            final_provider_model=resolved.provider_model,
+            attempt_count=attempt_count,
+            fallback_attempted=fallback_attempted,
+            final_error_code=error_code,
+        ),
+        db=db,
+    )
+
+
 async def _enforce_limit_policies(
     *,
     resolved,
     estimated_input_tokens: int,
     requested_output_tokens: int | None,
     limit_types: set[str] | None = None,
+    gateway_request_id: UUID | None = None,
+    gateway_endpoint: str | None = None,
     db: AsyncSession,
 ) -> list[UUID]:
     requested_total_tokens = estimated_input_tokens + (requested_output_tokens or 0)
@@ -1430,6 +1920,8 @@ async def _enforce_limit_policies(
                 current_usage=estimated_input_tokens,
                 reserved_usage=0,
                 attempted_usage=estimated_input_tokens,
+                gateway_request_id=gateway_request_id,
+                gateway_endpoint=gateway_endpoint,
                 db=db,
             )
         if (
@@ -1445,6 +1937,8 @@ async def _enforce_limit_policies(
                 current_usage=requested_output_tokens,
                 reserved_usage=0,
                 attempted_usage=requested_output_tokens,
+                gateway_request_id=gateway_request_id,
+                gateway_endpoint=gateway_endpoint,
                 db=db,
             )
         if limit.limit_type == "tokens_per_request" and requested_total_tokens > limit.limit_value:
@@ -1456,6 +1950,8 @@ async def _enforce_limit_policies(
                 current_usage=requested_total_tokens,
                 reserved_usage=0,
                 attempted_usage=requested_total_tokens,
+                gateway_request_id=gateway_request_id,
+                gateway_endpoint=gateway_endpoint,
                 db=db,
             )
 
@@ -1490,6 +1986,8 @@ async def _enforce_limit_policies(
                 current_usage=request_count,
                 reserved_usage=0,
                 attempted_usage=1,
+                gateway_request_id=gateway_request_id,
+                gateway_endpoint=gateway_endpoint,
                 db=db,
             )
         if (
@@ -1504,6 +2002,8 @@ async def _enforce_limit_policies(
                 current_usage=request_count,
                 reserved_usage=reservations.requests,
                 attempted_usage=1,
+                gateway_request_id=gateway_request_id,
+                gateway_endpoint=gateway_endpoint,
                 db=db,
             )
         if (
@@ -1519,6 +2019,8 @@ async def _enforce_limit_policies(
                 current_usage=prompt_tokens,
                 reserved_usage=reservations.prompt_tokens,
                 attempted_usage=estimated_input_tokens,
+                gateway_request_id=gateway_request_id,
+                gateway_endpoint=gateway_endpoint,
                 db=db,
             )
         if (
@@ -1535,6 +2037,8 @@ async def _enforce_limit_policies(
                 current_usage=completion_tokens,
                 reserved_usage=reservations.completion_tokens,
                 attempted_usage=requested_output_tokens,
+                gateway_request_id=gateway_request_id,
+                gateway_endpoint=gateway_endpoint,
                 db=db,
             )
         if limit.limit_type == "budget_cents":
@@ -1549,6 +2053,8 @@ async def _enforce_limit_policies(
                     current_usage=cost_cents,
                     reserved_usage=reservations.cost_cents,
                     attempted_usage=None,
+                    gateway_request_id=gateway_request_id,
+                    gateway_endpoint=gateway_endpoint,
                     db=db,
                 )
             # Budget math is in exact micro-cents (1_000_000 == 1 cent) to avoid the
@@ -1565,6 +2071,8 @@ async def _enforce_limit_policies(
                     current_usage=cost_cents,
                     reserved_usage=reservations.cost_cents,
                     attempted_usage=estimated_cost_cents,
+                    gateway_request_id=gateway_request_id,
+                    gateway_endpoint=gateway_endpoint,
                     db=db,
                 )
         if (
@@ -1584,6 +2092,8 @@ async def _enforce_limit_policies(
                 current_usage=prompt_tokens + completion_tokens,
                 reserved_usage=reservations.prompt_tokens + reservations.completion_tokens,
                 attempted_usage=requested_total_tokens,
+                gateway_request_id=gateway_request_id,
+                gateway_endpoint=gateway_endpoint,
                 db=db,
             )
     reservation_ids: list[UUID] = []
@@ -1652,6 +2162,8 @@ async def _raise_proxy_denial(
     current_usage: int | None,
     reserved_usage: int | None,
     attempted_usage: int | None,
+    gateway_request_id: UUID | None = None,
+    gateway_endpoint: str | None = None,
     db: AsyncSession,
 ) -> None:
     metadata = {
@@ -1672,10 +2184,12 @@ async def _raise_proxy_denial(
     }
     await _record_proxy_request(
         resolved=resolved,
+        gateway_request_id=gateway_request_id,
         http_status=status.HTTP_429_TOO_MANY_REQUESTS,
         latency_ms=0,
         usage=unknown_usage(),
         error_code="limit_policy_denied",
+        gateway_endpoint=gateway_endpoint,
         db=db,
     )
     await _record_proxy_activity(

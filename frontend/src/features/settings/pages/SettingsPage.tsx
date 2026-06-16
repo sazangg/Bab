@@ -77,6 +77,8 @@ export function SettingsPage() {
   const settingsQuery = useGetSettingsApiV1SettingsGet();
   const currentUserQuery = useMeApiV1AuthMeGet();
   const settings = settingsQuery.data?.status === 200 ? settingsQuery.data.data : undefined;
+  const deploymentMaxBodyBytes =
+    settings?.deployment_max_body_bytes ?? settings?.default_max_body_bytes ?? 0;
   const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
   const canManageSettings = hasPermission(currentUser, "settings.manage");
   const form = useForm<SettingsInput, unknown, SettingsValues>({
@@ -295,11 +297,11 @@ export function SettingsPage() {
                 name="default_max_body_bytes"
                 form={form}
                 disabled={!canManageSettings}
-                max={settings.deployment_max_body_bytes}
+                max={deploymentMaxBodyBytes}
               />
               <p className="text-xs text-muted-foreground md:col-span-2">
-                The deployment ceiling is {settings.deployment_max_body_bytes.toLocaleString()}{" "}
-                bytes. Provider limits can reduce the effective limit further.
+                The deployment ceiling is {deploymentMaxBodyBytes.toLocaleString()} bytes. Provider
+                limits can reduce the effective limit further.
               </p>
               <Field label="Model sync mode">
                 <Select

@@ -25,9 +25,7 @@ from app.modules.policies.errors import (
 from app.modules.policies.schemas import (
     AccessPolicyOptionsResponse,
     AccessPolicyResponse,
-    AccessPolicyRouteResponse,
     CreateAccessPolicyRequest,
-    CreateAccessPolicyRouteRequest,
     CreateLimitPolicyRequest,
     CreateLimitPolicyRuleRequest,
     CreatePolicyAssignmentRequest,
@@ -38,7 +36,6 @@ from app.modules.policies.schemas import (
     PolicyImpactResponse,
     ScopedPolicyAssignmentResponse,
     UpdateAccessPolicyRequest,
-    UpdateAccessPolicyRouteRequest,
     UpdateLimitPolicyRequest,
     UpdateLimitPolicyRuleRequest,
     UpdatePolicyAssignmentRequest,
@@ -106,6 +103,10 @@ async def update_access_policy(
         )
     except PolicyPermissionError as exc:
         raise HTTPException(status_code=403, detail="insufficient permissions") from exc
+    except PolicyAssignmentConflictError as exc:
+        raise HTTPException(status_code=409, detail="policy assignment conflict") from exc
+    except PolicyValidationError as exc:
+        raise HTTPException(status_code=400, detail="invalid access policy route") from exc
     except PolicyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="access policy not found") from exc
 
@@ -125,61 +126,6 @@ async def delete_access_policy(
         raise HTTPException(status_code=404, detail="access policy not found") from exc
 
 
-@router.post("/access/{policy_id}/routes", status_code=status.HTTP_201_CREATED)
-async def create_access_policy_route(
-    policy_id: UUID,
-    payload: CreateAccessPolicyRouteRequest,
-    _user: AssignmentActor,
-    scope: RequestScope,
-    db: DatabaseSession,
-) -> AccessPolicyRouteResponse:
-    try:
-        return await facade.create_access_policy_route(
-            policy_id=policy_id, payload=payload, scope=scope, db=db, actor=_user
-        )
-    except PolicyPermissionError as exc:
-        raise HTTPException(status_code=403, detail="insufficient permissions") from exc
-    except PolicyNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="access policy not found") from exc
-    except PolicyValidationError as exc:
-        raise HTTPException(status_code=400, detail="invalid access policy route") from exc
-
-
-@router.patch("/access/routes/{route_id}")
-async def update_access_policy_route(
-    route_id: UUID,
-    payload: UpdateAccessPolicyRouteRequest,
-    _user: AssignmentActor,
-    scope: RequestScope,
-    db: DatabaseSession,
-) -> AccessPolicyRouteResponse:
-    try:
-        return await facade.update_access_policy_route(
-            route_id=route_id, payload=payload, scope=scope, db=db, actor=_user
-        )
-    except PolicyPermissionError as exc:
-        raise HTTPException(status_code=403, detail="insufficient permissions") from exc
-    except PolicyNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="access policy route not found") from exc
-    except PolicyValidationError as exc:
-        raise HTTPException(status_code=400, detail="invalid access policy route") from exc
-
-
-@router.delete("/access/routes/{route_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_access_policy_route(
-    route_id: UUID,
-    _user: AssignmentActor,
-    scope: RequestScope,
-    db: DatabaseSession,
-) -> None:
-    try:
-        await facade.delete_access_policy_route(route_id=route_id, scope=scope, db=db, actor=_user)
-    except PolicyPermissionError as exc:
-        raise HTTPException(status_code=403, detail="insufficient permissions") from exc
-    except PolicyNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="access policy route not found") from exc
-
-
 @router.get("/access/{policy_id}/impact")
 async def get_access_policy_impact(
     policy_id: UUID,
@@ -193,21 +139,6 @@ async def get_access_policy_impact(
         )
     except PolicyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="access policy not found") from exc
-
-
-@router.get("/access/routes/{route_id}/impact")
-async def get_access_policy_route_impact(
-    route_id: UUID,
-    _user: ScopedPolicyViewer,
-    scope: RequestScope,
-    db: DatabaseSession,
-) -> PolicyImpactResponse:
-    try:
-        return await facade.get_access_policy_route_impact(
-            route_id=route_id, scope=scope, db=db, actor=_user
-        )
-    except PolicyNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="access policy route not found") from exc
 
 
 @router.get("/access-options")

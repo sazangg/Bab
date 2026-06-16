@@ -4,7 +4,7 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { AccessPolicyRouteInput } from './accessPolicyRouteInput';
+import type { AccessPolicyPublicModelInput } from './accessPolicyPublicModelInput';
 
 export interface CreateAccessPolicyRequest {
   /**
@@ -13,6 +13,6 @@ export interface CreateAccessPolicyRequest {
      */
   name: string;
   description?: string | null;
-  routes?: AccessPolicyRouteInput[];
+  public_models?: AccessPolicyPublicModelInput[];
   is_active?: boolean;
 }
