@@ -5,9 +5,10 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { GuardrailRuleInputConfig } from './guardrailRuleInputConfig';
+import type { GuardrailRuleMatcherInput } from './guardrailRuleMatcherInput';
 
 export interface GuardrailRuleInput {
-  /** @pattern ^(model|provider|pool|prompt_contains|prompt_regex|pii)$ */
+  /** @pattern ^(prompt_contains|prompt_regex|pii)$ */
   rule_type: string;
   /** @pattern ^(allow|deny)$ */
   effect?: string;
@@ -16,6 +17,7 @@ export interface GuardrailRuleInput {
   /** @minItems 1 */
   values: string[];
   config?: GuardrailRuleInputConfig;
+  matchers?: GuardrailRuleMatcherInput[];
   /** @minimum 1 */
   priority?: number;
   is_active?: boolean;

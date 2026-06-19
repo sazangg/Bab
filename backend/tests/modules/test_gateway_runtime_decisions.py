@@ -1,0 +1,376 @@
+from datetime import UTC, datetime
+from uuid import uuid4
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.modules.auth.internal.models import Organization, Team
+from app.modules.guardrails.internal import repository as guardrails_repository
+from app.modules.keys.internal.models import Project, VirtualKey
+from app.modules.providers.internal.models import CredentialPool, Provider
+from app.modules.usage import facade as usage_facade
+from app.modules.usage.internal import repository
+from app.modules.usage.internal.models import (
+    GatewayPolicyDecision,
+    GatewayRequest,
+    GatewayRouteAttempt,
+)
+from app.modules.usage.schemas import CreateGatewayRequest, FinalizeGatewayRequest, RecordUsage
+
+
+async def test_gateway_runtime_decision_substrate_records_attempt_and_decision(
+    db_session: AsyncSession,
+) -> None:
+    org = Organization(name="Gateway Trace Org", slug=f"gateway-trace-{uuid4()}")
+    db_session.add(org)
+    await db_session.flush()
+    team = Team(org_id=org.id, name="Platform", slug=f"platform-{uuid4()}")
+    db_session.add(team)
+    await db_session.flush()
+    project = Project(
+        org_id=org.id,
+        team_id=team.id,
+        created_by=uuid4(),
+        name="Gateway Project",
+        slug=f"gateway-project-{uuid4()}",
+    )
+    db_session.add(project)
+    await db_session.flush()
+    virtual_key = VirtualKey(
+        org_id=org.id,
+        project_id=project.id,
+        name="Gateway key",
+        key_hash=uuid4().hex,
+        key_prefix="bab_test",
+    )
+    db_session.add(virtual_key)
+    await db_session.flush()
+    provider = Provider(
+        org_id=org.id,
+        name="Trace Provider",
+        slug=f"trace-provider-{uuid4()}",
+        base_url="https://provider.example.test",
+    )
+    db_session.add(provider)
+    await db_session.flush()
+    pool = CredentialPool(
+        org_id=org.id,
+        provider_id=provider.id,
+        name="Trace Pool",
+    )
+    db_session.add(pool)
+    await db_session.flush()
+
+    gateway_request = await repository.create_gateway_request(
+        payload=CreateGatewayRequest(
+            org_id=org.id,
+            team_id=team.id,
+            project_id=project.id,
+            virtual_key_id=virtual_key.id,
+            gateway_endpoint="chat_completions",
+            requested_model="fast",
+        ),
+        db=db_session,
+    )
+    attempt = await repository.create_gateway_route_attempt(
+        values={
+            "org_id": org.id,
+            "gateway_request_id": gateway_request.id,
+            "attempt_index": 0,
+            "status": "planned",
+            "provider_model": "gpt-4o-mini",
+            "public_model_name": "fast",
+            "usage_source": "unknown",
+            "pricing_snapshot": {"source": "catalog"},
+            "capability_snapshot": {"streaming": True},
+            "route_snapshot": {"routing_mode": "single_route"},
+            "started_at": datetime.now(UTC),
+        },
+        db=db_session,
+    )
+    decision = await repository.create_gateway_policy_decision(
+        values={
+            "org_id": org.id,
+            "gateway_request_id": gateway_request.id,
+            "route_attempt_id": attempt.id,
+            "decision_type": "provider_routing",
+            "stage": "provider_attempt",
+            "outcome": "selected",
+            "enforced": True,
+            "dimension_snapshot": {"public_model_name": "fast"},
+            "metadata_": {"reason": "priority"},
+        },
+        db=db_session,
+    )
+    await repository.update_gateway_route_attempt(
+        route_attempt_id=attempt.id,
+        values={"status": "succeeded", "completed_at": datetime.now(UTC), "http_status": 200},
+        db=db_session,
+    )
+    await repository.finalize_gateway_request(
+        gateway_request_id=gateway_request.id,
+        payload=FinalizeGatewayRequest(
+            final_http_status=200,
+            final_route_attempt_id=attempt.id,
+            attempt_count=1,
+        ),
+        db=db_session,
+    )
+
+    stored_attempt = await db_session.scalar(
+        select(GatewayRouteAttempt).where(GatewayRouteAttempt.id == attempt.id)
+    )
+    stored_decision = await db_session.scalar(
+        select(GatewayPolicyDecision).where(GatewayPolicyDecision.id == decision.id)
+    )
+
+    assert gateway_request.trace_expires_at > gateway_request.started_at
+    assert stored_attempt.status == "succeeded"
+    assert stored_decision.metadata_ == {"reason": "priority"}
+    assert stored_decision.dimension_snapshot == {"public_model_name": "fast"}
+
+
+async def test_gateway_request_can_be_created_before_identity_resolution(
+    db_session: AsyncSession,
+) -> None:
+    gateway_request = await repository.create_gateway_request(
+        payload=CreateGatewayRequest(
+            gateway_endpoint="chat_completions",
+            requested_model="fast",
+        ),
+        db=db_session,
+    )
+
+    assert gateway_request.org_id is None
+    assert gateway_request.team_id is None
+    assert gateway_request.project_id is None
+    assert gateway_request.virtual_key_id is None
+    assert gateway_request.trace_expires_at > gateway_request.started_at
+
+
+async def test_unresolved_gateway_request_can_be_finalized(
+    db_session: AsyncSession,
+) -> None:
+    gateway_request = await repository.create_gateway_request(
+        payload=CreateGatewayRequest(
+            gateway_endpoint="chat_completions",
+            requested_model="fast",
+        ),
+        db=db_session,
+    )
+
+    await repository.finalize_gateway_request(
+        gateway_request_id=gateway_request.id,
+        payload=FinalizeGatewayRequest(
+            final_http_status=401,
+            attempt_count=0,
+            fallback_attempted=False,
+            final_error_code="invalid_virtual_key",
+        ),
+        db=db_session,
+    )
+    stored = await db_session.scalar(
+        select(GatewayRequest).where(GatewayRequest.id == gateway_request.id)
+    )
+
+    assert stored is not None
+    assert stored.org_id is None
+    assert stored.virtual_key_id is None
+    assert stored.final_http_status == 401
+    assert stored.final_error_code == "invalid_virtual_key"
+
+
+async def test_gateway_request_trace_returns_runtime_rows(db_session: AsyncSession) -> None:
+    org = Organization(name="Gateway Trace Read Org", slug=f"gateway-trace-read-{uuid4()}")
+    db_session.add(org)
+    await db_session.flush()
+    team = Team(org_id=org.id, name="Platform", slug=f"platform-{uuid4()}")
+    db_session.add(team)
+    await db_session.flush()
+    project = Project(
+        org_id=org.id,
+        team_id=team.id,
+        created_by=uuid4(),
+        name="Gateway Project",
+        slug=f"gateway-project-{uuid4()}",
+    )
+    db_session.add(project)
+    await db_session.flush()
+    virtual_key = VirtualKey(
+        org_id=org.id,
+        project_id=project.id,
+        name="Gateway key",
+        key_hash=uuid4().hex,
+        key_prefix="bab_test",
+    )
+    db_session.add(virtual_key)
+    await db_session.flush()
+    provider = Provider(
+        org_id=org.id,
+        name="Trace Read Provider",
+        slug=f"trace-read-provider-{uuid4()}",
+        base_url="https://provider.example.test",
+    )
+    db_session.add(provider)
+    await db_session.flush()
+    pool = CredentialPool(
+        org_id=org.id,
+        provider_id=provider.id,
+        name="Trace Read Pool",
+    )
+    db_session.add(pool)
+    await db_session.flush()
+
+    gateway_request = await repository.create_gateway_request(
+        payload=CreateGatewayRequest(
+            org_id=org.id,
+            team_id=team.id,
+            project_id=project.id,
+            virtual_key_id=virtual_key.id,
+            gateway_endpoint="chat_completions",
+            requested_model="fast",
+            public_model_name="fast",
+            routing_mode="single_route",
+        ),
+        db=db_session,
+    )
+    attempt = await repository.create_gateway_route_attempt(
+        values={
+            "org_id": org.id,
+            "gateway_request_id": gateway_request.id,
+            "attempt_index": 0,
+            "status": "succeeded",
+            "provider_model": "gpt-4o-mini",
+            "public_model_name": "fast",
+            "usage_source": "estimated",
+            "pricing_snapshot": {"source": "catalog"},
+            "capability_snapshot": {"streaming": True},
+            "route_snapshot": {"routing_mode": "single_route"},
+            "started_at": datetime.now(UTC),
+            "completed_at": datetime.now(UTC),
+            "http_status": 200,
+        },
+        db=db_session,
+    )
+    await repository.create_gateway_policy_decision(
+        values={
+            "org_id": org.id,
+            "gateway_request_id": gateway_request.id,
+            "route_attempt_id": attempt.id,
+            "decision_type": "provider_routing",
+            "stage": "provider_attempt",
+            "outcome": "selected",
+            "enforced": True,
+            "dimension_snapshot": {"public_model_name": "fast"},
+            "metadata_": {"reason": "priority"},
+        },
+        db=db_session,
+    )
+    await guardrails_repository.create_event(
+        org_id=org.id,
+        policy_id=None,
+        policy_revision_id=None,
+        rule_id=None,
+        decision="allowed",
+        phase="request",
+        reason="request_guardrails_passed",
+        team_id=team.id,
+        project_id=project.id,
+        virtual_key_id=virtual_key.id,
+        provider_id=uuid4(),
+        pool_id=uuid4(),
+        request_id="req-trace",
+        requested_model="fast",
+        provider_model="gpt-4o-mini",
+        metadata={"phase": "request"},
+        gateway_request_id=gateway_request.id,
+        route_attempt_id=attempt.id,
+        db=db_session,
+    )
+    await repository.create_usage_record(
+        payload=RecordUsage(
+            org_id=org.id,
+            team_id=team.id,
+            project_id=project.id,
+            gateway_request_id=gateway_request.id,
+            virtual_key_id=virtual_key.id,
+            pool_id=pool.id,
+            provider_id=provider.id,
+            provider_credential_id=None,
+            request_id="req-trace",
+            requested_model="fast",
+            provider_model="gpt-4o-mini",
+            public_model_name="fast",
+            http_status=200,
+            latency_ms=42,
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+            cost_cents=1,
+            cost_micro_cents=1_000_000,
+            usage_source="estimated",
+        ),
+        db=db_session,
+    )
+
+    trace = await usage_facade.get_gateway_request_trace(
+        org_id=org.id,
+        gateway_request_id=gateway_request.id,
+        db=db_session,
+    )
+
+    assert trace is not None
+    assert trace.request.id == gateway_request.id
+    assert trace.route_attempts[0].id == attempt.id
+    assert trace.policy_decisions[0].metadata == {"reason": "priority"}
+    assert trace.guardrail_events[0].metadata == {"phase": "request"}
+    assert trace.usage_records[0].total_tokens == 15
+
+
+async def test_gateway_request_trace_hides_expired_trace(db_session: AsyncSession) -> None:
+    org = Organization(name="Gateway Trace Expired Org", slug=f"gateway-trace-expired-{uuid4()}")
+    db_session.add(org)
+    await db_session.flush()
+    team = Team(org_id=org.id, name="Platform", slug=f"platform-{uuid4()}")
+    db_session.add(team)
+    await db_session.flush()
+    project = Project(
+        org_id=org.id,
+        team_id=team.id,
+        created_by=uuid4(),
+        name="Gateway Project",
+        slug=f"gateway-project-{uuid4()}",
+    )
+    db_session.add(project)
+    await db_session.flush()
+    virtual_key = VirtualKey(
+        org_id=org.id,
+        project_id=project.id,
+        name="Gateway key",
+        key_hash=uuid4().hex,
+        key_prefix="bab_test",
+    )
+    db_session.add(virtual_key)
+    await db_session.flush()
+
+    gateway_request = await repository.create_gateway_request(
+        payload=CreateGatewayRequest(
+            org_id=org.id,
+            team_id=team.id,
+            project_id=project.id,
+            virtual_key_id=virtual_key.id,
+            gateway_endpoint="chat_completions",
+            requested_model="fast",
+        ),
+        db=db_session,
+    )
+    gateway_request.trace_expires_at = datetime.now(UTC)
+    await db_session.flush()
+
+    trace = await usage_facade.get_gateway_request_trace(
+        org_id=org.id,
+        gateway_request_id=gateway_request.id,
+        db=db_session,
+    )
+
+    assert trace is None

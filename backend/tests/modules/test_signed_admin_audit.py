@@ -82,7 +82,7 @@ async def test_admin_mutations_write_signed_audit_events(db_session: AsyncSessio
     assignment = await policies_facade.create_policy_assignment(
         payload=CreatePolicyAssignmentRequest(
             policy_type="access",
-            access_policy_id=access_policy.id,
+            policy_id=access_policy.policy_id,
             scope_type="project",
             project_id=project.id,
         ),
@@ -340,3 +340,4 @@ async def _audit_events(db_session: AsyncSession, org_id: UUID) -> list[AuditEve
             .order_by(AuditEvent.created_at.asc(), AuditEvent.id.asc())
         )
     )
+

@@ -4,25 +4,24 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { CreateModelOfferingRequestCapabilities } from './createModelOfferingRequestCapabilities';
-import type { CreateModelOfferingRequestRateLimitHints } from './createModelOfferingRequestRateLimitHints';
+import type { CreateProviderModelOfferingRequestCapabilities } from './createProviderModelOfferingRequestCapabilities';
+import type { CreateProviderModelOfferingRequestRateLimitHints } from './createProviderModelOfferingRequestRateLimitHints';
 
-export interface CreateModelOfferingRequest {
+export interface CreateProviderModelOfferingRequest {
   /**
      * @minLength 1
      * @maxLength 255
      */
   provider_model_name: string;
-  alias?: string | null;
   version?: string | null;
   /** @maxLength 100 */
   modality?: string;
   input_modalities?: string[];
   output_modalities?: string[];
-  capabilities?: CreateModelOfferingRequestCapabilities;
+  capabilities?: CreateProviderModelOfferingRequestCapabilities;
   context_window?: number | null;
   input_price_per_million_tokens?: number | null;
   output_price_per_million_tokens?: number | null;
   cached_input_price_per_million_tokens?: number | null;
-  rate_limit_hints?: CreateModelOfferingRequestRateLimitHints;
+  rate_limit_hints?: CreateProviderModelOfferingRequestRateLimitHints;
 }

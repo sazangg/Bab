@@ -19,6 +19,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    model_offerings_table = _model_offerings_table()
     if not _has_table("access_policies"):
         op.create_table(
             "access_policies",
@@ -97,7 +98,7 @@ def upgrade() -> None:
                 ["credential_pool_id"], ["credential_pools.id"], ondelete="RESTRICT"
             ),
             sa.ForeignKeyConstraint(
-                ["model_offering_id"], ["model_offerings.id"], ondelete="RESTRICT"
+                ["model_offering_id"], [f"{model_offerings_table}.id"], ondelete="RESTRICT"
             ),
             sa.ForeignKeyConstraint(["org_id"], ["organizations.id"], ondelete="RESTRICT"),
             sa.ForeignKeyConstraint(["provider_id"], ["providers.id"], ondelete="RESTRICT"),
@@ -130,9 +131,7 @@ def upgrade() -> None:
             sa.ForeignKeyConstraint(
                 ["access_policy_id"], ["access_policies.id"], ondelete="CASCADE"
             ),
-            sa.ForeignKeyConstraint(
-                ["limit_policy_id"], ["limit_policies.id"], ondelete="CASCADE"
-            ),
+            sa.ForeignKeyConstraint(["limit_policy_id"], ["limit_policies.id"], ondelete="CASCADE"),
             sa.ForeignKeyConstraint(["org_id"], ["organizations.id"], ondelete="RESTRICT"),
             sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="CASCADE"),
             sa.ForeignKeyConstraint(["team_id"], ["teams.id"], ondelete="CASCADE"),
@@ -169,3 +168,9 @@ def downgrade() -> None:
 
 def _has_table(table_name: str) -> bool:
     return inspect(op.get_bind()).has_table(table_name)
+
+
+def _model_offerings_table() -> str:
+    if _has_table("provider_model_offerings"):
+        return "provider_model_offerings"
+    return "model_offerings"

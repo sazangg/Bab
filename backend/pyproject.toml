@@ -41,6 +41,9 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+filterwarnings = [
+    "ignore:.*SQL-parsed foreign key constraint .* could not be located in PRAGMA foreign_keys for table .*:sqlalchemy.exc.SAWarning",
+]
 
 [tool.ruff]
 line-length = 100

@@ -22,6 +22,7 @@ from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys.internal.models import Project, VirtualKey
 from app.modules.usage import facade
 from app.modules.usage.schemas import (
+    GatewayRequestTraceResponse,
     OrganizationUsageSummary,
     SpendInsights,
     UsageFilterOptions,
@@ -139,6 +140,31 @@ async def list_usage_records(
         offset=max(offset, 0),
         db=db,
     )
+
+
+@router.get("/requests/{gateway_request_id}")
+async def get_gateway_request_trace(
+    gateway_request_id: UUID,
+    scope: RequestScope,
+    db: DatabaseSession,
+    user: CurrentUser,
+) -> GatewayRequestTraceResponse:
+    trace = await facade.get_gateway_request_trace(
+        org_id=scope.org_id,
+        gateway_request_id=gateway_request_id,
+        db=db,
+    )
+    if trace is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="trace not found")
+    await _resolve_usage_scope(
+        user=user,
+        org_id=scope.org_id,
+        db=db,
+        team_id=trace.request.team_id,
+        project_id=trace.request.project_id,
+        virtual_key_id=trace.request.virtual_key_id,
+    )
+    return trace
 
 
 @router.get("/records/export")

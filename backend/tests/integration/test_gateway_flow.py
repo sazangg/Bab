@@ -14,9 +14,14 @@ from app.api.v1.routes.proxy import get_proxy_http_client
 from app.core.bootstrap import sync_default_workspace
 from app.core.config import settings
 from app.core.migrations import run_database_migrations
+from app.modules.guardrails.internal.models import GuardrailEvent
 from app.modules.keys import facade as keys_facade
 from app.modules.keys.schemas import ResolveAccessRequest
-from app.modules.usage.internal.models import GatewayRequest
+from app.modules.usage.internal.models import (
+    GatewayPolicyDecision,
+    GatewayRequest,
+    GatewayRouteAttempt,
+)
 
 
 async def _login(client: AsyncClient) -> dict[str, str]:
@@ -75,7 +80,6 @@ async def _provision_gateway_path(
         headers=headers,
         json={
             "provider_model_name": model,
-            "alias": model,
             "input_modalities": ["text"],
             "output_modalities": ["text"],
             "capabilities": {"chat": True, "streaming": True},
@@ -124,7 +128,7 @@ async def _provision_gateway_path(
         },
     )
     assert access_response.status_code == 201
-    access_policy_id = access_response.json()["id"]
+    access_shared_policy_id = access_response.json()["policy_id"]
 
     limit_response = await client.post(
         "/api/v1/policies/limits",
@@ -149,18 +153,18 @@ async def _provision_gateway_path(
         },
     )
     assert limit_response.status_code == 201
-    limit_policy_id = limit_response.json()["id"]
+    limit_shared_policy_id = limit_response.json()["policy_id"]
 
     for payload in (
         {
             "policy_type": "access",
-            "access_policy_id": access_policy_id,
+            "policy_id": access_shared_policy_id,
             "scope_type": "project",
             "project_id": project_id,
         },
         {
             "policy_type": "limit",
-            "limit_policy_id": limit_policy_id,
+            "policy_id": limit_shared_policy_id,
             "scope_type": "project",
             "project_id": project_id,
         },
@@ -535,6 +539,262 @@ async def test_anthropic_migration_backfill_requires_canonical_base_url(tmp_path
         "custom-slug": "openai_compatible_default",
         "custom-name": "openai_compatible_default",
     }
+
+
+@pytest.mark.asyncio
+async def test_limit_committed_usage_migration_backfills_historical_json_usage(
+    tmp_path,
+) -> None:
+    database_path = tmp_path / "limit-usage-backfill.db"
+    engine = create_async_engine(f"sqlite+aiosqlite:///{database_path}")
+
+    def upgrade_to(connection, revision: str) -> None:
+        config = Config("alembic.ini")
+        config.attributes["connection"] = connection
+        command.upgrade(config, revision)
+
+    ids = {
+        "org": "00000000000000000000000000000001",
+        "user": "00000000000000000000000000000002",
+        "team": "00000000000000000000000000000003",
+        "project": "00000000000000000000000000000004",
+        "virtual_key": "00000000000000000000000000000005",
+        "provider": "00000000000000000000000000000006",
+        "pool": "00000000000000000000000000000007",
+        "policy": "00000000000000000000000000000008",
+        "first_rule": "00000000000000000000000000000009",
+        "second_rule": "0000000000000000000000000000000a",
+        "first_assignment": "0000000000000000000000000000000b",
+        "second_assignment": "0000000000000000000000000000000c",
+        "first_usage": "0000000000000000000000000000000d",
+        "second_usage": "0000000000000000000000000000000e",
+    }
+
+    async with engine.begin() as connection:
+        await connection.run_sync(upgrade_to, "20260618_0047")
+        now = "2026-06-18 00:00:00"
+        await connection.execute(
+            text(
+                "insert into organizations (id, name, slug, is_active, created_at) "
+                "values (:id, 'Org', 'org', 1, :now)"
+            ),
+            {"id": ids["org"], "now": now},
+        )
+        await connection.execute(
+            text(
+                "insert into users "
+                "(id, email, name, password_hash, is_active, created_at, updated_at) "
+                "values (:id, 'admin@example.com', 'Admin', null, 1, :now, :now)"
+            ),
+            {"id": ids["user"], "now": now},
+        )
+        await connection.execute(
+            text(
+                "insert into teams (id, org_id, name, slug, is_active, created_at, updated_at) "
+                "values (:id, :org_id, 'Team', 'team', 1, :now, :now)"
+            ),
+            {"id": ids["team"], "org_id": ids["org"], "now": now},
+        )
+        await connection.execute(
+            text(
+                "insert into projects "
+                "(id, org_id, team_id, created_by, name, slug, is_active, created_at, updated_at) "
+                "values (:id, :org_id, :team_id, :user_id, 'Project', 'project', 1, :now, :now)"
+            ),
+            {
+                "id": ids["project"],
+                "org_id": ids["org"],
+                "team_id": ids["team"],
+                "user_id": ids["user"],
+                "now": now,
+            },
+        )
+        await connection.execute(
+            text(
+                "insert into virtual_keys "
+                "(id, org_id, project_id, name, key_hash, key_prefix, created_at, updated_at) "
+                "values (:id, :org_id, :project_id, 'Key', 'hash', 'bab', :now, :now)"
+            ),
+            {
+                "id": ids["virtual_key"],
+                "org_id": ids["org"],
+                "project_id": ids["project"],
+                "now": now,
+            },
+        )
+        await connection.execute(
+            text(
+                "insert into providers "
+                "(id, org_id, name, slug, base_url, api_key_encrypted, adapter_type, "
+                "capabilities, supported_integration, circuit_breaker_policy, is_favorite, "
+                "is_active, created_at, updated_at) "
+                "values (:id, :org_id, 'Provider', 'provider', 'https://example.com/v1', "
+                "null, 'openai_compat', '{}', 'openai_compatible_default', '{}', 0, 1, :now, :now)"
+            ),
+            {"id": ids["provider"], "org_id": ids["org"], "now": now},
+        )
+        await connection.execute(
+            text(
+                "insert into credential_pools "
+                "(id, org_id, provider_id, name, selection_policy, is_active, "
+                "created_at, updated_at) "
+                "values (:id, :org_id, :provider_id, 'Pool', 'priority', 1, :now, :now)"
+            ),
+            {
+                "id": ids["pool"],
+                "org_id": ids["org"],
+                "provider_id": ids["provider"],
+                "now": now,
+            },
+        )
+        await connection.execute(
+            text(
+                "insert into limit_policies (id, org_id, name, is_active, created_at, updated_at) "
+                "values (:id, :org_id, 'Limit', 1, :now, :now)"
+            ),
+            {"id": ids["policy"], "org_id": ids["org"], "now": now},
+        )
+        for rule_id, value in ((ids["first_rule"], 100), (ids["second_rule"], 200)):
+            await connection.execute(
+                text(
+                    "insert into limit_policy_rules "
+                    "(id, org_id, limit_policy_id, name, limit_type, limit_value, "
+                    "interval_unit, interval_count, is_active, created_at, updated_at) "
+                    "values (:id, :org_id, :policy_id, 'Requests', 'requests', :value, "
+                    "'day', 1, 1, :now, :now)"
+                ),
+                {
+                    "id": rule_id,
+                    "org_id": ids["org"],
+                    "policy_id": ids["policy"],
+                    "value": value,
+                    "now": now,
+                },
+            )
+        for assignment_id, scope_type, target_column, target_id, scope_target_key in (
+            (
+                ids["first_assignment"],
+                "project",
+                "project_id",
+                ids["project"],
+                f"project:{ids['project']}",
+            ),
+            (
+                ids["second_assignment"],
+                "virtual_key",
+                "virtual_key_id",
+                ids["virtual_key"],
+                f"virtual_key:{ids['virtual_key']}",
+            ),
+        ):
+            await connection.execute(
+                text(
+                    "insert into policy_assignments "
+                    f"(id, org_id, policy_type, limit_policy_id, scope_type, {target_column}, "
+                    "scope_target_key, mode, is_active, created_at, updated_at) "
+                    "values (:id, :org_id, 'limit', :policy_id, :scope_type, :target_id, "
+                    ":scope_target_key, 'enforce', 1, :now, :now)"
+                ),
+                {
+                    "id": assignment_id,
+                    "org_id": ids["org"],
+                    "policy_id": ids["policy"],
+                    "scope_type": scope_type,
+                    "target_id": target_id,
+                    "scope_target_key": scope_target_key,
+                    "now": now,
+                },
+            )
+
+        usage_sql = text(
+            "insert into usage_records "
+            "(id, org_id, team_id, project_id, virtual_key_id, pool_id, provider_id, "
+            "limit_policy_ids, limit_policy_rule_ids, limit_policy_assignment_ids, "
+            "limit_counter_key, limit_counting_unit, limit_window_descriptor, "
+            "dimension_snapshot, requested_model, provider_model, routing_attempt_index, "
+            "is_final_attempt, http_status, latency_ms, prompt_tokens, completion_tokens, "
+            "total_tokens, cost_cents, cost_micro_cents, usage_source, created_at) "
+            "values (:id, :org_id, :team_id, :project_id, :virtual_key_id, :pool_id, "
+            ":provider_id, :policy_ids, :rule_ids, :assignment_ids, :counter_key, "
+            "'logical_request', 'day:2026-06-18', :dimension_snapshot, 'public-model', "
+            "'provider-model', 0, 1, 200, 25, :prompt_tokens, :completion_tokens, "
+            ":total_tokens, :cost_cents, :cost_micro_cents, 'estimated', :now)"
+        )
+        for usage_id, rule_id, assignment_id, counter_key, cost_cents in (
+            (
+                ids["first_usage"],
+                ids["first_rule"],
+                ids["first_assignment"],
+                "public_model=alpha",
+                11,
+            ),
+            (
+                ids["second_usage"],
+                ids["second_rule"],
+                ids["second_assignment"],
+                "public_model=beta",
+                22,
+            ),
+        ):
+            await connection.execute(
+                usage_sql,
+                {
+                    "id": usage_id,
+                    "org_id": ids["org"],
+                    "team_id": ids["team"],
+                    "project_id": ids["project"],
+                    "virtual_key_id": ids["virtual_key"],
+                    "pool_id": ids["pool"],
+                    "provider_id": ids["provider"],
+                    "policy_ids": json.dumps([str(UUID(ids["policy"]))]),
+                    "rule_ids": json.dumps([str(UUID(rule_id))]),
+                    "assignment_ids": json.dumps([str(UUID(assignment_id))]),
+                    "counter_key": counter_key,
+                    "dimension_snapshot": json.dumps({"counter_key": counter_key}),
+                    "prompt_tokens": 3,
+                    "completion_tokens": 4,
+                    "total_tokens": 7,
+                    "cost_cents": cost_cents,
+                    "cost_micro_cents": cost_cents * 100,
+                    "now": now,
+                },
+            )
+
+        await connection.run_sync(upgrade_to, "head")
+        committed = (
+            await connection.execute(
+                text(
+                    "select usage_record_id, limit_policy_rule_id, limit_policy_assignment_id, "
+                    "counter_key, prompt_tokens, completion_tokens, total_tokens, cost_cents, "
+                    "cost_micro_cents from limit_policy_committed_usage order by counter_key"
+                )
+            )
+        ).mappings().all()
+
+    await engine.dispose()
+
+    assert [row["counter_key"] for row in committed] == [
+        "public_model=alpha",
+        "public_model=beta",
+    ]
+    assert {row["limit_policy_rule_id"] for row in committed} == {
+        ids["first_rule"],
+        ids["second_rule"],
+    }
+    assert {row["limit_policy_assignment_id"] for row in committed} == {
+        ids["first_assignment"],
+        ids["second_assignment"],
+    }
+    token_counts = [
+        (row["prompt_tokens"], row["completion_tokens"], row["total_tokens"])
+        for row in committed
+    ]
+    assert token_counts == [
+        (3, 4, 7),
+        (3, 4, 7),
+    ]
+    assert [row["cost_cents"] for row in committed] == [11, 22]
+    assert [row["cost_micro_cents"] for row in committed] == [1100, 2200]
 
 
 @pytest.mark.asyncio
@@ -968,13 +1228,13 @@ async def test_native_anthropic_messages_falls_back_to_second_candidate(
         for payload in (
             {
                 "policy_type": "access",
-                "access_policy_id": access.json()["id"],
+                "policy_id": access.json()["policy_id"],
                 "scope_type": "project",
                 "project_id": project.json()["id"],
             },
             {
                 "policy_type": "limit",
-                "limit_policy_id": limits.json()["id"],
+                "policy_id": limits.json()["policy_id"],
                 "scope_type": "project",
                 "project_id": project.json()["id"],
             },
@@ -1055,7 +1315,7 @@ async def test_project_key_creation_without_limit_policy_succeeds(
         offering_response = await client.post(
             f"/api/v1/providers/{provider_id}/offerings",
             headers=admin_headers,
-            json={"provider_model_name": "gpt-access-only", "alias": "gpt-access-only"},
+            json={"provider_model_name": "gpt-access-only"},
         )
         assert offering_response.status_code == 201
         offering_id = offering_response.json()["id"]
@@ -1083,7 +1343,7 @@ async def test_project_key_creation_without_limit_policy_succeeds(
                 "name": "Access without limits",
                 "public_models": [
                     {
-                            "public_model_name": "gpt-access-only",
+                        "public_model_name": "gpt-access-only",
                         "routing_mode": "single_route",
                         "candidates": [
                             {
@@ -1103,7 +1363,7 @@ async def test_project_key_creation_without_limit_policy_succeeds(
             headers=admin_headers,
             json={
                 "policy_type": "access",
-                "access_policy_id": access_response.json()["id"],
+                "policy_id": access_response.json()["policy_id"],
                 "scope_type": "project",
                 "project_id": project_id,
             },
@@ -1214,6 +1474,25 @@ async def test_gateway_enforces_virtual_key_request_rate_limit(app_client, db_se
         assert limit_record["error_code"] == "limit_policy_denied"
         assert limit_record["gateway_endpoint"] == "chat_completions"
         assert limit_record["gateway_request_id"] is not None
+
+        decisions = (
+            await db_session.scalars(
+                select(GatewayPolicyDecision)
+                .where(GatewayPolicyDecision.decision_type == "limit")
+                .order_by(GatewayPolicyDecision.created_at)
+            )
+        ).all()
+        assert [decision.outcome for decision in decisions] == [
+            "reserved",
+            "reserved",
+            "denied",
+        ]
+        assert decisions[-1].reason_code == "request_limit"
+        assert decisions[-1].effective_action == "deny"
+        assert decisions[-1].assignment_id is not None
+        assert decisions[-1].rule_id is not None
+        assert decisions[-1].dimension_snapshot["limit_type"] == "requests"
+        assert decisions[-1].metadata_["current_usage"] == 2
 
 
 @pytest.mark.asyncio
@@ -1397,7 +1676,29 @@ async def test_output_guardrail_blocks_non_streaming_response_and_records_spend(
         events = events_response.json()
         assert len(events) == 1
         assert events[0]["phase"] == "response"
+        assert events[0]["gateway_request_id"] == records[0]["gateway_request_id"]
         assert events[0]["metadata"]["matched_values"] == ["blocked output"]
+        stored_event = await db_session.scalar(
+            select(GuardrailEvent).where(GuardrailEvent.id == UUID(events[0]["id"]))
+        )
+        assert stored_event.gateway_request_id == UUID(records[0]["gateway_request_id"])
+        decisions = (
+            await db_session.scalars(
+                select(GatewayPolicyDecision)
+                .where(GatewayPolicyDecision.decision_type == "guardrail")
+                .order_by(GatewayPolicyDecision.created_at)
+            )
+        ).all()
+        assert [decision.stage for decision in decisions] == [
+            "request_guardrail",
+            "response_guardrail",
+        ]
+        assert [decision.outcome for decision in decisions] == ["allowed", "denied"]
+        assert decisions[-1].rule_id == UUID(events[0]["rule_id"])
+        assert decisions[-1].policy_revision_id == stored_event.policy_revision_id
+        assert decisions[-1].assignment_id is not None
+        assert decisions[-1].assignment_mode == "enforce"
+        assert decisions[-1].assignment_scope_type == "org"
 
 
 @pytest.mark.asyncio
@@ -1569,6 +1870,26 @@ async def test_input_guardrail_denial_does_not_consume_request_limit(
             },
         )
         assert limited_response.status_code == 429
+        events_response = await client.get(
+            "/api/v1/guardrails/events",
+            headers=admin_headers,
+        )
+        events = events_response.json()
+        blocked_event = next(event for event in events if event["decision"] == "blocked")
+        assert blocked_event["gateway_request_id"] is not None
+        assert blocked_event["route_attempt_id"] is not None
+        decisions = (
+            await db_session.scalars(
+                select(GatewayPolicyDecision)
+                .where(GatewayPolicyDecision.decision_type == "guardrail")
+                .order_by(GatewayPolicyDecision.created_at)
+            )
+        ).all()
+        assert "denied" in [decision.outcome for decision in decisions]
+        assert any(
+            decision.stage == "request_guardrail" and decision.outcome == "allowed"
+            for decision in decisions
+        )
 
 
 @pytest.mark.asyncio
@@ -1643,7 +1964,7 @@ async def test_streaming_is_allowed_when_output_guardrail_is_monitor_only(
         usage_response = await client.get("/api/v1/usage/records", headers=admin_headers)
         events_response = await client.get(
             "/api/v1/guardrails/events",
-            params={"phase": "response", "decision": "dry_run"},
+            params={"phase": "response", "decision": "would_block"},
             headers=admin_headers,
         )
 
@@ -1841,13 +2162,13 @@ async def test_chat_completion_falls_back_to_second_public_model_candidate(
         for payload in (
             {
                 "policy_type": "access",
-                "access_policy_id": access.json()["id"],
+                "policy_id": access.json()["policy_id"],
                 "scope_type": "project",
                 "project_id": project.json()["id"],
             },
             {
                 "policy_type": "limit",
-                "limit_policy_id": limits.json()["id"],
+                "policy_id": limits.json()["policy_id"],
                 "scope_type": "project",
                 "project_id": project.json()["id"],
             },
@@ -1900,6 +2221,49 @@ async def test_chat_completion_falls_back_to_second_public_model_candidate(
     assert gateway_requests[0].fallback_attempted is True
     assert gateway_requests[0].final_http_status == 200
     assert gateway_requests[0].final_provider_model == "secondary-chat"
+    route_attempts = (
+        (
+            await db_session.execute(
+                select(GatewayRouteAttempt).order_by(GatewayRouteAttempt.attempt_index)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert [attempt.status for attempt in route_attempts] == ["failed", "succeeded"]
+    assert route_attempts[0].failure_reason == "provider_5xx"
+    assert gateway_requests[0].final_route_attempt_id == route_attempts[1].id
+    decisions = (
+        (
+            await db_session.execute(
+                select(GatewayPolicyDecision).order_by(GatewayPolicyDecision.created_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    access_decisions = [decision for decision in decisions if decision.decision_type == "access"]
+    assert len(access_decisions) == 1
+    assert access_decisions[0].stage == "access_resolution"
+    assert access_decisions[0].outcome == "allowed"
+    assert access_decisions[0].policy_id is not None
+    assert access_decisions[0].assignment_id is not None
+    assert access_decisions[0].assignment_mode == "enforce"
+    assert access_decisions[0].assignment_scope_type == "project"
+    provider_routing_decisions = [
+        decision for decision in decisions if decision.decision_type == "provider_routing"
+    ]
+    assert [decision.outcome for decision in provider_routing_decisions] == [
+        "selected",
+        "selected",
+    ]
+    assert [decision.assignment_id for decision in provider_routing_decisions] == [
+        access_decisions[0].assignment_id,
+        access_decisions[0].assignment_id,
+    ]
+    assert all(
+        decision.assignment_scope_type == "project" for decision in provider_routing_decisions
+    )
     app_client.dependency_overrides.clear()
 
 
@@ -2002,7 +2366,7 @@ async def test_chat_completion_returns_primary_error_when_fallback_exhausts(
             headers=admin_headers,
             json={
                 "policy_type": "access",
-                "access_policy_id": access.json()["id"],
+                "policy_id": access.json()["policy_id"],
                 "scope_type": "project",
                 "project_id": project.json()["id"],
             },
@@ -2072,13 +2436,15 @@ async def test_chat_completion_does_not_fallback_for_nonfallbackable_status(
         base_url="http://test",
     ) as client:
         admin_headers = await _login(client)
-        virtual_key, _primary_provider_id, _secondary_provider_id = (
-            await _provision_ordered_fallback_gateway_path(
-                client=client,
-                headers=admin_headers,
-                slug_suffix="nonfallbackable",
-                public_model_name="chat-no-fallback",
-            )
+        (
+            virtual_key,
+            _primary_provider_id,
+            _secondary_provider_id,
+        ) = await _provision_ordered_fallback_gateway_path(
+            client=client,
+            headers=admin_headers,
+            slug_suffix="nonfallbackable",
+            public_model_name="chat-no-fallback",
         )
         response = await client.post(
             "/v1/chat/completions",
@@ -2136,14 +2502,16 @@ async def test_chat_completion_falls_back_for_configured_rate_limit(
         base_url="http://test",
     ) as client:
         admin_headers = await _login(client)
-        virtual_key, _primary_provider_id, _secondary_provider_id = (
-            await _provision_ordered_fallback_gateway_path(
-                client=client,
-                headers=admin_headers,
-                slug_suffix="rate-limit",
-                public_model_name="chat-rate-limit",
-                fallback_on=["rate_limited"],
-            )
+        (
+            virtual_key,
+            _primary_provider_id,
+            _secondary_provider_id,
+        ) = await _provision_ordered_fallback_gateway_path(
+            client=client,
+            headers=admin_headers,
+            slug_suffix="rate-limit",
+            public_model_name="chat-rate-limit",
+            fallback_on=["rate_limited"],
         )
         response = await client.post(
             "/v1/chat/completions",
@@ -2201,13 +2569,15 @@ async def test_responses_and_completions_fall_back_to_second_candidate(
         base_url="http://test",
     ) as client:
         admin_headers = await _login(client)
-        virtual_key, _primary_provider_id, _secondary_provider_id = (
-            await _provision_ordered_fallback_gateway_path(
-                client=client,
-                headers=admin_headers,
-                slug_suffix="openai-compatible",
-                public_model_name="chat-compatible",
-            )
+        (
+            virtual_key,
+            _primary_provider_id,
+            _secondary_provider_id,
+        ) = await _provision_ordered_fallback_gateway_path(
+            client=client,
+            headers=admin_headers,
+            slug_suffix="openai-compatible",
+            public_model_name="chat-compatible",
         )
         responses_response = await client.post(
             "/v1/responses",
@@ -2271,13 +2641,15 @@ async def test_responses_exhausted_fallback_records_response_endpoint(
         base_url="http://test",
     ) as client:
         admin_headers = await _login(client)
-        virtual_key, _primary_provider_id, _secondary_provider_id = (
-            await _provision_ordered_fallback_gateway_path(
-                client=client,
-                headers=admin_headers,
-                slug_suffix="responses-exhausted",
-                public_model_name="chat-responses-exhausted",
-            )
+        (
+            virtual_key,
+            _primary_provider_id,
+            _secondary_provider_id,
+        ) = await _provision_ordered_fallback_gateway_path(
+            client=client,
+            headers=admin_headers,
+            slug_suffix="responses-exhausted",
+            public_model_name="chat-responses-exhausted",
         )
         response = await client.post(
             "/v1/responses",
@@ -2322,13 +2694,15 @@ async def test_chat_completion_provider_pin_disables_fallback(
         base_url="http://test",
     ) as client:
         admin_headers = await _login(client)
-        virtual_key, primary_provider_id, _secondary_provider_id = (
-            await _provision_ordered_fallback_gateway_path(
-                client=client,
-                headers=admin_headers,
-                slug_suffix="provider-pin",
-                public_model_name="chat-pinned",
-            )
+        (
+            virtual_key,
+            primary_provider_id,
+            _secondary_provider_id,
+        ) = await _provision_ordered_fallback_gateway_path(
+            client=client,
+            headers=admin_headers,
+            slug_suffix="provider-pin",
+            public_model_name="chat-pinned",
         )
         response = await client.post(
             "/v1/chat/completions",
@@ -2433,7 +2807,7 @@ async def _provision_ordered_fallback_gateway_path(
         headers=headers,
         json={
             "policy_type": "access",
-            "access_policy_id": access.json()["id"],
+            "policy_id": access.json()["policy_id"],
             "scope_type": "project",
             "project_id": project.json()["id"],
         },
@@ -2537,3 +2911,4 @@ async def test_gateway_path_can_call_live_openai(app_client, db_session) -> None
         if response.status_code == 502:
             pytest.skip(f"live OpenAI smoke returned upstream error: {response.text}")
         assert response.status_code == 200
+

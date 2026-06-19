@@ -14,8 +14,8 @@ export interface EffectiveRouteSummary {
   public_model_name?: string | null;
   routing_mode?: string | null;
   provider_model: string;
-  alias?: string | null;
   access_policy_id?: string | null;
+  access_policy_revision_id?: string | null;
   access_policy_name?: string | null;
   access_policy_assignment_id?: string | null;
   source_scope?: string | null;

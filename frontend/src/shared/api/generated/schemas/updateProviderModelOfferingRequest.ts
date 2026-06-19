@@ -4,21 +4,20 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { UpdateModelOfferingRequestCapabilities } from './updateModelOfferingRequestCapabilities';
-import type { UpdateModelOfferingRequestRateLimitHints } from './updateModelOfferingRequestRateLimitHints';
+import type { UpdateProviderModelOfferingRequestCapabilities } from './updateProviderModelOfferingRequestCapabilities';
+import type { UpdateProviderModelOfferingRequestRateLimitHints } from './updateProviderModelOfferingRequestRateLimitHints';
 
-export interface UpdateModelOfferingRequest {
+export interface UpdateProviderModelOfferingRequest {
   provider_model_name?: string | null;
-  alias?: string | null;
   version?: string | null;
   modality?: string | null;
   input_modalities?: string[] | null;
   output_modalities?: string[] | null;
-  capabilities?: UpdateModelOfferingRequestCapabilities;
+  capabilities?: UpdateProviderModelOfferingRequestCapabilities;
   context_window?: number | null;
   input_price_per_million_tokens?: number | null;
   output_price_per_million_tokens?: number | null;
   cached_input_price_per_million_tokens?: number | null;
-  rate_limit_hints?: UpdateModelOfferingRequestRateLimitHints;
+  rate_limit_hints?: UpdateProviderModelOfferingRequestRateLimitHints;
   is_active?: boolean | null;
 }

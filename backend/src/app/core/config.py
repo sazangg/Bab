@@ -100,6 +100,11 @@ class Settings(BaseSettings):
         ge=1,
         validation_alias="BAB_ACTIVITY_RETENTION_DAYS",
     )
+    trace_retention_days: int = Field(
+        default=30,
+        ge=1,
+        validation_alias="BAB_TRACE_RETENTION_DAYS",
+    )
 
     @field_validator("environment")
     @classmethod
@@ -117,7 +122,12 @@ class Settings(BaseSettings):
             raise ValueError("BAB_REFRESH_COOKIE_SAMESITE must be lax, strict, or none")
         return normalized
 
-    @field_validator("usage_retention_days", "activity_retention_days", mode="before")
+    @field_validator(
+        "usage_retention_days",
+        "activity_retention_days",
+        "trace_retention_days",
+        mode="before",
+    )
     @classmethod
     def normalize_retention_days(cls, value: Any) -> Any:
         if value == "":

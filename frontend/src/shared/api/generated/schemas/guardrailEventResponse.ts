@@ -10,6 +10,7 @@ export interface GuardrailEventResponse {
   id: string;
   org_id: string;
   policy_id: string | null;
+  policy_revision_id: string | null;
   rule_id: string | null;
   decision: string;
   phase: string;
@@ -20,6 +21,8 @@ export interface GuardrailEventResponse {
   provider_id: string | null;
   pool_id: string | null;
   request_id: string | null;
+  gateway_request_id: string | null;
+  route_attempt_id: string | null;
   requested_model: string | null;
   provider_model: string | null;
   metadata: GuardrailEventResponseMetadata;

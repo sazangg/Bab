@@ -7,7 +7,14 @@ from sqlalchemy import event, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.routes.projects import create_virtual_key as create_virtual_key_route
-from app.api.v1.routes.proxy import ProxyLimitExceededError, _enforce_limit_policies
+from app.api.v1.routes.proxy import (
+    ProxyLimitExceededError,
+    _create_gateway_request,
+    _enforce_limit_policies,
+    _record_gateway_access_decision,
+    _record_gateway_route_attempt_started,
+    _record_proxy_request,
+)
 from app.core.database import Scope
 from app.modules.activity.internal.models import ActivityEvent
 from app.modules.auth.internal.models import AuditEvent, Organization, Team, User
@@ -39,6 +46,7 @@ from app.modules.policies.errors import (
     PolicyNotFoundError,
     PolicyValidationError,
 )
+from app.modules.policies.internal import repository as policies_repository
 from app.modules.policies.schemas import (
     AccessPolicyPublicModelInput,
     AccessPolicyRouteCandidateInput,
@@ -47,6 +55,8 @@ from app.modules.policies.schemas import (
     CreateLimitPolicyRuleRequest,
     CreatePolicyAssignmentRequest,
     LimitPolicyRuleInput,
+    LimitPolicyRuleMatcherInput,
+    LimitPolicyRulePartitionInput,
     UpdateAccessPolicyRequest,
     UpdateLimitPolicyRequest,
     UpdateLimitPolicyRuleRequest,
@@ -57,18 +67,25 @@ from app.modules.providers.internal.models import Provider
 from app.modules.providers.schemas import (
     AddCredentialPoolCredentialRequest,
     CreateCredentialPoolRequest,
-    CreateModelOfferingRequest,
     CreateProviderCredentialRequest,
+    CreateProviderModelOfferingRequest,
     CreateProviderRequest,
     UpdateCredentialPoolRequest,
-    UpdateModelOfferingRequest,
+    UpdateProviderModelOfferingRequest,
     UpdateProviderRequest,
 )
 from app.modules.settings import facade as settings_facade
 from app.modules.settings.schemas import UpdateOrganizationSettingsRequest
 from app.modules.teams.errors import TeamInactiveError
 from app.modules.usage import facade as usage_facade
-from app.modules.usage.schemas import RecordUsage
+from app.modules.usage.accounting import unknown_usage
+from app.modules.usage.internal.models import (
+    GatewayPolicyDecision,
+    GatewayRouteAttempt,
+    LimitPolicyReservation,
+    UsageRecord,
+)
+from app.modules.usage.schemas import CreateGatewayRequest, RecordUsage
 
 
 def _public_model_route(
@@ -99,6 +116,7 @@ def _public_model_route(
             )
         ],
     )
+
 
 async def _create_project_pool_and_models(db_session: AsyncSession):
     org = Organization(name=f"Policy {uuid4()}", slug=f"policy-{uuid4()}")
@@ -156,9 +174,8 @@ async def _create_project_pool_and_models(db_session: AsyncSession):
     )
     fast_model = await providers_facade.create_model_offering(
         provider_id=provider.id,
-        payload=CreateModelOfferingRequest(
+        payload=CreateProviderModelOfferingRequest(
             provider_model_name="gpt-5.4-mini",
-            alias="fast",
             input_price_per_million_tokens=1_000_000,
             output_price_per_million_tokens=1_000_000,
         ),
@@ -168,7 +185,7 @@ async def _create_project_pool_and_models(db_session: AsyncSession):
     )
     large_model = await providers_facade.create_model_offering(
         provider_id=provider.id,
-        payload=CreateModelOfferingRequest(provider_model_name="gpt-5.5"),
+        payload=CreateProviderModelOfferingRequest(provider_model_name="gpt-5.5"),
         actor=actor,
         scope=scope,
         db=db_session,
@@ -238,7 +255,7 @@ async def _assign_access_and_limit(
     await policies_facade.create_policy_assignment(
         payload=CreatePolicyAssignmentRequest(
             policy_type="access",
-            access_policy_id=access.id,
+            policy_id=access.policy_id,
             scope_type=scope_type,
             **target,
         ),
@@ -248,7 +265,7 @@ async def _assign_access_and_limit(
     await policies_facade.create_policy_assignment(
         payload=CreatePolicyAssignmentRequest(
             policy_type="limit",
-            limit_policy_id=limit.id,
+            policy_id=limit.policy_id,
             scope_type=scope_type,
             **target,
         ),
@@ -297,9 +314,16 @@ async def _record_usage_for_resolved(
 
 
 async def test_policy_runtime_grants_pool_model_access(db_session: AsyncSession) -> None:
-    actor, scope, team, project, provider, pool, fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
     access, _limit = await _assign_access_and_limit(
         scope=scope,
         team_id=team.id,
@@ -322,7 +346,13 @@ async def test_policy_runtime_grants_pool_model_access(db_session: AsyncSession)
         db=db_session,
     )
 
-    assert resolved.access_policy_id == access.id
+    stored_access = await policies_repository.get_access_policy(
+        policy_id=access.id,
+        org_id=scope.org_id,
+        db=db_session,
+    )
+    assert stored_access is not None
+    assert resolved.access_policy_id == stored_access.policy_id
     assert resolved.provider_id == provider.id
     assert resolved.pool_id == pool.id
     assert resolved.provider_model == "gpt-5.4-mini"
@@ -341,12 +371,331 @@ async def test_policy_runtime_grants_pool_model_access(db_session: AsyncSession)
     assert "key" not in key.model_dump()
 
 
+async def test_policy_runtime_resolves_shared_access_policy_revision(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
+    policy = await policies_repository.create_policy(
+        org_id=scope.org_id,
+        kind="access",
+        name="Shared access",
+        description=None,
+        db=db_session,
+    )
+    revision = await policies_repository.create_policy_revision(
+        org_id=scope.org_id,
+        policy_id=policy.id,
+        revision_number=1,
+        status="active",
+        created_by=actor.id,
+        db=db_session,
+    )
+    public_model = await policies_repository.create_access_policy_public_model(
+        org_id=scope.org_id,
+        access_policy_id=None,
+        policy_revision_id=revision.id,
+        public_model_name="fast",
+        routing_mode="single_route",
+        fallback_on=[],
+        max_route_attempts=None,
+        is_active=True,
+        db=db_session,
+    )
+    candidate = await policies_repository.create_access_policy_route_candidate(
+        org_id=scope.org_id,
+        public_model_id=public_model.id,
+        provider_id=provider.id,
+        credential_pool_id=pool.id,
+        model_offering_id=fast_model.id,
+        priority=100,
+        weight=100,
+        is_active=True,
+        db=db_session,
+    )
+    await policies_repository.create_policy_assignment(
+        org_id=scope.org_id,
+        values={
+            "policy_id": policy.id,
+            "policy_type": "access",
+            "scope_type": "team",
+            "team_id": team.id,
+            "scope_target_key": policies_repository.policy_assignment_scope_target_key(
+                scope_type="team",
+                team_id=team.id,
+                project_id=None,
+                virtual_key_id=None,
+            ),
+            "mode": "enforce",
+            "is_active": True,
+        },
+        db=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Console key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    resolved = await keys_facade.resolve_access(
+        payload=ResolveAccessRequest(raw_key=created_key.key, requested_model="fast"),
+        db=db_session,
+    )
+
+    assert resolved.access_policy_id == policy.id
+    assert resolved.access_policy_revision_id == revision.id
+    assert resolved.public_model_id == public_model.id
+    assert resolved.route_candidate_id == candidate.id
+    assert resolved.provider_id == provider.id
+    assert resolved.pool_id == pool.id
+    assert resolved.model_offering_id == fast_model.id
+
+
+async def test_facade_assignment_resolves_active_revision_and_traces_it(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    access = await policies_facade.create_access_policy(
+        payload=CreateAccessPolicyRequest(
+            name="Facade shared access",
+            public_models=[
+                _public_model_route(
+                    provider_id=provider.id,
+                    credential_pool_id=pool.id,
+                    model_offering_id=fast_model.id,
+                    public_model_name="fast",
+                )
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+        actor=actor,
+    )
+    active_revision = await policies_repository.get_active_policy_revision(
+        org_id=scope.org_id,
+        policy_id=access.policy_id,
+        db=db_session,
+    )
+    assert active_revision is not None
+    assignment = await policies_facade.create_policy_assignment(
+        payload=CreatePolicyAssignmentRequest(
+            policy_type="access",
+            policy_id=access.policy_id,
+            scope_type="team",
+            team_id=team.id,
+            mode="enforce",
+        ),
+        scope=scope,
+        db=db_session,
+        actor=actor,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Revision trace key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    resolved = await keys_facade.resolve_access(
+        payload=ResolveAccessRequest(raw_key=created_key.key, requested_model="fast"),
+        db=db_session,
+    )
+
+    assert resolved.access_policy_id == access.policy_id
+    assert resolved.access_policy_revision_id == active_revision.id
+    assert resolved.access_policy_assignment_id == assignment.id
+
+    gateway_request_id = await _create_gateway_request(
+        resolved=resolved,
+        gateway_endpoint="chat_completions",
+        db=db_session,
+    )
+    assert gateway_request_id is not None
+    await _record_gateway_access_decision(
+        gateway_request_id=gateway_request_id,
+        resolved=resolved,
+        db=db_session,
+    )
+    route_attempt_id = await _record_gateway_route_attempt_started(
+        gateway_request_id=gateway_request_id,
+        resolved=resolved,
+        attempt_index=0,
+        db=db_session,
+    )
+    assert route_attempt_id is not None
+    await db_session.flush()
+
+    attempt = await db_session.scalar(
+        select(GatewayRouteAttempt).where(GatewayRouteAttempt.id == route_attempt_id)
+    )
+    decisions = (
+        await db_session.scalars(
+            select(GatewayPolicyDecision).where(
+                GatewayPolicyDecision.gateway_request_id == gateway_request_id
+            )
+        )
+    ).all()
+    assert attempt is not None
+    assert attempt.access_policy_id == access.policy_id
+    assert attempt.access_policy_revision_id == active_revision.id
+    assert {decision.policy_revision_id for decision in decisions} == {active_revision.id}
+
+    await policies_facade.update_access_policy(
+        policy_id=access.id,
+        payload=UpdateAccessPolicyRequest(
+            public_models=[
+                _public_model_route(
+                    provider_id=provider.id,
+                    credential_pool_id=pool.id,
+                    model_offering_id=large_model.id,
+                    public_model_name="fast",
+                )
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+        actor=actor,
+    )
+    new_active_revision = await policies_repository.get_active_policy_revision(
+        org_id=scope.org_id,
+        policy_id=access.policy_id,
+        db=db_session,
+    )
+
+    assert new_active_revision is not None
+    assert new_active_revision.id != active_revision.id
+    await db_session.refresh(attempt)
+    refreshed_decisions = (
+        await db_session.scalars(
+            select(GatewayPolicyDecision).where(
+                GatewayPolicyDecision.gateway_request_id == gateway_request_id
+            )
+        )
+    ).all()
+    assert attempt.access_policy_revision_id == active_revision.id
+    assert {decision.policy_revision_id for decision in refreshed_decisions} == {
+        active_revision.id
+    }
+
+
+async def test_access_policy_create_update_publishes_shared_revisions(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _team,
+        _project,
+        provider,
+        pool,
+        fast_model,
+        large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    access = await policies_facade.create_access_policy(
+        payload=CreateAccessPolicyRequest(
+            name="Dual write access",
+            public_models=[
+                _public_model_route(
+                    provider_id=provider.id,
+                    credential_pool_id=pool.id,
+                    model_offering_id=fast_model.id,
+                    public_model_name="fast",
+                )
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+        actor=actor,
+    )
+    legacy_policy = await policies_repository.get_access_policy(
+        policy_id=access.id,
+        org_id=scope.org_id,
+        db=db_session,
+    )
+    active_revision = await policies_repository.get_active_policy_revision(
+        org_id=scope.org_id,
+        policy_id=legacy_policy.policy_id,
+        db=db_session,
+    )
+    revision_models = await policies_repository.list_access_policy_revision_public_models(
+        org_id=scope.org_id,
+        policy_revision_id=active_revision.id,
+        db=db_session,
+    )
+
+    assert active_revision.revision_number == 1
+    assert [item.public_model_name for item in revision_models] == ["fast"]
+
+    await policies_facade.update_access_policy(
+        policy_id=access.id,
+        payload=UpdateAccessPolicyRequest(
+            public_models=[
+                _public_model_route(
+                    provider_id=provider.id,
+                    credential_pool_id=pool.id,
+                    model_offering_id=large_model.id,
+                    public_model_name="large",
+                )
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+        actor=actor,
+    )
+    next_revision = await policies_repository.get_active_policy_revision(
+        org_id=scope.org_id,
+        policy_id=legacy_policy.policy_id,
+        db=db_session,
+    )
+    old_revision_models = await policies_repository.list_access_policy_revision_public_models(
+        org_id=scope.org_id,
+        policy_revision_id=active_revision.id,
+        db=db_session,
+    )
+    next_revision_models = await policies_repository.list_access_policy_revision_public_models(
+        org_id=scope.org_id,
+        policy_revision_id=next_revision.id,
+        db=db_session,
+    )
+
+    assert active_revision.status == "archived"
+    assert next_revision.revision_number == 2
+    assert [item.public_model_name for item in old_revision_models] == ["fast"]
+    assert [item.public_model_name for item in next_revision_models] == ["large"]
+
+
 async def test_authenticated_key_use_is_recorded_before_policy_denial(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=team.id,
@@ -385,9 +734,16 @@ async def test_authenticated_key_use_is_recorded_before_policy_denial(
 async def test_revocation_records_actor_reason_and_is_irreversible(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=team.id,
@@ -435,9 +791,16 @@ async def test_revocation_records_actor_reason_and_is_irreversible(
 async def test_rotation_keeps_both_keys_active_and_guards_early_revocation(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=team.id,
@@ -494,9 +857,16 @@ async def test_rotation_keeps_both_keys_active_and_guards_early_revocation(
 async def test_virtual_key_events_are_safe_and_failure_does_not_emit_success(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=team.id,
@@ -573,8 +943,7 @@ async def test_virtual_key_events_are_safe_and_failure_does_not_emit_success(
     assert {event.entity_type for event in audit_events} == {"virtual_key"}
     assert all(event.org_id == scope.org_id for event in activity_events + audit_events)
     assert any(
-        event.metadata_.get("changed_fields", {}).get("name", {}).get("to")
-        == "Renamed event key"
+        event.metadata_.get("changed_fields", {}).get("name", {}).get("to") == "Renamed event key"
         for event in activity_events
     )
     assert any(
@@ -639,9 +1008,16 @@ async def test_project_archive_and_reactivation_events_include_resource_ids(
 async def test_archive_and_revoke_impact_previews_are_scoped_and_diagnostic(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=team.id,
@@ -802,9 +1178,16 @@ async def test_archive_and_revoke_impact_previews_are_scoped_and_diagnostic(
 async def test_virtual_key_inventory_is_paginated_filtered_and_scoped(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=team.id,
@@ -890,9 +1273,16 @@ async def test_virtual_key_inventory_is_paginated_filtered_and_scoped(
 async def test_virtual_key_inventory_derived_status_pagination_is_not_truncated(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=team.id,
@@ -959,9 +1349,16 @@ async def test_virtual_key_inventory_derived_status_pagination_is_not_truncated(
 async def test_effective_access_explains_routability_and_key_blockers(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
     no_policy = await keys_facade.get_project_effective_access(
         project_id=project.id, scope=scope, db=db_session
     )
@@ -1077,8 +1474,8 @@ async def test_effective_access_explains_routability_and_key_blockers(
 async def test_empty_credential_pool_route_is_not_routable(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, _, project, provider, _, fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
+    actor, scope, _, project, provider, _, fast_model, _ = await _create_project_pool_and_models(
+        db_session
     )
     empty_pool = await providers_facade.create_credential_pool(
         provider_id=provider.id,
@@ -1107,9 +1504,16 @@ async def test_empty_credential_pool_route_is_not_routable(
 async def test_access_route_validation_blocks_inactive_provider_pool_and_model(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, _team, _project, provider, pool, fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        _team,
+        _project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
 
     await providers_facade.update_provider(
         provider_id=provider.id,
@@ -1176,7 +1580,7 @@ async def test_access_route_validation_blocks_inactive_provider_pool_and_model(
     await providers_facade.update_model_offering(
         provider_id=provider.id,
         model_offering_id=fast_model.id,
-        payload=UpdateModelOfferingRequest(is_active=False),
+        payload=UpdateProviderModelOfferingRequest(is_active=False),
         actor=actor,
         scope=scope,
         db=db_session,
@@ -1201,9 +1605,16 @@ async def test_access_route_validation_blocks_inactive_provider_pool_and_model(
 async def test_policy_runtime_requires_access_before_key_creation(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, _team, project, _provider, _pool, _fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        _provider,
+        _pool,
+        _fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
 
     with pytest.raises(PolicyNotConfiguredError):
         await keys_facade.create_virtual_key(
@@ -1222,9 +1633,16 @@ async def test_policy_runtime_requires_access_before_key_creation(
 async def test_virtual_key_creation_is_blocked_when_secret_delivery_is_disabled(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=team.id,
@@ -1260,9 +1678,16 @@ async def test_virtual_key_route_returns_structured_secret_delivery_error(
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    actor, scope, _team, project, _provider, _pool, _fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        _provider,
+        _pool,
+        _fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
 
     async def reject_creation(**_kwargs):
         raise SecretDeliveryDisabledError
@@ -1290,9 +1715,16 @@ async def test_virtual_key_route_returns_structured_secret_delivery_error(
 async def test_virtual_key_status_precedence_is_backend_derived(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=team.id,
@@ -1404,9 +1836,16 @@ async def test_virtual_key_status_precedence_is_backend_derived(
 async def test_archived_ownership_blocks_key_creation_and_runtime(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=team.id,
@@ -1490,9 +1929,16 @@ async def test_archived_ownership_blocks_key_creation_and_runtime(
 async def test_project_access_policy_is_capped_by_team_policy(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        large_model,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=team.id,
@@ -1539,9 +1985,16 @@ async def test_project_access_policy_is_capped_by_team_policy(
 async def test_same_project_access_policies_union_routes(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, _team, project, provider, pool, fast_model, large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        large_model,
+    ) = await _create_project_pool_and_models(db_session)
     access_policies = []
     for model in (fast_model, large_model):
         access = await policies_facade.create_access_policy(
@@ -1552,7 +2005,7 @@ async def test_same_project_access_policies_union_routes(
                         provider_id=provider.id,
                         credential_pool_id=pool.id,
                         model_offering_id=[model.id],
-                        public_model_name=model.alias or model.provider_model_name,
+                        public_model_name=model.provider_model_name,
                     )
                 ],
             ),
@@ -1563,7 +2016,7 @@ async def test_same_project_access_policies_union_routes(
         await policies_facade.create_policy_assignment(
             payload=CreatePolicyAssignmentRequest(
                 policy_type="access",
-                access_policy_id=access.id,
+                policy_id=access.policy_id,
                 scope_type="project",
                 project_id=project.id,
             ),
@@ -1584,7 +2037,7 @@ async def test_same_project_access_policies_union_routes(
         db=db_session,
     )
 
-    assert {model.id for model in accessible_models} == {"fast", "gpt-5.5"}
+    assert {model.id for model in accessible_models} == {"gpt-5.4-mini", "gpt-5.5"}
     summary = await keys_facade.get_project_effective_access(
         project_id=project.id,
         scope=scope,
@@ -1594,11 +2047,11 @@ async def test_same_project_access_policies_union_routes(
         policy.id for policy in access_policies
     }
     assert {route.access_policy_id for route in summary.routes} == {
-        policy.id for policy in access_policies
+        policy.policy_id for policy in access_policies
     }
     assert (
         await keys_facade.resolve_access(
-            payload=ResolveAccessRequest(raw_key=created_key.key, requested_model="fast"),
+            payload=ResolveAccessRequest(raw_key=created_key.key, requested_model="gpt-5.4-mini"),
             db=db_session,
         )
     ).provider_model == "gpt-5.4-mini"
@@ -1613,9 +2066,16 @@ async def test_same_project_access_policies_union_routes(
 async def test_public_model_name_resolves_to_route_candidate(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, _team, project, provider, pool, fast_model, _large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
     access = await policies_facade.create_access_policy(
         payload=CreateAccessPolicyRequest(
             name="Logical access",
@@ -1641,7 +2101,7 @@ async def test_public_model_name_resolves_to_route_candidate(
     await policies_facade.create_policy_assignment(
         payload=CreatePolicyAssignmentRequest(
             policy_type="access",
-            access_policy_id=access.id,
+            policy_id=access.policy_id,
             scope_type="project",
             project_id=project.id,
         ),
@@ -1684,9 +2144,16 @@ async def test_public_model_name_resolves_to_route_candidate(
 async def test_resolve_access_plan_orders_candidates_and_handles_streaming_and_pin(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, _team, project, provider, pool, fast_model, _large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
     fallback_provider = await providers_facade.create_provider(
         payload=CreateProviderRequest(
             name="Fallback OpenAI",
@@ -1713,16 +2180,14 @@ async def test_resolve_access_plan_orders_candidates_and_handles_streaming_and_p
     await providers_facade.add_credential_pool_credential(
         provider_id=fallback_provider.id,
         pool_id=fallback_pool.id,
-        payload=AddCredentialPoolCredentialRequest(
-            provider_credential_id=fallback_credential.id
-        ),
+        payload=AddCredentialPoolCredentialRequest(provider_credential_id=fallback_credential.id),
         actor=actor,
         scope=scope,
         db=db_session,
     )
     fallback_model = await providers_facade.create_model_offering(
         provider_id=fallback_provider.id,
-        payload=CreateModelOfferingRequest(provider_model_name="fallback-chat"),
+        payload=CreateProviderModelOfferingRequest(provider_model_name="fallback-chat"),
         actor=actor,
         scope=scope,
         db=db_session,
@@ -1757,7 +2222,7 @@ async def test_resolve_access_plan_orders_candidates_and_handles_streaming_and_p
     await policies_facade.create_policy_assignment(
         payload=CreatePolicyAssignmentRequest(
             policy_type="access",
-            access_policy_id=access.id,
+            policy_id=access.policy_id,
             scope_type="project",
             project_id=project.id,
         ),
@@ -1798,7 +2263,7 @@ async def test_resolve_access_plan_orders_candidates_and_handles_streaming_and_p
         await policies_facade.create_policy_assignment(
             payload=CreatePolicyAssignmentRequest(
                 policy_type="limit",
-                limit_policy_id=limit.id,
+                policy_id=limit.policy_id,
                 scope_type="project",
                 project_id=project.id,
             ),
@@ -1842,10 +2307,15 @@ async def test_resolve_access_plan_orders_candidates_and_handles_streaming_and_p
         [primary_limits.id],
         [fallback_limits.id],
     ]
-    assert [candidate.provider_id for candidate in (await keys_facade.list_accessible_models(
-        raw_key=created_key.key,
-        db=db_session,
-    ))[0].candidates] == [provider.id, fallback_provider.id]
+    assert [
+        candidate.provider_id
+        for candidate in (
+            await keys_facade.list_accessible_models(
+                raw_key=created_key.key,
+                db=db_session,
+            )
+        )[0].candidates
+    ] == [provider.id, fallback_provider.id]
     assert [attempt.provider_id for attempt in streaming_plan.attempts] == [provider.id]
     assert streaming_plan.fallback_disabled_reason == "streaming_fallback_phase_2"
     assert [attempt.provider_id for attempt in pinned_plan.attempts] == [fallback_provider.id]
@@ -1865,9 +2335,16 @@ async def test_resolve_access_plan_orders_candidates_and_handles_streaming_and_p
 async def test_resolve_access_plan_filters_candidates_by_gateway_endpoint(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, _team, project, provider, pool, fast_model, _large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
     provider_row = await db_session.get(Provider, provider.id)
     assert provider_row is not None
     provider_row.supported_integration = "anthropic_messages"
@@ -1890,7 +2367,7 @@ async def test_resolve_access_plan_filters_candidates_by_gateway_endpoint(
     await policies_facade.create_policy_assignment(
         payload=CreatePolicyAssignmentRequest(
             policy_type="access",
-            access_policy_id=access.id,
+            policy_id=access.policy_id,
             scope_type="project",
             project_id=project.id,
         ),
@@ -1928,25 +2405,32 @@ async def test_resolve_access_plan_filters_candidates_by_gateway_endpoint(
 async def test_access_narrows_through_org_team_project_and_virtual_key(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        large_model,
+    ) = await _create_project_pool_and_models(db_session)
     org_access = await policies_facade.create_access_policy(
         payload=CreateAccessPolicyRequest(
             name="Org access",
             public_models=[
-                    _public_model_route(
-                        provider_id=provider.id,
-                        credential_pool_id=pool.id,
-                        model_offering_id=[fast_model.id],
-                        public_model_name="fast",
-                    ),
-                    _public_model_route(
-                        provider_id=provider.id,
-                        credential_pool_id=pool.id,
-                        model_offering_id=[large_model.id],
-                        public_model_name="gpt-5.5",
-                    ),
+                _public_model_route(
+                    provider_id=provider.id,
+                    credential_pool_id=pool.id,
+                    model_offering_id=[fast_model.id],
+                    public_model_name="fast",
+                ),
+                _public_model_route(
+                    provider_id=provider.id,
+                    credential_pool_id=pool.id,
+                    model_offering_id=[large_model.id],
+                    public_model_name="gpt-5.5",
+                ),
             ],
         ),
         scope=scope,
@@ -1956,12 +2440,12 @@ async def test_access_narrows_through_org_team_project_and_virtual_key(
         payload=CreateAccessPolicyRequest(
             name="Team access",
             public_models=[
-                    _public_model_route(
-                        provider_id=provider.id,
-                        credential_pool_id=pool.id,
-                        model_offering_id=[fast_model.id],
-                        public_model_name="fast",
-                    )
+                _public_model_route(
+                    provider_id=provider.id,
+                    credential_pool_id=pool.id,
+                    model_offering_id=[fast_model.id],
+                    public_model_name="fast",
+                )
             ],
         ),
         scope=scope,
@@ -1971,18 +2455,18 @@ async def test_access_narrows_through_org_team_project_and_virtual_key(
         payload=CreateAccessPolicyRequest(
             name="Project tries to broaden",
             public_models=[
-                    _public_model_route(
-                        provider_id=provider.id,
-                        credential_pool_id=pool.id,
-                        model_offering_id=[fast_model.id],
-                        public_model_name="fast",
-                    ),
-                    _public_model_route(
-                        provider_id=provider.id,
-                        credential_pool_id=pool.id,
-                        model_offering_id=[large_model.id],
-                        public_model_name="gpt-5.5",
-                    ),
+                _public_model_route(
+                    provider_id=provider.id,
+                    credential_pool_id=pool.id,
+                    model_offering_id=[fast_model.id],
+                    public_model_name="fast",
+                ),
+                _public_model_route(
+                    provider_id=provider.id,
+                    credential_pool_id=pool.id,
+                    model_offering_id=[large_model.id],
+                    public_model_name="gpt-5.5",
+                ),
             ],
         ),
         scope=scope,
@@ -1992,12 +2476,12 @@ async def test_access_narrows_through_org_team_project_and_virtual_key(
         payload=CreateAccessPolicyRequest(
             name="Key access",
             public_models=[
-                    _public_model_route(
-                        provider_id=provider.id,
-                        credential_pool_id=pool.id,
-                        model_offering_id=[fast_model.id],
-                        public_model_name="fast",
-                    )
+                _public_model_route(
+                    provider_id=provider.id,
+                    credential_pool_id=pool.id,
+                    model_offering_id=[fast_model.id],
+                    public_model_name="fast",
+                )
             ],
         ),
         scope=scope,
@@ -2006,18 +2490,18 @@ async def test_access_narrows_through_org_team_project_and_virtual_key(
     for payload in (
         CreatePolicyAssignmentRequest(
             policy_type="access",
-            access_policy_id=org_access.id,
+            policy_id=org_access.policy_id,
             scope_type="org",
         ),
         CreatePolicyAssignmentRequest(
             policy_type="access",
-            access_policy_id=team_access.id,
+            policy_id=team_access.policy_id,
             scope_type="team",
             team_id=team.id,
         ),
         CreatePolicyAssignmentRequest(
             policy_type="access",
-            access_policy_id=project_access.id,
+            policy_id=project_access.policy_id,
             scope_type="project",
             project_id=project.id,
         ),
@@ -2034,7 +2518,7 @@ async def test_access_narrows_through_org_team_project_and_virtual_key(
     await policies_facade.create_policy_assignment(
         payload=CreatePolicyAssignmentRequest(
             policy_type="access",
-            access_policy_id=key_access.id,
+            policy_id=key_access.policy_id,
             scope_type="virtual_key",
             virtual_key_id=created_key.id,
         ),
@@ -2074,9 +2558,16 @@ async def test_access_narrows_through_org_team_project_and_virtual_key(
 async def test_multiple_parent_and_child_policies_do_not_broaden_access(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        large_model,
+    ) = await _create_project_pool_and_models(db_session)
     for name, model, scope_type, target in (
         ("Org fast", fast_model, "org", {}),
         ("Org large", large_model, "org", {}),
@@ -2091,7 +2582,7 @@ async def test_multiple_parent_and_child_policies_do_not_broaden_access(
                         provider_id=provider.id,
                         credential_pool_id=pool.id,
                         model_offering_id=[model.id],
-                        public_model_name=model.alias or model.provider_model_name,
+                        public_model_name=model.provider_model_name,
                     )
                 ],
             ),
@@ -2101,7 +2592,7 @@ async def test_multiple_parent_and_child_policies_do_not_broaden_access(
         await policies_facade.create_policy_assignment(
             payload=CreatePolicyAssignmentRequest(
                 policy_type="access",
-                access_policy_id=access.id,
+                policy_id=access.policy_id,
                 scope_type=scope_type,
                 **target,
             ),
@@ -2129,12 +2620,23 @@ async def test_multiple_parent_and_child_policies_do_not_broaden_access(
 async def test_policy_assignment_validates_targets_and_rejects_duplicate_active_assignment(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
-    )
-    _other_actor, _other_scope, other_team, other_project, *_ = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
+    (
+        _other_actor,
+        _other_scope,
+        other_team,
+        other_project,
+        *_,
+    ) = await _create_project_pool_and_models(db_session)
     access = await policies_facade.create_access_policy(
         payload=CreateAccessPolicyRequest(
             name="Scoped access",
@@ -2153,7 +2655,7 @@ async def test_policy_assignment_validates_targets_and_rejects_duplicate_active_
     assignment = await policies_facade.create_policy_assignment(
         payload=CreatePolicyAssignmentRequest(
             policy_type="access",
-            access_policy_id=access.id,
+            policy_id=access.policy_id,
             scope_type="project",
             project_id=project.id,
         ),
@@ -2173,7 +2675,7 @@ async def test_policy_assignment_validates_targets_and_rejects_duplicate_active_
         await policies_facade.create_policy_assignment(
             payload=CreatePolicyAssignmentRequest(
                 policy_type="access",
-                access_policy_id=access.id,
+                policy_id=access.policy_id,
                 scope_type="project",
                 project_id=project.id,
             ),
@@ -2184,7 +2686,7 @@ async def test_policy_assignment_validates_targets_and_rejects_duplicate_active_
         await policies_facade.create_policy_assignment(
             payload=CreatePolicyAssignmentRequest(
                 policy_type="access",
-                access_policy_id=access.id,
+                policy_id=access.policy_id,
                 scope_type="project",
                 team_id=other_team.id,
                 project_id=project.id,
@@ -2196,7 +2698,7 @@ async def test_policy_assignment_validates_targets_and_rejects_duplicate_active_
         await policies_facade.create_policy_assignment(
             payload=CreatePolicyAssignmentRequest(
                 policy_type="access",
-                access_policy_id=access.id,
+                policy_id=access.policy_id,
                 scope_type="virtual_key",
                 project_id=other_project.id,
                 virtual_key_id=created_key.id,
@@ -2208,7 +2710,7 @@ async def test_policy_assignment_validates_targets_and_rejects_duplicate_active_
         await policies_facade.create_policy_assignment(
             payload=CreatePolicyAssignmentRequest(
                 policy_type="access",
-                access_policy_id=access.id,
+                policy_id=access.policy_id,
                 scope_type="team",
                 team_id=other_team.id,
             ),
@@ -2217,10 +2719,208 @@ async def test_policy_assignment_validates_targets_and_rejects_duplicate_active_
         )
 
 
-async def test_limit_policy_request_limit_is_enforced(db_session: AsyncSession) -> None:
-    actor, scope, team, project, provider, pool, fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
+async def test_policy_assignment_can_target_shared_policy_id(
+    db_session: AsyncSession,
+) -> None:
+    (
+        _actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
+    access = await policies_facade.create_access_policy(
+        payload=CreateAccessPolicyRequest(
+            name="Shared id access",
+            public_models=[
+                _public_model_route(
+                    provider_id=provider.id,
+                    credential_pool_id=pool.id,
+                    model_offering_id=[fast_model.id],
+                    public_model_name="fast",
+                )
+            ],
+        ),
+        scope=scope,
+        db=db_session,
     )
+
+    assignment = await policies_facade.create_policy_assignment(
+        payload=CreatePolicyAssignmentRequest(
+            policy_id=access.policy_id,
+            policy_type="access",
+            scope_type="project",
+            project_id=project.id,
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    assert access.policy_id is not None
+    assert assignment.policy_id == access.policy_id
+    assert assignment.access_policy_id == access.id
+    assert assignment.scope_target_key == f"project:{project.id}"
+
+
+async def test_delete_access_policy_closes_assignments_and_preserves_trace_fk(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
+    access = await policies_facade.create_access_policy(
+        payload=CreateAccessPolicyRequest(
+            name="Trace preserved access",
+            public_models=[
+                _public_model_route(
+                    provider_id=provider.id,
+                    credential_pool_id=pool.id,
+                    model_offering_id=fast_model.id,
+                    public_model_name="fast",
+                )
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+        actor=actor,
+    )
+    assignment = await policies_facade.create_policy_assignment(
+        payload=CreatePolicyAssignmentRequest(
+            policy_id=access.policy_id,
+            policy_type="access",
+            scope_type="project",
+            project_id=project.id,
+        ),
+        scope=scope,
+        db=db_session,
+        actor=actor,
+    )
+    gateway_request_id = await usage_facade.create_gateway_request(
+        payload=CreateGatewayRequest(
+            org_id=scope.org_id,
+            team_id=project.team_id,
+            project_id=project.id,
+            gateway_endpoint="chat_completions",
+            requested_model="fast",
+        ),
+        db=db_session,
+    )
+    decision_id = await usage_facade.create_gateway_policy_decision(
+        values={
+            "org_id": scope.org_id,
+            "gateway_request_id": gateway_request_id,
+            "decision_type": "access",
+            "stage": "access_resolution",
+            "outcome": "allowed",
+            "enforced": True,
+            "policy_id": access.policy_id,
+            "assignment_id": assignment.id,
+            "dimension_snapshot": {},
+            "metadata_": {},
+        },
+        db=db_session,
+    )
+
+    await policies_facade.delete_access_policy(
+        policy_id=access.id,
+        scope=scope,
+        db=db_session,
+        actor=actor,
+    )
+
+    stored_assignment = await policies_repository.get_policy_assignment(
+        assignment_id=assignment.id,
+        org_id=scope.org_id,
+        db=db_session,
+    )
+    active_assignments = await policies_repository.list_active_policy_assignments_for_targets(
+        org_id=scope.org_id,
+        team_id=project.team_id,
+        project_id=project.id,
+        virtual_key_id=None,
+        policy_type="access",
+        db=db_session,
+    )
+    stored_decision = await db_session.get(GatewayPolicyDecision, decision_id)
+
+    assert stored_assignment is not None
+    assert stored_assignment.is_active is False
+    assert stored_assignment.effective_to is not None
+    assert all(item.id != assignment.id for item in active_assignments)
+    assert stored_decision is not None
+    assert stored_decision.assignment_id == assignment.id
+
+
+async def test_delete_limit_policy_closes_assignments_without_deleting_history(
+    db_session: AsyncSession,
+) -> None:
+    actor, scope, _team, project, *_ = await _create_project_pool_and_models(db_session)
+    limit = await policies_facade.create_limit_policy(
+        payload=CreateLimitPolicyRequest(name="Historical limit"),
+        scope=scope,
+        db=db_session,
+        actor=actor,
+    )
+    assignment = await policies_facade.create_policy_assignment(
+        payload=CreatePolicyAssignmentRequest(
+            policy_id=limit.policy_id,
+            policy_type="limit",
+            scope_type="project",
+            project_id=project.id,
+        ),
+        scope=scope,
+        db=db_session,
+        actor=actor,
+    )
+
+    await policies_facade.delete_limit_policy(
+        policy_id=limit.id,
+        scope=scope,
+        db=db_session,
+        actor=actor,
+    )
+
+    stored_assignment = await policies_repository.get_policy_assignment(
+        assignment_id=assignment.id,
+        org_id=scope.org_id,
+        db=db_session,
+    )
+    active_assignments = await policies_repository.list_active_policy_assignments_for_targets(
+        org_id=scope.org_id,
+        team_id=project.team_id,
+        project_id=project.id,
+        virtual_key_id=None,
+        policy_type="limit",
+        db=db_session,
+    )
+
+    assert stored_assignment is not None
+    assert stored_assignment.is_active is False
+    assert stored_assignment.effective_to is not None
+    assert all(item.id != assignment.id for item in active_assignments)
+
+
+async def test_limit_policy_request_limit_is_enforced(db_session: AsyncSession) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=team.id,
@@ -2254,10 +2954,975 @@ async def test_limit_policy_request_limit_is_enforced(db_session: AsyncSession) 
     assert exc.value.detail == "limit policy request token limit exceeded"
 
 
-async def test_reused_limit_policy_counts_per_assignment(db_session: AsyncSession) -> None:
-    actor, scope, team, first_project, provider, pool, fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
+async def test_limit_policy_runtime_skips_unmatched_rule_matchers(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
+    _access, limit = await _assign_access_and_limit(
+        scope=scope,
+        team_id=team.id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        max_requests=1,
+        db_session=db_session,
     )
+    await policies_facade.update_limit_policy_rule(
+        rule_id=limit.rules[0].id,
+        payload=UpdateLimitPolicyRuleRequest(
+            matchers=[
+                LimitPolicyRuleMatcherInput(
+                    dimension="public_model_name",
+                    operator="eq",
+                    value_json="slow",
+                )
+            ]
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Console key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    resolved = await keys_facade.resolve_access(
+        payload=ResolveAccessRequest(raw_key=created_key.key, requested_model="fast"),
+        db=db_session,
+    )
+
+    reservation_ids = await _enforce_limit_policies(
+        resolved=resolved,
+        estimated_input_tokens=1,
+        requested_output_tokens=0,
+        db=db_session,
+    )
+
+    reservation_count = await db_session.scalar(
+        select(func.count()).select_from(LimitPolicyReservation)
+    )
+    assert reservation_ids == []
+    assert reservation_count == 0
+
+
+async def test_limit_policy_runtime_enforces_matching_rule_matchers(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
+    _access, limit = await _assign_access_and_limit(
+        scope=scope,
+        team_id=team.id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        max_requests=1,
+        db_session=db_session,
+    )
+    await policies_facade.update_limit_policy_rule(
+        rule_id=limit.rules[0].id,
+        payload=UpdateLimitPolicyRuleRequest(
+            matchers=[
+                LimitPolicyRuleMatcherInput(
+                    dimension="public_model_name",
+                    operator="eq",
+                    value_json="fast",
+                )
+            ]
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Console key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    resolved = await keys_facade.resolve_access(
+        payload=ResolveAccessRequest(raw_key=created_key.key, requested_model="fast"),
+        db=db_session,
+    )
+    await _record_usage_for_resolved(resolved=resolved, db_session=db_session)
+
+    with pytest.raises(ProxyLimitExceededError) as exc:
+        await _enforce_limit_policies(
+            resolved=resolved,
+            estimated_input_tokens=1,
+            requested_output_tokens=0,
+            db=db_session,
+        )
+
+    assert exc.value.detail == "limit policy request limit exceeded"
+
+
+async def test_limit_policy_runtime_active_reservations_are_partitioned(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    access = await policies_facade.create_access_policy(
+        payload=CreateAccessPolicyRequest(
+            name="Partitioned access",
+            public_models=[
+                _public_model_route(
+                    provider_id=provider.id,
+                    credential_pool_id=pool.id,
+                    model_offering_id=fast_model.id,
+                    public_model_name="fast",
+                ),
+                _public_model_route(
+                    provider_id=provider.id,
+                    credential_pool_id=pool.id,
+                    model_offering_id=large_model.id,
+                    public_model_name="slow",
+                ),
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    limit = await policies_facade.create_limit_policy(
+        payload=CreateLimitPolicyRequest(
+            name="Partitioned request caps",
+            rules=[
+                LimitPolicyRuleInput(
+                    name="One active request per public model",
+                    limit_type="requests",
+                    limit_value=1,
+                    interval_unit="day",
+                    partitions=[
+                        LimitPolicyRulePartitionInput(
+                            dimension="public_model_name",
+                            position=0,
+                        )
+                    ],
+                )
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    await policies_facade.create_policy_assignment(
+        payload=CreatePolicyAssignmentRequest(
+            policy_type="access",
+            policy_id=access.policy_id,
+            scope_type="project",
+            project_id=project.id,
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    await policies_facade.create_policy_assignment(
+        payload=CreatePolicyAssignmentRequest(
+            policy_type="limit",
+            policy_id=limit.policy_id,
+            scope_type="project",
+            project_id=project.id,
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Console key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    fast_resolved = await keys_facade.resolve_access(
+        payload=ResolveAccessRequest(raw_key=created_key.key, requested_model="fast"),
+        db=db_session,
+    )
+    slow_resolved = await keys_facade.resolve_access(
+        payload=ResolveAccessRequest(raw_key=created_key.key, requested_model="slow"),
+        db=db_session,
+    )
+
+    await _enforce_limit_policies(
+        resolved=fast_resolved,
+        estimated_input_tokens=1,
+        requested_output_tokens=0,
+        db=db_session,
+    )
+    await _enforce_limit_policies(
+        resolved=slow_resolved,
+        estimated_input_tokens=1,
+        requested_output_tokens=0,
+        db=db_session,
+    )
+
+    reservations = (
+        await db_session.scalars(
+            select(LimitPolicyReservation).order_by(LimitPolicyReservation.created_at)
+        )
+    ).all()
+    assert [reservation.counter_key for reservation in reservations] == [
+        "public_model_name=fast",
+        "public_model_name=slow",
+    ]
+    assert all(
+        reservation.window_descriptor.startswith("day:1:")
+        for reservation in reservations
+        if reservation.window_descriptor is not None
+    )
+    assert [reservation.counting_unit for reservation in reservations] == [
+        "logical_request",
+        "logical_request",
+    ]
+    assert [
+        reservation.dimension_snapshot["public_model_name"] for reservation in reservations
+    ] == [
+        "fast",
+        "slow",
+    ]
+    with pytest.raises(ProxyLimitExceededError) as exc:
+        await _enforce_limit_policies(
+            resolved=fast_resolved,
+            estimated_input_tokens=1,
+            requested_output_tokens=0,
+            db=db_session,
+        )
+
+    assert exc.value.detail == "limit policy request limit exceeded"
+
+
+async def test_limit_policy_runtime_locks_resolved_counter_identity(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
+    _access, limit = await _assign_access_and_limit(
+        scope=scope,
+        team_id=team.id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        max_requests=1,
+        db_session=db_session,
+    )
+    updated_rule = await policies_facade.update_limit_policy_rule(
+        rule_id=limit.rules[0].id,
+        payload=UpdateLimitPolicyRuleRequest(
+            partitions=[
+                LimitPolicyRulePartitionInput(
+                    dimension="public_model_name",
+                    position=0,
+                )
+            ]
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Console key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    resolved = await keys_facade.resolve_access(
+        payload=ResolveAccessRequest(raw_key=created_key.key, requested_model="fast"),
+        db=db_session,
+    )
+    lock_identities: list[str] = []
+
+    async def capture_counter_lock(*, identity: str, db: AsyncSession) -> None:
+        lock_identities.append(identity)
+
+    monkeypatch.setattr(usage_facade, "acquire_limit_counter_lock", capture_counter_lock)
+
+    await _enforce_limit_policies(
+        resolved=resolved,
+        estimated_input_tokens=1,
+        requested_output_tokens=0,
+        db=db_session,
+    )
+
+    assert len(lock_identities) == 1
+    assert str(limit.id) in lock_identities[0]
+    assert str(updated_rule.id) in lock_identities[0]
+    assert "logical_request" in lock_identities[0]
+    assert "public_model_name=fast" in lock_identities[0]
+
+
+async def test_limit_policy_runtime_attempt_scoped_dimensions_use_route_attempt_unit(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
+    _access, limit = await _assign_access_and_limit(
+        scope=scope,
+        team_id=team.id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        max_requests=1,
+        db_session=db_session,
+    )
+    await policies_facade.update_limit_policy_rule(
+        rule_id=limit.rules[0].id,
+        payload=UpdateLimitPolicyRuleRequest(
+            partitions=[
+                LimitPolicyRulePartitionInput(
+                    dimension="provider_id",
+                    position=0,
+                )
+            ]
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Console key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    resolved = await keys_facade.resolve_access(
+        payload=ResolveAccessRequest(raw_key=created_key.key, requested_model="fast"),
+        db=db_session,
+    )
+
+    await _enforce_limit_policies(
+        resolved=resolved,
+        estimated_input_tokens=1,
+        requested_output_tokens=0,
+        db=db_session,
+    )
+    await _record_proxy_request(
+        resolved=resolved,
+        http_status=200,
+        latency_ms=10,
+        usage=unknown_usage(),
+        error_code=None,
+        gateway_endpoint="chat_completions",
+        db=db_session,
+    )
+
+    reservation = await db_session.scalar(select(LimitPolicyReservation))
+    usage_record = await db_session.scalar(select(UsageRecord))
+    assert reservation is not None
+    assert usage_record is not None
+    assert reservation.counting_unit == "route_attempt"
+    assert usage_record.limit_counting_unit == "route_attempt"
+    assert reservation.counter_key == f"provider_id={resolved.provider_id}"
+    assert usage_record.limit_counter_key == f"provider_id={resolved.provider_id}"
+    assert reservation.window_descriptor is not None
+    assert reservation.window_descriptor.startswith("day:1:")
+    assert usage_record.limit_window_descriptor == reservation.window_descriptor
+
+
+async def test_limit_policy_runtime_committed_usage_is_partitioned(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    access = await policies_facade.create_access_policy(
+        payload=CreateAccessPolicyRequest(
+            name="Committed partition access",
+            public_models=[
+                _public_model_route(
+                    provider_id=provider.id,
+                    credential_pool_id=pool.id,
+                    model_offering_id=fast_model.id,
+                    public_model_name="fast",
+                ),
+                _public_model_route(
+                    provider_id=provider.id,
+                    credential_pool_id=pool.id,
+                    model_offering_id=large_model.id,
+                    public_model_name="slow",
+                ),
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    limit = await policies_facade.create_limit_policy(
+        payload=CreateLimitPolicyRequest(
+            name="Committed partition caps",
+            rules=[
+                LimitPolicyRuleInput(
+                    name="One committed request per public model",
+                    limit_type="requests",
+                    limit_value=1,
+                    interval_unit="day",
+                    partitions=[
+                        LimitPolicyRulePartitionInput(
+                            dimension="public_model_name",
+                            position=0,
+                        )
+                    ],
+                )
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    await policies_facade.create_policy_assignment(
+        payload=CreatePolicyAssignmentRequest(
+            policy_type="access",
+            policy_id=access.policy_id,
+            scope_type="project",
+            project_id=project.id,
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    await policies_facade.create_policy_assignment(
+        payload=CreatePolicyAssignmentRequest(
+            policy_type="limit",
+            policy_id=limit.policy_id,
+            scope_type="project",
+            project_id=project.id,
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Console key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    fast_resolved = await keys_facade.resolve_access(
+        payload=ResolveAccessRequest(raw_key=created_key.key, requested_model="fast"),
+        db=db_session,
+    )
+    slow_resolved = await keys_facade.resolve_access(
+        payload=ResolveAccessRequest(raw_key=created_key.key, requested_model="slow"),
+        db=db_session,
+    )
+    await _record_proxy_request(
+        resolved=fast_resolved,
+        http_status=200,
+        latency_ms=10,
+        usage=unknown_usage(),
+        error_code=None,
+        gateway_endpoint="chat_completions",
+        db=db_session,
+    )
+
+    await _enforce_limit_policies(
+        resolved=slow_resolved,
+        estimated_input_tokens=1,
+        requested_output_tokens=0,
+        db=db_session,
+    )
+
+    with pytest.raises(ProxyLimitExceededError) as exc:
+        await _enforce_limit_policies(
+            resolved=fast_resolved,
+            estimated_input_tokens=1,
+            requested_output_tokens=0,
+            db=db_session,
+        )
+
+    assert exc.value.detail == "limit policy request limit exceeded"
+
+
+async def test_tokens_per_request_limit_does_not_create_reservation(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=team.id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        max_tokens_per_request=10,
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Console key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    resolved = await keys_facade.resolve_access(
+        payload=ResolveAccessRequest(raw_key=created_key.key, requested_model="fast"),
+        db=db_session,
+    )
+
+    reservation_ids = await _enforce_limit_policies(
+        resolved=resolved,
+        estimated_input_tokens=1,
+        requested_output_tokens=1,
+        db=db_session,
+    )
+
+    reservation_count = await db_session.scalar(
+        select(func.count()).select_from(LimitPolicyReservation)
+    )
+    assert reservation_ids == []
+    assert reservation_count == 0
+
+
+async def test_tokens_per_request_limit_requires_lifetime_window(
+    db_session: AsyncSession,
+) -> None:
+    _actor, scope, *_ = await _create_project_pool_and_models(db_session)
+
+    with pytest.raises(PolicyValidationError):
+        await policies_facade.create_limit_policy(
+            payload=CreateLimitPolicyRequest(
+                name="Invalid request token cap",
+                rules=[
+                    LimitPolicyRuleInput(
+                        name="Request token cap",
+                        limit_type="tokens_per_request",
+                        limit_value=10,
+                        interval_unit="day",
+                    )
+                ],
+            ),
+            scope=scope,
+            db=db_session,
+        )
+
+    policy = await policies_facade.create_limit_policy(
+        payload=CreateLimitPolicyRequest(name="Request token caps"),
+        scope=scope,
+        db=db_session,
+    )
+    with pytest.raises(PolicyValidationError):
+        await policies_facade.create_limit_policy_rule(
+            policy_id=policy.id,
+            payload=CreateLimitPolicyRuleRequest(
+                name="Invalid rule",
+                limit_type="tokens_per_request",
+                limit_value=10,
+                interval_unit="day",
+            ),
+            scope=scope,
+            db=db_session,
+        )
+    rule = await policies_facade.create_limit_policy_rule(
+        policy_id=policy.id,
+        payload=CreateLimitPolicyRuleRequest(
+            name="Valid rule",
+            limit_type="tokens_per_request",
+            limit_value=10,
+            interval_unit="lifetime",
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    with pytest.raises(PolicyValidationError):
+        await policies_facade.update_limit_policy_rule(
+            rule_id=rule.id,
+            payload=UpdateLimitPolicyRuleRequest(interval_unit="day"),
+            scope=scope,
+            db=db_session,
+        )
+
+
+async def test_limit_policy_rule_matchers_round_trip_through_service(
+    db_session: AsyncSession,
+) -> None:
+    _actor, scope, *_ = await _create_project_pool_and_models(db_session)
+
+    policy = await policies_facade.create_limit_policy(
+        payload=CreateLimitPolicyRequest(
+            name="Partitioned request limits",
+            rules=[
+                LimitPolicyRuleInput(
+                    name="Per model per project",
+                    limit_type="requests",
+                    limit_value=100,
+                    interval_unit="day",
+                    matchers=[
+                        LimitPolicyRuleMatcherInput(
+                            dimension="public_model_name",
+                            operator="eq",
+                            value_json="fast-general",
+                        )
+                    ],
+                    partitions=[
+                        LimitPolicyRulePartitionInput(dimension="project_id", position=0),
+                        LimitPolicyRulePartitionInput(
+                            dimension="public_model_name",
+                            position=1,
+                        ),
+                    ],
+                )
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    rule = policy.rules[0]
+    assert [
+        (matcher.dimension, matcher.operator, matcher.value_json) for matcher in rule.matchers
+    ] == [("public_model_name", "eq", "fast-general")]
+    assert [(partition.dimension, partition.position) for partition in rule.partitions] == [
+        ("project_id", 0),
+        ("public_model_name", 1),
+    ]
+
+    updated = await policies_facade.update_limit_policy_rule(
+        rule_id=rule.id,
+        payload=UpdateLimitPolicyRuleRequest(
+            matchers=[
+                LimitPolicyRuleMatcherInput(
+                    dimension="streaming",
+                    operator="exists",
+                )
+            ],
+            partitions=[],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    assert [
+        (matcher.dimension, matcher.operator, matcher.value_json) for matcher in updated.matchers
+    ] == [("streaming", "exists", None)]
+    assert updated.partitions == []
+
+
+async def test_limit_policy_rule_update_creates_new_revision(
+    db_session: AsyncSession,
+) -> None:
+    (
+        _actor,
+        scope,
+        *_,
+    ) = await _create_project_pool_and_models(db_session)
+    policy = await policies_facade.create_limit_policy(
+        payload=CreateLimitPolicyRequest(
+            name="Revisioned limits",
+            rules=[
+                LimitPolicyRuleInput(
+                    name="Requests",
+                    limit_type="requests",
+                    limit_value=1,
+                )
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    original_rule = policy.rules[0]
+
+    updated = await policies_facade.update_limit_policy_rule(
+        rule_id=original_rule.id,
+        payload=UpdateLimitPolicyRuleRequest(limit_value=2),
+        scope=scope,
+        db=db_session,
+    )
+    assert updated.id != original_rule.id
+
+    legacy_rule = await policies_repository.get_limit_policy_rule(
+        rule_id=original_rule.id,
+        org_id=scope.org_id,
+        db=db_session,
+    )
+    active_revision = await policies_repository.get_active_policy_revision(
+        org_id=scope.org_id,
+        policy_id=policy.policy_id,
+        db=db_session,
+    )
+    assert legacy_rule is not None
+    assert active_revision is not None
+    assert legacy_rule.limit_value == 1
+    assert legacy_rule.policy_revision_id != active_revision.id
+    assert updated.limit_value == 2
+    assert updated.policy_revision_id == active_revision.id
+
+
+async def test_limit_policy_rule_update_targets_copied_rule_by_source_id(
+    db_session: AsyncSession,
+) -> None:
+    _actor, scope, *_ = await _create_project_pool_and_models(db_session)
+    policy = await policies_facade.create_limit_policy(
+        payload=CreateLimitPolicyRequest(
+            name="Duplicate rule limits",
+            rules=[
+                LimitPolicyRuleInput(
+                    name="Requests",
+                    limit_type="requests",
+                    limit_value=100,
+                    partitions=[LimitPolicyRulePartitionInput(dimension="project_id", position=0)],
+                ),
+                LimitPolicyRuleInput(
+                    name="Requests",
+                    limit_type="requests",
+                    limit_value=100,
+                    partitions=[
+                        LimitPolicyRulePartitionInput(dimension="virtual_key_id", position=0)
+                    ],
+                ),
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    updated = await policies_facade.update_limit_policy_rule(
+        rule_id=policy.rules[1].id,
+        payload=UpdateLimitPolicyRuleRequest(limit_value=200),
+        scope=scope,
+        db=db_session,
+    )
+    active_revision = await policies_repository.get_active_policy_revision(
+        org_id=scope.org_id,
+        policy_id=policy.policy_id,
+        db=db_session,
+    )
+    assert active_revision is not None
+    active_rules = await policies_repository.list_limit_policy_revision_rules(
+        org_id=scope.org_id,
+        limit_policy_id=policy.id,
+        policy_revision_id=active_revision.id,
+        db=db_session,
+    )
+    value_by_partition: dict[str, int] = {}
+    for rule in active_rules:
+        partitions = await policies_repository.list_limit_policy_rule_partitions(
+            org_id=scope.org_id,
+            rule_id=rule.id,
+            db=db_session,
+        )
+        value_by_partition[partitions[0].dimension] = rule.limit_value
+
+    assert updated.limit_value == 200
+    assert value_by_partition == {"project_id": 100, "virtual_key_id": 200}
+
+
+async def test_limit_policy_rule_delete_targets_copied_rule_by_source_id(
+    db_session: AsyncSession,
+) -> None:
+    _actor, scope, *_ = await _create_project_pool_and_models(db_session)
+    policy = await policies_facade.create_limit_policy(
+        payload=CreateLimitPolicyRequest(
+            name="Duplicate rule delete limits",
+            rules=[
+                LimitPolicyRuleInput(
+                    name="Requests",
+                    limit_type="requests",
+                    limit_value=100,
+                    partitions=[LimitPolicyRulePartitionInput(dimension="project_id", position=0)],
+                ),
+                LimitPolicyRuleInput(
+                    name="Requests",
+                    limit_type="requests",
+                    limit_value=100,
+                    partitions=[
+                        LimitPolicyRulePartitionInput(dimension="virtual_key_id", position=0)
+                    ],
+                ),
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    await policies_facade.delete_limit_policy_rule(
+        rule_id=policy.rules[1].id,
+        scope=scope,
+        db=db_session,
+    )
+    active_revision = await policies_repository.get_active_policy_revision(
+        org_id=scope.org_id,
+        policy_id=policy.policy_id,
+        db=db_session,
+    )
+    assert active_revision is not None
+    active_rules = await policies_repository.list_limit_policy_revision_rules(
+        org_id=scope.org_id,
+        limit_policy_id=policy.id,
+        policy_revision_id=active_revision.id,
+        db=db_session,
+    )
+    remaining_partitions = []
+    for rule in active_rules:
+        partitions = await policies_repository.list_limit_policy_rule_partitions(
+            org_id=scope.org_id,
+            rule_id=rule.id,
+            db=db_session,
+        )
+        remaining_partitions.append(partitions[0].dimension)
+
+    assert remaining_partitions == ["project_id"]
+
+
+async def test_limit_policy_legacy_filters_materialize_as_matchers(
+    db_session: AsyncSession,
+) -> None:
+    (
+        _actor,
+        scope,
+        _team,
+        _project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
+
+    policy = await policies_facade.create_limit_policy(
+        payload=CreateLimitPolicyRequest(
+            name="Legacy filtered limits",
+            rules=[
+                LimitPolicyRuleInput(
+                    name="Provider cap",
+                    limit_type="requests",
+                    limit_value=1,
+                    interval_unit="day",
+                    provider_id=provider.id,
+                    credential_pool_id=pool.id,
+                    model_offering_id=fast_model.id,
+                )
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    assert [
+        (matcher.dimension, matcher.operator, matcher.value_json)
+        for matcher in policy.rules[0].matchers
+    ] == [
+        ("provider_id", "eq", str(provider.id)),
+        ("credential_pool_id", "eq", str(pool.id)),
+        ("provider_model_offering_id", "eq", str(fast_model.id)),
+    ]
+
+
+async def test_limit_policy_rule_matcher_validation_uses_dimension_registry(
+    db_session: AsyncSession,
+) -> None:
+    _actor, scope, *_ = await _create_project_pool_and_models(db_session)
+
+    with pytest.raises(PolicyValidationError):
+        await policies_facade.create_limit_policy(
+            payload=CreateLimitPolicyRequest(
+                name="Invalid dimensions",
+                rules=[
+                    LimitPolicyRuleInput(
+                        name="Bad provider credential scope",
+                        limit_type="requests",
+                        limit_value=100,
+                        interval_unit="day",
+                        matchers=[
+                            LimitPolicyRuleMatcherInput(
+                                dimension="provider_credential_id",
+                                operator="exists",
+                            )
+                        ],
+                    )
+                ],
+            ),
+            scope=scope,
+            db=db_session,
+        )
+
+    with pytest.raises(PolicyValidationError):
+        await policies_facade.create_limit_policy(
+            payload=CreateLimitPolicyRequest(
+                name="Partitioned token cap",
+                rules=[
+                    LimitPolicyRuleInput(
+                        name="Bad token cap",
+                        limit_type="tokens_per_request",
+                        limit_value=100,
+                        interval_unit="lifetime",
+                        partitions=[
+                            LimitPolicyRulePartitionInput(dimension="project_id", position=0)
+                        ],
+                    )
+                ],
+            ),
+            scope=scope,
+            db=db_session,
+        )
+
+
+async def test_reused_limit_policy_counts_per_assignment(db_session: AsyncSession) -> None:
+    (
+        actor,
+        scope,
+        team,
+        first_project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
     second_project = await keys_facade.create_project(
         team_id=team.id,
         payload=CreateProjectRequest(name="Second Console", description=None),
@@ -2299,7 +3964,7 @@ async def test_reused_limit_policy_counts_per_assignment(db_session: AsyncSessio
         await policies_facade.create_policy_assignment(
             payload=CreatePolicyAssignmentRequest(
                 policy_type="access",
-                access_policy_id=access.id,
+                policy_id=access.policy_id,
                 scope_type="project",
                 project_id=project.id,
             ),
@@ -2309,7 +3974,7 @@ async def test_reused_limit_policy_counts_per_assignment(db_session: AsyncSessio
         await policies_facade.create_policy_assignment(
             payload=CreatePolicyAssignmentRequest(
                 policy_type="limit",
-                limit_policy_id=limit.id,
+                policy_id=limit.policy_id,
                 scope_type="project",
                 project_id=project.id,
             ),
@@ -2386,9 +4051,16 @@ async def test_reused_limit_policy_counts_per_assignment(db_session: AsyncSessio
 
 
 async def test_policy_activity_events_cover_mutations(db_session: AsyncSession) -> None:
-    actor, scope, team, project, provider, pool, fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
     access = await policies_facade.create_access_policy(
         payload=CreateAccessPolicyRequest(
             name="Activity access",
@@ -2436,7 +4108,7 @@ async def test_policy_activity_events_cover_mutations(db_session: AsyncSession) 
         scope=scope,
         db=db_session,
     )
-    await policies_facade.update_limit_policy_rule(
+    rule = await policies_facade.update_limit_policy_rule(
         rule_id=rule.id,
         payload=UpdateLimitPolicyRuleRequest(limit_value=12),
         actor=actor,
@@ -2446,7 +4118,7 @@ async def test_policy_activity_events_cover_mutations(db_session: AsyncSession) 
     assignment = await policies_facade.create_policy_assignment(
         payload=CreatePolicyAssignmentRequest(
             policy_type="access",
-            access_policy_id=access.id,
+            policy_id=access.policy_id,
             scope_type="project",
             team_id=team.id,
             project_id=project.id,
@@ -2514,9 +4186,16 @@ async def test_policy_activity_events_cover_mutations(db_session: AsyncSession) 
 async def test_policy_impact_reports_affected_targets_and_unusable_keys(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
     access = await policies_facade.create_access_policy(
         payload=CreateAccessPolicyRequest(
             name="Project access",
@@ -2534,7 +4213,7 @@ async def test_policy_impact_reports_affected_targets_and_unusable_keys(
     await policies_facade.create_policy_assignment(
         payload=CreatePolicyAssignmentRequest(
             policy_type="access",
-            access_policy_id=access.id,
+            policy_id=access.policy_id,
             scope_type="project",
             team_id=team.id,
             project_id=project.id,
@@ -2562,3 +4241,4 @@ async def test_policy_impact_reports_affected_targets_and_unusable_keys(
     assert impact.affected_virtual_keys[0].id == key.id
     assert impact.virtual_keys_would_become_unusable_count == 1
     assert impact.virtual_keys_would_become_unusable[0].id == key.id
+

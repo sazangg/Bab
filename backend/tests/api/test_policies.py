@@ -11,8 +11,8 @@ from app.modules.providers import facade as providers_facade
 from app.modules.providers.schemas import (
     AddCredentialPoolCredentialRequest,
     CreateCredentialPoolRequest,
-    CreateModelOfferingRequest,
     CreateProviderCredentialRequest,
+    CreateProviderModelOfferingRequest,
     CreateProviderRequest,
 )
 
@@ -67,7 +67,7 @@ async def _create_provider_fixture(db_session: AsyncSession, *, name: str):
     )
     model = await providers_facade.create_model_offering(
         provider_id=provider.id,
-        payload=CreateModelOfferingRequest(provider_model_name=f"{name}-model"),
+        payload=CreateProviderModelOfferingRequest(provider_model_name=f"{name}-model"),
         actor=actor,
         scope=scope,
         db=db_session,
@@ -131,14 +131,14 @@ async def test_limit_policy_can_be_created_and_assigned_to_org(
             },
         )
         assert policy_response.status_code == 201
-        policy_id = policy_response.json()["id"]
+        policy_id = policy_response.json()["policy_id"]
 
         assignment_response = await client.post(
             "/api/v1/policies/assignments",
             headers=headers,
             json={
                 "policy_type": "limit",
-                "limit_policy_id": policy_id,
+                "policy_id": policy_id,
                 "scope_type": "org",
             },
         )
@@ -289,7 +289,7 @@ async def test_scoped_admin_can_create_owned_policy_only_for_current_scope(
             headers=scoped_headers,
             json={
                 "policy_type": "limit",
-                "limit_policy_id": policy["id"],
+                "policy_id": policy["policy_id"],
                 "scope_type": "team",
                 "team_id": str(other_team.id),
             },
@@ -300,7 +300,7 @@ async def test_scoped_admin_can_create_owned_policy_only_for_current_scope(
             headers=other_headers,
             json={
                 "policy_type": "limit",
-                "limit_policy_id": policy["id"],
+                "policy_id": policy["policy_id"],
                 "scope_type": "team",
                 "team_id": str(other_team.id),
             },
@@ -371,7 +371,7 @@ async def test_scoped_admin_can_list_and_assign_org_created_policy(
             headers=scoped_headers,
             json={
                 "policy_type": "limit",
-                "limit_policy_id": policy_response.json()["id"],
+                "policy_id": policy_response.json()["policy_id"],
                 "scope_type": "team",
                 "team_id": str(default_team.id),
             },
@@ -420,7 +420,7 @@ async def test_scoped_access_policy_creation_cannot_widen_inherited_access(
             headers=admin_headers,
             json={
                 "policy_type": "access",
-                "access_policy_id": parent_policy.json()["id"],
+                "policy_id": parent_policy.json()["policy_id"],
                 "scope_type": "org",
             },
         )
@@ -622,7 +622,7 @@ async def test_scoped_admin_route_update_cannot_widen_inherited_access(
             headers=admin_headers,
             json={
                 "policy_type": "access",
-                "access_policy_id": parent_policy.json()["id"],
+                "policy_id": parent_policy.json()["policy_id"],
                 "scope_type": "org",
             },
         )
@@ -938,7 +938,7 @@ async def test_access_policy_assignment_rejects_same_scope_duplicate_public_mode
             headers=headers,
             json={
                 "policy_type": "access",
-                "access_policy_id": first_policy.json()["id"],
+                "policy_id": first_policy.json()["policy_id"],
                 "scope_type": "org",
             },
         )
@@ -947,7 +947,7 @@ async def test_access_policy_assignment_rejects_same_scope_duplicate_public_mode
             headers=headers,
             json={
                 "policy_type": "access",
-                "access_policy_id": second_policy.json()["id"],
+                "policy_id": second_policy.json()["policy_id"],
                 "scope_type": "org",
             },
         )
@@ -1000,7 +1000,7 @@ async def test_access_policy_update_rejects_assigned_same_scope_duplicate_public
                 headers=headers,
                 json={
                     "policy_type": "access",
-                    "access_policy_id": policy.json()["id"],
+                    "policy_id": policy.json()["policy_id"],
                     "scope_type": "org",
                 },
             )
@@ -1062,7 +1062,7 @@ async def test_access_policy_update_allows_duplicate_from_inactive_assigned_poli
                 headers=headers,
                 json={
                     "policy_type": "access",
-                    "access_policy_id": policy.json()["id"],
+                    "policy_id": policy.json()["policy_id"],
                     "scope_type": "org",
                 },
             )
@@ -1129,7 +1129,7 @@ async def test_scoped_access_policy_creation_supports_multiple_narrowed_routes(
             headers=admin_headers,
             json={
                 "policy_type": "access",
-                "access_policy_id": parent_policy.json()["id"],
+                "policy_id": parent_policy.json()["policy_id"],
                 "scope_type": "org",
             },
         )
@@ -1228,7 +1228,7 @@ async def test_scoped_access_policy_cannot_widen_single_route_to_ordered_public_
             headers=admin_headers,
             json={
                 "policy_type": "access",
-                "access_policy_id": parent_policy.json()["id"],
+                "policy_id": parent_policy.json()["policy_id"],
                 "scope_type": "org",
             },
         )
@@ -1319,7 +1319,7 @@ async def test_scoped_access_policy_can_create_narrowed_public_model(
             headers=admin_headers,
             json={
                 "policy_type": "access",
-                "access_policy_id": parent_policy.json()["id"],
+                "policy_id": parent_policy.json()["policy_id"],
                 "scope_type": "org",
             },
         )
@@ -1423,7 +1423,7 @@ async def test_scoped_access_policy_cannot_add_parent_public_model_fallback_reas
             headers=admin_headers,
             json={
                 "policy_type": "access",
-                "access_policy_id": parent_policy.json()["id"],
+                "policy_id": parent_policy.json()["policy_id"],
                 "scope_type": "org",
             },
         )
@@ -1478,3 +1478,4 @@ async def test_scoped_access_policy_cannot_add_parent_public_model_fallback_reas
 
     assert parent_policy.status_code == 201
     assert widened_response.status_code == 400
+

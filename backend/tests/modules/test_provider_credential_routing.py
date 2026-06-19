@@ -31,8 +31,8 @@ from app.modules.providers.internal.secret_backends import (
 from app.modules.providers.schemas import (
     AddCredentialPoolCredentialRequest,
     CreateCredentialPoolRequest,
-    CreateModelOfferingRequest,
     CreateProviderCredentialRequest,
+    CreateProviderModelOfferingRequest,
     CreateProviderRequest,
     ModelMetadataSyncMode,
     ProviderChatCompletionRequest,
@@ -40,9 +40,7 @@ from app.modules.providers.schemas import (
     UpdateProviderCredentialRequest,
     UpdateProviderRequest,
 )
-from app.modules.providers.schemas import (
-    TestModelOfferingRequest as ModelTestRequest,
-)
+from app.modules.providers.schemas import TestProviderModelOfferingRequest as ModelTestRequest
 
 
 async def _create_actor_scope(db_session: AsyncSession) -> tuple[AuthenticatedUser, Scope]:
@@ -452,7 +450,7 @@ async def test_provider_resource_conflicts_are_reported_before_database_constrai
 
     await providers_facade.create_model_offering(
         provider_id=provider.id,
-        payload=CreateModelOfferingRequest(provider_model_name="model-a", alias="stable"),
+        payload=CreateProviderModelOfferingRequest(provider_model_name="model-a"),
         actor=actor,
         scope=scope,
         db=db_session,
@@ -460,19 +458,19 @@ async def test_provider_resource_conflicts_are_reported_before_database_constrai
     with pytest.raises(ProviderResourceConflictError):
         await providers_facade.create_model_offering(
             provider_id=provider.id,
-            payload=CreateModelOfferingRequest(provider_model_name="model-a"),
+            payload=CreateProviderModelOfferingRequest(provider_model_name="model-a"),
             actor=actor,
             scope=scope,
             db=db_session,
         )
-    with pytest.raises(ProviderResourceConflictError):
-        await providers_facade.create_model_offering(
-            provider_id=provider.id,
-            payload=CreateModelOfferingRequest(provider_model_name="model-b", alias="stable"),
-            actor=actor,
-            scope=scope,
-            db=db_session,
-        )
+    second_model = await providers_facade.create_model_offering(
+        provider_id=provider.id,
+        payload=CreateProviderModelOfferingRequest(provider_model_name="model-b"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    assert second_model.provider_model_name == "model-b"
 
 
 async def test_anthropic_validation_and_model_sync_use_native_auth(
@@ -617,7 +615,7 @@ async def test_openai_model_test_uses_chat_completions_with_bearer(
     )
     model = await providers_facade.create_model_offering(
         provider_id=provider.id,
-        payload=CreateModelOfferingRequest(provider_model_name="gpt-test"),
+        payload=CreateProviderModelOfferingRequest(provider_model_name="gpt-test"),
         actor=actor,
         scope=scope,
         db=db_session,
@@ -682,7 +680,7 @@ async def test_anthropic_model_test_uses_native_messages_and_pool_routing(
     )
     model = await providers_facade.create_model_offering(
         provider_id=provider.id,
-        payload=CreateModelOfferingRequest(provider_model_name="claude-test"),
+        payload=CreateProviderModelOfferingRequest(provider_model_name="claude-test"),
         actor=actor,
         scope=scope,
         db=db_session,
@@ -737,7 +735,7 @@ async def test_anthropic_model_test_auth_failure_updates_credential_health(
     )
     model = await providers_facade.create_model_offering(
         provider_id=provider.id,
-        payload=CreateModelOfferingRequest(provider_model_name="claude-test"),
+        payload=CreateProviderModelOfferingRequest(provider_model_name="claude-test"),
         actor=actor,
         scope=scope,
         db=db_session,
@@ -781,7 +779,7 @@ async def test_model_test_returns_controlled_result_for_unsupported_integration(
     provider.supported_integration = "unsupported_test_integration"
     model = await providers_facade.create_model_offering(
         provider_id=provider.id,
-        payload=CreateModelOfferingRequest(provider_model_name="custom-model"),
+        payload=CreateProviderModelOfferingRequest(provider_model_name="custom-model"),
         actor=actor,
         scope=scope,
         db=db_session,

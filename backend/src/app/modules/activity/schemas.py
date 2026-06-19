@@ -19,6 +19,7 @@ class RecordActivityEvent(BaseModel):
     pool_id: UUID | None = None
     model_offering_id: UUID | None = None
     request_id: str | None = None
+    gateway_request_id: UUID | None = None
     metadata: dict = Field(default_factory=dict)
 
 
@@ -40,5 +41,6 @@ class ActivityEventResponse(BaseModel):
     pool_id: UUID | None
     model_offering_id: UUID | None
     request_id: str | None
+    gateway_request_id: UUID | None
     metadata: dict
     created_at: datetime

@@ -5,8 +5,8 @@ Revises: 20260601_0011
 Create Date: 2026-06-01
 """
 
-from collections.abc import Sequence
 import uuid
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 from sqlalchemy import inspect, text
@@ -20,6 +20,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    model_offerings_table = _model_offerings_table()
     if not _has_table("limit_policy_rules"):
         op.create_table(
             "limit_policy_rules",
@@ -40,12 +41,16 @@ def upgrade() -> None:
             sa.Column("is_active", sa.Boolean(), nullable=False),
             sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
             sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-            sa.ForeignKeyConstraint(["access_policy_id"], ["access_policies.id"], ondelete="RESTRICT"),
+            sa.ForeignKeyConstraint(
+                ["access_policy_id"], ["access_policies.id"], ondelete="RESTRICT"
+            ),
             sa.ForeignKeyConstraint(
                 ["credential_pool_id"], ["credential_pools.id"], ondelete="RESTRICT"
             ),
             sa.ForeignKeyConstraint(["limit_policy_id"], ["limit_policies.id"], ondelete="CASCADE"),
-            sa.ForeignKeyConstraint(["model_offering_id"], ["model_offerings.id"], ondelete="RESTRICT"),
+            sa.ForeignKeyConstraint(
+                ["model_offering_id"], [f"{model_offerings_table}.id"], ondelete="RESTRICT"
+            ),
             sa.ForeignKeyConstraint(["org_id"], ["organizations.id"], ondelete="RESTRICT"),
             sa.ForeignKeyConstraint(["provider_id"], ["providers.id"], ondelete="RESTRICT"),
             sa.PrimaryKeyConstraint("id"),
@@ -64,13 +69,18 @@ def upgrade() -> None:
                 [column_name],
             )
     _backfill_default_rules()
-    _add_column_if_missing("usage_records", sa.Column("limit_policy_rule_ids", sa.JSON(), nullable=True))
+    _add_column_if_missing(
+        "usage_records", sa.Column("limit_policy_rule_ids", sa.JSON(), nullable=True)
+    )
     _add_column_if_missing(
         "limit_policy_reservations",
         sa.Column("limit_policy_rule_id", sa.Uuid(), nullable=True),
     )
     if _has_table("limit_policy_reservations"):
-        indexes = {index["name"] for index in inspect(op.get_bind()).get_indexes("limit_policy_reservations")}
+        indexes = {
+            index["name"]
+            for index in inspect(op.get_bind()).get_indexes("limit_policy_reservations")
+        }
         if "ix_limit_policy_reservations_limit_policy_rule_id" not in indexes:
             op.create_index(
                 "ix_limit_policy_reservations_limit_policy_rule_id",
@@ -122,7 +132,9 @@ def _backfill_default_rules() -> None:
                 "max_output_tokens": policy["max_output_tokens"],
                 "max_tokens_per_request": policy["max_tokens_per_request"],
                 "window": policy["window"],
-                "provider_id": None if policy["provider_id"] is None else str(policy["provider_id"]),
+                "provider_id": None
+                if policy["provider_id"] is None
+                else str(policy["provider_id"]),
                 "credential_pool_id": None
                 if policy["credential_pool_id"] is None
                 else str(policy["credential_pool_id"]),
@@ -149,3 +161,9 @@ def _add_column_if_missing(table_name: str, column: sa.Column) -> None:
 
 def _has_table(table_name: str) -> bool:
     return table_name in inspect(op.get_bind()).get_table_names()
+
+
+def _model_offerings_table() -> str:
+    if _has_table("provider_model_offerings"):
+        return "provider_model_offerings"
+    return "model_offerings"

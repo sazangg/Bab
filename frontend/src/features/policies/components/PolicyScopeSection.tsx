@@ -358,12 +358,14 @@ function AssignExistingPolicySheet({
         : { scope_type: "virtual_key", virtual_key_id: target.virtualKeyId };
   const submit = async () => {
     if (!kind || !policyId) return;
+    const selectedPolicy = policies.find((policy) => policy.id === policyId);
+    if (!selectedPolicy?.policy_id) return;
     try {
       await createAssignment.mutateAsync({
         data:
           kind === "access"
-            ? { policy_type: "access", access_policy_id: policyId, ...assignTarget }
-            : { policy_type: "limit", limit_policy_id: policyId, ...assignTarget },
+            ? { policy_id: selectedPolicy.policy_id, policy_type: "access", ...assignTarget }
+            : { policy_id: selectedPolicy.policy_id, policy_type: "limit", ...assignTarget },
       });
       toast.success("Policy assigned.");
       setPolicyId("");
@@ -929,7 +931,6 @@ function AccessRouteFields({
         models={models.map((model) => ({
           id: model.id,
           label: model.provider_model_name,
-          sublabel: model.alias,
         }))}
         selected={selectedModels}
         onChange={onModelsChange}

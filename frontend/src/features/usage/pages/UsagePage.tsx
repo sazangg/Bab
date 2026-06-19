@@ -4,6 +4,7 @@ import {
   ChartNoAxesCombined,
   Clock,
   Download,
+  Eye,
   Timer,
   WalletCards,
 } from "lucide-react";
@@ -59,6 +60,7 @@ import { EmptyState } from "@/shared/components/EmptyState";
 import { formatCents } from "@/shared/lib/format-currency";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { HttpStatusBadge } from "@/shared/components/StatusBadge";
+import { RequestTraceSheet } from "@/features/usage/components/RequestTraceSheet";
 
 type UsageWindow = "24h" | "7d" | "30d" | "90d" | "lifetime";
 type UsageGrain = "hour" | "day" | "week";
@@ -91,6 +93,7 @@ export function UsagePage() {
   const [recordSearch, setRecordSearch] = useState("");
   const [recordPage, setRecordPage] = useState(0);
   const [chartMetric, setChartMetric] = useState<UsageChartMetric>("spend");
+  const [traceRequestId, setTraceRequestId] = useState<string | null>(null);
   const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
   const canViewOrgUsage = hasPermission(currentUser, "usage.view");
   const teams = teamsQuery.data?.status === 200 ? teamsQuery.data.data : [];
@@ -100,29 +103,33 @@ export function UsagePage() {
     ? scopeValue
     : "authorized";
   const grain = getUsageGrain(window, customRangeEnabled, startDate, endDate);
-  const usageParams = useMemo(() => buildUsageParams({
-    window,
-    startDate: customRangeEnabled ? startDate : "",
-    endDate: customRangeEnabled ? endDate : "",
-    providerId,
-    teamId,
-    projectId,
-    model,
-    virtualKeyId,
-    scopeValue: canViewOrgUsage ? "authorized" : selectedUsageScope,
-  }), [
-    canViewOrgUsage,
-    customRangeEnabled,
-    endDate,
-    model,
-    projectId,
-    providerId,
-    selectedUsageScope,
-    startDate,
-    teamId,
-    virtualKeyId,
-    window,
-  ]);
+  const usageParams = useMemo(
+    () =>
+      buildUsageParams({
+        window,
+        startDate: customRangeEnabled ? startDate : "",
+        endDate: customRangeEnabled ? endDate : "",
+        providerId,
+        teamId,
+        projectId,
+        model,
+        virtualKeyId,
+        scopeValue: canViewOrgUsage ? "authorized" : selectedUsageScope,
+      }),
+    [
+      canViewOrgUsage,
+      customRangeEnabled,
+      endDate,
+      model,
+      projectId,
+      providerId,
+      selectedUsageScope,
+      startDate,
+      teamId,
+      virtualKeyId,
+      window,
+    ],
+  );
   const filterOptionParams = useMemo(
     () =>
       buildUsageParams({
@@ -488,8 +495,16 @@ export function UsagePage() {
           onPreviousPage={() => setRecordPage((page) => Math.max(0, page - 1))}
           onNextPage={() => setRecordPage((page) => page + 1)}
           onRetry={() => recordsQuery.refetch()}
+          onOpenTrace={(record) => setTraceRequestId(record.gateway_request_id ?? null)}
         />
       ) : null}
+      <RequestTraceSheet
+        gatewayRequestId={traceRequestId}
+        open={Boolean(traceRequestId)}
+        onOpenChange={(open) => {
+          if (!open) setTraceRequestId(null);
+        }}
+      />
     </div>
   );
 }
@@ -810,6 +825,7 @@ function UsageRecordsCard({
   onPreviousPage,
   onNextPage,
   onRetry,
+  onOpenTrace,
 }: {
   records: UsageRecordResponse[];
   isLoading: boolean;
@@ -823,6 +839,7 @@ function UsageRecordsCard({
   onPreviousPage: () => void;
   onNextPage: () => void;
   onRetry: () => void;
+  onOpenTrace: (record: UsageRecordResponse) => void;
 }) {
   const startRecord = page * pageSize + 1;
   const endRecord = page * pageSize + records.length;
@@ -889,8 +906,23 @@ function UsageRecordsCard({
             {
               key: "request",
               header: "Request",
-              className: "font-mono text-xs text-muted-foreground",
-              cell: (record) => shortId(record.request_id),
+              cell: (record) => (
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {shortId(record.request_id)}
+                  </span>
+                  {record.gateway_request_id ? (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Open request trace"
+                      onClick={() => onOpenTrace(record)}
+                    >
+                      <Eye />
+                    </Button>
+                  ) : null}
+                </div>
+              ),
             },
             {
               key: "status",
@@ -977,9 +1009,7 @@ function SpendDriversCard({ rows }: { rows: UsageBreakdownRow[] }) {
                 <div key={row.id} className="space-y-1.5">
                   <div className="flex items-center justify-between gap-3 text-sm">
                     <span className="min-w-0 truncate font-medium">{row.label}</span>
-                    <span className="shrink-0 text-muted-foreground">
-                      {formatSpendParts(row)}
-                    </span>
+                    <span className="shrink-0 text-muted-foreground">{formatSpendParts(row)}</span>
                   </div>
                   <div className="h-2 overflow-hidden rounded-full bg-muted">
                     <div
@@ -1046,7 +1076,9 @@ function BudgetBurnCard({ rows }: { rows: LimitPolicyBudgetBurnRow[] }) {
   );
 }
 
-async function downloadUsageExport(params: ReturnType<typeof buildUsageParams> & { search?: string }) {
+async function downloadUsageExport(
+  params: ReturnType<typeof buildUsageParams> & { search?: string },
+) {
   const response = await httpClient.get<Blob>("/api/v1/usage/records/export", {
     params,
     responseType: "blob",
@@ -1215,7 +1247,9 @@ function fillTimeSeriesGaps(
       : windowStartDate(window, firstPoint);
   const rangeStart = window === "lifetime" && !startDate ? firstPoint : start;
   const rangeEnd = window === "lifetime" && !endDate ? lastPoint : end;
-  const pointByBucket = new Map(points.map((point) => [bucketKey(new Date(point.bucket), grain), point]));
+  const pointByBucket = new Map(
+    points.map((point) => [bucketKey(new Date(point.bucket), grain), point]),
+  );
   const filled: UsageTimeSeriesPoint[] = [];
   for (
     let cursor = alignBucket(rangeStart, grain);

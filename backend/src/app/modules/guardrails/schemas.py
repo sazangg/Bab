@@ -6,15 +6,11 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 GUARDRAIL_RULE_TYPES = (
-    "model",
-    "provider",
-    "pool",
     "prompt_contains",
     "prompt_regex",
     "pii",
 )
 GUARDRAIL_RULE_TYPE_PATTERN = f"^({'|'.join(GUARDRAIL_RULE_TYPES)})$"
-ROUTING_RULE_TYPES = {"model", "provider", "pool"}
 PII_RULE_VALUES = {"email", "phone", "credit_card"}
 # Bounds on author-supplied regex rules to limit the ReDoS attack surface.
 MAX_REGEX_VALUES_PER_RULE = 25
@@ -27,6 +23,7 @@ class GuardrailRuleInput(BaseModel):
     phase: str = Field(default="both", pattern="^(request|response|both)$")
     values: list[str] = Field(min_length=1)
     config: dict[str, Any] = Field(default_factory=dict)
+    matchers: list["GuardrailRuleMatcherInput"] = Field(default_factory=list)
     priority: int = Field(default=100, ge=1)
     is_active: bool = True
 
@@ -40,8 +37,6 @@ class GuardrailRuleInput(BaseModel):
 
     @model_validator(mode="after")
     def validate_rule_configuration(self):
-        if self.phase == "response" and self.rule_type in ROUTING_RULE_TYPES:
-            raise ValueError(f"{self.rule_type} rules only support request-phase evaluation")
         if self.rule_type == "prompt_regex":
             if len(self.values) > MAX_REGEX_VALUES_PER_RULE:
                 raise ValueError(
@@ -61,17 +56,37 @@ class GuardrailRuleInput(BaseModel):
         return self
 
 
+class GuardrailRuleMatcherInput(BaseModel):
+    dimension: str = Field(min_length=1, max_length=100)
+    operator: str = Field(pattern="^(eq|in|exists|not_exists)$")
+    value_json: Any = None
+
+
+class GuardrailRuleMatcherResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    org_id: UUID
+    rule_id: UUID
+    dimension: str
+    operator: str
+    value_json: Any = None
+    created_at: datetime
+
+
 class GuardrailRuleResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     org_id: UUID
     policy_id: UUID
+    policy_revision_id: UUID | None = None
     rule_type: str
     effect: str
     phase: str
     values: list[str]
     config: dict[str, Any]
+    matchers: list[GuardrailRuleMatcherResponse] = Field(default_factory=list)
     priority: int
     is_active: bool
     created_at: datetime
@@ -209,6 +224,7 @@ class GuardrailEventResponse(BaseModel):
     id: UUID
     org_id: UUID
     policy_id: UUID | None
+    policy_revision_id: UUID | None
     rule_id: UUID | None
     decision: str
     phase: str
@@ -219,6 +235,8 @@ class GuardrailEventResponse(BaseModel):
     provider_id: UUID | None
     pool_id: UUID | None
     request_id: str | None
+    gateway_request_id: UUID | None
+    route_attempt_id: UUID | None
     requested_model: str | None
     provider_model: str | None
     metadata: dict
@@ -232,7 +250,14 @@ class GuardrailEvaluationContext(BaseModel):
     virtual_key_id: UUID
     provider_id: UUID
     pool_id: UUID
+    provider_model_offering_id: UUID | None = None
+    public_model_id: UUID | None = None
+    public_model_name: str | None = None
+    route_candidate_id: UUID | None = None
+    gateway_endpoint: str | None = None
     request_id: str | None = None
+    gateway_request_id: UUID | None = None
+    route_attempt_id: UUID | None = None
     requested_model: str
     provider_model: str
     prompt_text: str = ""
@@ -248,6 +273,11 @@ class GuardrailSimulationRequest(BaseModel):
     provider_model: str | None = None
     provider_id: UUID | None = None
     pool_id: UUID | None = None
+    provider_model_offering_id: UUID | None = None
+    public_model_id: UUID | None = None
+    public_model_name: str | None = None
+    route_candidate_id: UUID | None = None
+    gateway_endpoint: str | None = None
     messages: list[dict[str, Any]] = Field(default_factory=list)
     prompt_text: str | None = None
 

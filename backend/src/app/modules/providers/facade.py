@@ -10,14 +10,12 @@ from app.modules.providers.internal.secret_backends import ProviderSecretBackend
 from app.modules.providers.schemas import (
     AddCredentialPoolCredentialRequest,
     CreateCredentialPoolRequest,
-    CreateModelOfferingRequest,
     CreateProviderCredentialRequest,
+    CreateProviderModelOfferingRequest,
     CreateProviderRequest,
     CredentialPoolCredentialResponse,
     CredentialPoolResponse,
     ModelMetadataSyncMode,
-    ModelOfferingPageResponse,
-    ModelOfferingResponse,
     ProviderAnthropicMessagesRequest,
     ProviderAnthropicMessagesResponse,
     ProviderChatCompletionRequest,
@@ -25,16 +23,18 @@ from app.modules.providers.schemas import (
     ProviderChatCompletionStream,
     ProviderCredentialResponse,
     ProviderImpactResponse,
+    ProviderModelOfferingPageResponse,
+    ProviderModelOfferingResponse,
     ProviderResourceImpactResponse,
     ProviderResponse,
-    SyncModelOfferingsResponse,
-    TestModelOfferingRequest,
-    TestModelOfferingResponse,
+    SyncProviderModelOfferingsResponse,
     TestProviderCredentialResponse,
+    TestProviderModelOfferingRequest,
+    TestProviderModelOfferingResponse,
     UpdateCredentialPoolCredentialRequest,
     UpdateCredentialPoolRequest,
-    UpdateModelOfferingRequest,
     UpdateProviderCredentialRequest,
+    UpdateProviderModelOfferingRequest,
     UpdateProviderRequest,
 )
 
@@ -321,11 +321,11 @@ async def deactivate_provider_credential(
 async def create_model_offering(
     *,
     provider_id: UUID,
-    payload: CreateModelOfferingRequest,
+    payload: CreateProviderModelOfferingRequest,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
-) -> ModelOfferingResponse:
+) -> ProviderModelOfferingResponse:
     return await service.create_model_offering(
         provider_id=provider_id,
         payload=payload,
@@ -345,7 +345,7 @@ async def sync_model_offerings(
     metadata_mode: ModelMetadataSyncMode,
     sync_mode: str = "merge",
     secret_registry: ProviderSecretBackendRegistry | None = None,
-) -> SyncModelOfferingsResponse:
+) -> SyncProviderModelOfferingsResponse:
     return await service.sync_model_offerings(
         provider_id=provider_id,
         actor=actor,
@@ -368,7 +368,7 @@ async def list_model_offerings(
     offset: int,
     scope: Scope,
     db: AsyncSession,
-) -> ModelOfferingPageResponse:
+) -> ProviderModelOfferingPageResponse:
     return await service.list_model_offerings(
         provider_id=provider_id,
         search=search,
@@ -386,7 +386,7 @@ async def get_model_offering(
     model_offering_id: UUID,
     scope: Scope,
     db: AsyncSession,
-) -> ModelOfferingResponse:
+) -> ProviderModelOfferingResponse:
     return await service.get_model_offering(
         model_offering_id=model_offering_id,
         scope=scope,
@@ -398,13 +398,13 @@ async def test_model_offering(
     *,
     provider_id: UUID,
     model_offering_id: UUID,
-    payload: TestModelOfferingRequest,
+    payload: TestProviderModelOfferingRequest,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
     http_client: httpx.AsyncClient,
     secret_registry: ProviderSecretBackendRegistry | None = None,
-) -> TestModelOfferingResponse:
+) -> TestProviderModelOfferingResponse:
     return await service.test_model_offering(
         provider_id=provider_id,
         model_offering_id=model_offering_id,
@@ -421,11 +421,11 @@ async def update_model_offering(
     *,
     provider_id: UUID,
     model_offering_id: UUID,
-    payload: UpdateModelOfferingRequest,
+    payload: UpdateProviderModelOfferingRequest,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
-) -> ModelOfferingResponse:
+) -> ProviderModelOfferingResponse:
     return await service.update_model_offering(
         provider_id=provider_id,
         model_offering_id=model_offering_id,

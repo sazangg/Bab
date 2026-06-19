@@ -1,4 +1,4 @@
-import type { ModelOfferingResponse } from "@/shared/api/generated/schemas";
+import type { ProviderModelOfferingResponse } from "@/shared/api/generated/schemas";
 
 import { modelCapabilityOptions, routingPolicyOptions } from "./schemas";
 
@@ -83,7 +83,7 @@ export function capabilityListToRecord(capabilities: string[]) {
   );
 }
 
-export function capabilityRecordToList(capabilities: ModelOfferingResponse["capabilities"]) {
+export function capabilityRecordToList(capabilities: ProviderModelOfferingResponse["capabilities"]) {
   return modelCapabilityOptions.filter((item) => capabilities?.[item] === true);
 }
 

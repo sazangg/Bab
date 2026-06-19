@@ -6,10 +6,9 @@
  */
 
 export interface CreatePolicyAssignmentRequest {
+  policy_id: string;
   /** @pattern ^(access|limit)$ */
   policy_type: string;
-  access_policy_id?: string | null;
-  limit_policy_id?: string | null;
   /** @pattern ^(org|team|project|virtual_key)$ */
   scope_type: string;
   team_id?: string | null;

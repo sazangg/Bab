@@ -1,4 +1,4 @@
-import { ListRestart, LoaderCircle, Send, TerminalSquare } from "lucide-react";
+import { Eye, ListRestart, LoaderCircle, Send, TerminalSquare } from "lucide-react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useState } from "react";
@@ -31,6 +31,7 @@ import { apiMutator } from "@/shared/api/orval-mutator";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { HttpStatusBadge, StatusBadge } from "@/shared/components/StatusBadge";
+import { RequestTraceSheet } from "@/features/usage/components/RequestTraceSheet";
 
 type PlaygroundResult = {
   status: number;
@@ -43,7 +44,6 @@ type GatewayModel = {
   id: string;
   provider_id: string;
   provider_name: string;
-  alias?: string | null;
   candidates?: {
     provider_id: string;
     provider_name: string;
@@ -56,6 +56,7 @@ type UsageRecord = {
   total_tokens?: number | null;
   cost_cents?: number | null;
   request_id?: string | null;
+  gateway_request_id?: string | null;
   created_at: string;
 };
 type UsageRecordsResponse = {
@@ -84,6 +85,7 @@ export function PlaygroundPage() {
   const [isSending, setIsSending] = useState(false);
   const [result, setResult] = useState<PlaygroundResult | null>(null);
   const [requestId, setRequestId] = useState<string | null>(null);
+  const [traceRequestId, setTraceRequestId] = useState<string | null>(null);
 
   const projectsQuery = useListProjectsApiV1ProjectsGet();
   const keysQuery = useListVirtualKeyInventoryApiV1VirtualKeysGet(
@@ -181,7 +183,8 @@ export function PlaygroundPage() {
           setResult({
             status: response.status,
             body: next.parsedError ?? { content: next.content },
-            requestId: responseRequestId ?? extractRequestId(response, next.parsedError ?? next.raw),
+            requestId:
+              responseRequestId ?? extractRequestId(response, next.parsedError ?? next.raw),
             streamedText: next.content,
             rawStream: next.raw,
           });
@@ -189,7 +192,8 @@ export function PlaygroundPage() {
         setResult({
           status: response.status,
           body: streamed.parsedError ?? { content: streamed.content },
-          requestId: responseRequestId ?? extractRequestId(response, streamed.parsedError ?? streamed.raw),
+          requestId:
+            responseRequestId ?? extractRequestId(response, streamed.parsedError ?? streamed.raw),
           streamedText: streamed.content,
           rawStream: streamed.raw,
         });
@@ -297,9 +301,17 @@ export function PlaygroundPage() {
             isFetching={usageQuery.isFetching}
             isWaiting={Boolean(usageLookupRequestId && !latestUsage && !usageQuery.isError)}
             requestId={usageLookupRequestId}
+            onOpenTrace={(gatewayRequestId) => setTraceRequestId(gatewayRequestId)}
           />
         </div>
       </div>
+      <RequestTraceSheet
+        gatewayRequestId={traceRequestId}
+        open={Boolean(traceRequestId)}
+        onOpenChange={(open) => {
+          if (!open) setTraceRequestId(null);
+        }}
+      />
     </div>
   );
 }
@@ -422,11 +434,7 @@ function PlaygroundSettings({
               Status:{" "}
               <StatusBadge
                 variant={
-                  selectedKey.is_usable
-                    ? "active"
-                    : selectedKey.revoked_at
-                      ? "revoked"
-                      : "warning"
+                  selectedKey.is_usable ? "active" : selectedKey.revoked_at ? "revoked" : "warning"
                 }
               >
                 {keyStateLabel(selectedKey)}
@@ -465,7 +473,7 @@ function PlaygroundSettings({
             <SelectContent className="w-[min(34rem,var(--radix-select-trigger-width))]">
               {models.map((entry) => (
                 <SelectItem key={entry.id} value={entry.id}>
-                  {entry.alias ?? entry.id}
+                  {entry.id}
                   {entry.candidates && entry.candidates.length > 1
                     ? ` (${entry.candidates.length} candidates)`
                     : ""}
@@ -589,7 +597,9 @@ function ResponseCard({
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           Response
-          {isSending ? <LoaderCircle className="size-4 animate-spin text-muted-foreground" /> : null}
+          {isSending ? (
+            <LoaderCircle className="size-4 animate-spin text-muted-foreground" />
+          ) : null}
         </CardTitle>
         <CardDescription>{mode} response or gateway error.</CardDescription>
       </CardHeader>
@@ -732,7 +742,10 @@ function extractResponseMessage(result: PlaygroundResult, mode: PlaygroundMode) 
 
   const choices = getArrayProperty(body, "choices");
   if (mode === "completions") {
-    return choices.map((choice) => getStringProperty(choice, "text")).filter(Boolean).join("\n");
+    return choices
+      .map((choice) => getStringProperty(choice, "text"))
+      .filter(Boolean)
+      .join("\n");
   }
 
   return choices
@@ -803,7 +816,7 @@ function renderBasicMarkdown(markdown: string) {
     const heading = line.match(/^(#{1,3})\s+(.+)$/);
     if (heading) {
       flushList();
-      const HeadingTag = (`h${heading[1].length + 2}` as "h3" | "h4" | "h5");
+      const HeadingTag = `h${heading[1].length + 2}` as "h3" | "h4" | "h5";
       nodes.push(
         <HeadingTag key={`heading-${index}`} className="mt-3 font-medium first:mt-0">
           {heading[2]}
@@ -865,6 +878,7 @@ function LatestUsageCard({
   isFetching,
   isWaiting,
   requestId,
+  onOpenTrace,
 }: {
   latestUsage:
     | {
@@ -873,6 +887,7 @@ function LatestUsageCard({
         total_tokens?: number | null;
         cost_cents?: number | null;
         request_id?: string | null;
+        gateway_request_id?: string | null;
         created_at: string;
       }
     | null
@@ -880,6 +895,7 @@ function LatestUsageCard({
   isFetching: boolean;
   isWaiting: boolean;
   requestId?: string | null;
+  onOpenTrace: (gatewayRequestId: string) => void;
 }) {
   const isMatchingRecord = Boolean(requestId && latestUsage?.request_id === requestId);
   return (
@@ -894,17 +910,33 @@ function LatestUsageCard({
       </CardHeader>
       <CardContent>
         {latestUsage ? (
-          <dl className="grid gap-3 text-sm sm:grid-cols-2">
-            <UsageItem label="Status" value={String(latestUsage.http_status)} />
-            <UsageItem label="Model" value={latestUsage.requested_model} />
-            <UsageItem label="Request" value={latestUsage.request_id?.slice(0, 8) ?? "-"} />
-            <UsageItem label="Tokens" value={String(latestUsage.total_tokens ?? 0)} />
-            <UsageItem
-              label="Cost"
-              value={`$${((latestUsage.cost_cents ?? 0) / 100).toFixed(4)}`}
-            />
-            <UsageItem label="Recorded" value={new Date(latestUsage.created_at).toLocaleString()} />
-          </dl>
+          <div className="space-y-4">
+            <dl className="grid gap-3 text-sm sm:grid-cols-2">
+              <UsageItem label="Status" value={String(latestUsage.http_status)} />
+              <UsageItem label="Model" value={latestUsage.requested_model} />
+              <UsageItem label="Request" value={latestUsage.request_id?.slice(0, 8) ?? "-"} />
+              <UsageItem label="Tokens" value={String(latestUsage.total_tokens ?? 0)} />
+              <UsageItem
+                label="Cost"
+                value={`$${((latestUsage.cost_cents ?? 0) / 100).toFixed(4)}`}
+              />
+              <UsageItem
+                label="Recorded"
+                value={new Date(latestUsage.created_at).toLocaleString()}
+              />
+            </dl>
+            {latestUsage.gateway_request_id ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onOpenTrace(latestUsage.gateway_request_id!)}
+              >
+                <Eye data-icon="inline-start" />
+                Open trace
+              </Button>
+            ) : null}
+          </div>
         ) : isWaiting || isFetching ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <LoaderCircle className="size-4 animate-spin" />
@@ -1084,10 +1116,7 @@ function providerOptions(models: GatewayModel[]) {
     new Map(
       models.flatMap((entry) =>
         entry.candidates?.length
-          ? entry.candidates.map((candidate) => [
-              candidate.provider_id,
-              candidate.provider_name,
-            ])
+          ? entry.candidates.map((candidate) => [candidate.provider_id, candidate.provider_name])
           : [[entry.provider_id, entry.provider_name]],
       ),
     ).entries(),

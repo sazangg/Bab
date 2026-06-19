@@ -1,5 +1,4 @@
 import { Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,9 +18,14 @@ import type { GuardrailPolicyResponse } from "@/shared/api/generated/schemas";
 import { Field, SelectField } from "./GuardrailFormFields";
 import {
   assignmentScopeTypes,
+  matcherDimensionLabels,
+  matcherDimensionOptions,
+  matcherNeedsValue,
+  matcherOperatorLabels,
+  matcherOperatorOptions,
+  newMatcherForm,
   newRuleForm,
   normalizeRulePhase,
-  parseRuleValues,
   phaseOptionsForRuleType,
   ruleTypeLabels,
   ruleTypeOptions,
@@ -42,7 +46,6 @@ export function GuardrailPolicySheet({
   assignmentForm,
   setAssignmentForm,
   assignmentScopeOptions,
-  modelOptions,
   onSubmit,
   isPending,
 }: {
@@ -54,7 +57,6 @@ export function GuardrailPolicySheet({
   assignmentForm: AssignmentFormState;
   setAssignmentForm: (form: AssignmentFormState) => void;
   assignmentScopeOptions: ScopeOptions;
-  modelOptions: string[];
   onSubmit: () => void;
   isPending: boolean;
 }) {
@@ -193,7 +195,6 @@ export function GuardrailPolicySheet({
                         rules: form.rules.filter((item) => item.id !== rule.id),
                       })
                     }
-                    modelOptions={modelOptions}
                   />
                 ))}
               </div>
@@ -227,14 +228,12 @@ function RuleEditor({
   canRemove,
   onChange,
   onRemove,
-  modelOptions,
 }: {
   rule: PolicyRuleForm;
   index: number;
   canRemove: boolean;
   onChange: (rule: PolicyRuleForm) => void;
   onRemove: () => void;
-  modelOptions: string[];
 }) {
   return (
     <div className="grid gap-4 rounded-md border bg-background p-3">
@@ -299,22 +298,14 @@ function RuleEditor({
           />
         </Field>
       </div>
-      {rule.rule_type === "model" ? (
-        <ModelRuleValues
+      <Field label="Values">
+        <Textarea
           value={rule.values}
-          onChange={(values) => onChange({ ...rule, values })}
-          options={modelOptions}
+          onChange={(event) => onChange({ ...rule, values: event.target.value })}
+          placeholder={ruleValuePlaceholder(rule.rule_type)}
+          className="min-h-28 font-mono text-sm"
         />
-      ) : (
-        <Field label="Values">
-          <Textarea
-            value={rule.values}
-            onChange={(event) => onChange({ ...rule, values: event.target.value })}
-            placeholder={ruleValuePlaceholder(rule.rule_type)}
-            className="min-h-28 font-mono text-sm"
-          />
-        </Field>
-      )}
+      </Field>
       {rule.rule_type === "pii" ? (
         <SelectField
           label="Detector"
@@ -324,81 +315,98 @@ function RuleEditor({
           labels={{ local_regex: "Local regex" }}
         />
       ) : null}
-    </div>
-  );
-}
-
-function ModelRuleValues({
-  value,
-  onChange,
-  options,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  options: string[];
-}) {
-  const [search, setSearch] = useState("");
-  const selected = parseRuleValues(value);
-  const searchTerm = search.toLowerCase().trim();
-  const filtered = searchTerm
-    ? options
-        .filter((option) => option.toLowerCase().includes(searchTerm) && !selected.includes(option))
-        .slice(0, 8)
-    : [];
-
-  const addValue = (nextValue: string) => {
-    onChange([...selected, nextValue].join("\n"));
-    setSearch("");
-  };
-  const removeValue = (removedValue: string) => {
-    onChange(selected.filter((item) => item !== removedValue).join("\n"));
-  };
-
-  return (
-    <Field label="Models">
-      <div className="grid gap-2">
-        <Input
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search synced model offerings..."
-        />
-        {filtered.length > 0 ? (
-          <div className="rounded-md border bg-background p-1">
-            {filtered.map((option) => (
-              <button
-                key={option}
-                type="button"
-                className="block w-full rounded px-2 py-1.5 text-left font-mono text-xs hover:bg-muted"
-                onClick={() => addValue(option)}
+      <div className="grid gap-3 rounded-md border bg-muted/20 p-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-medium">Applicability filters</div>
+            <div className="text-xs text-muted-foreground">
+              Leave filters empty to evaluate this rule on all assigned traffic.
+            </div>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onChange({ ...rule, matchers: [...rule.matchers, newMatcherForm()] })}
+          >
+            <Plus data-icon="inline-start" />
+            Add filter
+          </Button>
+        </div>
+        {rule.matchers.length > 0 ? (
+          <div className="grid gap-2">
+            {rule.matchers.map((matcher) => (
+              <div
+                key={matcher.id}
+                className="grid gap-2 rounded-md border bg-background p-2 sm:grid-cols-[1fr_9rem_1fr_auto]"
               >
-                {option}
-              </button>
+                <SelectField
+                  label="Dimension"
+                  value={matcher.dimension}
+                  onValueChange={(dimension) =>
+                    onChange({
+                      ...rule,
+                      matchers: rule.matchers.map((item) =>
+                        item.id === matcher.id ? { ...item, dimension } : item,
+                      ),
+                    })
+                  }
+                  options={matcherDimensionOptions}
+                  labels={matcherDimensionLabels}
+                />
+                <SelectField
+                  label="Operator"
+                  value={matcher.operator}
+                  onValueChange={(operator) =>
+                    onChange({
+                      ...rule,
+                      matchers: rule.matchers.map((item) =>
+                        item.id === matcher.id ? { ...item, operator } : item,
+                      ),
+                    })
+                  }
+                  options={matcherOperatorOptions}
+                  labels={matcherOperatorLabels}
+                />
+                {matcherNeedsValue(matcher.operator) ? (
+                  <Field label={matcher.operator === "in" ? "Values" : "Value"}>
+                    <Input
+                      value={matcher.value}
+                      onChange={(event) =>
+                        onChange({
+                          ...rule,
+                          matchers: rule.matchers.map((item) =>
+                            item.id === matcher.id ? { ...item, value: event.target.value } : item,
+                          ),
+                        })
+                      }
+                      placeholder={matcher.operator === "in" ? "One value per line or comma" : ""}
+                    />
+                  </Field>
+                ) : (
+                  <div />
+                )}
+                <div className="flex items-end">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() =>
+                      onChange({
+                        ...rule,
+                        matchers: rule.matchers.filter((item) => item.id !== matcher.id),
+                      })
+                    }
+                    aria-label="Remove applicability filter"
+                  >
+                    <Trash2 />
+                  </Button>
+                </div>
+              </div>
             ))}
           </div>
         ) : null}
-        {selected.length > 0 ? (
-          <div className="flex flex-wrap gap-1.5">
-            {selected.map((item) => (
-              <Button
-                key={item}
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => removeValue(item)}
-              >
-                <span className="max-w-80 truncate font-mono text-xs">{item}</span>
-                <Trash2 data-icon="inline-end" />
-              </Button>
-            ))}
-          </div>
-        ) : null}
-        <Textarea
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder={ruleValuePlaceholder("model")}
-          className="min-h-20 font-mono text-sm"
-        />
       </div>
-    </Field>
+    </div>
   );
 }

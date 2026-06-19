@@ -7,14 +7,63 @@ from sqlalchemy import select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.policies.internal.models import LimitPolicy, LimitPolicyRule
+from app.modules.auth.internal.models import Organization, Team
+from app.modules.keys.internal.models import Project, VirtualKey
+from app.modules.policies.internal.models import LimitPolicy, LimitPolicyRule, PolicyAssignment
+from app.modules.providers.internal.models import CredentialPool, Provider
 from app.modules.usage import facade as usage_facade
-from app.modules.usage.internal.models import UsageRecord
+from app.modules.usage.internal.models import LimitPolicyCommittedUsage, UsageRecord
 from app.modules.usage.internal.repository import (
     _bucket_datetime,
     _json_array_contains_postgresql,
     _records_to_totals,
 )
+
+
+async def _create_usage_identity(db_session: AsyncSession) -> SimpleNamespace:
+    org = Organization(name=f"Usage Org {uuid4()}", slug=f"usage-org-{uuid4()}")
+    db_session.add(org)
+    await db_session.flush()
+    team = Team(org_id=org.id, name="Usage Team", slug=f"usage-team-{uuid4()}")
+    db_session.add(team)
+    await db_session.flush()
+    project = Project(
+        org_id=org.id,
+        team_id=team.id,
+        created_by=uuid4(),
+        name="Usage Project",
+        slug=f"usage-project-{uuid4()}",
+    )
+    provider = Provider(
+        org_id=org.id,
+        name="Usage Provider",
+        slug=f"usage-provider-{uuid4()}",
+        base_url="https://provider.example.test",
+    )
+    db_session.add_all([project, provider])
+    await db_session.flush()
+    pool = CredentialPool(
+        org_id=org.id,
+        provider_id=provider.id,
+        name="Usage Pool",
+    )
+    virtual_key = VirtualKey(
+        org_id=org.id,
+        project_id=project.id,
+        name="Usage key",
+        key_hash=uuid4().hex,
+        key_prefix="bab_usage",
+    )
+    db_session.add_all([pool, virtual_key])
+    await db_session.flush()
+    return SimpleNamespace(
+        org_id=org.id,
+        team_id=team.id,
+        project_id=project.id,
+        virtual_key_id=virtual_key.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+    )
 
 
 def test_usage_bucket_datetime_supports_hour_day_and_week() -> None:
@@ -74,9 +123,10 @@ def test_postgresql_json_array_contains_uses_jsonb_containment_not_like() -> Non
 
 @pytest.mark.asyncio
 async def test_spend_insights_returns_limit_policy_budget_burn(db_session: AsyncSession) -> None:
-    org_id = uuid4()
-    team_id = uuid4()
-    project_id = uuid4()
+    identity = await _create_usage_identity(db_session)
+    org_id = identity.org_id
+    team_id = identity.team_id
+    project_id = identity.project_id
     limit_policy_id = uuid4()
     limit_policy_rule_id = uuid4()
     db_session.add(
@@ -105,9 +155,9 @@ async def test_spend_insights_returns_limit_policy_budget_burn(db_session: Async
             project_id=project_id,
             limit_policy_ids=[str(limit_policy_id)],
             limit_policy_rule_ids=[str(limit_policy_rule_id)],
-            virtual_key_id=uuid4(),
-            pool_id=uuid4(),
-            provider_id=uuid4(),
+            virtual_key_id=identity.virtual_key_id,
+            pool_id=identity.pool_id,
+            provider_id=identity.provider_id,
             provider_credential_id=None,
             requested_model="gpt-5-mini",
             provider_model="gpt-5-mini",
@@ -137,9 +187,10 @@ async def test_spend_insights_returns_limit_policy_budget_burn(db_session: Async
 async def test_budget_burn_uses_policy_rule_interval_not_usage_window(
     db_session: AsyncSession,
 ) -> None:
-    org_id = uuid4()
-    team_id = uuid4()
-    project_id = uuid4()
+    identity = await _create_usage_identity(db_session)
+    org_id = identity.org_id
+    team_id = identity.team_id
+    project_id = identity.project_id
     limit_policy_id = uuid4()
     limit_policy_rule_id = uuid4()
     db_session.add(
@@ -168,9 +219,9 @@ async def test_budget_burn_uses_policy_rule_interval_not_usage_window(
             project_id=project_id,
             limit_policy_ids=[str(limit_policy_id)],
             limit_policy_rule_ids=[str(limit_policy_rule_id)],
-            virtual_key_id=uuid4(),
-            pool_id=uuid4(),
-            provider_id=uuid4(),
+            virtual_key_id=identity.virtual_key_id,
+            pool_id=identity.pool_id,
+            provider_id=identity.provider_id,
             provider_credential_id=None,
             requested_model="gpt-5-mini",
             provider_model="gpt-5-mini",
@@ -194,19 +245,91 @@ async def test_budget_burn_uses_policy_rule_interval_not_usage_window(
 
 
 @pytest.mark.asyncio
-async def test_usage_summary_splits_confirmed_estimated_and_unknown_spend(
+async def test_budget_burn_filters_by_limit_window_descriptor(
     db_session: AsyncSession,
 ) -> None:
-    org_id = uuid4()
-    team_id = uuid4()
-    project_id = uuid4()
+    identity = await _create_usage_identity(db_session)
+    org_id = identity.org_id
+    team_id = identity.team_id
+    project_id = identity.project_id
+    limit_policy_id = uuid4()
+    limit_policy_rule_id = uuid4()
+    db_session.add(
+        LimitPolicy(
+            id=limit_policy_id,
+            org_id=org_id,
+            name="Daily cap",
+        )
+    )
+    db_session.add(
+        LimitPolicyRule(
+            id=limit_policy_rule_id,
+            org_id=org_id,
+            limit_policy_id=limit_policy_id,
+            name="Daily budget",
+            limit_type="budget_cents",
+            limit_value=1000,
+            interval_unit="day",
+            interval_count=1,
+        )
+    )
     shared = {
         "org_id": org_id,
         "team_id": team_id,
         "project_id": project_id,
-        "virtual_key_id": uuid4(),
-        "pool_id": uuid4(),
-        "provider_id": uuid4(),
+        "limit_policy_ids": [str(limit_policy_id)],
+        "limit_policy_rule_ids": [str(limit_policy_rule_id)],
+        "virtual_key_id": identity.virtual_key_id,
+        "pool_id": identity.pool_id,
+        "provider_id": identity.provider_id,
+        "provider_credential_id": None,
+        "requested_model": "gpt-5-mini",
+        "provider_model": "gpt-5-mini",
+        "http_status": 200,
+        "latency_ms": 100,
+        "total_tokens": 10,
+        "usage_source": "estimated",
+    }
+    db_session.add_all(
+        [
+            UsageRecord(
+                **shared,
+                limit_window_descriptor="day:1:rolling",
+                cost_cents=250,
+            ),
+            UsageRecord(
+                **shared,
+                limit_window_descriptor="month:1:rolling",
+                cost_cents=900,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    insights = await usage_facade.get_spend_insights(
+        org_id=org_id,
+        window="30d",
+        db=db_session,
+    )
+
+    assert insights.limit_policy_budget_burn[0].spent_cents == 250
+
+
+@pytest.mark.asyncio
+async def test_usage_summary_splits_confirmed_estimated_and_unknown_spend(
+    db_session: AsyncSession,
+) -> None:
+    identity = await _create_usage_identity(db_session)
+    org_id = identity.org_id
+    team_id = identity.team_id
+    project_id = identity.project_id
+    shared = {
+        "org_id": org_id,
+        "team_id": team_id,
+        "project_id": project_id,
+        "virtual_key_id": identity.virtual_key_id,
+        "pool_id": identity.pool_id,
+        "provider_id": identity.provider_id,
         "provider_credential_id": None,
         "requested_model": "gpt-5-mini",
         "provider_model": "gpt-5-mini",
@@ -281,16 +404,17 @@ async def test_usage_summary_splits_confirmed_estimated_and_unknown_spend(
 
 @pytest.mark.asyncio
 async def test_usage_records_support_search_and_offset(db_session: AsyncSession) -> None:
-    org_id = uuid4()
-    team_id = uuid4()
-    project_id = uuid4()
+    identity = await _create_usage_identity(db_session)
+    org_id = identity.org_id
+    team_id = identity.team_id
+    project_id = identity.project_id
     shared = {
         "org_id": org_id,
         "team_id": team_id,
         "project_id": project_id,
-        "virtual_key_id": uuid4(),
-        "pool_id": uuid4(),
-        "provider_id": uuid4(),
+        "virtual_key_id": identity.virtual_key_id,
+        "pool_id": identity.pool_id,
+        "provider_id": identity.provider_id,
         "provider_credential_id": None,
         "http_status": 200,
         "latency_ms": 100,
@@ -350,16 +474,47 @@ async def test_limit_policy_usage_matches_exact_json_uuid_values(
     target_rule_id = uuid4()
     target_assignment_id = uuid4()
     overlapping_policy_id = f"prefix-{target_policy_id}-suffix"
-    org_id = uuid4()
-    team_id = uuid4()
-    project_id = uuid4()
+    identity = await _create_usage_identity(db_session)
+    org_id = identity.org_id
+    team_id = identity.team_id
+    project_id = identity.project_id
+    db_session.add(
+        LimitPolicy(
+            id=target_policy_id,
+            org_id=org_id,
+            name="Exact policy",
+        )
+    )
+    db_session.add(
+        LimitPolicyRule(
+            id=target_rule_id,
+            org_id=org_id,
+            limit_policy_id=target_policy_id,
+            name="Exact rule",
+            limit_type="requests",
+            limit_value=100,
+        )
+    )
+    db_session.add(
+        PolicyAssignment(
+            id=target_assignment_id,
+            org_id=org_id,
+            policy_type="limit",
+            limit_policy_id=target_policy_id,
+            scope_type="project",
+            project_id=project_id,
+            scope_target_key=f"project:{project_id}",
+            mode="enforce",
+        )
+    )
+    await db_session.flush()
     shared = {
         "org_id": org_id,
         "team_id": team_id,
         "project_id": project_id,
-        "virtual_key_id": uuid4(),
-        "pool_id": uuid4(),
-        "provider_id": uuid4(),
+        "virtual_key_id": identity.virtual_key_id,
+        "pool_id": identity.pool_id,
+        "provider_id": identity.provider_id,
         "provider_credential_id": None,
         "requested_model": "gpt-5-mini",
         "provider_model": "gpt-5-mini",
@@ -370,34 +525,53 @@ async def test_limit_policy_usage_matches_exact_json_uuid_values(
         "total_tokens": 10,
         "usage_source": "estimated",
     }
-    db_session.add_all(
-        [
-            UsageRecord(
-                **shared,
-                limit_policy_ids=[str(target_policy_id)],
-                limit_policy_rule_ids=[str(target_rule_id)],
-                limit_policy_assignment_ids=[str(target_assignment_id)],
-                cost_cents=25,
-            ),
-            UsageRecord(
-                **shared,
-                limit_policy_ids=[overlapping_policy_id],
-                limit_policy_rule_ids=[f"prefix-{target_rule_id}-suffix"],
-                limit_policy_assignment_ids=[f"prefix-{target_assignment_id}-suffix"],
-                cost_cents=999,
-            ),
-        ]
+    target_usage = UsageRecord(
+        **shared,
+        limit_policy_ids=[str(target_policy_id)],
+        limit_policy_rule_ids=[str(target_rule_id)],
+        limit_policy_assignment_ids=[str(target_assignment_id)],
+        cost_cents=25,
     )
-    await db_session.commit()
-
-    requests, prompt_tokens, completion_tokens, cost_cents, cost_micro_cents = (
-        await usage_facade.summarize_limit_policy_usage(
+    overlap_usage = UsageRecord(
+        **shared,
+        limit_policy_ids=[overlapping_policy_id],
+        limit_policy_rule_ids=[f"prefix-{target_rule_id}-suffix"],
+        limit_policy_assignment_ids=[f"prefix-{target_assignment_id}-suffix"],
+        cost_cents=999,
+    )
+    db_session.add_all([target_usage, overlap_usage])
+    await db_session.flush()
+    db_session.add(
+        LimitPolicyCommittedUsage(
+            org_id=org_id,
+            usage_record_id=target_usage.id,
             limit_policy_id=target_policy_id,
             limit_policy_rule_id=target_rule_id,
             limit_policy_assignment_id=target_assignment_id,
-            since=None,
-            db=db_session,
+            counting_unit="logical_request",
+            prompt_tokens=10,
+            completion_tokens=0,
+            total_tokens=10,
+            cost_cents=25,
+            cost_micro_cents=0,
+            dimension_snapshot={},
+            created_at=target_usage.created_at,
         )
+    )
+    await db_session.commit()
+
+    (
+        requests,
+        prompt_tokens,
+        completion_tokens,
+        cost_cents,
+        cost_micro_cents,
+    ) = await usage_facade.summarize_limit_policy_usage(
+        limit_policy_id=target_policy_id,
+        limit_policy_rule_id=target_rule_id,
+        limit_policy_assignment_id=target_assignment_id,
+        since=None,
+        db=db_session,
     )
 
     assert requests == 1
@@ -411,9 +585,10 @@ async def test_limit_policy_usage_matches_exact_json_uuid_values(
 async def test_budget_burn_matches_exact_json_policy_and_rule_ids(
     db_session: AsyncSession,
 ) -> None:
-    org_id = uuid4()
-    team_id = uuid4()
-    project_id = uuid4()
+    identity = await _create_usage_identity(db_session)
+    org_id = identity.org_id
+    team_id = identity.team_id
+    project_id = identity.project_id
     policy_id = uuid4()
     rule_id = uuid4()
     db_session.add(LimitPolicy(id=policy_id, org_id=org_id, name="Budget"))
@@ -433,9 +608,9 @@ async def test_budget_burn_matches_exact_json_policy_and_rule_ids(
         "org_id": org_id,
         "team_id": team_id,
         "project_id": project_id,
-        "virtual_key_id": uuid4(),
-        "pool_id": uuid4(),
-        "provider_id": uuid4(),
+        "virtual_key_id": identity.virtual_key_id,
+        "pool_id": identity.pool_id,
+        "provider_id": identity.provider_id,
         "provider_credential_id": None,
         "requested_model": "gpt-5-mini",
         "provider_model": "gpt-5-mini",
@@ -485,9 +660,10 @@ async def test_usage_timeseries_aggregates_hour_day_and_week_in_sql(
     grain: str,
     expected_buckets: list[datetime],
 ) -> None:
-    org_id = uuid4()
-    team_id = uuid4()
-    project_id = uuid4()
+    identity = await _create_usage_identity(db_session)
+    org_id = identity.org_id
+    team_id = identity.team_id
+    project_id = identity.project_id
     base = datetime(2026, 5, 24, 10, 15, tzinfo=UTC)
     second_bucket_at = {
         "hour": base.replace(hour=11),
@@ -498,9 +674,9 @@ async def test_usage_timeseries_aggregates_hour_day_and_week_in_sql(
         "org_id": org_id,
         "team_id": team_id,
         "project_id": project_id,
-        "virtual_key_id": uuid4(),
-        "pool_id": uuid4(),
-        "provider_id": uuid4(),
+        "virtual_key_id": identity.virtual_key_id,
+        "pool_id": identity.pool_id,
+        "provider_id": identity.provider_id,
         "provider_credential_id": None,
         "requested_model": "gpt-5-mini",
         "provider_model": "gpt-5-mini",

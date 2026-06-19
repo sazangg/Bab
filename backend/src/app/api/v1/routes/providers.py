@@ -19,26 +19,26 @@ from app.modules.providers.errors import (
 from app.modules.providers.schemas import (
     AddCredentialPoolCredentialRequest,
     CreateCredentialPoolRequest,
-    CreateModelOfferingRequest,
     CreateProviderCredentialRequest,
+    CreateProviderModelOfferingRequest,
     CreateProviderRequest,
     CredentialPoolCredentialResponse,
     CredentialPoolResponse,
-    ModelOfferingPageResponse,
-    ModelOfferingResponse,
     ProviderCredentialResponse,
     ProviderImpactResponse,
+    ProviderModelOfferingPageResponse,
+    ProviderModelOfferingResponse,
     ProviderResourceImpactResponse,
     ProviderResponse,
-    SyncModelOfferingsRequest,
-    SyncModelOfferingsResponse,
-    TestModelOfferingRequest,
-    TestModelOfferingResponse,
+    SyncProviderModelOfferingsRequest,
+    SyncProviderModelOfferingsResponse,
     TestProviderCredentialResponse,
+    TestProviderModelOfferingRequest,
+    TestProviderModelOfferingResponse,
     UpdateCredentialPoolCredentialRequest,
     UpdateCredentialPoolRequest,
-    UpdateModelOfferingRequest,
     UpdateProviderCredentialRequest,
+    UpdateProviderModelOfferingRequest,
     UpdateProviderRequest,
 )
 from app.modules.settings import facade as settings_facade
@@ -133,7 +133,10 @@ async def get_credential_pool_impact(
         raise HTTPException(status_code=404, detail="credential pool not found") from exc
 
 
-@router.get("/{provider_id}/offerings/{model_offering_id}/impact")
+@router.get(
+    "/{provider_id}/offerings/{model_offering_id}/impact",
+    operation_id="get_provider_model_offering_impact",
+)
 async def get_model_offering_impact(
     provider_id: UUID,
     model_offering_id: UUID,
@@ -402,7 +405,7 @@ async def deactivate_provider_credential(
         raise HTTPException(status_code=404, detail="provider credential not found") from exc
 
 
-@router.get("/{provider_id}/offerings")
+@router.get("/{provider_id}/offerings", operation_id="list_provider_model_offerings")
 async def list_model_offerings(
     provider_id: UUID,
     scope: RequestScope,
@@ -413,7 +416,7 @@ async def list_model_offerings(
     is_active: bool | None = Query(default=None),
     limit: int = Query(default=24, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
-) -> ModelOfferingPageResponse:
+) -> ProviderModelOfferingPageResponse:
     try:
         return await facade.list_model_offerings(
             provider_id=provider_id,
@@ -436,14 +439,18 @@ def _parse_modalities(value: str | None) -> list[str] | None:
     return modalities or None
 
 
-@router.post("/{provider_id}/offerings", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{provider_id}/offerings",
+    status_code=status.HTTP_201_CREATED,
+    operation_id="create_provider_model_offering",
+)
 async def create_model_offering(
     provider_id: UUID,
-    payload: CreateModelOfferingRequest,
+    payload: CreateProviderModelOfferingRequest,
     actor: ProviderAdmin,
     scope: RequestScope,
     db: DatabaseSession,
-) -> ModelOfferingResponse:
+) -> ProviderModelOfferingResponse:
     try:
         return await facade.create_model_offering(
             provider_id=provider_id,
@@ -458,15 +465,18 @@ async def create_model_offering(
         raise HTTPException(status_code=409, detail="model offering already exists") from exc
 
 
-@router.patch("/{provider_id}/offerings/{model_offering_id}")
+@router.patch(
+    "/{provider_id}/offerings/{model_offering_id}",
+    operation_id="update_provider_model_offering",
+)
 async def update_model_offering(
     provider_id: UUID,
     model_offering_id: UUID,
-    payload: UpdateModelOfferingRequest,
+    payload: UpdateProviderModelOfferingRequest,
     actor: ProviderAdmin,
     scope: RequestScope,
     db: DatabaseSession,
-) -> ModelOfferingResponse:
+) -> ProviderModelOfferingResponse:
     try:
         return await facade.update_model_offering(
             provider_id=provider_id,
@@ -482,21 +492,24 @@ async def update_model_offering(
         raise HTTPException(status_code=409, detail="model offering already exists") from exc
 
 
-@router.post("/{provider_id}/offerings/{model_offering_id}/test")
+@router.post(
+    "/{provider_id}/offerings/{model_offering_id}/test",
+    operation_id="test_provider_model_offering",
+)
 async def test_model_offering(
     provider_id: UUID,
     model_offering_id: UUID,
     actor: ProviderAdmin,
     scope: RequestScope,
     db: DatabaseSession,
-    payload: TestModelOfferingRequest | None = None,
-) -> TestModelOfferingResponse:
+    payload: TestProviderModelOfferingRequest | None = None,
+) -> TestProviderModelOfferingResponse:
     try:
         async with httpx.AsyncClient(timeout=30) as http_client:
             return await facade.test_model_offering(
                 provider_id=provider_id,
                 model_offering_id=model_offering_id,
-                payload=payload or TestModelOfferingRequest(),
+                payload=payload or TestProviderModelOfferingRequest(),
                 actor=actor,
                 scope=scope,
                 db=db,
@@ -511,6 +524,7 @@ async def test_model_offering(
 @router.delete(
     "/{provider_id}/offerings/{model_offering_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="deactivate_provider_model_offering",
 )
 async def deactivate_model_offering(
     provider_id: UUID,
@@ -531,14 +545,17 @@ async def deactivate_model_offering(
         raise HTTPException(status_code=404, detail="model offering not found") from exc
 
 
-@router.post("/{provider_id}/offerings/sync")
+@router.post(
+    "/{provider_id}/offerings/sync",
+    operation_id="sync_provider_model_offerings",
+)
 async def sync_model_offerings(
     provider_id: UUID,
     actor: ProviderAdmin,
     scope: RequestScope,
     db: DatabaseSession,
-    payload: SyncModelOfferingsRequest | None = None,
-) -> SyncModelOfferingsResponse:
+    payload: SyncProviderModelOfferingsRequest | None = None,
+) -> SyncProviderModelOfferingsResponse:
     try:
         org_settings = await settings_facade.get_organization_settings(scope=scope, db=db)
         provider = await facade.get_provider(provider_id=provider_id, scope=scope, db=db)
@@ -552,7 +569,7 @@ async def sync_model_offerings(
                 metadata_mode=(
                     payload.metadata_mode
                     if payload is not None
-                    else SyncModelOfferingsRequest().metadata_mode
+                    else SyncProviderModelOfferingsRequest().metadata_mode
                 ),
                 sync_mode=provider.model_sync_mode or org_settings.default_model_sync_mode,
             )

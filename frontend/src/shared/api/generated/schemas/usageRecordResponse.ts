@@ -4,6 +4,7 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
+import type { UsageRecordResponseDimensionSnapshot } from './usageRecordResponseDimensionSnapshot';
 
 export interface UsageRecordResponse {
   org_id: string;
@@ -17,6 +18,10 @@ export interface UsageRecordResponse {
   limit_policy_ids?: string[] | null;
   limit_policy_rule_ids?: string[] | null;
   limit_policy_assignment_ids?: string[] | null;
+  limit_counter_key?: string | null;
+  limit_counting_unit?: string;
+  limit_window_descriptor?: string | null;
+  dimension_snapshot?: UsageRecordResponseDimensionSnapshot;
   virtual_key_id: string;
   pool_id: string;
   provider_id: string;

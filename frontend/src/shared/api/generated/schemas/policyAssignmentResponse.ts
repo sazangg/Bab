@@ -8,6 +8,7 @@
 export interface PolicyAssignmentResponse {
   id: string;
   org_id: string;
+  policy_id: string | null;
   policy_type: string;
   access_policy_id: string | null;
   limit_policy_id: string | null;
@@ -15,6 +16,9 @@ export interface PolicyAssignmentResponse {
   team_id: string | null;
   project_id: string | null;
   virtual_key_id: string | null;
+  scope_target_key: string | null;
+  effective_from: string | null;
+  effective_to: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;

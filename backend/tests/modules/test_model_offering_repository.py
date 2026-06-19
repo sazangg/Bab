@@ -30,13 +30,13 @@ async def test_list_model_offerings_filters_and_paginates(db_session: AsyncSessi
             base_url="https://example.com/v1",
         )
     )
+    await db_session.flush()
     db_session.add_all(
         [
             ModelOffering(
                 org_id=org_id,
                 provider_id=provider_id,
                 provider_model_name="gpt-5.4-mini",
-                alias="fast",
                 modality="text+vision",
                 is_active=True,
             ),
@@ -44,7 +44,6 @@ async def test_list_model_offerings_filters_and_paginates(db_session: AsyncSessi
                 org_id=org_id,
                 provider_id=provider_id,
                 provider_model_name="gpt-image-2",
-                alias="image",
                 modality="image",
                 is_active=True,
             ),
@@ -52,7 +51,6 @@ async def test_list_model_offerings_filters_and_paginates(db_session: AsyncSessi
                 org_id=org_id,
                 provider_id=provider_id,
                 provider_model_name="legacy-text",
-                alias="legacy",
                 modality="text",
                 is_active=False,
             ),
@@ -60,7 +58,6 @@ async def test_list_model_offerings_filters_and_paginates(db_session: AsyncSessi
                 org_id=org_id,
                 provider_id=other_provider_id,
                 provider_model_name="gpt-5.4-mini",
-                alias="fast",
                 modality="text",
                 is_active=True,
             ),
@@ -96,6 +93,7 @@ async def test_list_model_offerings_filters_multiple_modalities(db_session: Asyn
             base_url="https://api.openai.com/v1",
         )
     )
+    await db_session.flush()
     db_session.add_all(
         [
             ModelOffering(

@@ -5,7 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface TestModelOfferingResponse {
+export interface TestProviderModelOfferingResponse {
   id: string;
   provider_credential_id?: string | null;
   health_status: string;

@@ -1,5 +1,6 @@
-import { ShieldAlert } from "lucide-react";
+import { Eye, ShieldAlert } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -7,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useListEventsApiV1GuardrailsEventsGet } from "@/shared/api/generated/guardrails/guardrails";
 import type { GuardrailEventResponse } from "@/shared/api/generated/schemas";
 import { EmptyState } from "@/shared/components/EmptyState";
+import { RequestTraceSheet } from "@/features/usage/components/RequestTraceSheet";
 
 export function RecentGuardrailEventsCard({
   title = "Guardrail events",
@@ -24,43 +26,59 @@ export function RecentGuardrailEventsCard({
     { ...filters, limit: 5 },
     { query: { enabled } },
   );
+  const [traceRequestId, setTraceRequestId] = useState<string | null>(null);
   const events = eventsQuery.data?.status === 200 ? eventsQuery.data.data : [];
   const activityHref = buildActivityHref(filters);
 
   if (!enabled) return null;
 
   return (
-    <Card>
-      <CardHeader className="border-b">
-        <div className="flex items-center justify-between gap-3">
-          <CardTitle>{title}</CardTitle>
-          <Button asChild variant="outline" size="sm">
-            <Link to={activityHref}>Open activity</Link>
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {eventsQuery.isPending ? (
-          <p className="text-sm text-muted-foreground">Loading guardrail events...</p>
-        ) : events.length === 0 ? (
-          <EmptyState
-            icon={ShieldAlert}
-            title="No guardrail events"
-            description="Denied and dry-run matches for this scope will appear here."
-          />
-        ) : (
-          <div className="space-y-2">
-            {events.map((event) => (
-              <GuardrailEventRow key={event.id} event={event} />
-            ))}
+    <>
+      <Card>
+        <CardHeader className="border-b">
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle>{title}</CardTitle>
+            <Button asChild variant="outline" size="sm">
+              <Link to={activityHref}>Open activity</Link>
+            </Button>
           </div>
-        )}
-      </CardContent>
-    </Card>
+        </CardHeader>
+        <CardContent>
+          {eventsQuery.isPending ? (
+            <p className="text-sm text-muted-foreground">Loading guardrail events...</p>
+          ) : events.length === 0 ? (
+            <EmptyState
+              icon={ShieldAlert}
+              title="No guardrail events"
+              description="Denied and dry-run matches for this scope will appear here."
+            />
+          ) : (
+            <div className="space-y-2">
+              {events.map((event) => (
+                <GuardrailEventRow key={event.id} event={event} onOpenTrace={setTraceRequestId} />
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+      <RequestTraceSheet
+        gatewayRequestId={traceRequestId}
+        open={Boolean(traceRequestId)}
+        onOpenChange={(open) => {
+          if (!open) setTraceRequestId(null);
+        }}
+      />
+    </>
   );
 }
 
-function GuardrailEventRow({ event }: { event: GuardrailEventResponse }) {
+function GuardrailEventRow({
+  event,
+  onOpenTrace,
+}: {
+  event: GuardrailEventResponse;
+  onOpenTrace: (gatewayRequestId: string) => void;
+}) {
   return (
     <div className="rounded-md border bg-background p-3 text-sm">
       <div className="flex items-start justify-between gap-3">
@@ -78,8 +96,19 @@ function GuardrailEventRow({ event }: { event: GuardrailEventResponse }) {
           {event.decision === "dry_run" ? "Dry run" : event.decision}
         </Badge>
       </div>
-      <div className="mt-2 text-xs text-muted-foreground">
-        {new Date(event.created_at).toLocaleString()}
+      <div className="mt-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+        <span>{new Date(event.created_at).toLocaleString()}</span>
+        {event.gateway_request_id ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Open request trace"
+            onClick={() => onOpenTrace(event.gateway_request_id!)}
+          >
+            <Eye />
+          </Button>
+        ) : null}
       </div>
     </div>
   );

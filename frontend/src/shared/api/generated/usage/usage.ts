@@ -21,6 +21,7 @@ import type {
 
 import type {
   ExportUsageRecordsApiV1UsageRecordsExportGetParams,
+  GatewayRequestTraceResponse,
   GetOrganizationUsageSummaryApiV1UsageSummaryGetParams,
   GetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetParams,
   GetSpendInsightsApiV1UsageSpendInsightsGetParams,
@@ -280,6 +281,125 @@ export function useListUsageRecordsApiV1UsageRecordsGet<TData = Awaited<ReturnTy
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getListUsageRecordsApiV1UsageRecordsGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export type getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGetResponse200 = {
+  data: GatewayRequestTraceResponse
+  status: 200
+}
+
+export type getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGetResponseSuccess = (getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGetResponse200) & {
+  headers: Headers;
+};
+export type getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGetResponseError = (getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGetResponse422) & {
+  headers: Headers;
+};
+
+export type getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGetResponse = (getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGetResponseSuccess | getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGetResponseError)
+
+export const getGetGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGetUrl = (gatewayRequestId: string,) => {
+
+
+
+
+  return `/api/v1/usage/requests/${gatewayRequestId}`
+}
+
+/**
+ * @summary Get Gateway Request Trace
+ */
+export const getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGet = async (gatewayRequestId: string, options?: RequestInit): Promise<getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGetResponse> => {
+
+  return apiMutator<getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGetResponse>(getGetGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGetUrl(gatewayRequestId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGetQueryKey = (gatewayRequestId: string,) => {
+    return [
+    `/api/v1/usage/requests/${gatewayRequestId}`
+    ] as const;
+    }
+
+
+export const getGetGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGetQueryOptions = <TData = Awaited<ReturnType<typeof getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGet>>, TError = HTTPValidationError>(gatewayRequestId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGetQueryKey(gatewayRequestId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGet>>> = ({ signal }) => getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGet(gatewayRequestId, { signal });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(gatewayRequestId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGetQueryResult = NonNullable<Awaited<ReturnType<typeof getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGet>>>
+export type GetGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGetQueryError = HTTPValidationError
+
+
+export function useGetGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGet<TData = Awaited<ReturnType<typeof getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGet>>, TError = HTTPValidationError>(
+ gatewayRequestId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGet>>,
+          TError,
+          Awaited<ReturnType<typeof getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGet<TData = Awaited<ReturnType<typeof getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGet>>, TError = HTTPValidationError>(
+ gatewayRequestId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGet>>,
+          TError,
+          Awaited<ReturnType<typeof getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGet<TData = Awaited<ReturnType<typeof getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGet>>, TError = HTTPValidationError>(
+ gatewayRequestId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get Gateway Request Trace
+ */
+
+export function useGetGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGet<TData = Awaited<ReturnType<typeof getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGet>>, TError = HTTPValidationError>(
+ gatewayRequestId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGetQueryOptions(gatewayRequestId,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

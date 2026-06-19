@@ -61,7 +61,7 @@ export function ApiDocsPage() {
   -H "X-Bab-Provider-Id: PROVIDER_UUID" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "gpt-4o-mini",
+    "model": "policy-public-model",
     "messages": [
       {"role": "user", "content": "Reply with pong"}
     ],
@@ -75,7 +75,7 @@ export function ApiDocsPage() {
   -H "X-Bab-Provider-Id: PROVIDER_UUID" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "gpt-4o-mini",
+    "model": "policy-public-model",
     "input": "Reply with pong",
     "max_output_tokens": 32
   }'`}
@@ -87,7 +87,7 @@ export function ApiDocsPage() {
   -H "X-Bab-Provider-Id: PROVIDER_UUID" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "gpt-4o-mini",
+    "model": "policy-public-model",
     "prompt": "Reply with pong",
     "max_tokens": 32
   }'`}
@@ -103,7 +103,7 @@ const client = new OpenAI({
 });
 
 const response = await client.chat.completions.create({
-  model: "gpt-4o-mini",
+  model: "policy-public-model",
   messages: [{ role: "user", content: "Reply with pong" }],
   max_completion_tokens: 32,
 });`}
@@ -119,7 +119,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="gpt-4o-mini",
+    model="policy-public-model",
     messages=[{"role": "user", "content": "Reply with pong"}],
     max_completion_tokens=32,
 )`}
@@ -132,7 +132,7 @@ response = client.chat.completions.create(
   -H "anthropic-version: 2023-06-01" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "claude-model-alias",
+    "model": "policy-public-claude",
     "max_tokens": 64,
     "messages": [
       {"role": "user", "content": "Reply with pong"}
@@ -150,7 +150,7 @@ const client = new Anthropic({
 });
 
 const message = await client.messages.create({
-  model: "claude-model-alias",
+  model: "policy-public-claude",
   max_tokens: 64,
   messages: [{ role: "user", content: "Reply with pong" }],
 });`}
@@ -166,7 +166,7 @@ client = Anthropic(
 )
 
 message = client.messages.create(
-    model="claude-model-alias",
+    model="policy-public-claude",
     max_tokens=64,
     messages=[{"role": "user", "content": "Reply with pong"}],
 )`}
@@ -204,6 +204,11 @@ message = client.messages.create(
           <p>
             Chat completions are the primary proxy endpoint. Streaming is supported there. Responses
             and legacy completions are compatibility adapters over chat completions.
+          </p>
+          <p>
+            The <code>model</code> value is a public model name exposed by an assigned access
+            policy. Provider model offerings are configured by admins and selected through policy
+            routes; provider aliases are not runtime model inputs.
           </p>
           <p>
             <code>/v1/messages</code> is native Anthropic Messages passthrough, not an

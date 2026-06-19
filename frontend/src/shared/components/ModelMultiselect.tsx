@@ -8,7 +8,6 @@ import { Label } from "@/components/ui/label";
 export type ModelMultiselectOption = {
   id: string;
   provider_model_name: string;
-  alias?: string | null;
 };
 
 /**
@@ -45,9 +44,7 @@ export function ModelMultiselect({
   const filtered = models.filter((model) =>
     !term
       ? true
-      : [model.provider_model_name, model.alias]
-          .filter(Boolean)
-          .some((value) => value?.toLowerCase().includes(term)),
+      : model.provider_model_name.toLowerCase().includes(term),
   );
   const filteredIds = filtered.map((model) => model.id);
   const selectedVisible = selected.filter((id) => filteredIds.includes(id));
@@ -112,11 +109,6 @@ export function ModelMultiselect({
                 <span className="block break-all font-mono leading-5">
                   {model.provider_model_name}
                 </span>
-                {model.alias ? (
-                  <span className="block break-all text-xs text-muted-foreground">
-                    {model.alias}
-                  </span>
-                ) : null}
               </span>
             </label>
           ))

@@ -9,6 +9,7 @@ import type { LimitPolicyRuleResponse } from './limitPolicyRuleResponse';
 export interface LimitPolicyResponse {
   id: string;
   org_id: string;
+  policy_id: string | null;
   name: string;
   description: string | null;
   owning_scope_type: string | null;

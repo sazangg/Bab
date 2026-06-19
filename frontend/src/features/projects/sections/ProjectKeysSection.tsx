@@ -370,7 +370,7 @@ export function ProjectKeysSection({
                 preflight?.routes.length
                   ? preflight.routes
                       .slice(0, 2)
-                      .map((route) => route.alias ?? route.provider_model)
+                      .map((route) => route.provider_model)
                       .join(", ")
                   : "No route summary"
               }
@@ -408,10 +408,7 @@ export function ProjectKeysSection({
                 {sampleCurl({
                   baseUrl: gatewayBaseUrl,
                   key: createdKey.key,
-                  model:
-                    preflight?.routes[0]?.alias ??
-                    preflight?.routes[0]?.provider_model ??
-                    "model-name",
+                  model: preflight?.routes[0]?.provider_model ?? "model-name",
                 })}
               </code>
             </pre>

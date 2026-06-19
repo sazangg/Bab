@@ -128,8 +128,7 @@ export function GuardrailPoliciesTab({
           empty={{
             icon: ShieldCheck,
             title: "No guardrails yet",
-            description:
-              "Create a policy to start constraining routing by model, provider, or pool.",
+            description: "Create a policy to start inspecting prompts and responses.",
             action: canManage ? (
               <Button onClick={onCreate}>
                 <Plus data-icon="inline-start" />

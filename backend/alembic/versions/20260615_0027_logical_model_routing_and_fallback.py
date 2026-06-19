@@ -21,6 +21,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    model_offerings_table = _model_offerings_table()
     if not _has_table("access_policy_public_models"):
         op.create_table(
             "access_policy_public_models",
@@ -72,7 +73,7 @@ def upgrade() -> None:
                 ["credential_pool_id"], ["credential_pools.id"], ondelete="RESTRICT"
             ),
             sa.ForeignKeyConstraint(
-                ["model_offering_id"], ["model_offerings.id"], ondelete="RESTRICT"
+                ["model_offering_id"], [f"{model_offerings_table}.id"], ondelete="RESTRICT"
             ),
             sa.ForeignKeyConstraint(["org_id"], ["organizations.id"], ondelete="RESTRICT"),
             sa.ForeignKeyConstraint(["provider_id"], ["providers.id"], ondelete="RESTRICT"),
@@ -106,10 +107,10 @@ def upgrade() -> None:
         op.create_table(
             "gateway_requests",
             sa.Column("id", sa.Uuid(), nullable=False),
-            sa.Column("org_id", sa.Uuid(), nullable=False),
-            sa.Column("team_id", sa.Uuid(), nullable=False),
-            sa.Column("project_id", sa.Uuid(), nullable=False),
-            sa.Column("virtual_key_id", sa.Uuid(), nullable=False),
+            sa.Column("org_id", sa.Uuid(), nullable=True),
+            sa.Column("team_id", sa.Uuid(), nullable=True),
+            sa.Column("project_id", sa.Uuid(), nullable=True),
+            sa.Column("virtual_key_id", sa.Uuid(), nullable=True),
             sa.Column("request_id", sa.String(length=100), nullable=True),
             sa.Column("gateway_endpoint", sa.String(length=50), nullable=False),
             sa.Column("requested_model", sa.String(length=255), nullable=False),
@@ -129,7 +130,7 @@ def upgrade() -> None:
             sa.Column("started_at", sa.DateTime(timezone=True), nullable=False),
             sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
             sa.ForeignKeyConstraint(
-                ["final_access_policy_id"], ["access_policies.id"], ondelete="RESTRICT"
+                ["final_access_policy_id"], ["policies.id"], ondelete="RESTRICT"
             ),
             sa.ForeignKeyConstraint(
                 ["final_candidate_id"], ["access_policy_route_candidates.id"], ondelete="RESTRICT"
@@ -138,14 +139,12 @@ def upgrade() -> None:
                 ["final_credential_pool_id"], ["credential_pools.id"], ondelete="RESTRICT"
             ),
             sa.ForeignKeyConstraint(
-                ["final_model_offering_id"], ["model_offerings.id"], ondelete="RESTRICT"
+                ["final_model_offering_id"], [f"{model_offerings_table}.id"], ondelete="RESTRICT"
             ),
             sa.ForeignKeyConstraint(
                 ["final_public_model_id"], ["access_policy_public_models.id"], ondelete="RESTRICT"
             ),
-            sa.ForeignKeyConstraint(
-                ["final_provider_id"], ["providers.id"], ondelete="RESTRICT"
-            ),
+            sa.ForeignKeyConstraint(["final_provider_id"], ["providers.id"], ondelete="RESTRICT"),
             sa.ForeignKeyConstraint(["org_id"], ["organizations.id"], ondelete="RESTRICT"),
             sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="RESTRICT"),
             sa.ForeignKeyConstraint(["team_id"], ["teams.id"], ondelete="RESTRICT"),
@@ -295,6 +294,7 @@ def _backfill_public_models_from_legacy_routes() -> None:
     ):
         return
     bind = op.get_bind()
+    model_offerings_table = _model_offerings_table()
     existing_count = bind.execute(
         sa.text("SELECT COUNT(*) FROM access_policy_public_models")
     ).scalar()
@@ -317,16 +317,20 @@ def _backfill_public_models_from_legacy_routes() -> None:
         if not isinstance(model_ids, list):
             continue
         for offset, model_id in enumerate(model_ids):
-            model = bind.execute(
-                sa.text(
-                    """
+            model = (
+                bind.execute(
+                    sa.text(
+                        f"""
                     SELECT provider_model_name
-                    FROM model_offerings
+                    FROM {model_offerings_table}
                     WHERE id = :model_id AND org_id = :org_id
                     """
-                ),
-                {"model_id": model_id, "org_id": route["org_id"]},
-            ).mappings().first()
+                    ),
+                    {"model_id": model_id, "org_id": route["org_id"]},
+                )
+                .mappings()
+                .first()
+            )
             if model is None:
                 continue
             public_model_id = bind.execute(
@@ -405,6 +409,12 @@ def _backfill_public_models_from_legacy_routes() -> None:
 
 def _has_table(table_name: str) -> bool:
     return inspect(op.get_bind()).has_table(table_name)
+
+
+def _model_offerings_table() -> str:
+    if _has_table("provider_model_offerings"):
+        return "provider_model_offerings"
+    return "model_offerings"
 
 
 def _columns(table_name: str) -> set[str]:

@@ -3,9 +3,9 @@ import type { UseFormRegister } from "react-hook-form";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { ModelOfferingResponse } from "@/shared/api/generated/schemas";
+import type { ProviderModelOfferingResponse } from "@/shared/api/generated/schemas";
 
-import { formatPricingSource, formatRelativeFromNow, formatTokenPrice } from "../../lib/format";
+import { formatPricingSource, formatTokenPrice } from "../../lib/format";
 import { modelCapabilityOptions, modelModalities, type ModelOfferingFormInput } from "../../lib/schemas";
 
 export function PricingFields({
@@ -66,7 +66,7 @@ export function PricingFields({
   );
 }
 
-export function PricingSnapshot({ model }: { model: ModelOfferingResponse }) {
+export function PricingSnapshot({ model }: { model: ProviderModelOfferingResponse }) {
   return (
     <div className="rounded-md border bg-muted/20 p-3 text-sm">
       <div className="font-medium">Effective pricing</div>
@@ -80,10 +80,6 @@ export function PricingSnapshot({ model }: { model: ModelOfferingResponse }) {
       </div>
       <div className="mt-2 text-xs text-muted-foreground">
         {formatPricingSource(model.pricing_source)}
-        {model.pricing_catalog_version ? ` · catalog ${model.pricing_catalog_version}` : ""}
-        {model.pricing_last_refreshed_at
-          ? ` · refreshed ${formatRelativeFromNow(model.pricing_last_refreshed_at)}`
-          : ""}
       </div>
     </div>
   );

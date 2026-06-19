@@ -4,8 +4,9 @@ from uuid import uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope
-from app.modules.auth.internal.models import Organization
+from app.modules.auth.internal.models import Organization, Team
 from app.modules.auth.schemas import AuthenticatedUser
+from app.modules.keys.internal.models import Project, VirtualKey
 from app.modules.policies.internal.models import (
     AccessPolicy,
     AccessPolicyPublicModel,
@@ -29,6 +30,27 @@ async def test_provider_impact_detects_policy_routes_and_recent_usage(
 ) -> None:
     org = Organization(name="Impact Org", slug="impact-org")
     db_session.add(org)
+    await db_session.flush()
+    team = Team(org_id=org.id, name="Impact Team", slug="impact-team")
+    db_session.add(team)
+    await db_session.flush()
+    project = Project(
+        org_id=org.id,
+        team_id=team.id,
+        created_by=uuid4(),
+        name="Impact Project",
+        slug="impact-project",
+    )
+    db_session.add(project)
+    await db_session.flush()
+    virtual_key = VirtualKey(
+        org_id=org.id,
+        project_id=project.id,
+        name="Impact key",
+        key_hash=uuid4().hex,
+        key_prefix="bab_impact",
+    )
+    db_session.add(virtual_key)
     await db_session.flush()
     actor = AuthenticatedUser(
         id=uuid4(),
@@ -93,9 +115,9 @@ async def test_provider_impact_detects_policy_routes_and_recent_usage(
     )
     usage = UsageRecord(
         org_id=org.id,
-        team_id=uuid4(),
-        project_id=uuid4(),
-        virtual_key_id=uuid4(),
+        team_id=team.id,
+        project_id=project.id,
+        virtual_key_id=virtual_key.id,
         pool_id=pool.id,
         provider_id=provider.id,
         requested_model="model-a",

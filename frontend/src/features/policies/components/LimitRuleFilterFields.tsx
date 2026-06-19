@@ -11,7 +11,7 @@ import {
 } from "@/shared/api/generated/policies/policies";
 import {
   useListCredentialPoolsApiV1ProvidersProviderIdPoolsGet,
-  useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet,
+  useListProviderModelOfferings,
   useListProvidersApiV1ProvidersGet,
 } from "@/shared/api/generated/providers/providers";
 import type { LimitPolicyRuleResponse } from "@/shared/api/generated/schemas";
@@ -36,7 +36,7 @@ export function LimitRuleFilterFields({
   const poolsQuery = useListCredentialPoolsApiV1ProvidersProviderIdPoolsGet(value.providerId, {
     query: { enabled: Boolean(value.providerId) },
   });
-  const modelsQuery = useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet(
+  const modelsQuery = useListProviderModelOfferings(
     value.providerId,
     { limit: 1000 },
     { query: { enabled: Boolean(value.providerId) } },
@@ -116,7 +116,7 @@ export function LimitRuleFiltersSummary({ rule }: { rule: LimitPolicyRuleRespons
     rule.provider_id ?? "",
     { query: { enabled: Boolean(rule.provider_id) } },
   );
-  const modelsQuery = useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet(
+  const modelsQuery = useListProviderModelOfferings(
     rule.provider_id ?? "",
     { limit: 1000 },
     { query: { enabled: Boolean(rule.provider_id) } },

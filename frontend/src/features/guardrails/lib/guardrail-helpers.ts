@@ -3,32 +3,45 @@ import type {
   GuardrailAssignmentResponse,
   GuardrailEventResponse,
   GuardrailPolicyResponse,
-  ModelOfferingResponse,
   ProjectResponse,
   TeamResponse,
   VirtualKeyResponse,
 } from "@/shared/api/generated/schemas";
 
-export const ruleTypeOptions = [
-  "model",
-  "provider",
-  "pool",
-  "prompt_contains",
-  "prompt_regex",
-  "pii",
-];
+export const ruleTypeOptions = ["prompt_contains", "prompt_regex", "pii"];
 export const responsePhaseRuleTypes = ["prompt_contains", "prompt_regex", "pii"];
-export const routingRuleTypes = ["model", "provider", "pool"];
 export const piiRuleValues = ["email", "phone", "credit_card"];
 export const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export const ruleTypeLabels: Record<string, string> = {
-  model: "Model",
-  provider: "Provider",
-  pool: "Pool",
   prompt_contains: "Prompt keyword",
   prompt_regex: "Prompt regex",
   pii: "PII detector",
+};
+export const matcherDimensionOptions = [
+  "provider_id",
+  "credential_pool_id",
+  "provider_model_offering_id",
+  "public_model_id",
+  "public_model_name",
+  "route_candidate_id",
+  "gateway_endpoint",
+];
+export const matcherDimensionLabels: Record<string, string> = {
+  provider_id: "Provider",
+  credential_pool_id: "Credential pool",
+  provider_model_offering_id: "Provider model",
+  public_model_id: "Public model ID",
+  public_model_name: "Public model name",
+  route_candidate_id: "Route candidate",
+  gateway_endpoint: "Gateway endpoint",
+};
+export const matcherOperatorOptions = ["eq", "in", "exists", "not_exists"];
+export const matcherOperatorLabels: Record<string, string> = {
+  eq: "Equals",
+  in: "One of",
+  exists: "Exists",
+  not_exists: "Missing",
 };
 
 export type ScopeType = "org" | "team" | "project" | "virtual_key";
@@ -37,6 +50,12 @@ export type ScopeOption = { id: string; label: string };
 export type GuardrailPolicyOption = { id: string; name: string; is_active: boolean };
 export type ScopeOptions = Record<ScopeType, ScopeOption[]>;
 export type ScopedVirtualKey = VirtualKeyResponse & { project_name: string };
+export type GuardrailMatcherForm = {
+  id: string;
+  dimension: string;
+  operator: string;
+  value: string;
+};
 export type PolicyRuleForm = {
   id: string;
   rule_type: string;
@@ -44,6 +63,7 @@ export type PolicyRuleForm = {
   phase: string;
   values: string;
   detector: string;
+  matchers: GuardrailMatcherForm[];
   priority: number;
   is_active: boolean;
 };
@@ -64,13 +84,26 @@ export type AssignmentFormState = {
 export function newRuleForm(overrides: Partial<PolicyRuleForm> = {}): PolicyRuleForm {
   return {
     id: crypto.randomUUID(),
-    rule_type: "model",
-    effect: "allow",
-    phase: "request",
+    rule_type: "prompt_contains",
+    effect: "deny",
+    phase: "both",
     values: "",
     detector: "local_regex",
+    matchers: [],
     priority: 100,
     is_active: true,
+    ...overrides,
+  };
+}
+
+export function newMatcherForm(
+  overrides: Partial<GuardrailMatcherForm> = {},
+): GuardrailMatcherForm {
+  return {
+    id: crypto.randomUUID(),
+    dimension: "public_model_name",
+    operator: "eq",
+    value: "",
     ...overrides,
   };
 }
@@ -122,24 +155,11 @@ export function guardrailDecisionStatus(decision: string): {
   return { label: decision, variant: "muted" };
 }
 
-export function uniqueModelOptions(models: ModelOfferingResponse[]) {
-  return Array.from(
-    new Set(
-      models.flatMap((model) =>
-        [model.provider_model_name, model.alias].filter(
-          (value): value is string => typeof value === "string" && value.length > 0,
-        ),
-      ),
-    ),
-  ).sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" }));
-}
-
 export function ruleValuePlaceholder(ruleType: string) {
   if (ruleType === "pii") return "email\nphone\ncredit_card";
   if (ruleType === "prompt_regex") return "secret|confidential";
   if (ruleType === "prompt_contains") return "internal roadmap";
-  if (ruleType === "model") return "gpt-5-mini";
-  return "One UUID per line";
+  return "One value per line";
 }
 
 export function ruleEffectLabel(effect: string) {
@@ -176,9 +196,7 @@ export function parseRuleValues(value: string) {
 }
 
 export function phaseOptionsForRuleType(ruleType: string) {
-  return responsePhaseRuleTypes.includes(ruleType)
-    ? ["request", "response", "both"]
-    : ["request"];
+  return responsePhaseRuleTypes.includes(ruleType) ? ["request", "response", "both"] : ["request"];
 }
 
 export function normalizeRulePhase(ruleType: string, phase: string) {
@@ -209,10 +227,41 @@ export function validateRuleForm(rule: PolicyRuleForm, index: number, values: st
       return `${label} supports only these PII values: ${piiRuleValues.join(", ")}.`;
     }
   }
-  if (routingRuleTypes.includes(rule.rule_type) && rule.rule_type !== "model") {
-    const invalid = values.filter((value) => !uuidPattern.test(value));
-    if (invalid.length > 0) {
-      return `${label} ${ruleTypeLabels[rule.rule_type]} values must be UUIDs.`;
+  for (const [matcherIndex, matcher] of rule.matchers.entries()) {
+    const matcherError = validateMatcherForm(matcher, index, matcherIndex);
+    if (matcherError) return matcherError;
+  }
+  return null;
+}
+
+export function matcherNeedsValue(operator: string) {
+  return operator !== "exists" && operator !== "not_exists";
+}
+
+export function parseMatcherValue(matcher: GuardrailMatcherForm) {
+  if (!matcherNeedsValue(matcher.operator)) return null;
+  if (matcher.operator === "in") {
+    return parseRuleValues(matcher.value);
+  }
+  return matcher.value.trim();
+}
+
+export function validateMatcherForm(
+  matcher: GuardrailMatcherForm,
+  ruleIndex: number,
+  matcherIndex: number,
+) {
+  const label = `Rule ${ruleIndex + 1} filter ${matcherIndex + 1}`;
+  if (!matcherDimensionOptions.includes(matcher.dimension)) {
+    return `${label} has an unsupported dimension.`;
+  }
+  if (!matcherOperatorOptions.includes(matcher.operator)) {
+    return `${label} has an unsupported operator.`;
+  }
+  if (matcherNeedsValue(matcher.operator)) {
+    const value = parseMatcherValue(matcher);
+    if (Array.isArray(value) ? value.length === 0 : !value) {
+      return `${label} needs a value.`;
     }
   }
   return null;

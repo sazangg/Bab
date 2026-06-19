@@ -17,7 +17,7 @@ includes a React administration console and a FastAPI backend.
 - Multiple credentials per provider with validation and health state.
 - Credential pools with priority, round-robin, least-recently-used, health-based, and weighted
   selection.
-- Model discovery, synchronization, aliases, capabilities, pricing, and health tests.
+- Provider model discovery, synchronization, capabilities, pricing, and health tests.
 - Provider, credential, pool, and model impact previews.
 
 ### Workspace And Access
@@ -30,7 +30,7 @@ includes a React administration console and a FastAPI backend.
 
 ### Policies And Guardrails
 
-- Access policies targeting provider pools and model offerings.
+- Access policies exposing public model names that route to provider pools and provider model offerings.
 - Multiple active access policies at the same scope union their routes.
 - Child scopes can narrow inherited access but cannot widen it.
 - Request, token, and budget limit policies with configurable windows.
@@ -152,9 +152,9 @@ Use the console to:
 1. Configure OpenAI, OpenRouter, Anthropic, or a custom OpenAI-compatible provider.
 2. Add and validate a provider credential.
 3. Create a credential pool and add the credential.
-4. Synchronize or create at least one model offering.
+4. Synchronize or create at least one provider model offering.
 5. Create a team and project.
-6. Create an access policy with a route to the pool and model offering.
+6. Create an access policy with a public model name that routes to the pool and provider model offering.
 7. Assign the access policy to the project.
 8. Create a virtual key under the project and capture its one-time secret.
 
@@ -162,7 +162,7 @@ Then send a request:
 
 ```powershell
 $body = @{
-  model = "your-model-alias-or-provider-model"
+  model = "your-policy-public-model"
   messages = @(
     @{ role = "user"; content = "Reply with hello from Bab." }
   )
@@ -176,8 +176,9 @@ Invoke-RestMethod `
   -Body $body
 ```
 
-The request should appear in Usage and Activity with its team, project, key, policy, provider,
-credential pool, model, status, latency, tokens, and cost information where available.
+The request model is the public model name exposed by the assigned access policy. The request should
+appear in Usage and Activity with its team, project, key, policy, provider, credential pool, model,
+status, latency, tokens, cost information where available, and request trace links.
 
 ## Verification
 

@@ -1,8 +1,8 @@
-import type { SyncModelOfferingsResponse } from "@/shared/api/generated/schemas";
+import type { SyncProviderModelOfferingsResponse } from "@/shared/api/generated/schemas";
 
 import { formatRelativeFromNow } from "../../lib/format";
 
-export function ModelSyncSummary({ result }: { result: SyncModelOfferingsResponse }) {
+export function ModelSyncSummary({ result }: { result: SyncProviderModelOfferingsResponse }) {
   const summary = result.summary;
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border bg-muted/30 px-3 py-2 text-xs">

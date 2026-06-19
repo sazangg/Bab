@@ -6,19 +6,28 @@ from sqlalchemy import Integer, case, cast, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.request_ids import current_request_id
 from app.modules.auth.internal.models import Team
 from app.modules.keys.internal.models import Project, VirtualKey
-from app.modules.policies.internal.models import AccessPolicy, LimitPolicy, LimitPolicyRule
+from app.modules.policies.internal.models import LimitPolicy, LimitPolicyRule, Policy
 from app.modules.providers.internal.models import CredentialPool, Provider, ProviderCredential
 from app.modules.usage.accounting import UsageAccounting, subtract_months
-from app.modules.usage.internal.models import GatewayRequest, LimitPolicyReservation, UsageRecord
+from app.modules.usage.internal.models import (
+    GatewayPolicyDecision,
+    GatewayRequest,
+    GatewayRouteAttempt,
+    LimitPolicyCommittedUsage,
+    LimitPolicyReservation,
+    UsageRecord,
+)
 from app.modules.usage.schemas import (
     CreateGatewayRequest,
     FinalizeGatewayRequest,
     LimitPolicyBudgetBurnRow,
     LimitPolicyReservationSummary,
     OrganizationUsageSummary,
+    RecordLimitPolicyCommittedUsage,
     RecordLimitPolicyReservation,
     RecordUsage,
     SpendInsights,
@@ -41,6 +50,15 @@ async def create_usage_record(*, payload: RecordUsage, db: AsyncSession) -> Usag
     return usage_record
 
 
+async def create_limit_policy_committed_usage(
+    *, payload: RecordLimitPolicyCommittedUsage, db: AsyncSession
+) -> LimitPolicyCommittedUsage:
+    committed_usage = LimitPolicyCommittedUsage(**payload.model_dump())
+    db.add(committed_usage)
+    await db.flush()
+    return committed_usage
+
+
 async def create_gateway_request(
     *,
     payload: CreateGatewayRequest,
@@ -48,6 +66,9 @@ async def create_gateway_request(
 ) -> GatewayRequest:
     data = payload.model_dump()
     data["request_id"] = data["request_id"] or current_request_id()
+    started_at = data.get("started_at") or datetime.now(UTC)
+    data["started_at"] = started_at
+    data["trace_expires_at"] = started_at + timedelta(days=settings.trace_retention_days)
     gateway_request = GatewayRequest(**data)
     db.add(gateway_request)
     await db.flush()
@@ -67,6 +88,116 @@ async def finalize_gateway_request(
     )
 
 
+async def create_gateway_route_attempt(
+    *,
+    values: dict,
+    db: AsyncSession,
+) -> GatewayRouteAttempt:
+    attempt = GatewayRouteAttempt(**values)
+    db.add(attempt)
+    await db.flush()
+    return attempt
+
+
+async def update_gateway_route_attempt(
+    *,
+    route_attempt_id: UUID,
+    values: dict,
+    db: AsyncSession,
+) -> None:
+    await db.execute(
+        update(GatewayRouteAttempt)
+        .where(GatewayRouteAttempt.id == route_attempt_id)
+        .values(**values)
+    )
+
+
+async def create_gateway_policy_decision(
+    *,
+    values: dict,
+    db: AsyncSession,
+) -> GatewayPolicyDecision:
+    decision = GatewayPolicyDecision(**values)
+    db.add(decision)
+    await db.flush()
+    return decision
+
+
+async def get_gateway_request(
+    *,
+    gateway_request_id: UUID,
+    org_id: UUID,
+    db: AsyncSession,
+) -> GatewayRequest | None:
+    return await db.scalar(
+        select(GatewayRequest).where(
+            GatewayRequest.id == gateway_request_id,
+            GatewayRequest.org_id == org_id,
+        )
+    )
+
+
+async def list_gateway_route_attempts(
+    *,
+    gateway_request_id: UUID,
+    org_id: UUID,
+    db: AsyncSession,
+) -> list[GatewayRouteAttempt]:
+    result = await db.scalars(
+        select(GatewayRouteAttempt)
+        .where(
+            GatewayRouteAttempt.gateway_request_id == gateway_request_id,
+            GatewayRouteAttempt.org_id == org_id,
+        )
+        .order_by(GatewayRouteAttempt.attempt_index, GatewayRouteAttempt.started_at)
+    )
+    return list(result)
+
+
+async def list_gateway_policy_decisions(
+    *,
+    gateway_request_id: UUID,
+    org_id: UUID,
+    db: AsyncSession,
+) -> list[GatewayPolicyDecision]:
+    result = await db.scalars(
+        select(GatewayPolicyDecision)
+        .where(
+            GatewayPolicyDecision.gateway_request_id == gateway_request_id,
+            GatewayPolicyDecision.org_id == org_id,
+        )
+        .order_by(GatewayPolicyDecision.created_at)
+    )
+    return list(result)
+
+
+async def list_usage_records_for_gateway_request(
+    *,
+    gateway_request_id: UUID,
+    org_id: UUID,
+    db: AsyncSession,
+) -> list[UsageRecordResponse]:
+    result = await db.execute(
+        select(UsageRecord, ProviderCredential.name, ProviderCredential.key_prefix)
+        .outerjoin(ProviderCredential, ProviderCredential.id == UsageRecord.provider_credential_id)
+        .where(
+            UsageRecord.gateway_request_id == gateway_request_id,
+            UsageRecord.org_id == org_id,
+        )
+        .order_by(UsageRecord.routing_attempt_index, UsageRecord.created_at)
+    )
+    return [
+        UsageRecordResponse.model_validate(
+            {
+                **record.__dict__,
+                "provider_credential_name": credential_name,
+                "provider_credential_prefix": credential_prefix,
+            }
+        )
+        for record, credential_name, credential_prefix in result
+    ]
+
+
 async def acquire_limit_scope_lock(*, assignment_id: UUID, db: AsyncSession) -> None:
     # Postgres transaction-scoped advisory lock keyed by the assignment id. Held until
     # the enclosing transaction commits, so the read-decide-reserve sequence runs
@@ -77,6 +208,16 @@ async def acquire_limit_scope_lock(*, assignment_id: UUID, db: AsyncSession) -> 
     key = int.from_bytes(
         hashlib.sha256(str(assignment_id).encode()).digest()[:8], "big", signed=True
     )
+    await db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
+
+
+async def acquire_limit_counter_lock(*, identity: str, db: AsyncSession) -> None:
+    # Postgres transaction-scoped advisory lock keyed by the resolved limit counter.
+    # Held until commit, so read-decide-reserve is serialized per concrete counter
+    # instead of per whole assignment.
+    if db.get_bind().dialect.name != "postgresql":
+        return
+    key = int.from_bytes(hashlib.sha256(identity.encode()).digest()[:8], "big", signed=True)
     await db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
 
 
@@ -98,6 +239,9 @@ async def summarize_active_limit_policy_reservations(
     limit_policy_id: UUID,
     limit_policy_rule_id: UUID | None,
     limit_policy_assignment_id: UUID | None,
+    counter_key: str | None = None,
+    counting_unit: str | None = None,
+    window_descriptor: str | None = None,
     since: datetime | None,
     now: datetime,
     db: AsyncSession,
@@ -112,6 +256,17 @@ async def summarize_active_limit_policy_reservations(
     if limit_policy_assignment_id is not None:
         filters.append(
             LimitPolicyReservation.limit_policy_assignment_id == limit_policy_assignment_id
+        )
+    if counter_key is not None:
+        filters.append(LimitPolicyReservation.counter_key == counter_key)
+    if counting_unit is not None:
+        filters.append(LimitPolicyReservation.counting_unit == counting_unit)
+    if window_descriptor is not None:
+        filters.append(
+            or_(
+                LimitPolicyReservation.window_descriptor == window_descriptor,
+                LimitPolicyReservation.window_descriptor.is_(None),
+            )
         )
     if since is not None:
         filters.append(LimitPolicyReservation.created_at >= since)
@@ -287,35 +442,42 @@ async def summarize_limit_policy_usage(
     limit_policy_id: UUID,
     limit_policy_rule_id: UUID | None,
     limit_policy_assignment_id: UUID | None,
+    counter_key: str | None = None,
+    counting_unit: str | None = None,
+    window_descriptor: str | None = None,
     since: datetime | None,
     db: AsyncSession,
 ) -> tuple[int, int, int, int, int]:
     filters = [
-        _json_array_contains(UsageRecord.limit_policy_ids, limit_policy_id, db=db),
-        UsageRecord.http_status < 400,
+        LimitPolicyCommittedUsage.limit_policy_id == limit_policy_id,
     ]
     if limit_policy_rule_id is not None:
-        filters.append(
-            _json_array_contains(UsageRecord.limit_policy_rule_ids, limit_policy_rule_id, db=db)
-        )
+        filters.append(LimitPolicyCommittedUsage.limit_policy_rule_id == limit_policy_rule_id)
     if limit_policy_assignment_id is not None:
         filters.append(
-            _json_array_contains(
-                UsageRecord.limit_policy_assignment_ids,
-                limit_policy_assignment_id,
-                db=db,
+            LimitPolicyCommittedUsage.limit_policy_assignment_id == limit_policy_assignment_id
+        )
+    if counter_key is not None:
+        filters.append(LimitPolicyCommittedUsage.counter_key == counter_key)
+    if counting_unit is not None:
+        filters.append(LimitPolicyCommittedUsage.counting_unit == counting_unit)
+    if window_descriptor is not None:
+        filters.append(
+            or_(
+                LimitPolicyCommittedUsage.window_descriptor == window_descriptor,
+                LimitPolicyCommittedUsage.window_descriptor.is_(None),
             )
         )
     if since is not None:
-        filters.append(UsageRecord.created_at >= since)
+        filters.append(LimitPolicyCommittedUsage.created_at >= since)
     row = (
         await db.execute(
             select(
-                func.count(UsageRecord.id),
-                func.coalesce(func.sum(UsageRecord.prompt_tokens), 0),
-                func.coalesce(func.sum(UsageRecord.completion_tokens), 0),
-                func.coalesce(func.sum(UsageRecord.cost_cents), 0),
-                func.coalesce(func.sum(UsageRecord.cost_micro_cents), 0),
+                func.count(LimitPolicyCommittedUsage.id),
+                func.coalesce(func.sum(LimitPolicyCommittedUsage.prompt_tokens), 0),
+                func.coalesce(func.sum(LimitPolicyCommittedUsage.completion_tokens), 0),
+                func.coalesce(func.sum(LimitPolicyCommittedUsage.cost_cents), 0),
+                func.coalesce(func.sum(LimitPolicyCommittedUsage.cost_micro_cents), 0),
             ).where(*filters)
         )
     ).one()
@@ -413,10 +575,10 @@ async def get_organization_usage_summary(
         ),
         by_access_policy=await _breakdown(
             UsageRecord.access_policy_id,
-            AccessPolicy.name,
+            Policy.name,
             *filters,
-            join_model=AccessPolicy,
-            join_on=AccessPolicy.id == UsageRecord.access_policy_id,
+            join_model=Policy,
+            join_on=Policy.id == UsageRecord.access_policy_id,
             db=db,
         ),
         by_virtual_key=await _breakdown(
@@ -672,10 +834,10 @@ async def get_virtual_key_usage_summary(
         ),
         by_access_policy=await _breakdown(
             UsageRecord.access_policy_id,
-            AccessPolicy.name,
+            Policy.name,
             *base_filters,
-            join_model=AccessPolicy,
-            join_on=AccessPolicy.id == UsageRecord.access_policy_id,
+            join_model=Policy,
+            join_on=Policy.id == UsageRecord.access_policy_id,
             db=db,
         ),
         recent_errors=await _recent_errors(*base_filters, db=db),
@@ -725,6 +887,16 @@ async def _limit_policy_budget_burn(
         ]
         if rule_since is not None:
             filters.append(UsageRecord.created_at >= rule_since)
+        window_descriptor = _limit_rule_window_descriptor(
+            interval_unit=rule.interval_unit,
+            interval_count=rule.interval_count,
+        )
+        filters.append(
+            or_(
+                UsageRecord.limit_window_descriptor == window_descriptor,
+                UsageRecord.limit_window_descriptor.is_(None),
+            )
+        )
         if until is not None:
             filters.append(UsageRecord.created_at <= until)
         if team_id is not None:
@@ -767,6 +939,12 @@ def format_limit_rule_interval(*, interval_unit: str, interval_count: int) -> st
     if interval_unit == "lifetime":
         return "lifetime"
     return f"{interval_count} {interval_unit}{'' if interval_count == 1 else 's'}"
+
+
+def _limit_rule_window_descriptor(*, interval_unit: str, interval_count: int) -> str:
+    if interval_unit == "lifetime":
+        return f"{interval_unit}:{interval_count}:lifetime"
+    return f"{interval_unit}:{interval_count}:rolling"
 
 
 def _limit_rule_window_start(*, interval_unit: str, interval_count: int) -> datetime | None:
@@ -926,9 +1104,7 @@ async def _totals(*filters, db: AsyncSession) -> UsageSummaryTotals:
 
 
 def _logical_request_count_expression():
-    return func.count(
-        func.distinct(func.coalesce(UsageRecord.gateway_request_id, UsageRecord.id))
-    )
+    return func.count(func.distinct(func.coalesce(UsageRecord.gateway_request_id, UsageRecord.id)))
 
 
 async def _breakdown(

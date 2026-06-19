@@ -487,7 +487,7 @@ async def _create_policy_assignment(
     await policies_facade.create_policy_assignment(
         payload=CreatePolicyAssignmentRequest(
             policy_type="access",
-            access_policy_id=policy.id,
+            policy_id=policy.policy_id,
             scope_type=scope_type,
             team_id=team_id,
             project_id=project_id,
@@ -497,3 +497,4 @@ async def _create_policy_assignment(
         scope=Scope(org_id=org_id),
         db=db_session,
     )
+

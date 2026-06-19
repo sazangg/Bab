@@ -5,4 +5,4 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type CreateModelOfferingRequestRateLimitHints = { [key: string]: unknown };
+export type GatewayRouteAttemptTraceCapabilitySnapshot = { [key: string]: unknown };

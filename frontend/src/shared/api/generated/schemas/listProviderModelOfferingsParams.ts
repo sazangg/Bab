@@ -5,7 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type ListModelOfferingsApiV1ProvidersProviderIdOfferingsGetParams = {
+export type ListProviderModelOfferingsParams = {
 search?: string | null;
 modality?: string | null;
 is_active?: boolean | null;

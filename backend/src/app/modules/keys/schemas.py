@@ -146,8 +146,8 @@ class EffectiveRouteSummary(BaseModel):
     public_model_name: str | None = None
     routing_mode: str | None = None
     provider_model: str
-    alias: str | None = None
     access_policy_id: UUID | None = None
+    access_policy_revision_id: UUID | None = None
     access_policy_name: str | None = None
     access_policy_assignment_id: UUID | None = None
     source_scope: str | None = None
@@ -208,6 +208,7 @@ class ResolveAccessRequest(BaseModel):
 class ResolvedLimitPolicy(BaseModel):
     limit_policy_assignment_id: UUID
     limit_policy_id: UUID
+    limit_policy_revision_id: UUID | None = None
     limit_policy_name: str
     limit_policy_rule_id: UUID
     name: str
@@ -222,6 +223,8 @@ class ResolvedAccess(BaseModel):
     team_id: UUID
     project_id: UUID
     access_policy_id: UUID
+    access_policy_revision_id: UUID | None = None
+    access_policy_assignment_id: UUID | None = None
     access_policy_route_id: UUID | None
     public_model_id: UUID | None = None
     route_candidate_id: UUID | None = None
@@ -247,6 +250,8 @@ class ResolvedRouteAttempt(BaseModel):
     team_id: UUID
     project_id: UUID
     access_policy_id: UUID
+    access_policy_revision_id: UUID | None = None
+    access_policy_assignment_id: UUID | None = None
     access_policy_route_id: UUID | None
     public_model_id: UUID
     route_candidate_id: UUID
@@ -314,5 +319,4 @@ class AccessibleModel(BaseModel):
     pool_id: UUID
     pool_name: str
     source_scope: str | None = None
-    alias: str | None = None
     candidates: list[AccessibleModelCandidate] = Field(default_factory=list)

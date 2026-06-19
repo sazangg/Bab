@@ -91,6 +91,7 @@ type EffectiveAccessRouteCandidate = tuple[
 type ResolvedPolicyRoute = tuple[
     AccessPolicyPublicModel,
     AccessPolicyRouteCandidate,
+    PolicyAssignment,
     ModelOffering,
     CredentialPool,
     UUID,
@@ -603,10 +604,7 @@ async def _batch_inventory_routing_readiness(
         )
     )
     pool_ids = {candidate.credential_pool_id for candidate in candidates}
-    model_ids = {
-        candidate.model_offering_id
-        for candidate in candidates
-    }
+    model_ids = {candidate.model_offering_id for candidate in candidates}
     pools = {
         pool.id: pool
         for pool in await db.scalars(
@@ -678,15 +676,12 @@ async def _batch_inventory_routing_readiness(
                     scope_type == "org"
                     or (scope_type == "team" and assignment.team_id == team.id)
                     or (scope_type == "project" and assignment.project_id == project.id)
-                    or (
-                        scope_type == "virtual_key"
-                        and assignment.virtual_key_id == key.id
-                    )
+                    or (scope_type == "virtual_key" and assignment.virtual_key_id == key.id)
                 )
             ]
             candidates = set().union(
                 *(
-                            candidates_by_policy.get(assignment.access_policy_id, set())
+                    candidates_by_policy.get(assignment.access_policy_id, set())
                     for assignment in scoped_assignments
                     if assignment.access_policy_id in policies
                 )
@@ -891,9 +886,7 @@ async def update_virtual_key(
         if "expires_at" in payload.model_fields_set:
             if payload.expires_at != virtual_key.expires_at:
                 changed_fields["expires_at"] = {
-                    "from": virtual_key.expires_at.isoformat()
-                    if virtual_key.expires_at
-                    else None,
+                    "from": virtual_key.expires_at.isoformat() if virtual_key.expires_at else None,
                     "to": payload.expires_at.isoformat() if payload.expires_at else None,
                 }
             virtual_key.expires_at = payload.expires_at
@@ -1000,6 +993,8 @@ async def resolve_access(*, payload: ResolveAccessRequest, db: AsyncSession) -> 
         team_id=primary.team_id,
         project_id=primary.project_id,
         access_policy_id=primary.access_policy_id,
+        access_policy_revision_id=primary.access_policy_revision_id,
+        access_policy_assignment_id=primary.access_policy_assignment_id,
         access_policy_route_id=primary.access_policy_route_id,
         public_model_id=primary.public_model_id,
         route_candidate_id=primary.route_candidate_id,
@@ -1049,6 +1044,7 @@ async def resolve_access_plan(
     for index, (
         attempt_public_model,
         attempt_candidate,
+        attempt_assignment,
         attempt_model,
         attempt_pool,
         _provider_id,
@@ -1073,6 +1069,7 @@ async def resolve_access_plan(
                 requested_model=payload.requested_model,
                 public_model=attempt_public_model,
                 candidate=attempt_candidate,
+                assignment=attempt_assignment,
                 model=attempt_model,
                 pool=attempt_pool,
                 attempt_index=index,
@@ -1131,7 +1128,18 @@ async def list_accessible_models(*, raw_key: str, db: AsyncSession) -> list[Acce
             continue
         pool, model = routable
         provider = await db.get(Provider, model.provider_id)
-        policy = await db.get(AccessPolicy, public_model.access_policy_id)
+        policy_id = assignment.policy_id or public_model.access_policy_id
+        policy_name = (
+            (
+                await _access_policy_names(
+                    org_id=virtual_key.org_id,
+                    policy_ids=[policy_id],
+                    db=db,
+                )
+            ).get(policy_id)
+            if policy_id is not None
+            else None
+        )
         model_id = _accessible_model_id(public_model=public_model, candidate=candidate, model=model)
         candidate_metadata = _accessible_model_candidate(
             candidate=candidate,
@@ -1148,8 +1156,8 @@ async def list_accessible_models(*, raw_key: str, db: AsyncSession) -> list[Acce
             provider_id=model.provider_id,
             provider_name=provider.name if provider else "Unknown provider",
             model_offering_id=model.id,
-            access_policy_id=public_model.access_policy_id,
-            access_policy_name=policy.name if policy else None,
+            access_policy_id=policy_id,
+            access_policy_name=policy_name,
             access_policy_route_id=None,
             public_model_id=public_model.id,
             route_candidate_id=candidate.id,
@@ -1158,7 +1166,6 @@ async def list_accessible_models(*, raw_key: str, db: AsyncSession) -> list[Acce
             pool_id=pool.id,
             pool_name=pool.name,
             source_scope=assignment.scope_type,
-            alias=model.alias,
             candidates=[candidate_metadata],
         )
         by_id[model_id] = accessible
@@ -1190,7 +1197,18 @@ async def list_project_accessible_models(
             continue
         pool, model = routable
         provider = await db.get(Provider, model.provider_id)
-        policy = await db.get(AccessPolicy, public_model.access_policy_id)
+        policy_id = assignment.policy_id or public_model.access_policy_id
+        policy_name = (
+            (
+                await _access_policy_names(
+                    org_id=scope.org_id,
+                    policy_ids=[policy_id],
+                    db=db,
+                )
+            ).get(policy_id)
+            if policy_id is not None
+            else None
+        )
         dedupe_key = (public_model.id, candidate.id)
         if dedupe_key in seen:
             continue
@@ -1206,8 +1224,8 @@ async def list_project_accessible_models(
                 provider_id=model.provider_id,
                 provider_name=provider.name if provider else "Unknown provider",
                 model_offering_id=model.id,
-                access_policy_id=public_model.access_policy_id,
-                access_policy_name=policy.name if policy else None,
+                access_policy_id=policy_id,
+                access_policy_name=policy_name,
                 access_policy_route_id=None,
                 public_model_id=public_model.id,
                 route_candidate_id=candidate.id,
@@ -1216,7 +1234,6 @@ async def list_project_accessible_models(
                 pool_id=pool.id,
                 pool_name=pool.name,
                 source_scope=assignment.scope_type,
-                alias=model.alias,
             )
         )
     return sorted(models, key=lambda item: (item.id, str(item.provider_id)))
@@ -1236,9 +1253,7 @@ async def get_virtual_key_effective_access(
     virtual_key = await _get_virtual_key_or_raise(
         project_id=project_id, key_id=key_id, scope=scope, db=db
     )
-    return await _build_effective_access_summary(
-        project=project, virtual_key=virtual_key, db=db
-    )
+    return await _build_effective_access_summary(project=project, virtual_key=virtual_key, db=db)
 
 
 async def _build_effective_access_summary(
@@ -1282,7 +1297,11 @@ async def _build_effective_access_summary(
     policy_names = await _access_policy_names(
         org_id=project.org_id,
         policy_ids=list(
-            {public_model.access_policy_id for public_model, _candidate, _assignment in routes}
+            {
+                public_model.access_policy_id or assignment.policy_id
+                for public_model, _candidate, assignment in routes
+                if public_model.access_policy_id is not None or assignment.policy_id is not None
+            }
         ),
         db=db,
     )
@@ -1305,9 +1324,11 @@ async def _build_effective_access_summary(
                 public_model_name=public_model.public_model_name,
                 routing_mode=public_model.routing_mode,
                 provider_model=model.provider_model_name,
-                alias=model.alias,
-                access_policy_id=public_model.access_policy_id,
-                access_policy_name=policy_names.get(public_model.access_policy_id),
+                access_policy_id=public_model.access_policy_id or assignment.policy_id,
+                access_policy_revision_id=public_model.policy_revision_id,
+                access_policy_name=policy_names.get(
+                    public_model.access_policy_id or assignment.policy_id
+                ),
                 access_policy_assignment_id=assignment.id,
                 source_scope=assignment.scope_type,
             )
@@ -1417,7 +1438,7 @@ async def _routable_route_candidate(
             db=db,
         )
         model = await providers_facade.get_model_offering(
-            model_offering_id=candidate.model_offering_id,
+            model_offering_id=candidate.provider_model_offering_id or candidate.model_offering_id,
             scope=Scope(org_id=org_id),
             db=db,
         )
@@ -1462,7 +1483,7 @@ async def _match_policy_route(
     candidates.sort(key=lambda item: (item[1].priority, -item[1].weight, item[1].created_at))
     matches: list[ResolvedPolicyRoute] = []
     matched_public_model_id: UUID | None = None
-    for public_model, candidate, _assignment in candidates:
+    for public_model, candidate, assignment in candidates:
         if matched_public_model_id is not None and public_model.id != matched_public_model_id:
             continue
         if provider_id is not None and candidate.provider_id != provider_id:
@@ -1481,15 +1502,16 @@ async def _match_policy_route(
         matched_public_model_id = public_model.id
         matches.append(
             (
-            public_model,
-            candidate,
-            model,
-            pool,
-            model.provider_id,
-            model.provider_model_name,
-            model.effective_input_price_per_million_tokens,
-            model.effective_output_price_per_million_tokens,
-        )
+                public_model,
+                candidate,
+                assignment,
+                model,
+                pool,
+                model.provider_id,
+                model.provider_model_name,
+                model.effective_input_price_per_million_tokens,
+                model.effective_output_price_per_million_tokens,
+            )
         )
         if public_model.routing_mode == "single_route":
             break
@@ -1557,20 +1579,42 @@ async def _access_route_candidates(
 ) -> list[EffectiveAccessRouteCandidate]:
     candidates: list[EffectiveAccessRouteCandidate] = []
     for assignment in assignments:
-        if assignment.access_policy_id is None:
+        if assignment.policy_id is not None:
+            policy = await policies_repository.get_policy(
+                policy_id=assignment.policy_id,
+                org_id=org_id,
+                db=db,
+            )
+            if policy is None or policy.kind != "access" or not policy.is_active:
+                continue
+            revision = await policies_repository.get_active_policy_revision(
+                org_id=org_id,
+                policy_id=policy.id,
+                db=db,
+            )
+            if revision is None:
+                continue
+            public_models = await policies_repository.list_access_policy_revision_public_models(
+                org_id=org_id,
+                policy_revision_id=revision.id,
+                db=db,
+            )
+        elif assignment.access_policy_id is not None:
+            policy = await policies_repository.get_access_policy(
+                policy_id=assignment.access_policy_id,
+                org_id=org_id,
+                db=db,
+            )
+            if policy is None or policy.policy_id is None or not policy.is_active:
+                continue
+            assignment.policy_id = assignment.policy_id or policy.policy_id
+            public_models = await policies_repository.list_access_policy_public_models(
+                org_id=org_id,
+                access_policy_id=policy.id,
+                db=db,
+            )
+        else:
             continue
-        policy = await policies_repository.get_access_policy(
-            policy_id=assignment.access_policy_id,
-            org_id=org_id,
-            db=db,
-        )
-        if policy is None or not policy.is_active:
-            continue
-        public_models = await policies_repository.list_access_policy_public_models(
-            org_id=org_id,
-            access_policy_id=policy.id,
-            db=db,
-        )
         for public_model in public_models:
             if not public_model.is_active:
                 continue
@@ -1597,7 +1641,8 @@ def _route_candidate_matches(
         child_public_model.public_model_name == ancestor_public_model.public_model_name
         and child_candidate.provider_id == ancestor_candidate.provider_id
         and child_candidate.credential_pool_id == ancestor_candidate.credential_pool_id
-        and child_candidate.model_offering_id == ancestor_candidate.model_offering_id
+        and (child_candidate.provider_model_offering_id or child_candidate.model_offering_id)
+        == (ancestor_candidate.provider_model_offering_id or ancestor_candidate.model_offering_id)
     )
 
 
@@ -1638,6 +1683,7 @@ def _to_resolved_route_attempt(
     requested_model: str,
     public_model: AccessPolicyPublicModel,
     candidate: AccessPolicyRouteCandidate,
+    assignment: PolicyAssignment,
     model: ModelOffering,
     pool: CredentialPool,
     attempt_index: int,
@@ -1648,7 +1694,9 @@ def _to_resolved_route_attempt(
         org_id=virtual_key.org_id,
         team_id=project.team_id,
         project_id=project.id,
-        access_policy_id=public_model.access_policy_id,
+        access_policy_id=assignment.policy_id,
+        access_policy_revision_id=public_model.policy_revision_id,
+        access_policy_assignment_id=assignment.id,
         access_policy_route_id=None,
         public_model_id=public_model.id,
         route_candidate_id=candidate.id,
@@ -1698,7 +1746,7 @@ async def _effective_limit_policies(
             org_id=org_id,
             db=db,
         )
-        if policy is not None and policy.is_active:
+        if policy is not None and policy.policy_id is not None and policy.is_active:
             policies.append((policy, assignment.id))
     return policies
 
@@ -1711,18 +1759,29 @@ async def _effective_access_policy_references(
     for assignment in sorted(
         assignments, key=lambda item: scope_order.get(item.scope_type, -1), reverse=True
     ):
-        if assignment.access_policy_id is None:
-            continue
-        policy = await policies_repository.get_access_policy(
-            policy_id=assignment.access_policy_id, org_id=org_id, db=db
-        )
-        if policy is not None and policy.is_active:
-            references.setdefault(
-                policy.id,
-                EffectivePolicyReference(
-                    id=policy.id, name=policy.name, source_scope=assignment.scope_type
-                ),
+        if assignment.access_policy_id is not None:
+            policy = await policies_repository.get_access_policy(
+                policy_id=assignment.access_policy_id, org_id=org_id, db=db
             )
+            if policy is not None and policy.is_active:
+                references.setdefault(
+                    policy.id,
+                    EffectivePolicyReference(
+                        id=policy.id, name=policy.name, source_scope=assignment.scope_type
+                    ),
+                )
+            continue
+        if assignment.policy_id is not None:
+            policy = await policies_repository.get_policy(
+                policy_id=assignment.policy_id, org_id=org_id, db=db
+            )
+            if policy is not None and policy.kind == "access" and policy.is_active:
+                references.setdefault(
+                    policy.id,
+                    EffectivePolicyReference(
+                        id=policy.id, name=policy.name, source_scope=assignment.scope_type
+                    ),
+                )
     return list(references.values())
 
 
@@ -1738,6 +1797,14 @@ async def _access_policy_names(
         )
         if policy is not None:
             names[policy.id] = policy.name
+            continue
+        shared_policy = await policies_repository.get_policy(
+            policy_id=policy_id,
+            org_id=org_id,
+            db=db,
+        )
+        if shared_policy is not None:
+            names[shared_policy.id] = shared_policy.name
     return names
 
 
@@ -1792,9 +1859,17 @@ async def _matching_limit_policies(
     )
     rules: list[tuple[LimitPolicyRule, LimitPolicy, UUID]] = []
     for policy, assignment_id in policies:
-        policy_rules = await policies_repository.list_limit_policy_rules(
+        active_revision = await policies_repository.get_active_policy_revision(
+            org_id=org_id,
+            policy_id=policy.policy_id,
+            db=db,
+        )
+        if active_revision is None:
+            continue
+        policy_rules = await policies_repository.list_limit_policy_revision_rules(
             org_id=org_id,
             limit_policy_id=policy.id,
+            policy_revision_id=active_revision.id,
             db=db,
         )
         rules.extend(
@@ -1823,12 +1898,10 @@ def _limit_rule_matches_candidate(
             or rule.credential_pool_id == candidate.credential_pool_id
         )
         and (
-            rule.model_offering_id is None
-            or rule.model_offering_id == candidate.model_offering_id
+            rule.model_offering_id is None or rule.model_offering_id == candidate.model_offering_id
         )
         and (
-            rule.access_policy_id is None
-            or rule.access_policy_id == public_model.access_policy_id
+            rule.access_policy_id is None or rule.access_policy_id == public_model.access_policy_id
         )
     )
 
@@ -1889,6 +1962,7 @@ def _to_resolved_limit_policy(
     return ResolvedLimitPolicy(
         limit_policy_assignment_id=assignment_id,
         limit_policy_id=policy.id,
+        limit_policy_revision_id=rule.policy_revision_id,
         limit_policy_name=policy.name,
         limit_policy_rule_id=rule.id,
         name=rule.name,
@@ -2000,9 +2074,9 @@ def _derive_inventory_state(
         return "team_archived", False
     if not routing_ready:
         return "no_effective_access", False
-    if virtual_key.expires_at is not None and _as_utc(
-        virtual_key.expires_at
-    ) <= now + timedelta(days=EXPIRING_SOON_DAYS):
+    if virtual_key.expires_at is not None and _as_utc(virtual_key.expires_at) <= now + timedelta(
+        days=EXPIRING_SOON_DAYS
+    ):
         return "expiring_soon", True
     if virtual_key.last_used_at is None:
         return "unused", True
@@ -2025,9 +2099,7 @@ async def _derive_virtual_key_state(
         return "project_archived", False
     if team is None:
         try:
-            team_response = await teams_facade.get_team(
-                team_id=project.team_id, scope=scope, db=db
-            )
+            team_response = await teams_facade.get_team(team_id=project.team_id, scope=scope, db=db)
             team_active = team_response.is_active
         except TeamNotFoundError:
             team_active = False
@@ -2036,9 +2108,7 @@ async def _derive_virtual_key_state(
     if not team_active:
         return "team_archived", False
 
-    summary = await _build_effective_access_summary(
-        project=project, virtual_key=virtual_key, db=db
-    )
+    summary = await _build_effective_access_summary(project=project, virtual_key=virtual_key, db=db)
     if not summary.is_usable:
         return "no_effective_access", False
     if virtual_key.expires_at is not None and _as_utc(virtual_key.expires_at) <= datetime.now(

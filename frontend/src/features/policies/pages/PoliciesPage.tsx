@@ -114,8 +114,8 @@ type PolicySettingsSheetState =
   | { kind: "limit"; policy: LimitPolicyResponse }
   | null;
 type AssignmentSheetState =
-  | { policyType: "access"; policyId: string }
-  | { policyType: "limit"; policyId: string }
+  | { policyType: "access"; policyId: string; sharedPolicyId: string | null }
+  | { policyType: "limit"; policyId: string; sharedPolicyId: string | null }
   | null;
 type DraftLimitRule = {
   id: string;
@@ -439,7 +439,11 @@ export function PoliciesPage() {
               onConfigureRules={(policy) => setLimitRulesSheet({ policy })}
               onEditPolicy={(policy) => setPolicySettingsSheet({ kind: "limit", policy })}
               onAssign={(policy) =>
-                setAssignmentSheet({ policyType: "limit", policyId: policy.id })
+                setAssignmentSheet({
+                  policyType: "limit",
+                  policyId: policy.id,
+                  sharedPolicyId: policy.policy_id,
+                })
               }
               canManageDefinition={canManageDefinition}
               canAssign={canAssignPolicies}
@@ -451,7 +455,11 @@ export function PoliciesPage() {
               isLoading={accessQuery.isPending}
               onEditPolicy={(policy) => setPolicySettingsSheet({ kind: "access", policy })}
               onAssign={(policy) =>
-                setAssignmentSheet({ policyType: "access", policyId: policy.id })
+                setAssignmentSheet({
+                  policyType: "access",
+                  policyId: policy.id,
+                  sharedPolicyId: policy.policy_id,
+                })
               }
               canManageDefinition={canManageDefinition}
               canAssign={canAssignPolicies}
@@ -541,7 +549,13 @@ export function AccessPolicyDetailPage() {
             {canAssignPolicies ? (
               <Button
                 variant="outline"
-                onClick={() => setAssignmentSheet({ policyType: "access", policyId })}
+                onClick={() =>
+                  setAssignmentSheet({
+                    policyType: "access",
+                    policyId,
+                    sharedPolicyId: policy.policy_id,
+                  })
+                }
               >
                 <Plus />
                 Assign
@@ -641,7 +655,13 @@ export function LimitPolicyDetailPage() {
             {canAssignPolicies ? (
               <Button
                 variant="outline"
-                onClick={() => setAssignmentSheet({ policyType: "limit", policyId })}
+                onClick={() =>
+                  setAssignmentSheet({
+                    policyType: "limit",
+                    policyId,
+                    sharedPolicyId: policy.policy_id,
+                  })
+                }
               >
                 <Plus />
                 Assign
@@ -1774,12 +1794,12 @@ function CreatePolicySheet({
     const currentRoute = currentAccessRoute();
     return currentRoute ? [...draftRoutes, currentRoute] : draftRoutes;
   };
-  const assignmentPayload = (policyId: string) => {
+  const assignmentPayload = (sharedPolicyId: string | null) => {
+    if (!sharedPolicyId) return null;
     if (assignmentScope === "none") return null;
     return {
+      policy_id: sharedPolicyId,
       policy_type: isLimit ? "limit" : "access",
-      access_policy_id: isLimit ? null : policyId,
-      limit_policy_id: isLimit ? policyId : null,
       scope_type: assignmentScope,
       team_id: assignmentScope === "team" ? assignmentTeamId : null,
       project_id: assignmentScope === "project" ? assignmentProjectId : null,
@@ -1790,7 +1810,7 @@ function CreatePolicySheet({
   const submit = async () => {
     if (!name.trim()) return;
     try {
-      let policyId = "";
+      let sharedPolicyId: string | null = null;
       if (isLimit) {
         const rules = rulesForSubmit();
         if (rules.length === 0) return;
@@ -1802,7 +1822,7 @@ function CreatePolicySheet({
           },
         });
         if (response.status !== 201) return;
-        policyId = response.data.id;
+        sharedPolicyId = response.data.policy_id;
       } else {
         const routes = accessRoutesForSubmit();
         if (routes.length === 0) return;
@@ -1814,9 +1834,9 @@ function CreatePolicySheet({
           },
         });
         if (response.status !== 201) return;
-        policyId = response.data.id;
+        sharedPolicyId = response.data.policy_id;
       }
-      const payload = assignmentPayload(policyId);
+      const payload = assignmentPayload(sharedPolicyId);
       if (payload) {
         await createAssignment.mutateAsync({ data: payload });
       }
@@ -2400,12 +2420,12 @@ function AssignmentSheet({
   });
   const submit = () => {
     if (!state) return;
+    if (!state.sharedPolicyId) return;
     if (scopeType !== "org" && !scopeId.trim()) return;
     createAssignment.mutate({
       data: {
+        policy_id: state.sharedPolicyId,
         policy_type: state.policyType,
-        access_policy_id: state.policyType === "access" ? state.policyId : null,
-        limit_policy_id: state.policyType === "limit" ? state.policyId : null,
         scope_type: scopeType,
         team_id: scopeType === "team" ? scopeId : null,
         project_id: scopeType === "project" ? scopeId : null,

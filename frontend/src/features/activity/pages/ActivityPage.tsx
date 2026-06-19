@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   CalendarDays,
   Download,
+  Eye,
   Info,
   Search,
   XCircle,
@@ -42,6 +43,7 @@ import { EmptyState } from "@/shared/components/EmptyState";
 import { EventDetailSheet, type EventDetailRow } from "@/shared/components/EventDetailSheet";
 import { FilterToolbar, type FilterChip } from "@/shared/components/FilterToolbar";
 import { PageHeader } from "@/shared/components/PageHeader";
+import { RequestTraceSheet } from "@/features/usage/components/RequestTraceSheet";
 import { buildDateRange, type DateRange } from "@/shared/lib/date-range";
 import { downloadBlob } from "@/shared/lib/download";
 import { shortId } from "@/shared/lib/short-id";
@@ -80,6 +82,7 @@ export function ActivityPage() {
   const [entitySearch, setEntitySearch] = useState(searchParams.get("q") ?? "");
   const debouncedSearch = useDebouncedValue(entitySearch, 300);
   const [selectedEvent, setSelectedEvent] = useState<ActivityEventResponse | null>(null);
+  const [traceRequestId, setTraceRequestId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
   const canViewOrgActivity = hasPermission(currentUser, "activity.view");
@@ -204,7 +207,9 @@ export function ActivityPage() {
   if (entityType !== ANY) {
     chips.push({
       key: "entity",
-      label: entityId.trim() ? `Entity: ${entityType} ${shortId(entityId.trim())}` : `Entity: ${entityType}`,
+      label: entityId.trim()
+        ? `Entity: ${entityType} ${shortId(entityId.trim())}`
+        : `Entity: ${entityType}`,
       onRemove: () => {
         setEntityType(ANY);
         setEntityId("");
@@ -232,7 +237,11 @@ export function ActivityPage() {
       className: "max-w-[28rem] whitespace-normal",
       cell: (event) => {
         const Icon =
-          event.severity === "error" ? XCircle : event.severity === "warning" ? AlertTriangle : Info;
+          event.severity === "error"
+            ? XCircle
+            : event.severity === "warning"
+              ? AlertTriangle
+              : Info;
         return (
           <div className="flex gap-2">
             <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
@@ -265,7 +274,25 @@ export function ActivityPage() {
       key: "context",
       header: "Context",
       className: "max-w-[18rem] whitespace-normal text-xs text-muted-foreground",
-      cell: (event) => contextLabel(event),
+      cell: (event) => (
+        <div className="flex items-center gap-2">
+          <span>{contextLabel(event)}</span>
+          {event.gateway_request_id ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Open request trace"
+              onClick={(clickEvent) => {
+                clickEvent.stopPropagation();
+                setTraceRequestId(event.gateway_request_id);
+              }}
+            >
+              <Eye />
+            </Button>
+          ) : null}
+        </div>
+      ),
     },
     {
       key: "time",
@@ -487,7 +514,18 @@ export function ActivityPage() {
         title="Activity event details"
         description="Severity, actor, context, and metadata for this event."
         rows={detailRows}
-        json={selectedEvent ? { context: eventContext(selectedEvent), metadata: selectedEvent.metadata } : undefined}
+        json={
+          selectedEvent
+            ? { context: eventContext(selectedEvent), metadata: selectedEvent.metadata }
+            : undefined
+        }
+      />
+      <RequestTraceSheet
+        gatewayRequestId={traceRequestId}
+        open={Boolean(traceRequestId)}
+        onOpenChange={(open) => {
+          if (!open) setTraceRequestId(null);
+        }}
       />
     </div>
   );

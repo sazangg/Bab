@@ -36,3 +36,19 @@ def test_usage_retention_defaults_to_no_deletion_intent() -> None:
 
     assert settings.usage_retention_days is None
     assert settings.activity_retention_days is None
+
+
+def test_trace_retention_defaults_and_validates() -> None:
+    settings = Settings(
+        BAB_SECRET_KEY="changed-secret-key-with-more-than-32-chars",
+        BAB_ENCRYPTION_KEY="mC2XCkbSXUHnJS1bAgRZ1LMvw4mDhF-GqXFf0ySFyDw=",
+    )
+
+    assert settings.trace_retention_days == 30
+
+    with pytest.raises(ValueError, match="greater than or equal to 1"):
+        Settings(
+            BAB_SECRET_KEY="changed-secret-key-with-more-than-32-chars",
+            BAB_ENCRYPTION_KEY="mC2XCkbSXUHnJS1bAgRZ1LMvw4mDhF-GqXFf0ySFyDw=",
+            BAB_TRACE_RETENTION_DAYS=0,
+        )

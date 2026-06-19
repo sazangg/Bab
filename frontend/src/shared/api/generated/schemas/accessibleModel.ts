@@ -23,6 +23,5 @@ export interface AccessibleModel {
   pool_id: string;
   pool_name: string;
   source_scope?: string | null;
-  alias?: string | null;
   candidates?: AccessibleModelCandidate[];
 }

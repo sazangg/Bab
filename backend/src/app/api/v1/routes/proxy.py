@@ -20,6 +20,7 @@ from app.modules.activity import facade as activity_facade
 from app.modules.activity.schemas import RecordActivityEvent
 from app.modules.guardrails import facade as guardrails_facade
 from app.modules.guardrails.errors import GuardrailDeniedError
+from app.modules.guardrails.internal import repository as guardrails_repository
 from app.modules.guardrails.schemas import GuardrailEvaluationContext
 from app.modules.keys import facade as keys_facade
 from app.modules.keys.errors import (
@@ -27,6 +28,13 @@ from app.modules.keys.errors import (
     InvalidVirtualKeyError,
 )
 from app.modules.keys.schemas import ResolveAccessRequest, ResolvedAccess, ResolvedAccessPlan
+from app.modules.policies.dimensions import (
+    ATTEMPT_SCOPED_DIMENSIONS,
+    PolicyDimensionStage,
+    evaluate_matcher,
+    to_dimension_snapshot,
+)
+from app.modules.policies.internal import repository as policies_repository
 from app.modules.providers import facade as providers_facade
 from app.modules.providers.errors import (
     ProviderAdapterNotFoundError,
@@ -53,6 +61,7 @@ from app.modules.usage.costing.registry import default_cost_calculator_registry
 from app.modules.usage.schemas import (
     CreateGatewayRequest,
     FinalizeGatewayRequest,
+    RecordLimitPolicyCommittedUsage,
     RecordLimitPolicyReservation,
     RecordUsage,
 )
@@ -188,6 +197,12 @@ async def create_chat_completion(
     estimated_tokens = 0
     reservation_ids: list[UUID] = []
     try:
+        gateway_request_id = await _create_gateway_request(
+            resolved=None,
+            requested_model=provider_payload.model,
+            gateway_endpoint="chat_completions",
+            db=db,
+        )
         resolved = await keys_facade.resolve_access(
             payload=ResolveAccessRequest(
                 raw_key=raw_key,
@@ -221,8 +236,17 @@ async def create_chat_completion(
             gateway_endpoint="chat_completions",
             db=db,
         )
-        guardrail_context = _guardrail_context(resolved=resolved, provider_payload=provider_payload)
-        await guardrails_facade.evaluate_request(context=guardrail_context, db=db)
+        guardrail_context = _guardrail_context(
+            resolved=resolved,
+            provider_payload=provider_payload,
+            gateway_request_id=gateway_request_id,
+            gateway_endpoint="chat_completions",
+        )
+        await _evaluate_guardrail_request(
+            context=guardrail_context,
+            resolved=resolved,
+            db=db,
+        )
         reservation_ids.extend(
             await _enforce_limit_policies(
                 resolved=resolved,
@@ -251,6 +275,7 @@ async def create_chat_completion(
                     message="Streaming fallback is disabled for this phase.",
                     severity="info",
                     metadata={"reason": resolved.fallback_disabled_reason},
+                    gateway_request_id=gateway_request_id,
                     db=db,
                 )
             if await guardrails_facade.has_enforced_response_guardrails(
@@ -296,6 +321,15 @@ async def create_chat_completion(
             http_client=http_client,
         )
     except InvalidVirtualKeyError as exc:
+        await _finalize_gateway_request(
+            gateway_request_id=gateway_request_id,
+            resolved=None,
+            http_status=status.HTTP_401_UNAUTHORIZED,
+            attempt_count=0,
+            fallback_attempted=False,
+            error_code="invalid_virtual_key",
+            db=db,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="invalid virtual key",
@@ -319,6 +353,17 @@ async def create_chat_completion(
                 message="Proxy request denied by access, limit, or provider routing policy.",
                 severity="warning",
                 metadata={"reason": "access_denied"},
+                gateway_request_id=gateway_request_id,
+                db=db,
+            )
+        else:
+            await _finalize_gateway_request(
+                gateway_request_id=gateway_request_id,
+                resolved=None,
+                http_status=status.HTTP_403_FORBIDDEN,
+                attempt_count=0,
+                fallback_attempted=False,
+                error_code="access_denied",
                 db=db,
             )
         raise HTTPException(
@@ -346,6 +391,7 @@ async def create_chat_completion(
                     "policy_id": str(exc.policy_id) if exc.policy_id else None,
                     "rule_id": str(exc.rule_id) if exc.rule_id else None,
                 },
+                gateway_request_id=gateway_request_id,
                 db=db,
             )
         raise HTTPException(
@@ -369,6 +415,7 @@ async def create_chat_completion(
                 message="Proxy request failed because the provider is unavailable.",
                 severity="error",
                 metadata={"reason": "provider_unavailable"},
+                gateway_request_id=gateway_request_id,
                 db=db,
             )
         raise HTTPException(
@@ -395,6 +442,7 @@ async def create_chat_completion(
                 message="Proxy request failed with an upstream provider error.",
                 severity="error",
                 metadata={"status_code": exc.status_code},
+                gateway_request_id=gateway_request_id,
                 db=db,
             )
         return JSONResponse(status_code=exc.status_code, content=exc.body)
@@ -404,8 +452,14 @@ async def create_chat_completion(
         response_body=upstream.body,
     )
     try:
-        await guardrails_facade.evaluate_response(
-            context=_guardrail_context(resolved=resolved, provider_payload=provider_payload),
+        await _evaluate_guardrail_response(
+            context=_guardrail_context(
+                resolved=resolved,
+                provider_payload=provider_payload,
+                gateway_request_id=gateway_request_id,
+                gateway_endpoint="chat_completions",
+            ),
+            resolved=resolved,
             response_text=_response_text(upstream.body),
             db=db,
         )
@@ -436,6 +490,7 @@ async def create_chat_completion(
                 "policy_id": str(exc.policy_id) if exc.policy_id else None,
                 "rule_id": str(exc.rule_id) if exc.rule_id else None,
             },
+            gateway_request_id=gateway_request_id,
             db=db,
         )
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.detail) from exc
@@ -487,7 +542,15 @@ async def create_anthropic_message(
     reservation_ids: list[UUID] = []
     guardrail_context: GuardrailEvaluationContext | None = None
     selected_attempt_index = 0
+    current_route_attempt_id: UUID | None = None
+    final_route_attempt_id: UUID | None = None
     try:
+        gateway_request_id = await _create_gateway_request(
+            resolved=None,
+            requested_model=provider_payload.model,
+            gateway_endpoint="anthropic_messages",
+            db=db,
+        )
         plan = await keys_facade.resolve_access_plan(
             payload=ResolveAccessRequest(
                 raw_key=raw_key,
@@ -503,9 +566,9 @@ async def create_anthropic_message(
             db=db,
         )
         _enforce_body_size(raw_body, org_settings.default_max_body_bytes)
-        gateway_request_id = await _create_gateway_request(
+        await _record_gateway_access_decision(
+            gateway_request_id=gateway_request_id,
             resolved=resolved,
-            gateway_endpoint="anthropic_messages",
             db=db,
         )
         estimated_tokens = estimate_request_tokens(provider_payload.messages)
@@ -520,23 +583,31 @@ async def create_anthropic_message(
             selected_attempt_index = attempt_index
             attempted_routes = max(attempted_routes, attempt_index + 1)
             reservation_ids = []
+            current_route_attempt_id = await _record_gateway_route_attempt_started(
+                gateway_request_id=gateway_request_id,
+                resolved=resolved,
+                attempt_index=attempt_index,
+                db=db,
+            )
             try:
                 resolved_provider = await providers_facade.get_provider(
                     provider_id=resolved.provider_id,
                     scope=Scope(org_id=resolved.org_id),
                     db=db,
                 )
-                if not resolved_provider.integration_capabilities.get(
-                    "native_anthropic_messages"
-                ):
+                if not resolved_provider.integration_capabilities.get("native_anthropic_messages"):
                     raise AccessDeniedError
                 _enforce_provider_body_size(raw_body, resolved_provider.max_body_bytes)
                 guardrail_context = _guardrail_context(
                     resolved=resolved,
                     provider_payload=guardrail_payload,
+                    gateway_request_id=gateway_request_id,
+                    route_attempt_id=current_route_attempt_id,
+                    gateway_endpoint="anthropic_messages",
                 )
-                await guardrails_facade.evaluate_request(
+                await _evaluate_guardrail_request(
                     context=guardrail_context,
+                    resolved=resolved,
                     db=db,
                 )
                 reservation_ids = await _enforce_limit_policies(
@@ -545,6 +616,7 @@ async def create_anthropic_message(
                     requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
                     limit_types=ESTIMATED_LIMIT_TYPES,
                     gateway_request_id=gateway_request_id,
+                    route_attempt_id=current_route_attempt_id,
                     gateway_endpoint="anthropic_messages",
                     db=db,
                 )
@@ -552,9 +624,12 @@ async def create_anthropic_message(
                     await _enforce_limit_policies(
                         resolved=resolved,
                         estimated_input_tokens=estimated_tokens,
-                        requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
+                        requested_output_tokens=_requested_output_tokens(
+                            provider_payload.extra_body
+                        ),
                         limit_types=REQUEST_LIMIT_TYPES,
                         gateway_request_id=gateway_request_id,
+                        route_attempt_id=current_route_attempt_id,
                         gateway_endpoint="anthropic_messages",
                         db=db,
                     )
@@ -573,9 +648,23 @@ async def create_anthropic_message(
                     db=db,
                     http_client=http_client,
                 )
+                final_route_attempt_id = current_route_attempt_id
                 break
             except ProviderUpstreamError as exc:
                 last_upstream_error = exc
+                await _finalize_gateway_route_attempt(
+                    route_attempt_id=current_route_attempt_id,
+                    status_="failed",
+                    http_status=exc.status_code,
+                    error_code="provider_upstream_error",
+                    failure_reason=exc.failure_reason,
+                    latency_ms=_elapsed_ms(started_at),
+                    usage=unknown_usage(),
+                    cost_cents=None,
+                    cost_micro_cents=None,
+                    usage_source="unknown",
+                    db=db,
+                )
                 if not _should_try_next_route(
                     plan=plan,
                     attempt_index=attempt_index,
@@ -609,12 +698,22 @@ async def create_anthropic_message(
                         if resolved.route_candidate_id
                         else None,
                     },
+                    gateway_request_id=gateway_request_id,
                     db=db,
                 )
         else:
             assert last_upstream_error is not None
             raise last_upstream_error
     except InvalidVirtualKeyError as exc:
+        await _finalize_gateway_request(
+            gateway_request_id=gateway_request_id,
+            resolved=None,
+            http_status=status.HTTP_401_UNAUTHORIZED,
+            attempt_count=0,
+            fallback_attempted=False,
+            error_code="invalid_virtual_key",
+            db=db,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="invalid virtual key",
@@ -633,6 +732,7 @@ async def create_anthropic_message(
             fallback_attempted=fallback_attempted,
             error_code="limit_exceeded",
             db=db,
+            final_route_attempt_id=final_route_attempt_id,
         )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -665,6 +765,17 @@ async def create_anthropic_message(
                 message="Native Anthropic request denied by access or provider routing policy.",
                 severity="warning",
                 metadata={"reason": "access_denied"},
+                gateway_request_id=gateway_request_id,
+                db=db,
+            )
+        else:
+            await _finalize_gateway_request(
+                gateway_request_id=gateway_request_id,
+                resolved=None,
+                http_status=status.HTTP_403_FORBIDDEN,
+                attempt_count=0,
+                fallback_attempted=False,
+                error_code="access_denied",
                 db=db,
             )
         raise HTTPException(
@@ -691,6 +802,7 @@ async def create_anthropic_message(
                 fallback_attempted=fallback_attempted,
                 error_code="guardrail_denied",
                 db=db,
+                final_route_attempt_id=final_route_attempt_id,
             )
             await _record_proxy_activity(
                 resolved=resolved,
@@ -702,6 +814,7 @@ async def create_anthropic_message(
                     "policy_id": str(exc.policy_id) if exc.policy_id else None,
                     "rule_id": str(exc.rule_id) if exc.rule_id else None,
                 },
+                gateway_request_id=gateway_request_id,
                 db=db,
             )
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.detail) from exc
@@ -725,6 +838,7 @@ async def create_anthropic_message(
                 fallback_attempted=fallback_attempted,
                 error_code="provider_unavailable",
                 db=db,
+                final_route_attempt_id=final_route_attempt_id,
             )
             await _record_proxy_activity(
                 resolved=resolved,
@@ -732,6 +846,7 @@ async def create_anthropic_message(
                 message="Native Anthropic provider is not available.",
                 severity="error",
                 metadata={"reason": "provider_unavailable"},
+                gateway_request_id=gateway_request_id,
                 db=db,
             )
         raise HTTPException(
@@ -759,6 +874,7 @@ async def create_anthropic_message(
                 fallback_attempted=fallback_attempted,
                 error_code="provider_upstream_error",
                 db=db,
+                final_route_attempt_id=final_route_attempt_id or current_route_attempt_id,
             )
             if fallback_attempted:
                 await _record_proxy_activity(
@@ -770,6 +886,7 @@ async def create_anthropic_message(
                         "reason": exc.failure_reason,
                         "http_status": exc.status_code,
                     },
+                    gateway_request_id=gateway_request_id,
                     db=db,
                 )
             await _record_proxy_activity(
@@ -781,6 +898,7 @@ async def create_anthropic_message(
                     "reason": "provider_upstream_error",
                     "http_status": exc.status_code,
                 },
+                gateway_request_id=gateway_request_id,
                 db=db,
             )
         await _release_reservations(reservation_ids=reservation_ids, db=db)
@@ -791,7 +909,7 @@ async def create_anthropic_message(
         response_body=upstream.body,
     )
     try:
-        await guardrails_facade.evaluate_response(
+        await _evaluate_guardrail_response(
             context=guardrail_context
             or _guardrail_context(
                 resolved=resolved,
@@ -800,7 +918,11 @@ async def create_anthropic_message(
                     messages=provider_payload.messages,
                     extra_body=provider_payload.extra_body,
                 ),
+                gateway_request_id=gateway_request_id,
+                route_attempt_id=final_route_attempt_id,
+                gateway_endpoint="anthropic_messages",
             ),
+            resolved=resolved,
             response_text=_response_text(upstream.body),
             db=db,
         )
@@ -824,6 +946,7 @@ async def create_anthropic_message(
             fallback_attempted=fallback_attempted,
             error_code="guardrail_output_denied",
             db=db,
+            final_route_attempt_id=final_route_attempt_id,
         )
         await _commit_reservations(
             reservation_ids=reservation_ids,
@@ -841,6 +964,7 @@ async def create_anthropic_message(
                 "policy_id": str(exc.policy_id) if exc.policy_id else None,
                 "rule_id": str(exc.rule_id) if exc.rule_id else None,
             },
+            gateway_request_id=gateway_request_id,
             db=db,
         )
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.detail) from exc
@@ -856,6 +980,19 @@ async def create_anthropic_message(
         gateway_endpoint="anthropic_messages",
         db=db,
     )
+    await _finalize_gateway_route_attempt(
+        route_attempt_id=final_route_attempt_id,
+        status_="succeeded",
+        http_status=upstream.status_code,
+        error_code=None,
+        failure_reason=None,
+        latency_ms=_elapsed_ms(started_at),
+        usage=usage,
+        cost_cents=actual_cost_cents,
+        cost_micro_cents=_calculate_cost_micro_cents(resolved=resolved, usage=usage),
+        usage_source=usage.usage_source,
+        db=db,
+    )
     await _finalize_gateway_request(
         gateway_request_id=gateway_request_id,
         resolved=resolved,
@@ -864,6 +1001,7 @@ async def create_anthropic_message(
         fallback_attempted=fallback_attempted,
         error_code=None,
         db=db,
+        final_route_attempt_id=final_route_attempt_id,
     )
     if fallback_attempted:
         await _record_proxy_activity(
@@ -877,6 +1015,7 @@ async def create_anthropic_message(
                 if resolved.route_candidate_id
                 else None,
             },
+            gateway_request_id=gateway_request_id,
             db=db,
         )
     await _commit_reservations(
@@ -923,7 +1062,15 @@ async def _execute_chat_proxy(
     fallback_attempted = False
     reservation_ids: list[UUID] = []
     selected_attempt_index = 0
+    current_route_attempt_id: UUID | None = None
+    final_route_attempt_id: UUID | None = None
     try:
+        gateway_request_id = await _create_gateway_request(
+            resolved=None,
+            requested_model=provider_payload.model,
+            gateway_endpoint=gateway_endpoint,
+            db=db,
+        )
         plan = await keys_facade.resolve_access_plan(
             payload=ResolveAccessRequest(
                 raw_key=raw_key,
@@ -939,9 +1086,9 @@ async def _execute_chat_proxy(
             db=db,
         )
         _enforce_body_size(raw_body, org_settings.default_max_body_bytes)
-        gateway_request_id = await _create_gateway_request(
+        await _record_gateway_access_decision(
+            gateway_request_id=gateway_request_id,
             resolved=resolved,
-            gateway_endpoint=gateway_endpoint,
             db=db,
         )
         estimated_tokens = estimate_request_tokens(provider_payload.messages)
@@ -951,6 +1098,12 @@ async def _execute_chat_proxy(
             selected_attempt_index = attempt_index
             attempted_routes = max(attempted_routes, attempt_index + 1)
             reservation_ids = []
+            current_route_attempt_id = await _record_gateway_route_attempt_started(
+                gateway_request_id=gateway_request_id,
+                resolved=resolved,
+                attempt_index=attempt_index,
+                db=db,
+            )
             try:
                 resolved_provider = await providers_facade.get_provider(
                     provider_id=resolved.provider_id,
@@ -958,10 +1111,15 @@ async def _execute_chat_proxy(
                     db=db,
                 )
                 _enforce_provider_body_size(raw_body, resolved_provider.max_body_bytes)
-                await guardrails_facade.evaluate_request(
+                await _evaluate_guardrail_request(
                     context=_guardrail_context(
-                        resolved=resolved, provider_payload=provider_payload
+                        resolved=resolved,
+                        provider_payload=provider_payload,
+                        gateway_request_id=gateway_request_id,
+                        route_attempt_id=current_route_attempt_id,
+                        gateway_endpoint=gateway_endpoint,
                     ),
+                    resolved=resolved,
                     db=db,
                 )
                 reservation_ids = await _enforce_limit_policies(
@@ -970,6 +1128,7 @@ async def _execute_chat_proxy(
                     requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
                     limit_types=ESTIMATED_LIMIT_TYPES,
                     gateway_request_id=gateway_request_id,
+                    route_attempt_id=current_route_attempt_id,
                     gateway_endpoint=gateway_endpoint,
                     db=db,
                 )
@@ -977,9 +1136,12 @@ async def _execute_chat_proxy(
                     await _enforce_limit_policies(
                         resolved=resolved,
                         estimated_input_tokens=estimated_tokens,
-                        requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
+                        requested_output_tokens=_requested_output_tokens(
+                            provider_payload.extra_body
+                        ),
                         limit_types=REQUEST_LIMIT_TYPES,
                         gateway_request_id=gateway_request_id,
+                        route_attempt_id=current_route_attempt_id,
                         gateway_endpoint=gateway_endpoint,
                         db=db,
                     )
@@ -1002,9 +1164,23 @@ async def _execute_chat_proxy(
                     http_client=http_client,
                 )
                 selected_attempt_index = attempt_index
+                final_route_attempt_id = current_route_attempt_id
                 break
             except ProviderUpstreamError as exc:
                 last_upstream_error = exc
+                await _finalize_gateway_route_attempt(
+                    route_attempt_id=current_route_attempt_id,
+                    status_="failed",
+                    http_status=exc.status_code,
+                    error_code="provider_upstream_error",
+                    failure_reason=exc.failure_reason,
+                    latency_ms=_elapsed_ms(started_at),
+                    usage=unknown_usage(),
+                    cost_cents=None,
+                    cost_micro_cents=None,
+                    usage_source="unknown",
+                    db=db,
+                )
                 if not _should_try_next_route(
                     plan=plan,
                     attempt_index=attempt_index,
@@ -1038,12 +1214,22 @@ async def _execute_chat_proxy(
                         if resolved.route_candidate_id
                         else None,
                     },
+                    gateway_request_id=gateway_request_id,
                     db=db,
                 )
         else:
             assert last_upstream_error is not None
             raise last_upstream_error
     except InvalidVirtualKeyError as exc:
+        await _finalize_gateway_request(
+            gateway_request_id=gateway_request_id,
+            resolved=None,
+            http_status=status.HTTP_401_UNAUTHORIZED,
+            attempt_count=0,
+            fallback_attempted=False,
+            error_code="invalid_virtual_key",
+            db=db,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="invalid virtual key",
@@ -1076,6 +1262,17 @@ async def _execute_chat_proxy(
                 message="Proxy request denied by access, limit, or provider routing policy.",
                 severity="warning",
                 metadata={"reason": "access_denied"},
+                gateway_request_id=gateway_request_id,
+                db=db,
+            )
+        else:
+            await _finalize_gateway_request(
+                gateway_request_id=gateway_request_id,
+                resolved=None,
+                http_status=status.HTTP_403_FORBIDDEN,
+                attempt_count=0,
+                fallback_attempted=False,
+                error_code="access_denied",
                 db=db,
             )
         raise HTTPException(
@@ -1114,6 +1311,7 @@ async def _execute_chat_proxy(
                     "policy_id": str(exc.policy_id) if exc.policy_id else None,
                     "rule_id": str(exc.rule_id) if exc.rule_id else None,
                 },
+                gateway_request_id=gateway_request_id,
                 db=db,
             )
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.detail) from exc
@@ -1145,6 +1343,7 @@ async def _execute_chat_proxy(
                 message="Provider is not available.",
                 severity="error",
                 metadata={"reason": "provider_unavailable"},
+                gateway_request_id=gateway_request_id,
                 db=db,
             )
         raise HTTPException(
@@ -1173,6 +1372,7 @@ async def _execute_chat_proxy(
                 fallback_attempted=fallback_attempted,
                 error_code="provider_upstream_error",
                 db=db,
+                final_route_attempt_id=final_route_attempt_id or current_route_attempt_id,
             )
             if fallback_attempted:
                 await _record_proxy_activity(
@@ -1184,6 +1384,7 @@ async def _execute_chat_proxy(
                         "reason": exc.failure_reason,
                         "http_status": exc.status_code,
                     },
+                    gateway_request_id=gateway_request_id,
                     db=db,
                 )
             await _release_reservations(reservation_ids=reservation_ids, db=db)
@@ -1196,6 +1397,7 @@ async def _execute_chat_proxy(
                     "reason": "provider_upstream_error",
                     "http_status": exc.status_code,
                 },
+                gateway_request_id=gateway_request_id,
                 db=db,
             )
         return JSONResponse(status_code=exc.status_code, content=exc.body)
@@ -1205,8 +1407,15 @@ async def _execute_chat_proxy(
         response_body=upstream.body,
     )
     try:
-        await guardrails_facade.evaluate_response(
-            context=_guardrail_context(resolved=resolved, provider_payload=provider_payload),
+        await _evaluate_guardrail_response(
+            context=_guardrail_context(
+                resolved=resolved,
+                provider_payload=provider_payload,
+                gateway_request_id=gateway_request_id,
+                route_attempt_id=final_route_attempt_id,
+                gateway_endpoint=gateway_endpoint,
+            ),
+            resolved=resolved,
             response_text=_response_text(upstream.body),
             db=db,
         )
@@ -1223,6 +1432,19 @@ async def _execute_chat_proxy(
             gateway_endpoint=gateway_endpoint,
             db=db,
         )
+        await _finalize_gateway_route_attempt(
+            route_attempt_id=final_route_attempt_id,
+            status_="blocked",
+            http_status=status.HTTP_403_FORBIDDEN,
+            error_code="guardrail_output_denied",
+            failure_reason=None,
+            latency_ms=_elapsed_ms(started_at),
+            usage=usage,
+            cost_cents=actual_cost_cents,
+            cost_micro_cents=_calculate_cost_micro_cents(resolved=resolved, usage=usage),
+            usage_source=usage.usage_source,
+            db=db,
+        )
         await _finalize_gateway_request(
             gateway_request_id=gateway_request_id,
             resolved=resolved,
@@ -1231,6 +1453,7 @@ async def _execute_chat_proxy(
             fallback_attempted=fallback_attempted,
             error_code="guardrail_output_denied",
             db=db,
+            final_route_attempt_id=final_route_attempt_id,
         )
         await _commit_reservations(
             reservation_ids=reservation_ids,
@@ -1248,6 +1471,7 @@ async def _execute_chat_proxy(
                 "policy_id": str(exc.policy_id) if exc.policy_id else None,
                 "rule_id": str(exc.rule_id) if exc.rule_id else None,
             },
+            gateway_request_id=gateway_request_id,
             db=db,
         )
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.detail) from exc
@@ -1263,6 +1487,19 @@ async def _execute_chat_proxy(
         gateway_endpoint=gateway_endpoint,
         db=db,
     )
+    await _finalize_gateway_route_attempt(
+        route_attempt_id=final_route_attempt_id,
+        status_="succeeded",
+        http_status=upstream.status_code,
+        error_code=None,
+        failure_reason=None,
+        latency_ms=_elapsed_ms(started_at),
+        usage=usage,
+        cost_cents=actual_cost_cents,
+        cost_micro_cents=_calculate_cost_micro_cents(resolved=resolved, usage=usage),
+        usage_source=usage.usage_source,
+        db=db,
+    )
     await _finalize_gateway_request(
         gateway_request_id=gateway_request_id,
         resolved=resolved,
@@ -1271,6 +1508,7 @@ async def _execute_chat_proxy(
         fallback_attempted=fallback_attempted,
         error_code=None,
         db=db,
+        final_route_attempt_id=final_route_attempt_id,
     )
     if fallback_attempted:
         await _record_proxy_activity(
@@ -1284,6 +1522,7 @@ async def _execute_chat_proxy(
                 if resolved.route_candidate_id
                 else None,
             },
+            gateway_request_id=gateway_request_id,
             db=db,
         )
     await _commit_reservations(
@@ -1319,8 +1558,9 @@ async def _stream_proxy_response(
         await upstream.close()
         if error_code is None:
             try:
-                await guardrails_facade.evaluate_response(
+                await _evaluate_guardrail_response(
                     context=guardrail_context,
+                    resolved=resolved,
                     response_text=_stream_response_text(chunks),
                     db=db,
                 )
@@ -1336,6 +1576,7 @@ async def _stream_proxy_response(
                         "rule_id": str(exc.rule_id) if exc.rule_id else None,
                         "streaming": True,
                     },
+                    gateway_request_id=guardrail_context.gateway_request_id,
                     db=db,
                 )
         usage = usage_from_stream_chunks(
@@ -1344,6 +1585,7 @@ async def _stream_proxy_response(
         )
         usage_cost_cents = await _record_proxy_request(
             resolved=resolved,
+            gateway_request_id=guardrail_context.gateway_request_id,
             http_status=upstream.status_code,
             latency_ms=_elapsed_ms(started_at),
             usage=usage,
@@ -1366,6 +1608,7 @@ async def _stream_proxy_response(
                 message="Provider stream failed after the response started.",
                 severity="error",
                 metadata={"reason": error_code},
+                gateway_request_id=guardrail_context.gateway_request_id,
                 db=db,
             )
 
@@ -1520,6 +1763,9 @@ def _guardrail_context(
     *,
     resolved,
     provider_payload: ProviderChatCompletionRequest,
+    gateway_request_id: UUID | None = None,
+    route_attempt_id: UUID | None = None,
+    gateway_endpoint: str | None = None,
 ) -> GuardrailEvaluationContext:
     return GuardrailEvaluationContext(
         org_id=resolved.org_id,
@@ -1528,7 +1774,14 @@ def _guardrail_context(
         virtual_key_id=resolved.virtual_key_id,
         provider_id=resolved.provider_id,
         pool_id=resolved.pool_id,
+        provider_model_offering_id=resolved.model_offering_id,
+        public_model_id=resolved.public_model_id,
+        public_model_name=resolved.public_model_name,
+        route_candidate_id=resolved.route_candidate_id,
+        gateway_endpoint=gateway_endpoint,
         request_id=current_request_id(),
+        gateway_request_id=gateway_request_id,
+        route_attempt_id=route_attempt_id,
         requested_model=resolved.requested_model,
         provider_model=resolved.provider_model,
         prompt_text=_messages_text(provider_payload.messages),
@@ -1698,6 +1951,8 @@ def _resolved_access_from_attempt(
         team_id=attempt.team_id,
         project_id=attempt.project_id,
         access_policy_id=attempt.access_policy_id,
+        access_policy_revision_id=attempt.access_policy_revision_id,
+        access_policy_assignment_id=attempt.access_policy_assignment_id,
         access_policy_route_id=attempt.access_policy_route_id,
         public_model_id=attempt.public_model_id,
         route_candidate_id=attempt.route_candidate_id,
@@ -1770,7 +2025,22 @@ async def _record_proxy_request(
 ) -> int | None:
     cost_cents = _calculate_cost_cents(resolved=resolved, usage=usage)
     cost_micro_cents = _calculate_cost_micro_cents(resolved=resolved, usage=usage)
-    await usage_facade.record_usage(
+    dimension_subject = _limit_dimension_subject(
+        resolved=resolved,
+        gateway_endpoint=gateway_endpoint,
+    )
+    dimension_snapshot = to_dimension_snapshot(
+        dimension_subject,
+        stage=PolicyDimensionStage.LIMIT_COMMIT,
+    )
+    limit_counter_key = await _usage_limit_counter_key(
+        resolved=resolved,
+        subject=dimension_subject,
+        db=db,
+    )
+    limit_counting_unit = await _usage_limit_counting_unit(resolved=resolved, db=db)
+    limit_window_descriptor = await _usage_limit_window_descriptor(resolved=resolved)
+    usage_record_id = await usage_facade.create_usage_record(
         payload=RecordUsage(
             org_id=resolved.org_id,
             team_id=resolved.team_id,
@@ -1787,6 +2057,10 @@ async def _record_proxy_request(
             limit_policy_assignment_ids=[
                 str(limit.limit_policy_assignment_id) for limit in resolved.limit_policies
             ],
+            limit_counter_key=limit_counter_key,
+            limit_counting_unit=limit_counting_unit,
+            limit_window_descriptor=limit_window_descriptor,
+            dimension_snapshot=dimension_snapshot,
             virtual_key_id=resolved.virtual_key_id,
             pool_id=resolved.pool_id,
             provider_id=resolved.provider_id,
@@ -1815,29 +2089,68 @@ async def _record_proxy_request(
         ),
         db=db,
     )
+    if http_status < 400:
+        for limit in resolved.limit_policies:
+            counter_key = await _limit_rule_counter_key(
+                limit=limit,
+                subject=dimension_subject,
+                db=db,
+            )
+            counting_unit = await _limit_rule_counting_unit(
+                org_id=resolved.org_id,
+                limit=limit,
+                db=db,
+            )
+            await usage_facade.create_limit_policy_committed_usage(
+                payload=RecordLimitPolicyCommittedUsage(
+                    org_id=resolved.org_id,
+                    usage_record_id=usage_record_id,
+                    limit_policy_id=limit.limit_policy_id,
+                    limit_policy_revision_id=limit.limit_policy_revision_id,
+                    limit_policy_rule_id=limit.limit_policy_rule_id,
+                    limit_policy_assignment_id=limit.limit_policy_assignment_id,
+                    counter_key=counter_key,
+                    counting_unit=counting_unit,
+                    window_descriptor=_limit_policy_window_descriptor(limit),
+                    dimension_snapshot=dimension_snapshot,
+                    prompt_tokens=usage.prompt_tokens,
+                    completion_tokens=usage.completion_tokens,
+                    total_tokens=usage.total_tokens,
+                    cost_cents=cost_cents,
+                    cost_micro_cents=cost_micro_cents,
+                ),
+                db=db,
+            )
+        await db.commit()
     return cost_cents
 
 
 async def _create_gateway_request(
     *,
-    resolved: ResolvedAccess,
+    resolved: ResolvedAccess | None,
+    requested_model: str | None = None,
     gateway_endpoint: str,
     db: AsyncSession,
-) -> UUID:
-    return await usage_facade.create_gateway_request(
-        payload=CreateGatewayRequest(
-            org_id=resolved.org_id,
-            team_id=resolved.team_id,
-            project_id=resolved.project_id,
-            virtual_key_id=resolved.virtual_key_id,
-            request_id=current_request_id(),
-            gateway_endpoint=gateway_endpoint,
-            requested_model=resolved.requested_model,
-            public_model_name=resolved.public_model_name,
-            routing_mode=resolved.routing_mode,
-        ),
-        db=db,
-    )
+) -> UUID | None:
+    try:
+        return await usage_facade.create_gateway_request(
+            payload=CreateGatewayRequest(
+                org_id=resolved.org_id if resolved else None,
+                team_id=resolved.team_id if resolved else None,
+                project_id=resolved.project_id if resolved else None,
+                virtual_key_id=resolved.virtual_key_id if resolved else None,
+                request_id=current_request_id(),
+                gateway_endpoint=gateway_endpoint,
+                requested_model=resolved.requested_model if resolved else (requested_model or ""),
+                public_model_id=resolved.public_model_id if resolved else None,
+                public_model_name=resolved.public_model_name if resolved else None,
+                routing_mode=resolved.routing_mode if resolved else None,
+            ),
+            db=db,
+        )
+    except Exception:
+        await db.rollback()
+        return None
 
 
 async def _finalize_gateway_request(
@@ -1849,24 +2162,200 @@ async def _finalize_gateway_request(
     fallback_attempted: bool,
     error_code: str | None,
     db: AsyncSession,
+    final_route_attempt_id: UUID | None = None,
 ) -> None:
-    if gateway_request_id is None or resolved is None:
+    if gateway_request_id is None:
         return
     await usage_facade.finalize_gateway_request(
         gateway_request_id=gateway_request_id,
         payload=FinalizeGatewayRequest(
             final_http_status=http_status,
-            final_access_policy_id=resolved.access_policy_id,
-            final_public_model_id=resolved.public_model_id,
-            final_candidate_id=resolved.route_candidate_id,
-            final_provider_id=resolved.provider_id,
-            final_credential_pool_id=resolved.pool_id,
-            final_model_offering_id=resolved.model_offering_id,
-            final_provider_model=resolved.provider_model,
+            final_access_policy_id=resolved.access_policy_id if resolved else None,
+            final_public_model_id=resolved.public_model_id if resolved else None,
+            final_candidate_id=resolved.route_candidate_id if resolved else None,
+            final_route_attempt_id=final_route_attempt_id,
+            final_provider_id=resolved.provider_id if resolved else None,
+            final_credential_pool_id=resolved.pool_id if resolved else None,
+            final_model_offering_id=resolved.model_offering_id if resolved else None,
+            final_provider_model=resolved.provider_model if resolved else None,
             attempt_count=attempt_count,
             fallback_attempted=fallback_attempted,
             final_error_code=error_code,
         ),
+        db=db,
+    )
+
+
+async def _record_gateway_route_attempt_started(
+    *,
+    gateway_request_id: UUID | None,
+    resolved: ResolvedAccess,
+    attempt_index: int,
+    db: AsyncSession,
+) -> UUID | None:
+    if gateway_request_id is None:
+        return None
+    route_attempt_id = await usage_facade.create_gateway_route_attempt(
+        values={
+            "org_id": resolved.org_id,
+            "gateway_request_id": gateway_request_id,
+            "attempt_index": attempt_index,
+            "access_policy_id": resolved.access_policy_id,
+            "access_policy_revision_id": resolved.access_policy_revision_id,
+            "access_public_model_id": resolved.public_model_id,
+            "route_candidate_id": resolved.route_candidate_id,
+            "primary_route_candidate_id": resolved.primary_route_candidate_id,
+            "provider_id": resolved.provider_id,
+            "credential_pool_id": resolved.pool_id,
+            "provider_credential_id": resolved.provider_key_id,
+            "provider_model_offering_id": resolved.model_offering_id,
+            "provider_model": resolved.provider_model,
+            "public_model_name": resolved.public_model_name,
+            "status": "started",
+            "usage_source": "unknown",
+            "pricing_snapshot": {
+                "input_price_per_million_tokens": resolved.input_price_per_million_tokens,
+                "output_price_per_million_tokens": resolved.output_price_per_million_tokens,
+            },
+            "capability_snapshot": {},
+            "route_snapshot": {
+                "routing_mode": resolved.routing_mode,
+                "fallback_disabled_reason": resolved.fallback_disabled_reason,
+            },
+            "started_at": datetime.now(UTC),
+        },
+        db=db,
+    )
+    assignment = (
+        await policies_repository.get_policy_assignment(
+            assignment_id=resolved.access_policy_assignment_id,
+            org_id=resolved.org_id,
+            db=db,
+        )
+        if resolved.access_policy_assignment_id is not None
+        else None
+    )
+    await usage_facade.create_gateway_policy_decision(
+        values={
+            "org_id": resolved.org_id,
+            "gateway_request_id": gateway_request_id,
+            "route_attempt_id": route_attempt_id,
+            "decision_type": "provider_routing",
+            "stage": "provider_attempt",
+            "outcome": "selected",
+            "enforced": True,
+            "policy_id": resolved.access_policy_id,
+            "policy_revision_id": resolved.access_policy_revision_id,
+            "assignment_id": resolved.access_policy_assignment_id,
+            "assignment_mode": assignment.mode if assignment else None,
+            "assignment_scope_type": assignment.scope_type if assignment else None,
+            "assignment_team_id": assignment.team_id if assignment else None,
+            "assignment_project_id": assignment.project_id if assignment else None,
+            "assignment_virtual_key_id": assignment.virtual_key_id if assignment else None,
+            "route_candidate_id": resolved.route_candidate_id,
+            "reason_code": "route_selected",
+            "dimension_snapshot": {
+                "public_model_name": resolved.public_model_name,
+                "provider_id": str(resolved.provider_id),
+                "credential_pool_id": str(resolved.pool_id),
+                "provider_model_offering_id": str(resolved.model_offering_id),
+            },
+            "metadata_": {"attempt_index": attempt_index},
+        },
+        db=db,
+    )
+    return route_attempt_id
+
+
+async def _finalize_gateway_route_attempt(
+    *,
+    route_attempt_id: UUID | None,
+    status_: str,
+    http_status: int | None,
+    error_code: str | None,
+    failure_reason: str | None,
+    latency_ms: int | None,
+    usage: UsageAccounting | None,
+    cost_cents: int | None,
+    cost_micro_cents: int | None,
+    usage_source: str = "unknown",
+    db: AsyncSession,
+) -> None:
+    if route_attempt_id is None:
+        return
+    await usage_facade.update_gateway_route_attempt(
+        route_attempt_id=route_attempt_id,
+        values={
+            "status": status_,
+            "http_status": http_status,
+            "error_code": error_code,
+            "failure_reason": failure_reason,
+            "latency_ms": latency_ms,
+            "prompt_tokens": usage.prompt_tokens if usage else None,
+            "completion_tokens": usage.completion_tokens if usage else None,
+            "total_tokens": usage.total_tokens if usage else None,
+            "cost_cents": cost_cents,
+            "cost_micro_cents": cost_micro_cents,
+            "usage_source": usage_source,
+            "completed_at": datetime.now(UTC),
+        },
+        db=db,
+    )
+
+
+async def _record_gateway_access_decision(
+    *,
+    gateway_request_id: UUID | None,
+    resolved: ResolvedAccess,
+    db: AsyncSession,
+) -> None:
+    if gateway_request_id is None:
+        return
+    assignment = (
+        await policies_repository.get_policy_assignment(
+            assignment_id=resolved.access_policy_assignment_id,
+            org_id=resolved.org_id,
+            db=db,
+        )
+        if resolved.access_policy_assignment_id is not None
+        else None
+    )
+    await usage_facade.create_gateway_policy_decision(
+        values={
+            "org_id": resolved.org_id,
+            "gateway_request_id": gateway_request_id,
+            "route_attempt_id": None,
+            "decision_type": "access",
+            "stage": "access_resolution",
+            "outcome": "allowed",
+            "effective_action": "allow",
+            "enforced": True,
+            "policy_id": resolved.access_policy_id,
+            "policy_revision_id": resolved.access_policy_revision_id,
+            "assignment_id": resolved.access_policy_assignment_id,
+            "assignment_mode": assignment.mode if assignment else None,
+            "assignment_scope_type": assignment.scope_type if assignment else None,
+            "assignment_team_id": assignment.team_id if assignment else None,
+            "assignment_project_id": assignment.project_id if assignment else None,
+            "assignment_virtual_key_id": assignment.virtual_key_id if assignment else None,
+            "rule_id": None,
+            "route_candidate_id": resolved.route_candidate_id,
+            "reason_code": "access_resolved",
+            "message": None,
+            "dimension_snapshot": {
+                "virtual_key_id": str(resolved.virtual_key_id),
+                "requested_model": resolved.requested_model,
+                "public_model_id": str(resolved.public_model_id),
+                "public_model_name": resolved.public_model_name,
+                "routing_mode": resolved.routing_mode,
+            },
+            "metadata_": {
+                "provider_id": str(resolved.provider_id),
+                "pool_id": str(resolved.pool_id),
+                "provider_model_offering_id": str(resolved.model_offering_id),
+                "provider_model": resolved.provider_model,
+            },
+        },
         db=db,
     )
 
@@ -1878,6 +2367,7 @@ async def _enforce_limit_policies(
     requested_output_tokens: int | None,
     limit_types: set[str] | None = None,
     gateway_request_id: UUID | None = None,
+    route_attempt_id: UUID | None = None,
     gateway_endpoint: str | None = None,
     db: AsyncSession,
 ) -> list[UUID]:
@@ -1896,21 +2386,40 @@ async def _enforce_limit_policies(
     # up to 300s plus retries and streaming drain) so a slow request is not silently
     # under-counted by the active-reservation summary before it finalizes.
     expires_at = datetime.now(UTC) + timedelta(minutes=15)
-    # Serialize the read-decide-reserve critical section per assignment so concurrent
-    # requests for the same limit cannot both pass the check and overshoot the cap.
+    # Serialize the read-decide-reserve critical section per resolved counter so
+    # concurrent requests for the same limit cannot both pass and overshoot the cap.
     # Locks are acquired in a stable order to avoid deadlocks and released at commit.
-    for assignment_id in sorted(
+    dimension_subject = _limit_dimension_subject(
+        resolved=resolved,
+        gateway_endpoint=gateway_endpoint,
+    )
+    matched_limits = [
+        limit
+        for limit in resolved.limit_policies
+        if (limit_types is None or limit.limit_type in limit_types)
+        and await _limit_rule_matches_runtime_subject(
+            limit=limit,
+            subject=dimension_subject,
+            db=db,
+        )
+    ]
+    dimension_snapshot = to_dimension_snapshot(
+        dimension_subject,
+        stage=PolicyDimensionStage.LIMIT_RESERVATION,
+    )
+    for counter_identity in sorted(
         {
-            limit.limit_policy_assignment_id
-            for limit in resolved.limit_policies
-            if limit_types is None or limit.limit_type in limit_types
-        },
-        key=str,
+            await _limit_rule_counter_identity(
+                org_id=resolved.org_id,
+                limit=limit,
+                subject=dimension_subject,
+                db=db,
+            )
+            for limit in matched_limits
+        }
     ):
-        await usage_facade.acquire_limit_scope_lock(assignment_id=assignment_id, db=db)
-    for limit in resolved.limit_policies:
-        if limit_types is not None and limit.limit_type not in limit_types:
-            continue
+        await usage_facade.acquire_limit_counter_lock(identity=counter_identity, db=db)
+    for limit in matched_limits:
         if limit.limit_type == "input_tokens" and estimated_input_tokens > limit.limit_value:
             await _raise_proxy_denial(
                 resolved=resolved,
@@ -1921,7 +2430,9 @@ async def _enforce_limit_policies(
                 reserved_usage=0,
                 attempted_usage=estimated_input_tokens,
                 gateway_request_id=gateway_request_id,
+                route_attempt_id=route_attempt_id,
                 gateway_endpoint=gateway_endpoint,
+                dimension_snapshot=dimension_snapshot,
                 db=db,
             )
         if (
@@ -1938,7 +2449,9 @@ async def _enforce_limit_policies(
                 reserved_usage=0,
                 attempted_usage=requested_output_tokens,
                 gateway_request_id=gateway_request_id,
+                route_attempt_id=route_attempt_id,
                 gateway_endpoint=gateway_endpoint,
+                dimension_snapshot=dimension_snapshot,
                 db=db,
             )
         if limit.limit_type == "tokens_per_request" and requested_total_tokens > limit.limit_value:
@@ -1951,11 +2464,24 @@ async def _enforce_limit_policies(
                 reserved_usage=0,
                 attempted_usage=requested_total_tokens,
                 gateway_request_id=gateway_request_id,
+                route_attempt_id=route_attempt_id,
                 gateway_endpoint=gateway_endpoint,
+                dimension_snapshot=dimension_snapshot,
                 db=db,
             )
 
         since = _limit_policy_window_start(limit.interval_unit, limit.interval_count)
+        window_descriptor = _limit_policy_window_descriptor(limit)
+        counter_key = await _limit_rule_counter_key(
+            limit=limit,
+            subject=dimension_subject,
+            db=db,
+        )
+        counting_unit = await _limit_rule_counting_unit(
+            org_id=resolved.org_id,
+            limit=limit,
+            db=db,
+        )
         (
             request_count,
             prompt_tokens,
@@ -1966,6 +2492,9 @@ async def _enforce_limit_policies(
             limit_policy_id=limit.limit_policy_id,
             limit_policy_rule_id=limit.limit_policy_rule_id,
             limit_policy_assignment_id=limit.limit_policy_assignment_id,
+            counter_key=counter_key,
+            counting_unit=counting_unit,
+            window_descriptor=window_descriptor,
             since=since,
             db=db,
         )
@@ -1973,6 +2502,9 @@ async def _enforce_limit_policies(
             limit_policy_id=limit.limit_policy_id,
             limit_policy_rule_id=limit.limit_policy_rule_id,
             limit_policy_assignment_id=limit.limit_policy_assignment_id,
+            counter_key=counter_key,
+            counting_unit=counting_unit,
+            window_descriptor=window_descriptor,
             since=since,
             now=datetime.now(UTC),
             db=db,
@@ -1987,7 +2519,9 @@ async def _enforce_limit_policies(
                 reserved_usage=0,
                 attempted_usage=1,
                 gateway_request_id=gateway_request_id,
+                route_attempt_id=route_attempt_id,
                 gateway_endpoint=gateway_endpoint,
+                dimension_snapshot=dimension_snapshot,
                 db=db,
             )
         if (
@@ -2003,7 +2537,9 @@ async def _enforce_limit_policies(
                 reserved_usage=reservations.requests,
                 attempted_usage=1,
                 gateway_request_id=gateway_request_id,
+                route_attempt_id=route_attempt_id,
                 gateway_endpoint=gateway_endpoint,
+                dimension_snapshot=dimension_snapshot,
                 db=db,
             )
         if (
@@ -2020,7 +2556,9 @@ async def _enforce_limit_policies(
                 reserved_usage=reservations.prompt_tokens,
                 attempted_usage=estimated_input_tokens,
                 gateway_request_id=gateway_request_id,
+                route_attempt_id=route_attempt_id,
                 gateway_endpoint=gateway_endpoint,
+                dimension_snapshot=dimension_snapshot,
                 db=db,
             )
         if (
@@ -2038,6 +2576,7 @@ async def _enforce_limit_policies(
                 reserved_usage=reservations.completion_tokens,
                 attempted_usage=requested_output_tokens,
                 gateway_request_id=gateway_request_id,
+                route_attempt_id=route_attempt_id,
                 gateway_endpoint=gateway_endpoint,
                 db=db,
             )
@@ -2054,7 +2593,9 @@ async def _enforce_limit_policies(
                     reserved_usage=reservations.cost_cents,
                     attempted_usage=None,
                     gateway_request_id=gateway_request_id,
+                    route_attempt_id=route_attempt_id,
                     gateway_endpoint=gateway_endpoint,
+                    dimension_snapshot=dimension_snapshot,
                     db=db,
                 )
             # Budget math is in exact micro-cents (1_000_000 == 1 cent) to avoid the
@@ -2072,7 +2613,9 @@ async def _enforce_limit_policies(
                     reserved_usage=reservations.cost_cents,
                     attempted_usage=estimated_cost_cents,
                     gateway_request_id=gateway_request_id,
+                    route_attempt_id=route_attempt_id,
                     gateway_endpoint=gateway_endpoint,
+                    dimension_snapshot=dimension_snapshot,
                     db=db,
                 )
         if (
@@ -2093,34 +2636,230 @@ async def _enforce_limit_policies(
                 reserved_usage=reservations.prompt_tokens + reservations.completion_tokens,
                 attempted_usage=requested_total_tokens,
                 gateway_request_id=gateway_request_id,
+                route_attempt_id=route_attempt_id,
                 gateway_endpoint=gateway_endpoint,
+                dimension_snapshot=dimension_snapshot,
                 db=db,
             )
     reservation_ids: list[UUID] = []
-    for limit in resolved.limit_policies:
-        if limit_types is not None and limit.limit_type not in limit_types:
+    for limit in matched_limits:
+        if limit.limit_type == "tokens_per_request":
             continue
-        reservation_ids.append(
-            await usage_facade.create_limit_policy_reservation(
-                payload=RecordLimitPolicyReservation(
-                    org_id=resolved.org_id,
-                    limit_policy_id=limit.limit_policy_id,
-                    limit_policy_rule_id=limit.limit_policy_rule_id,
-                    limit_policy_assignment_id=limit.limit_policy_assignment_id,
-                    virtual_key_id=resolved.virtual_key_id,
-                    request_id=current_request_id(),
-                    reserved_prompt_tokens=estimated_input_tokens,
-                    reserved_completion_tokens=requested_output_tokens or 0,
-                    reserved_total_tokens=requested_total_tokens,
-                    reserved_cost_cents=estimated_cost_cents,
-                    reserved_cost_micro_cents=estimated_cost_micro_cents,
-                    expires_at=expires_at,
-                ),
-                db=db,
-            )
+        counter_key = await _limit_rule_counter_key(
+            limit=limit,
+            subject=dimension_subject,
+            db=db,
+        )
+        counting_unit = await _limit_rule_counting_unit(
+            org_id=resolved.org_id,
+            limit=limit,
+            db=db,
+        )
+        window_descriptor = _limit_policy_window_descriptor(limit)
+        reservation_id = await usage_facade.create_limit_policy_reservation(
+            payload=RecordLimitPolicyReservation(
+                org_id=resolved.org_id,
+                limit_policy_id=limit.limit_policy_id,
+                limit_policy_revision_id=limit.limit_policy_revision_id,
+                limit_policy_rule_id=limit.limit_policy_rule_id,
+                limit_policy_assignment_id=limit.limit_policy_assignment_id,
+                virtual_key_id=resolved.virtual_key_id,
+                request_id=current_request_id(),
+                counter_key=counter_key,
+                counting_unit=counting_unit,
+                window_descriptor=window_descriptor,
+                dimension_snapshot=dimension_snapshot,
+                reserved_prompt_tokens=estimated_input_tokens,
+                reserved_completion_tokens=requested_output_tokens or 0,
+                reserved_total_tokens=requested_total_tokens,
+                reserved_cost_cents=estimated_cost_cents,
+                reserved_cost_micro_cents=estimated_cost_micro_cents,
+                expires_at=expires_at,
+            ),
+            db=db,
+        )
+        reservation_ids.append(reservation_id)
+        await _record_gateway_limit_decision(
+            resolved=resolved,
+            limit=limit,
+            gateway_request_id=gateway_request_id,
+            route_attempt_id=route_attempt_id,
+            stage="limit_reservation",
+            outcome="reserved",
+            effective_action="allow",
+            reason_code="limit_reserved",
+            message=None,
+            dimension_snapshot=dimension_snapshot,
+            metadata={
+                "reservation_id": str(reservation_id),
+                "gateway_endpoint": gateway_endpoint,
+                "counting_unit": counting_unit,
+                "reserved_prompt_tokens": estimated_input_tokens,
+                "reserved_completion_tokens": requested_output_tokens or 0,
+                "reserved_total_tokens": requested_total_tokens,
+                "reserved_cost_cents": estimated_cost_cents,
+                "reserved_cost_micro_cents": estimated_cost_micro_cents,
+            },
+            db=db,
         )
     await db.commit()
     return reservation_ids
+
+
+def _limit_dimension_subject(
+    *,
+    resolved: ResolvedAccess,
+    gateway_endpoint: str | None,
+) -> dict[str, Any]:
+    return {
+        "org_id": resolved.org_id,
+        "team_id": resolved.team_id,
+        "project_id": resolved.project_id,
+        "virtual_key_id": resolved.virtual_key_id,
+        "provider_id": resolved.provider_id,
+        "credential_pool_id": resolved.pool_id,
+        "provider_credential_id": resolved.provider_key_id,
+        "provider_model_offering_id": resolved.model_offering_id,
+        "public_model_id": resolved.public_model_id,
+        "public_model_name": resolved.public_model_name,
+        "route_candidate_id": resolved.route_candidate_id,
+        "access_policy_id": resolved.access_policy_id,
+        "access_policy_revision_id": resolved.access_policy_revision_id,
+        "gateway_endpoint": gateway_endpoint,
+        "requested_model": resolved.requested_model,
+    }
+
+
+async def _limit_rule_matches_runtime_subject(
+    *,
+    limit,
+    subject: dict[str, Any],
+    db: AsyncSession,
+) -> bool:
+    matchers = await policies_repository.list_limit_policy_rule_matchers(
+        org_id=subject["org_id"],
+        rule_id=limit.limit_policy_rule_id,
+        db=db,
+    )
+    for matcher in matchers:
+        if not evaluate_matcher(
+            subject=subject,
+            dimension=matcher.dimension,
+            operator=matcher.operator,
+            value=matcher.value_json,
+            stage=PolicyDimensionStage.LIMIT_RESERVATION,
+        ):
+            return False
+    return True
+
+
+async def _limit_rule_counter_key(
+    *,
+    limit,
+    subject: dict[str, Any],
+    db: AsyncSession,
+) -> str | None:
+    partitions = await policies_repository.list_limit_policy_rule_partitions(
+        org_id=subject["org_id"],
+        rule_id=limit.limit_policy_rule_id,
+        db=db,
+    )
+    if not partitions:
+        return None
+    parts = []
+    for partition in partitions:
+        value = subject.get(partition.dimension)
+        parts.append(f"{partition.dimension}={value}")
+    return "|".join(parts)
+
+
+async def _limit_rule_counter_identity(
+    *,
+    org_id: UUID,
+    limit,
+    subject: dict[str, Any],
+    db: AsyncSession,
+) -> str:
+    counter_key = await _limit_rule_counter_key(limit=limit, subject=subject, db=db)
+    counting_unit = await _limit_rule_counting_unit(org_id=org_id, limit=limit, db=db)
+    window_descriptor = _limit_policy_window_descriptor(limit)
+    return "|".join(
+        (
+            str(org_id),
+            str(limit.limit_policy_id),
+            str(limit.limit_policy_rule_id),
+            str(limit.limit_policy_assignment_id),
+            window_descriptor,
+            counting_unit,
+            counter_key or "unpartitioned",
+        )
+    )
+
+
+async def _limit_rule_counting_unit(*, org_id: UUID, limit, db: AsyncSession) -> str:
+    if limit.limit_type != "requests":
+        return "logical_request"
+    matchers = await policies_repository.list_limit_policy_rule_matchers(
+        org_id=org_id,
+        rule_id=limit.limit_policy_rule_id,
+        db=db,
+    )
+    partitions = await policies_repository.list_limit_policy_rule_partitions(
+        org_id=org_id,
+        rule_id=limit.limit_policy_rule_id,
+        db=db,
+    )
+    dimensions = {matcher.dimension for matcher in matchers} | {
+        partition.dimension for partition in partitions
+    }
+    if dimensions & ATTEMPT_SCOPED_DIMENSIONS:
+        return "route_attempt"
+    return "logical_request"
+
+
+async def _usage_limit_counter_key(
+    *,
+    resolved: ResolvedAccess,
+    subject: dict[str, Any],
+    db: AsyncSession,
+) -> str | None:
+    counter_keys = {
+        counter_key
+        for limit in resolved.limit_policies
+        if (
+            counter_key := await _limit_rule_counter_key(
+                limit=limit,
+                subject=subject,
+                db=db,
+            )
+        )
+        is not None
+    }
+    if len(counter_keys) == 1:
+        return next(iter(counter_keys))
+    return None
+
+
+async def _usage_limit_window_descriptor(*, resolved: ResolvedAccess) -> str | None:
+    descriptors = {
+        _limit_policy_window_descriptor(limit)
+        for limit in resolved.limit_policies
+        if limit.limit_type != "tokens_per_request"
+    }
+    if len(descriptors) == 1:
+        return next(iter(descriptors))
+    return None
+
+
+async def _usage_limit_counting_unit(*, resolved: ResolvedAccess, db: AsyncSession) -> str:
+    counting_units = {
+        await _limit_rule_counting_unit(org_id=resolved.org_id, limit=limit, db=db)
+        for limit in resolved.limit_policies
+        if limit.limit_type == "requests"
+    }
+    if counting_units == {"route_attempt"}:
+        return "route_attempt"
+    return "logical_request"
 
 
 async def _commit_reservations(
@@ -2163,7 +2902,9 @@ async def _raise_proxy_denial(
     reserved_usage: int | None,
     attempted_usage: int | None,
     gateway_request_id: UUID | None = None,
+    route_attempt_id: UUID | None = None,
     gateway_endpoint: str | None = None,
+    dimension_snapshot: dict[str, Any] | None = None,
     db: AsyncSession,
 ) -> None:
     metadata = {
@@ -2182,6 +2923,25 @@ async def _raise_proxy_denial(
         "interval_unit": limit.interval_unit,
         "interval_count": limit.interval_count,
     }
+    await _record_gateway_limit_decision(
+        resolved=resolved,
+        limit=limit,
+        gateway_request_id=gateway_request_id,
+        route_attempt_id=route_attempt_id,
+        stage="limit_reservation",
+        outcome="denied",
+        effective_action="deny",
+        reason_code=reason,
+        message=detail,
+        dimension_snapshot=dimension_snapshot,
+        metadata={
+            "gateway_endpoint": gateway_endpoint,
+            "current_usage": current_usage,
+            "reserved_usage": reserved_usage,
+            "attempted_usage": attempted_usage,
+        },
+        db=db,
+    )
     await _record_proxy_request(
         resolved=resolved,
         gateway_request_id=gateway_request_id,
@@ -2198,11 +2958,298 @@ async def _raise_proxy_denial(
         message=detail,
         severity="warning",
         metadata=metadata,
+        gateway_request_id=gateway_request_id,
         db=db,
     )
     # Raise a domain error (not HTTPException) so the request handler can release
     # any reservations taken in an earlier enforcement phase before returning 429.
     raise ProxyLimitExceededError(detail)
+
+
+async def _record_gateway_limit_decision(
+    *,
+    resolved,
+    limit,
+    gateway_request_id: UUID | None,
+    route_attempt_id: UUID | None,
+    stage: str,
+    outcome: str,
+    effective_action: str,
+    reason_code: str,
+    message: str | None,
+    dimension_snapshot: dict[str, Any] | None = None,
+    metadata: dict,
+    db: AsyncSession,
+) -> None:
+    if gateway_request_id is None:
+        return
+    assignment = await policies_repository.get_policy_assignment(
+        assignment_id=limit.limit_policy_assignment_id,
+        org_id=resolved.org_id,
+        db=db,
+    )
+    await usage_facade.create_gateway_policy_decision(
+        values={
+            "org_id": resolved.org_id,
+            "gateway_request_id": gateway_request_id,
+            "route_attempt_id": route_attempt_id,
+            "decision_type": "limit",
+            "stage": stage,
+            "outcome": outcome,
+            "effective_action": effective_action,
+            "enforced": True,
+            "policy_id": assignment.policy_id if assignment else None,
+            "policy_revision_id": limit.limit_policy_revision_id,
+            "assignment_id": limit.limit_policy_assignment_id,
+            "assignment_mode": assignment.mode if assignment else None,
+            "assignment_scope_type": assignment.scope_type if assignment else None,
+            "assignment_team_id": assignment.team_id if assignment else None,
+            "assignment_project_id": assignment.project_id if assignment else None,
+            "assignment_virtual_key_id": assignment.virtual_key_id if assignment else None,
+            "rule_id": limit.limit_policy_rule_id,
+            "route_candidate_id": resolved.route_candidate_id,
+            "reason_code": reason_code,
+            "message": message,
+            "dimension_snapshot": {
+                **(dimension_snapshot or {}),
+                "limit_type": limit.limit_type,
+            },
+            "metadata_": {
+                **metadata,
+                "limit_policy_id": str(limit.limit_policy_id),
+                "limit_policy_name": limit.limit_policy_name,
+                "limit_policy_rule_id": str(limit.limit_policy_rule_id),
+                "limit_policy_rule_name": limit.name,
+                "limit_policy_assignment_id": str(limit.limit_policy_assignment_id),
+                "configured_limit": limit.limit_value,
+                "interval_unit": limit.interval_unit,
+                "interval_count": limit.interval_count,
+            },
+        },
+        db=db,
+    )
+
+
+async def _evaluate_guardrail_request(
+    *,
+    context: GuardrailEvaluationContext,
+    resolved: ResolvedAccess,
+    db: AsyncSession,
+) -> None:
+    try:
+        evaluated = await guardrails_facade.evaluate_request(context=context, db=db)
+    except GuardrailDeniedError as exc:
+        await _record_gateway_guardrail_decision(
+            context=context,
+            resolved=resolved,
+            stage="request_guardrail",
+            outcome="denied",
+            effective_action="deny",
+            reason_code="guardrail_denied",
+            message=exc.detail,
+            policy_id=exc.policy_id,
+            policy_revision_id=exc.policy_revision_id,
+            assignment_id=exc.assignment_id,
+            assignment_mode=exc.assignment_mode,
+            assignment_scope_type=exc.assignment_scope_type,
+            assignment_team_id=exc.assignment_team_id,
+            assignment_project_id=exc.assignment_project_id,
+            assignment_virtual_key_id=exc.assignment_virtual_key_id,
+            rule_id=exc.rule_id,
+            db=db,
+        )
+        raise
+    if evaluated:
+        for trace in evaluated.would_deny:
+            await _record_gateway_guardrail_decision(
+                context=context,
+                resolved=resolved,
+                stage="request_guardrail",
+                outcome="would_deny",
+                effective_action="would_deny",
+                reason_code=trace.reason_code,
+                message=trace.message,
+                policy_id=trace.policy_id,
+                policy_revision_id=trace.policy_revision_id,
+                assignment_id=trace.assignment_id,
+                assignment_mode=trace.assignment_mode,
+                assignment_scope_type=trace.assignment_scope_type,
+                assignment_team_id=trace.assignment_team_id,
+                assignment_project_id=trace.assignment_project_id,
+                assignment_virtual_key_id=trace.assignment_virtual_key_id,
+                rule_id=trace.rule_id,
+                db=db,
+            )
+        await _record_gateway_guardrail_decision(
+            context=context,
+            resolved=resolved,
+            stage="request_guardrail",
+            outcome="allowed",
+            effective_action="allow",
+            reason_code="request_guardrails_passed",
+            message=None,
+            policy_id=None,
+            policy_revision_id=None,
+            assignment_id=None,
+            assignment_mode=None,
+            assignment_scope_type=None,
+            assignment_team_id=None,
+            assignment_project_id=None,
+            assignment_virtual_key_id=None,
+            rule_id=None,
+            db=db,
+        )
+
+
+async def _evaluate_guardrail_response(
+    *,
+    context: GuardrailEvaluationContext,
+    resolved: ResolvedAccess,
+    response_text: str,
+    db: AsyncSession,
+) -> None:
+    response_context = context.model_copy(update={"phase": "response"})
+    try:
+        evaluated = await guardrails_facade.evaluate_response(
+            context=context,
+            response_text=response_text,
+            db=db,
+        )
+    except GuardrailDeniedError as exc:
+        await _record_gateway_guardrail_decision(
+            context=response_context,
+            resolved=resolved,
+            stage="response_guardrail",
+            outcome="denied",
+            effective_action="deny",
+            reason_code="guardrail_output_denied",
+            message=exc.detail,
+            policy_id=exc.policy_id,
+            policy_revision_id=exc.policy_revision_id,
+            assignment_id=exc.assignment_id,
+            assignment_mode=exc.assignment_mode,
+            assignment_scope_type=exc.assignment_scope_type,
+            assignment_team_id=exc.assignment_team_id,
+            assignment_project_id=exc.assignment_project_id,
+            assignment_virtual_key_id=exc.assignment_virtual_key_id,
+            rule_id=exc.rule_id,
+            db=db,
+        )
+        raise
+    if evaluated:
+        for trace in evaluated.would_deny:
+            await _record_gateway_guardrail_decision(
+                context=response_context,
+                resolved=resolved,
+                stage="response_guardrail",
+                outcome="would_deny",
+                effective_action="would_deny",
+                reason_code=trace.reason_code,
+                message=trace.message,
+                policy_id=trace.policy_id,
+                policy_revision_id=trace.policy_revision_id,
+                assignment_id=trace.assignment_id,
+                assignment_mode=trace.assignment_mode,
+                assignment_scope_type=trace.assignment_scope_type,
+                assignment_team_id=trace.assignment_team_id,
+                assignment_project_id=trace.assignment_project_id,
+                assignment_virtual_key_id=trace.assignment_virtual_key_id,
+                rule_id=trace.rule_id,
+                db=db,
+            )
+        await _record_gateway_guardrail_decision(
+            context=response_context,
+            resolved=resolved,
+            stage="response_guardrail",
+            outcome="allowed",
+            effective_action="allow",
+            reason_code="response_guardrails_passed",
+            message=None,
+            policy_id=None,
+            policy_revision_id=None,
+            assignment_id=None,
+            assignment_mode=None,
+            assignment_scope_type=None,
+            assignment_team_id=None,
+            assignment_project_id=None,
+            assignment_virtual_key_id=None,
+            rule_id=None,
+            db=db,
+        )
+
+
+async def _record_gateway_guardrail_decision(
+    *,
+    context: GuardrailEvaluationContext,
+    resolved: ResolvedAccess,
+    stage: str,
+    outcome: str,
+    effective_action: str,
+    reason_code: str,
+    message: str | None,
+    policy_id: UUID | None,
+    policy_revision_id: UUID | None,
+    assignment_id: UUID | None,
+    assignment_mode: str | None,
+    assignment_scope_type: str | None,
+    assignment_team_id: UUID | None,
+    assignment_project_id: UUID | None,
+    assignment_virtual_key_id: UUID | None,
+    rule_id: UUID | None,
+    db: AsyncSession,
+) -> None:
+    if context.gateway_request_id is None:
+        return
+    shared_policy_id = policy_id
+    if policy_id is not None:
+        policy = await guardrails_repository.get_policy(
+            policy_id=policy_id,
+            org_id=resolved.org_id,
+            db=db,
+        )
+        if policy is not None and policy.policy_id is not None:
+            shared_policy_id = policy.policy_id
+    await usage_facade.create_gateway_policy_decision(
+        values={
+            "org_id": resolved.org_id,
+            "gateway_request_id": context.gateway_request_id,
+            "route_attempt_id": context.route_attempt_id,
+            "decision_type": "guardrail",
+            "stage": stage,
+            "outcome": outcome,
+            "effective_action": effective_action,
+            "enforced": outcome != "would_deny",
+            "policy_id": shared_policy_id,
+            "policy_revision_id": policy_revision_id,
+            "assignment_id": assignment_id,
+            "assignment_mode": assignment_mode,
+            "assignment_scope_type": assignment_scope_type,
+            "assignment_team_id": assignment_team_id,
+            "assignment_project_id": assignment_project_id,
+            "assignment_virtual_key_id": assignment_virtual_key_id,
+            "rule_id": rule_id,
+            "route_candidate_id": resolved.route_candidate_id,
+            "reason_code": reason_code,
+            "message": message,
+            "dimension_snapshot": {
+                "phase": context.phase,
+                "virtual_key_id": str(resolved.virtual_key_id),
+                "public_model_id": str(resolved.public_model_id),
+                "provider_id": str(resolved.provider_id),
+                "pool_id": str(resolved.pool_id),
+                "route_candidate_id": str(resolved.route_candidate_id),
+            },
+            "metadata_": {
+                "guardrail_policy_revision_id": str(policy_revision_id)
+                if policy_revision_id
+                else None,
+                "legacy_guardrail_rule_id": str(rule_id) if rule_id else None,
+                "requested_model": context.requested_model,
+                "provider_model": context.provider_model,
+            },
+        },
+        db=db,
+    )
 
 
 async def _record_proxy_activity(
@@ -2213,6 +3260,7 @@ async def _record_proxy_activity(
     severity: str,
     metadata: dict,
     db: AsyncSession,
+    gateway_request_id: UUID | None = None,
 ) -> None:
     await activity_facade.record_event_and_commit(
         payload=RecordActivityEvent(
@@ -2227,6 +3275,7 @@ async def _record_proxy_activity(
             provider_id=resolved.provider_id,
             pool_id=resolved.pool_id,
             request_id=current_request_id(),
+            gateway_request_id=gateway_request_id,
             metadata={
                 **metadata,
                 "requested_model": resolved.requested_model,
@@ -2257,6 +3306,12 @@ def _limit_policy_window_start(interval_unit: str, interval_count: int) -> datet
     if interval_unit == "month":
         return subtract_months(now, interval_count)
     return None
+
+
+def _limit_policy_window_descriptor(limit) -> str:
+    if limit.interval_unit == "lifetime":
+        return f"{limit.interval_unit}:{limit.interval_count}:lifetime"
+    return f"{limit.interval_unit}:{limit.interval_count}:rolling"
 
 
 def _costing_context(resolved) -> CostingContext:

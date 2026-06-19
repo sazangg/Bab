@@ -4,17 +4,20 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
+import type { GuardrailRuleMatcherResponse } from './guardrailRuleMatcherResponse';
 import type { GuardrailRuleResponseConfig } from './guardrailRuleResponseConfig';
 
 export interface GuardrailRuleResponse {
   id: string;
   org_id: string;
   policy_id: string;
+  policy_revision_id?: string | null;
   rule_type: string;
   effect: string;
   phase: string;
   values: string[];
   config: GuardrailRuleResponseConfig;
+  matchers?: GuardrailRuleMatcherResponse[];
   priority: number;
   is_active: boolean;
   created_at: string;

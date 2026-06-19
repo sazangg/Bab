@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -73,6 +74,7 @@ class AccessPolicyResponse(BaseModel):
 
     id: UUID
     org_id: UUID
+    policy_id: UUID | None
     name: str
     description: str | None
     owning_scope_type: str | None
@@ -88,7 +90,6 @@ class AccessPolicyResponse(BaseModel):
 class AccessPolicyModelOption(BaseModel):
     id: UUID
     provider_model_name: str
-    alias: str | None = None
 
 
 class AccessPolicyPoolOption(BaseModel):
@@ -114,6 +115,17 @@ class CreateLimitPolicyRequest(BaseModel):
     is_active: bool = True
 
 
+class LimitPolicyRuleMatcherInput(BaseModel):
+    dimension: str = Field(min_length=1, max_length=100)
+    operator: str = Field(pattern="^(eq|in|exists|not_exists)$")
+    value_json: Any = None
+
+
+class LimitPolicyRulePartitionInput(BaseModel):
+    dimension: str = Field(min_length=1, max_length=100)
+    position: int = Field(ge=0)
+
+
 class LimitPolicyRuleInput(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     limit_type: str = Field(
@@ -126,6 +138,8 @@ class LimitPolicyRuleInput(BaseModel):
     credential_pool_id: UUID | None = None
     model_offering_id: UUID | None = None
     access_policy_id: UUID | None = None
+    matchers: list[LimitPolicyRuleMatcherInput] = Field(default_factory=list)
+    partitions: list[LimitPolicyRulePartitionInput] = Field(default_factory=list)
     is_active: bool = True
 
 
@@ -154,7 +168,32 @@ class UpdateLimitPolicyRuleRequest(BaseModel):
     credential_pool_id: UUID | None = None
     model_offering_id: UUID | None = None
     access_policy_id: UUID | None = None
+    matchers: list[LimitPolicyRuleMatcherInput] | None = None
+    partitions: list[LimitPolicyRulePartitionInput] | None = None
     is_active: bool | None = None
+
+
+class LimitPolicyRuleMatcherResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    org_id: UUID
+    rule_id: UUID
+    dimension: str
+    operator: str
+    value_json: Any = None
+    created_at: datetime
+
+
+class LimitPolicyRulePartitionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    org_id: UUID
+    rule_id: UUID
+    dimension: str
+    position: int
+    created_at: datetime
 
 
 class LimitPolicyRuleResponse(BaseModel):
@@ -163,6 +202,7 @@ class LimitPolicyRuleResponse(BaseModel):
     id: UUID
     org_id: UUID
     limit_policy_id: UUID
+    policy_revision_id: UUID | None
     name: str
     limit_type: str
     limit_value: int
@@ -172,6 +212,8 @@ class LimitPolicyRuleResponse(BaseModel):
     credential_pool_id: UUID | None
     model_offering_id: UUID | None
     access_policy_id: UUID | None
+    matchers: list[LimitPolicyRuleMatcherResponse] = Field(default_factory=list)
+    partitions: list[LimitPolicyRulePartitionResponse] = Field(default_factory=list)
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -182,6 +224,7 @@ class LimitPolicyResponse(BaseModel):
 
     id: UUID
     org_id: UUID
+    policy_id: UUID | None
     name: str
     description: str | None
     owning_scope_type: str | None
@@ -195,9 +238,8 @@ class LimitPolicyResponse(BaseModel):
 
 
 class CreatePolicyAssignmentRequest(BaseModel):
+    policy_id: UUID
     policy_type: str = Field(pattern="^(access|limit)$")
-    access_policy_id: UUID | None = None
-    limit_policy_id: UUID | None = None
     scope_type: str = Field(pattern="^(org|team|project|virtual_key)$")
     team_id: UUID | None = None
     project_id: UUID | None = None
@@ -206,10 +248,6 @@ class CreatePolicyAssignmentRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_assignment(self):
-        if self.policy_type == "access" and self.access_policy_id is None:
-            raise ValueError("access_policy_id is required for access assignments")
-        if self.policy_type == "limit" and self.limit_policy_id is None:
-            raise ValueError("limit_policy_id is required for limit assignments")
         expected_scope_id = {
             "org": None,
             "team": self.team_id,
@@ -230,6 +268,7 @@ class PolicyAssignmentResponse(BaseModel):
 
     id: UUID
     org_id: UUID
+    policy_id: UUID | None
     policy_type: str
     access_policy_id: UUID | None
     limit_policy_id: UUID | None
@@ -237,6 +276,9 @@ class PolicyAssignmentResponse(BaseModel):
     team_id: UUID | None
     project_id: UUID | None
     virtual_key_id: UUID | None
+    scope_target_key: str | None
+    effective_from: datetime | None
+    effective_to: datetime | None
     is_active: bool
     created_at: datetime
     updated_at: datetime

@@ -1,9 +1,14 @@
+import warnings
+
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.exc import SAWarning
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.api.v1.routes import health as health_routes
+from app.core.database import Base
 from app.core.migrations import run_database_migrations
+from app.core.model_imports import import_all_models
 from app.main import create_app
 
 
@@ -37,6 +42,17 @@ async def test_request_id_header_is_preserved() -> None:
 
     assert response.status_code == 200
     assert response.headers["x-request-id"] == "req-test"
+
+
+def test_model_metadata_sorts_gateway_trace_tables_without_fk_cycle_warning() -> None:
+    import_all_models()
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "error",
+            message="Cannot correctly sort tables.*",
+            category=SAWarning,
+        )
+        list(Base.metadata.sorted_tables)
 
 
 @pytest.mark.asyncio

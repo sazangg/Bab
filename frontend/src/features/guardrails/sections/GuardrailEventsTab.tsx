@@ -1,6 +1,7 @@
-import { ShieldX } from "lucide-react";
+import { Eye, ShieldX } from "lucide-react";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { Input } from "@/components/ui/input";
@@ -12,9 +13,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useListEventsApiV1GuardrailsEventsGet } from "@/shared/api/generated/guardrails/guardrails";
-import type { GuardrailEventResponse, GuardrailPolicyResponse } from "@/shared/api/generated/schemas";
+import type {
+  GuardrailEventResponse,
+  GuardrailPolicyResponse,
+} from "@/shared/api/generated/schemas";
 import { FilterToolbar, type FilterChip } from "@/shared/components/FilterToolbar";
 import { StatusBadge } from "@/shared/components/StatusBadge";
+import { RequestTraceSheet } from "@/features/usage/components/RequestTraceSheet";
 
 import {
   guardrailDecisionStatus,
@@ -45,6 +50,7 @@ export function GuardrailEventsTab({
   const [ruleId, setRuleId] = useState("");
   const [providerId, setProviderId] = useState("");
   const [poolId, setPoolId] = useState("");
+  const [traceRequestId, setTraceRequestId] = useState<string | null>(null);
 
   const ruleIdFilter = ruleId.trim();
   const providerIdFilter = providerId.trim();
@@ -165,8 +171,24 @@ export function GuardrailEventsTab({
     {
       key: "request",
       header: "Request",
-      className: "font-mono text-xs text-muted-foreground",
-      cell: (event) => shortId(event.request_id),
+      cell: (event) => (
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-xs text-muted-foreground">
+            {shortId(event.request_id)}
+          </span>
+          {event.gateway_request_id ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Open request trace"
+              onClick={() => setTraceRequestId(event.gateway_request_id)}
+            >
+              <Eye />
+            </Button>
+          ) : null}
+        </div>
+      ),
     },
     {
       key: "scope",
@@ -177,122 +199,131 @@ export function GuardrailEventsTab({
   ];
 
   return (
-    <Card>
-      <CardHeader>
-        <div>
-          <CardTitle>Recent events</CardTitle>
-          <CardDescription>Append-only guardrail decisions from proxy traffic.</CardDescription>
-        </div>
-        <div className="mt-4">
-          <FilterToolbar chips={chips} onClearAll={chips.length > 0 ? clearAll : undefined}>
-            <Select value={decision} onValueChange={setDecision}>
-              <SelectTrigger className="w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All decisions</SelectItem>
-                <SelectItem value="allowed">Allowed</SelectItem>
-                <SelectItem value="dry_run">Dry run</SelectItem>
-                <SelectItem value="blocked">Blocked</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={phase} onValueChange={setPhase}>
-              <SelectTrigger className="w-36">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All phases</SelectItem>
-                <SelectItem value="request">Request</SelectItem>
-                <SelectItem value="response">Response</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={policyId} onValueChange={setPolicyId}>
-              <SelectTrigger className="w-48">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All policies</SelectItem>
-                {policies.map((policy) => (
-                  <SelectItem key={policy.id} value={policy.id}>
-                    {policy.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
-              value={scopeType}
-              onValueChange={(value) => {
-                setScopeType(value as EventScopeType);
-                setScopeId("all");
-              }}
-            >
-              <SelectTrigger className="w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All scopes</SelectItem>
-                <SelectItem value="team">Team</SelectItem>
-                <SelectItem value="project">Project</SelectItem>
-                <SelectItem value="virtual_key">Virtual key</SelectItem>
-              </SelectContent>
-            </Select>
-            {scopeType !== "all" ? (
-              <Select value={scopeId} onValueChange={setScopeId}>
-                <SelectTrigger className="w-56">
+    <>
+      <Card>
+        <CardHeader>
+          <div>
+            <CardTitle>Recent events</CardTitle>
+            <CardDescription>Append-only guardrail decisions from proxy traffic.</CardDescription>
+          </div>
+          <div className="mt-4">
+            <FilterToolbar chips={chips} onClearAll={chips.length > 0 ? clearAll : undefined}>
+              <Select value={decision} onValueChange={setDecision}>
+                <SelectTrigger className="w-40">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All {scopeType.replace("_", " ")}s</SelectItem>
-                  {eventScopeOptions.map((option) => (
-                    <SelectItem key={option.id} value={option.id}>
-                      {option.label}
+                  <SelectItem value="all">All decisions</SelectItem>
+                  <SelectItem value="allowed">Allowed</SelectItem>
+                  <SelectItem value="dry_run">Dry run</SelectItem>
+                  <SelectItem value="blocked">Blocked</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={phase} onValueChange={setPhase}>
+                <SelectTrigger className="w-36">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All phases</SelectItem>
+                  <SelectItem value="request">Request</SelectItem>
+                  <SelectItem value="response">Response</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={policyId} onValueChange={setPolicyId}>
+                <SelectTrigger className="w-48">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All policies</SelectItem>
+                  {policies.map((policy) => (
+                    <SelectItem key={policy.id} value={policy.id}>
+                      {policy.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            ) : null}
-            <Input
-              value={model}
-              onChange={(event) => setModel(event.target.value)}
-              placeholder="Filter model"
-              className="w-44"
-            />
-            <Input
-              value={ruleId}
-              onChange={(event) => setRuleId(event.target.value)}
-              placeholder="Filter rule ID"
-              className="w-44"
-            />
-            <Input
-              value={providerId}
-              onChange={(event) => setProviderId(event.target.value)}
-              placeholder="Filter provider ID"
-              className="w-44"
-            />
-            <Input
-              value={poolId}
-              onChange={(event) => setPoolId(event.target.value)}
-              placeholder="Filter pool ID"
-              className="w-44"
-            />
-          </FilterToolbar>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <DataTable
-          columns={columns}
-          data={events}
-          loading={eventsQuery.isPending}
-          error={eventsQuery.isError ? "Could not load guardrail events." : undefined}
-          onRetry={() => void eventsQuery.refetch()}
-          getRowKey={(event) => event.id}
-          empty={{
-            icon: ShieldX,
-            title: "No guardrail events",
-            description: "Events appear when proxied requests pass or fail assigned policies.",
-          }}
-        />
-      </CardContent>
-    </Card>
+              <Select
+                value={scopeType}
+                onValueChange={(value) => {
+                  setScopeType(value as EventScopeType);
+                  setScopeId("all");
+                }}
+              >
+                <SelectTrigger className="w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All scopes</SelectItem>
+                  <SelectItem value="team">Team</SelectItem>
+                  <SelectItem value="project">Project</SelectItem>
+                  <SelectItem value="virtual_key">Virtual key</SelectItem>
+                </SelectContent>
+              </Select>
+              {scopeType !== "all" ? (
+                <Select value={scopeId} onValueChange={setScopeId}>
+                  <SelectTrigger className="w-56">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All {scopeType.replace("_", " ")}s</SelectItem>
+                    {eventScopeOptions.map((option) => (
+                      <SelectItem key={option.id} value={option.id}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : null}
+              <Input
+                value={model}
+                onChange={(event) => setModel(event.target.value)}
+                placeholder="Filter model"
+                className="w-44"
+              />
+              <Input
+                value={ruleId}
+                onChange={(event) => setRuleId(event.target.value)}
+                placeholder="Filter rule ID"
+                className="w-44"
+              />
+              <Input
+                value={providerId}
+                onChange={(event) => setProviderId(event.target.value)}
+                placeholder="Filter provider ID"
+                className="w-44"
+              />
+              <Input
+                value={poolId}
+                onChange={(event) => setPoolId(event.target.value)}
+                placeholder="Filter pool ID"
+                className="w-44"
+              />
+            </FilterToolbar>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <DataTable
+            columns={columns}
+            data={events}
+            loading={eventsQuery.isPending}
+            error={eventsQuery.isError ? "Could not load guardrail events." : undefined}
+            onRetry={() => void eventsQuery.refetch()}
+            getRowKey={(event) => event.id}
+            empty={{
+              icon: ShieldX,
+              title: "No guardrail events",
+              description: "Events appear when proxied requests pass or fail assigned policies.",
+            }}
+          />
+        </CardContent>
+      </Card>
+      <RequestTraceSheet
+        gatewayRequestId={traceRequestId}
+        open={Boolean(traceRequestId)}
+        onOpenChange={(open) => {
+          if (!open) setTraceRequestId(null);
+        }}
+      />
+    </>
   );
 }

@@ -6,6 +6,6 @@
  */
 import type { ModelMetadataSyncMode } from './modelMetadataSyncMode';
 
-export interface SyncModelOfferingsRequest {
+export interface SyncProviderModelOfferingsRequest {
   metadata_mode?: ModelMetadataSyncMode;
 }

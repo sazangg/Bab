@@ -141,6 +141,7 @@ async def test_team_member_can_view_own_team_project_but_not_other_team(
     org, team, project, other_team, _, _, _, _ = await _workspace(db_session)
     user = _user(org_id=org.id)
     db_session.add(_user_row(user))
+    await db_session.flush()
     db_session.add(
         TeamMembership(
             org_id=org.id,
@@ -180,6 +181,7 @@ async def test_project_admin_can_view_own_project_but_not_cross_project_or_org(
     org, _, project, _, other_project, cross_org_project, _, _ = await _workspace(db_session)
     user = _user(org_id=org.id)
     db_session.add(_user_row(user))
+    await db_session.flush()
     db_session.add(
         ProjectMembership(
             org_id=org.id,
@@ -213,6 +215,7 @@ async def test_project_member_can_view_only_own_project_and_cannot_manage_it(
     org, _, project, _, other_project, _, _, _ = await _workspace(db_session)
     user = _user(org_id=org.id)
     db_session.add(_user_row(user))
+    await db_session.flush()
     db_session.add(
         ProjectMembership(
             org_id=org.id,
@@ -599,6 +602,7 @@ async def test_project_admin_guardrail_reads_are_limited_to_own_project(
         await guardrails_repository.create_event(
             org_id=org.id,
             policy_id=policy.id,
+            policy_revision_id=None,
             rule_id=None,
             decision="blocked",
             phase="request",

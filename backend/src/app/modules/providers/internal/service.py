@@ -41,9 +41,11 @@ from app.modules.providers.internal.model_metadata import (
 from app.modules.providers.internal.models import (
     CredentialPool,
     CredentialPoolCredential,
+    ModelCatalogEntry,
     ModelOffering,
     Provider,
     ProviderCredential,
+    ProviderModelCatalogMapping,
 )
 from app.modules.providers.internal.secret_backends import (
     LOCAL_SECRET_BACKEND,
@@ -54,14 +56,12 @@ from app.modules.providers.internal.secret_backends import (
 from app.modules.providers.schemas import (
     AddCredentialPoolCredentialRequest,
     CreateCredentialPoolRequest,
-    CreateModelOfferingRequest,
     CreateProviderCredentialRequest,
+    CreateProviderModelOfferingRequest,
     CreateProviderRequest,
     CredentialPoolCredentialResponse,
     CredentialPoolResponse,
     ModelMetadataSyncMode,
-    ModelOfferingPageResponse,
-    ModelOfferingResponse,
     ModelSyncSummary,
     ProviderAnthropicMessagesRequest,
     ProviderAnthropicMessagesResponse,
@@ -72,18 +72,20 @@ from app.modules.providers.schemas import (
     ProviderCredentialRoutingPolicy,
     ProviderCredentialSummary,
     ProviderImpactResponse,
+    ProviderModelOfferingPageResponse,
+    ProviderModelOfferingResponse,
     ProviderOperationalState,
     ProviderReadiness,
     ProviderResourceImpactResponse,
     ProviderResponse,
-    SyncModelOfferingsResponse,
-    TestModelOfferingRequest,
-    TestModelOfferingResponse,
+    SyncProviderModelOfferingsResponse,
     TestProviderCredentialResponse,
+    TestProviderModelOfferingRequest,
+    TestProviderModelOfferingResponse,
     UpdateCredentialPoolCredentialRequest,
     UpdateCredentialPoolRequest,
-    UpdateModelOfferingRequest,
     UpdateProviderCredentialRequest,
+    UpdateProviderModelOfferingRequest,
     UpdateProviderRequest,
 )
 from app.modules.settings import facade as settings_facade
@@ -741,25 +743,23 @@ async def deactivate_provider_credential(
 async def create_model_offering(
     *,
     provider_id: UUID,
-    payload: CreateModelOfferingRequest,
+    payload: CreateProviderModelOfferingRequest,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
-) -> ModelOfferingResponse:
+) -> ProviderModelOfferingResponse:
     async with transaction(db):
         await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
         await _ensure_model_offering_unique(
             org_id=scope.org_id,
             provider_id=provider_id,
             provider_model_name=payload.provider_model_name,
-            alias=payload.alias,
             db=db,
         )
         model_offering = await repository.create_model_offering(
             org_id=scope.org_id,
             provider_id=provider_id,
             provider_model_name=payload.provider_model_name,
-            alias=payload.alias,
             version=payload.version,
             modality=payload.modality,
             input_modalities=payload.input_modalities,
@@ -790,7 +790,6 @@ async def _ensure_model_offering_unique(
     org_id: UUID,
     provider_id: UUID,
     provider_model_name: str | None,
-    alias: str | None,
     db: AsyncSession,
     current_model_offering_id: UUID | None = None,
 ) -> None:
@@ -799,17 +798,6 @@ async def _ensure_model_offering_unique(
             org_id=org_id,
             provider_id=provider_id,
             provider_model_name=provider_model_name,
-            db=db,
-        )
-        if existing is not None and existing.id != current_model_offering_id:
-            raise ProviderResourceConflictError
-    if alias is not None:
-        # Aliases must be unique across the whole org (not just within a provider): the
-        # gateway resolves requested_model against any offering's alias, so a duplicate
-        # alias on another provider would make routing ambiguous.
-        existing = await repository.get_model_offering_by_alias_in_org(
-            org_id=org_id,
-            alias=alias,
             db=db,
         )
         if existing is not None and existing.id != current_model_offering_id:
@@ -826,7 +814,7 @@ async def sync_model_offerings(
     metadata_mode: ModelMetadataSyncMode,
     sync_mode: str,
     secret_registry: ProviderSecretBackendRegistry | None = None,
-) -> SyncModelOfferingsResponse:
+) -> SyncProviderModelOfferingsResponse:
     if sync_mode == "disabled":
         raise ProviderUpstreamError(
             status_code=409,
@@ -897,7 +885,6 @@ async def sync_model_offerings(
                     org_id=scope.org_id,
                     provider_id=provider_id,
                     provider_model_name=model_name,
-                    alias=None,
                     version=metadata.version if metadata else None,
                     modality=(
                         _combined_modality(metadata.input_modalities, metadata.output_modalities)
@@ -913,17 +900,6 @@ async def sync_model_offerings(
                     input_price_per_million_tokens=None,
                     output_price_per_million_tokens=None,
                     cached_input_price_per_million_tokens=None,
-                    catalog_input_price_per_million_tokens=(
-                        metadata.pricing.input_price_per_million_tokens if metadata else None
-                    ),
-                    catalog_output_price_per_million_tokens=(
-                        metadata.pricing.output_price_per_million_tokens if metadata else None
-                    ),
-                    catalog_cached_input_price_per_million_tokens=(
-                        metadata.pricing.cached_input_price_per_million_tokens if metadata else None
-                    ),
-                    pricing_catalog_version=metadata.pricing.catalog_version if metadata else None,
-                    pricing_last_refreshed_at=synced_at if metadata else None,
                     rate_limit_hints=metadata.rate_limit_hints if metadata else {},
                     metadata_source="catalog" if metadata else "provider",
                     db=db,
@@ -955,6 +931,56 @@ async def sync_model_offerings(
                     summary.updated += 1
                 else:
                     summary.unchanged += 1
+            if metadata is not None:
+                catalog_entry = await repository.upsert_model_catalog_entry(
+                    canonical_name=metadata.provider_model_name,
+                    provider_family=_provider_family(provider),
+                    version=metadata.version,
+                    input_modalities=metadata.input_modalities,
+                    output_modalities=metadata.output_modalities,
+                    capabilities=metadata.capabilities,
+                    context_window=metadata.context_window,
+                    input_price_per_million_tokens=metadata.pricing.input_price_per_million_tokens,
+                    output_price_per_million_tokens=(
+                        metadata.pricing.output_price_per_million_tokens
+                    ),
+                    cached_input_price_per_million_tokens=(
+                        metadata.pricing.cached_input_price_per_million_tokens
+                    ),
+                    metadata_source="static",
+                    catalog_version=metadata.pricing.catalog_version
+                    or metadata.metadata_version
+                    or "unversioned",
+                    refreshed_at=synced_at,
+                    db=db,
+                )
+                await repository.upsert_provider_model_catalog_mapping(
+                    org_id=scope.org_id,
+                    provider_id=provider_id,
+                    model_offering_id=model_offering.id,
+                    catalog_entry_id=catalog_entry.id,
+                    match_source="static_metadata",
+                    confidence="exact",
+                    input_price_per_million_tokens=metadata.pricing.input_price_per_million_tokens,
+                    output_price_per_million_tokens=(
+                        metadata.pricing.output_price_per_million_tokens
+                    ),
+                    cached_input_price_per_million_tokens=(
+                        metadata.pricing.cached_input_price_per_million_tokens
+                    ),
+                    pricing_source="static"
+                    if any(
+                        value is not None
+                        for value in (
+                            metadata.pricing.input_price_per_million_tokens,
+                            metadata.pricing.output_price_per_million_tokens,
+                            metadata.pricing.cached_input_price_per_million_tokens,
+                        )
+                    )
+                    else None,
+                    refreshed_at=synced_at,
+                    db=db,
+                )
             synced_models.append(model_offering)
         await activity_facade.record_admin_event(
             actor=actor,
@@ -972,11 +998,22 @@ async def sync_model_offerings(
         model_count=len(synced_models),
         org_id=str(scope.org_id),
     )
-    return SyncModelOfferingsResponse(
+    mapping_by_model = await repository.list_primary_catalog_mappings(
+        org_id=scope.org_id,
+        model_offering_ids=[model.id for model in synced_models],
+        db=db,
+    )
+    return SyncProviderModelOfferingsResponse(
         synced_at=synced_at,
         status="success",
         summary=summary,
-        models=[_model_offering_response(model_offering) for model_offering in synced_models],
+        models=[
+            _model_offering_response(
+                model_offering,
+                catalog_mapping=mapping_by_model.get(model_offering.id),
+            )
+            for model_offering in synced_models
+        ],
     )
 
 
@@ -990,7 +1027,7 @@ async def list_model_offerings(
     offset: int,
     scope: Scope,
     db: AsyncSession,
-) -> ModelOfferingPageResponse:
+) -> ProviderModelOfferingPageResponse:
     await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
     model_offerings, total = await repository.list_model_offerings(
         org_id=scope.org_id,
@@ -1002,8 +1039,19 @@ async def list_model_offerings(
         offset=offset,
         db=db,
     )
-    return ModelOfferingPageResponse(
-        items=[_model_offering_response(model_offering) for model_offering in model_offerings],
+    mapping_by_model = await repository.list_primary_catalog_mappings(
+        org_id=scope.org_id,
+        model_offering_ids=[model.id for model in model_offerings],
+        db=db,
+    )
+    return ProviderModelOfferingPageResponse(
+        items=[
+            _model_offering_response(
+                model_offering,
+                catalog_mapping=mapping_by_model.get(model_offering.id),
+            )
+            for model_offering in model_offerings
+        ],
         total=total,
         limit=limit,
         offset=offset,
@@ -1015,7 +1063,7 @@ async def get_model_offering(
     model_offering_id: UUID,
     scope: Scope,
     db: AsyncSession,
-) -> ModelOfferingResponse:
+) -> ProviderModelOfferingResponse:
     model_offering = await repository.get_model_offering(
         org_id=scope.org_id,
         model_offering_id=model_offering_id,
@@ -1023,20 +1071,28 @@ async def get_model_offering(
     )
     if model_offering is None:
         raise ProviderNotFoundError
-    return _model_offering_response(model_offering)
+    mapping_by_model = await repository.list_primary_catalog_mappings(
+        org_id=scope.org_id,
+        model_offering_ids=[model_offering.id],
+        db=db,
+    )
+    return _model_offering_response(
+        model_offering,
+        catalog_mapping=mapping_by_model.get(model_offering.id),
+    )
 
 
 async def test_model_offering(
     *,
     provider_id: UUID,
     model_offering_id: UUID,
-    payload: TestModelOfferingRequest,
+    payload: TestProviderModelOfferingRequest,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
     http_client: httpx.AsyncClient,
     secret_registry: ProviderSecretBackendRegistry | None = None,
-) -> TestModelOfferingResponse:
+) -> TestProviderModelOfferingResponse:
     async with transaction(db):
         provider = await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
         model_offering = await _get_model_offering_or_raise(
@@ -1052,7 +1108,7 @@ async def test_model_offering(
             *OPENAI_COMPAT_INTEGRATIONS,
             "anthropic_messages",
         }:
-            return TestModelOfferingResponse(
+            return TestProviderModelOfferingResponse(
                 id=model_offering.id,
                 health_status="unsupported",
                 last_validation_error=(
@@ -1137,7 +1193,7 @@ async def test_model_offering(
         if last_error is not None and error is None:
             error = str(last_error.body)
 
-    return TestModelOfferingResponse(
+    return TestProviderModelOfferingResponse(
         id=model_offering.id,
         provider_credential_id=tested_credential_id,
         health_status=health_status,
@@ -1150,11 +1206,11 @@ async def update_model_offering(
     *,
     provider_id: UUID,
     model_offering_id: UUID,
-    payload: UpdateModelOfferingRequest,
+    payload: UpdateProviderModelOfferingRequest,
     actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
-) -> ModelOfferingResponse:
+) -> ProviderModelOfferingResponse:
     async with transaction(db):
         await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
         model_offering = await _get_model_offering_or_raise(
@@ -1168,21 +1224,10 @@ async def update_model_offering(
                 org_id=scope.org_id,
                 provider_id=provider_id,
                 provider_model_name=payload.provider_model_name,
-                alias=None,
                 current_model_offering_id=model_offering.id,
                 db=db,
             )
             model_offering.provider_model_name = payload.provider_model_name
-        if "alias" in payload.model_fields_set:
-            await _ensure_model_offering_unique(
-                org_id=scope.org_id,
-                provider_id=provider_id,
-                provider_model_name=None,
-                alias=payload.alias,
-                current_model_offering_id=model_offering.id,
-                db=db,
-            )
-            model_offering.alias = payload.alias
         if "version" in payload.model_fields_set:
             model_offering.version = payload.version
         if payload.modality is not None:
@@ -1225,7 +1270,15 @@ async def update_model_offering(
             db=db,
         )
 
-    return _model_offering_response(model_offering)
+    mapping_by_model = await repository.list_primary_catalog_mappings(
+        org_id=scope.org_id,
+        model_offering_ids=[model_offering.id],
+        db=db,
+    )
+    return _model_offering_response(
+        model_offering,
+        catalog_mapping=mapping_by_model.get(model_offering.id),
+    )
 
 
 async def deactivate_model_offering(
@@ -1986,6 +2039,13 @@ def _provider_catalog_type(provider: Provider) -> str:
     )
 
 
+def _provider_family(provider: Provider) -> str:
+    slug = (provider.slug or "").strip()
+    if slug:
+        return slug
+    return (provider.supported_integration or "global").strip() or "global"
+
+
 def _aggregate_provider_capabilities(provider: Provider) -> dict:
     model_capabilities = getattr(provider, "_active_model_capabilities", None)
     if not model_capabilities:
@@ -2434,11 +2494,6 @@ def _enrich_model_offering_from_metadata(
             model_offering.input_modalities,
             model_offering.output_modalities,
         )
-    _refresh_model_offering_catalog_pricing(
-        model_offering=model_offering,
-        metadata=metadata,
-        refreshed_at=refreshed_at,
-    )
     model_offering.rate_limit_hints = {
         **metadata.rate_limit_hints,
         **(model_offering.rate_limit_hints or {}),
@@ -2463,49 +2518,36 @@ def _overwrite_model_offering_from_metadata(
     model_offering.input_price_per_million_tokens = None
     model_offering.output_price_per_million_tokens = None
     model_offering.cached_input_price_per_million_tokens = None
-    _refresh_model_offering_catalog_pricing(
-        model_offering=model_offering,
-        metadata=metadata,
-        refreshed_at=refreshed_at,
-    )
     model_offering.rate_limit_hints = metadata.rate_limit_hints
     model_offering.metadata_source = "catalog"
 
 
-def _refresh_model_offering_catalog_pricing(
-    *,
+def _model_offering_response(
     model_offering: ModelOffering,
-    metadata: ModelMetadata,
-    refreshed_at: datetime,
-) -> None:
-    model_offering.catalog_input_price_per_million_tokens = (
-        metadata.pricing.input_price_per_million_tokens
+    *,
+    catalog_mapping: tuple[ProviderModelCatalogMapping, ModelCatalogEntry] | None = None,
+) -> ProviderModelOfferingResponse:
+    mapping, catalog_entry = catalog_mapping if catalog_mapping is not None else (None, None)
+    effective_input = _effective_price(
+        manual=model_offering.input_price_per_million_tokens,
+        mapping=mapping.input_price_per_million_tokens if mapping is not None else None,
+        catalog=catalog_entry.input_price_per_million_tokens if catalog_entry is not None else None,
     )
-    model_offering.catalog_output_price_per_million_tokens = (
-        metadata.pricing.output_price_per_million_tokens
+    effective_output = _effective_price(
+        manual=model_offering.output_price_per_million_tokens,
+        mapping=mapping.output_price_per_million_tokens if mapping is not None else None,
+        catalog=catalog_entry.output_price_per_million_tokens
+        if catalog_entry is not None
+        else None,
     )
-    model_offering.catalog_cached_input_price_per_million_tokens = (
-        metadata.pricing.cached_input_price_per_million_tokens
-    )
-    model_offering.pricing_catalog_version = metadata.pricing.catalog_version
-    model_offering.pricing_last_refreshed_at = refreshed_at
-
-
-def _model_offering_response(model_offering: ModelOffering) -> ModelOfferingResponse:
-    effective_input = (
-        model_offering.input_price_per_million_tokens
-        if model_offering.input_price_per_million_tokens is not None
-        else model_offering.catalog_input_price_per_million_tokens
-    )
-    effective_output = (
-        model_offering.output_price_per_million_tokens
-        if model_offering.output_price_per_million_tokens is not None
-        else model_offering.catalog_output_price_per_million_tokens
-    )
-    effective_cached_input = (
-        model_offering.cached_input_price_per_million_tokens
-        if model_offering.cached_input_price_per_million_tokens is not None
-        else model_offering.catalog_cached_input_price_per_million_tokens
+    effective_cached_input = _effective_price(
+        manual=model_offering.cached_input_price_per_million_tokens,
+        mapping=mapping.cached_input_price_per_million_tokens if mapping is not None else None,
+        catalog=(
+            catalog_entry.cached_input_price_per_million_tokens
+            if catalog_entry is not None
+            else None
+        ),
     )
     has_manual_price = any(
         value is not None
@@ -2515,25 +2557,32 @@ def _model_offering_response(model_offering: ModelOffering) -> ModelOfferingResp
             model_offering.cached_input_price_per_million_tokens,
         )
     )
-    has_catalog_price = any(
-        value is not None
-        for value in (
-            model_offering.catalog_input_price_per_million_tokens,
-            model_offering.catalog_output_price_per_million_tokens,
-            model_offering.catalog_cached_input_price_per_million_tokens,
-        )
-    )
     pricing_source = "unset"
     if has_manual_price:
         pricing_source = "manual"
-    elif has_catalog_price:
+    elif mapping is not None and any(
+        value is not None
+        for value in (
+            mapping.input_price_per_million_tokens,
+            mapping.output_price_per_million_tokens,
+            mapping.cached_input_price_per_million_tokens,
+        )
+    ):
+        pricing_source = "catalog_mapping"
+    elif catalog_entry is not None and any(
+        value is not None
+        for value in (
+            catalog_entry.input_price_per_million_tokens,
+            catalog_entry.output_price_per_million_tokens,
+            catalog_entry.cached_input_price_per_million_tokens,
+        )
+    ):
         pricing_source = "catalog"
-    return ModelOfferingResponse(
+    return ProviderModelOfferingResponse(
         id=model_offering.id,
         org_id=model_offering.org_id,
         provider_id=model_offering.provider_id,
         provider_model_name=model_offering.provider_model_name,
-        alias=model_offering.alias,
         version=model_offering.version,
         modality=model_offering.modality,
         input_modalities=model_offering.input_modalities,
@@ -2543,21 +2592,10 @@ def _model_offering_response(model_offering: ModelOffering) -> ModelOfferingResp
         input_price_per_million_tokens=model_offering.input_price_per_million_tokens,
         output_price_per_million_tokens=model_offering.output_price_per_million_tokens,
         cached_input_price_per_million_tokens=model_offering.cached_input_price_per_million_tokens,
-        catalog_input_price_per_million_tokens=(
-            model_offering.catalog_input_price_per_million_tokens
-        ),
-        catalog_output_price_per_million_tokens=(
-            model_offering.catalog_output_price_per_million_tokens
-        ),
-        catalog_cached_input_price_per_million_tokens=(
-            model_offering.catalog_cached_input_price_per_million_tokens
-        ),
         effective_input_price_per_million_tokens=effective_input,
         effective_output_price_per_million_tokens=effective_output,
         effective_cached_input_price_per_million_tokens=effective_cached_input,
         pricing_source=pricing_source,
-        pricing_catalog_version=model_offering.pricing_catalog_version,
-        pricing_last_refreshed_at=model_offering.pricing_last_refreshed_at,
         rate_limit_hints=model_offering.rate_limit_hints,
         metadata_source=model_offering.metadata_source,
         metadata_last_synced_at=model_offering.metadata_last_synced_at,
@@ -2565,6 +2603,19 @@ def _model_offering_response(model_offering: ModelOffering) -> ModelOfferingResp
         created_at=model_offering.created_at,
         updated_at=model_offering.updated_at,
     )
+
+
+def _effective_price(
+    *,
+    manual: int | None,
+    mapping: int | None,
+    catalog: int | None,
+) -> int | None:
+    if manual is not None:
+        return manual
+    if mapping is not None:
+        return mapping
+    return catalog
 
 
 def _combined_modality(input_modalities: list[str], output_modalities: list[str]) -> str:

@@ -5,7 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface TestModelOfferingRequest {
+export interface TestProviderModelOfferingRequest {
   provider_credential_id?: string | null;
   credential_pool_id?: string | null;
 }

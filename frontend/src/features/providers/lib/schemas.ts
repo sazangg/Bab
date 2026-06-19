@@ -140,7 +140,6 @@ export const defaultCircuitBreakerPolicy: CircuitBreakerPolicyValues = {
 
 export const modelOfferingSchema = z.object({
   provider_model_name: z.string().min(1).max(255),
-  alias: z.string().optional(),
   version: z.string().optional(),
   input_modalities: z.array(z.string()).min(1),
   output_modalities: z.array(z.string()).min(1),

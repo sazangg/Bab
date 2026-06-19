@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import delete, func, or_, select
@@ -10,8 +11,10 @@ from app.modules.guardrails.internal.models import (
     GuardrailEvent,
     GuardrailPolicy,
     GuardrailRule,
+    GuardrailRuleMatcher,
 )
 from app.modules.keys.internal.models import Project, VirtualKey
+from app.modules.policies.internal.models import PolicyAssignment, PolicyRevision
 
 
 async def list_policies(*, org_id: UUID, db: AsyncSession) -> list[GuardrailPolicy]:
@@ -40,8 +43,10 @@ async def create_policy(
     enforcement_mode: str,
     is_active: bool,
     db: AsyncSession,
+    policy_id: UUID | None = None,
 ) -> GuardrailPolicy:
     policy = GuardrailPolicy(
+        policy_id=policy_id,
         org_id=org_id,
         name=name,
         description=description,
@@ -59,10 +64,26 @@ async def replace_rules(
     policy_id: UUID,
     rules: list[dict],
     db: AsyncSession,
+    policy_revision_id: UUID | None = None,
 ) -> None:
-    await db.execute(delete(GuardrailRule).where(GuardrailRule.policy_id == policy_id))
+    filters = [GuardrailRule.org_id == org_id, GuardrailRule.policy_id == policy_id]
+    if policy_revision_id is None:
+        filters.append(GuardrailRule.policy_revision_id.is_(None))
+    else:
+        filters.append(GuardrailRule.policy_revision_id == policy_revision_id)
+    await db.execute(delete(GuardrailRule).where(*filters))
     for rule in rules:
-        db.add(GuardrailRule(org_id=org_id, policy_id=policy_id, **rule))
+        matchers = rule.pop("matchers", [])
+        guardrail_rule = GuardrailRule(
+            org_id=org_id,
+            policy_id=policy_id,
+            policy_revision_id=policy_revision_id,
+            **rule,
+        )
+        db.add(guardrail_rule)
+        await db.flush()
+        for matcher in matchers:
+            db.add(GuardrailRuleMatcher(org_id=org_id, rule_id=guardrail_rule.id, **matcher))
     await db.flush()
 
 
@@ -79,13 +100,58 @@ async def list_policy_rules(
 ) -> list[GuardrailRule]:
     if not policy_ids:
         return []
+    active_revisions = await db.execute(
+        select(GuardrailPolicy.id, PolicyRevision.id)
+        .join(PolicyRevision, PolicyRevision.policy_id == GuardrailPolicy.policy_id)
+        .where(
+            GuardrailPolicy.org_id == org_id,
+            GuardrailPolicy.id.in_(policy_ids),
+            PolicyRevision.org_id == org_id,
+            PolicyRevision.status == "active",
+        )
+    )
+    active_revision_by_policy = {
+        guardrail_policy_id: revision_id
+        for guardrail_policy_id, revision_id in active_revisions.all()
+    }
+    revision_ids = list(active_revision_by_policy.values())
+    legacy_policy_ids = [
+        policy_id for policy_id in policy_ids if policy_id not in active_revision_by_policy
+    ]
+    filters = []
+    if revision_ids:
+        filters.append(GuardrailRule.policy_revision_id.in_(revision_ids))
+    if legacy_policy_ids:
+        filters.append(
+            (GuardrailRule.policy_id.in_(legacy_policy_ids))
+            & (GuardrailRule.policy_revision_id.is_(None))
+        )
+    if not filters:
+        return []
     result = await db.scalars(
         select(GuardrailRule)
         .where(
             GuardrailRule.org_id == org_id,
-            GuardrailRule.policy_id.in_(policy_ids),
+            or_(*filters),
         )
         .order_by(GuardrailRule.priority, GuardrailRule.created_at)
+    )
+    return list(result)
+
+
+async def list_rule_matchers(
+    *,
+    org_id: UUID,
+    rule_id: UUID,
+    db: AsyncSession,
+) -> list[GuardrailRuleMatcher]:
+    result = await db.scalars(
+        select(GuardrailRuleMatcher)
+        .where(
+            GuardrailRuleMatcher.org_id == org_id,
+            GuardrailRuleMatcher.rule_id == rule_id,
+        )
+        .order_by(GuardrailRuleMatcher.created_at.asc(), GuardrailRuleMatcher.id.asc())
     )
     return list(result)
 
@@ -137,10 +203,12 @@ async def create_assignment(
     enforcement_mode: str,
     is_active: bool,
     db: AsyncSession,
+    policy_assignment_id: UUID | None = None,
 ) -> GuardrailAssignment:
     assignment = GuardrailAssignment(
         org_id=org_id,
         policy_id=policy_id,
+        policy_assignment_id=policy_assignment_id,
         scope_type=scope_type,
         team_id=team_id,
         project_id=project_id,
@@ -266,8 +334,14 @@ async def list_effective_assignments(
     virtual_key_id: UUID,
     db: AsyncSession,
 ) -> list[GuardrailAssignment]:
+    now = datetime.now(UTC)
     result = await db.scalars(
-        select(GuardrailAssignment).where(
+        select(GuardrailAssignment)
+        .outerjoin(
+            PolicyAssignment,
+            GuardrailAssignment.policy_assignment_id == PolicyAssignment.id,
+        )
+        .where(
             GuardrailAssignment.org_id == org_id,
             GuardrailAssignment.is_active.is_(True),
             or_(
@@ -275,6 +349,18 @@ async def list_effective_assignments(
                 GuardrailAssignment.team_id == team_id,
                 GuardrailAssignment.project_id == project_id,
                 GuardrailAssignment.virtual_key_id == virtual_key_id,
+            ),
+            or_(
+                GuardrailAssignment.policy_assignment_id.is_(None),
+                (
+                    (PolicyAssignment.policy_type == "guardrail")
+                    & (PolicyAssignment.is_active.is_(True))
+                    & (
+                        PolicyAssignment.effective_from.is_(None)
+                        | (PolicyAssignment.effective_from <= now)
+                    )
+                    & (PolicyAssignment.effective_to.is_(None))
+                ),
             ),
         )
     )
@@ -285,6 +371,7 @@ async def create_event(
     *,
     org_id: UUID,
     policy_id: UUID | None,
+    policy_revision_id: UUID | None,
     rule_id: UUID | None,
     decision: str,
     phase: str,
@@ -299,10 +386,13 @@ async def create_event(
     provider_model: str,
     metadata: dict,
     db: AsyncSession,
+    gateway_request_id: UUID | None = None,
+    route_attempt_id: UUID | None = None,
 ) -> GuardrailEvent:
     event = GuardrailEvent(
         org_id=org_id,
         policy_id=policy_id,
+        policy_revision_id=policy_revision_id,
         rule_id=rule_id,
         decision=decision,
         phase=phase,
@@ -313,6 +403,8 @@ async def create_event(
         provider_id=provider_id,
         pool_id=pool_id,
         request_id=request_id or current_request_id(),
+        gateway_request_id=gateway_request_id,
+        route_attempt_id=route_attempt_id,
         requested_model=requested_model,
         provider_model=provider_model,
         metadata_=metadata,
@@ -381,5 +473,22 @@ async def list_events(
         .where(*filters)
         .order_by(GuardrailEvent.created_at.desc())
         .limit(limit)
+    )
+    return list(result)
+
+
+async def list_events_for_gateway_request(
+    *,
+    org_id: UUID,
+    gateway_request_id: UUID,
+    db: AsyncSession,
+) -> list[GuardrailEvent]:
+    result = await db.scalars(
+        select(GuardrailEvent)
+        .where(
+            GuardrailEvent.org_id == org_id,
+            GuardrailEvent.gateway_request_id == gateway_request_id,
+        )
+        .order_by(GuardrailEvent.created_at)
     )
     return list(result)

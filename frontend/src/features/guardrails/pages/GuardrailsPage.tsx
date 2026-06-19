@@ -29,10 +29,6 @@ import {
   listVirtualKeysApiV1ProjectsProjectIdKeysGet,
   useListProjectsApiV1ProjectsGet,
 } from "@/shared/api/generated/projects/projects";
-import {
-  listModelOfferingsApiV1ProvidersProviderIdOfferingsGet,
-  useListProvidersApiV1ProvidersGet,
-} from "@/shared/api/generated/providers/providers";
 import type {
   GuardrailAssignmentResponse,
   GuardrailPolicyResponse,
@@ -57,11 +53,12 @@ import {
   emptyAssignmentForm,
   emptyPolicyForm,
   firstAssignableScope,
+  newMatcherForm,
   newRuleForm,
   normalizeRulePhase,
   parseRuleValues,
+  parseMatcherValue,
   readRuleDetector,
-  uniqueModelOptions,
   validateRuleForm,
   type AssignmentFormState,
   type GuardrailPolicyOption,
@@ -110,19 +107,17 @@ export function GuardrailsPage() {
     enabled: Boolean(currentUser),
   });
   const assignmentsQuery = useListAssignmentsApiV1GuardrailsAssignmentsGet();
-  const recentBlocksQuery = useListEventsApiV1GuardrailsEventsGet({ decision: "blocked", limit: 50 });
+  const recentBlocksQuery = useListEventsApiV1GuardrailsEventsGet({
+    decision: "blocked",
+    limit: 50,
+  });
   const teamsQuery = useListTeamsApiV1TeamsGet();
   const projectsQuery = useListProjectsApiV1ProjectsGet();
-  const providersQuery = useListProvidersApiV1ProvidersGet({
-    query: { enabled: canManageGuardrails },
-  });
-
   const policies = policiesQuery.data?.status === 200 ? policiesQuery.data.data : [];
   const policyOptions = policyOptionsQuery.data ?? [];
   const assignments = assignmentsQuery.data?.status === 200 ? assignmentsQuery.data.data : [];
   const teams = teamsQuery.data?.status === 200 ? teamsQuery.data.data : [];
   const projects = projectsQuery.data?.status === 200 ? projectsQuery.data.data : [];
-  const providers = providersQuery.data?.status === 200 ? providersQuery.data.data : [];
   const recentBlockCount =
     recentBlocksQuery.data?.status === 200 ? recentBlocksQuery.data.data.length : 0;
 
@@ -139,24 +134,6 @@ export function GuardrailsPage() {
     if (query.data?.status !== 200 || !project) return [];
     return query.data.data.map((key) => ({ ...key, project_name: project.name }));
   });
-  const modelOfferingQueries = useQueries({
-    queries: providers.map((provider) => ({
-      queryKey: ["guardrail-policy-model-offerings", provider.id],
-      queryFn: ({ signal }: { signal: AbortSignal }) =>
-        listModelOfferingsApiV1ProvidersProviderIdOfferingsGet(
-          provider.id,
-          { limit: 500, is_active: true },
-          { signal },
-        ),
-      enabled: canManageGuardrails && providers.length > 0,
-    })),
-  });
-  const modelOptions = uniqueModelOptions(
-    modelOfferingQueries.flatMap((query) =>
-      query.data?.status === 200 ? query.data.data.items : [],
-    ),
-  );
-
   const teamAdminIds = new Set(
     (currentUser?.team_memberships ?? [])
       .filter((membership) => membership.role === "team_admin")
@@ -314,6 +291,18 @@ export function GuardrailsPage() {
                 phase: normalizeRulePhase(rule.rule_type, rule.phase ?? "both"),
                 values: rule.values.join("\n"),
                 detector: readRuleDetector(rule.config),
+                matchers:
+                  rule.matchers?.map((matcher) =>
+                    newMatcherForm({
+                      dimension: matcher.dimension,
+                      operator: matcher.operator,
+                      value: Array.isArray(matcher.value_json)
+                        ? matcher.value_json.join("\n")
+                        : matcher.value_json == null
+                          ? ""
+                          : String(matcher.value_json),
+                    }),
+                  ) ?? [],
                 priority: rule.priority,
                 is_active: rule.is_active,
               }),
@@ -360,6 +349,11 @@ export function GuardrailsPage() {
         phase: normalizeRulePhase(rule.rule_type, rule.phase),
         values,
         config: buildRuleConfig(rule),
+        matchers: rule.matchers.map((matcher) => ({
+          dimension: matcher.dimension,
+          operator: matcher.operator,
+          value_json: parseMatcherValue(matcher),
+        })),
         priority: rule.priority,
         is_active: rule.is_active,
       });
@@ -453,7 +447,7 @@ export function GuardrailsPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Guardrails"
-        description="Composable request policies that constrain models, providers, and pools."
+        description="Composable request and response policies that inspect and block unsafe content."
         actions={
           canAssignGuardrails || canManageGuardrails ? (
             <div className="flex gap-2">
@@ -546,7 +540,6 @@ export function GuardrailsPage() {
         assignmentForm={assignmentForm}
         setAssignmentForm={setAssignmentForm}
         assignmentScopeOptions={assignmentScopeOptions}
-        modelOptions={modelOptions}
         onSubmit={submitPolicy}
         isPending={createPolicy.isPending || updatePolicy.isPending}
       />

@@ -59,7 +59,7 @@ export function EffectiveAccessSummaryCard({
           {summary.routes.slice(0, 3).map((route) => (
             <div key={`${route.credential_pool_id}-${route.model_offering_id}`}>
               <Link className="hover:underline" to={`/providers/${route.provider_id}`}>
-                {route.alias ?? route.provider_model}
+                {route.provider_model}
               </Link>
               {"access_policy_name" in route && route.access_policy_name ? (
                 <span className="text-muted-foreground"> · {route.access_policy_name}</span>

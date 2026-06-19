@@ -234,12 +234,12 @@ class TestProviderCredentialResponse(BaseModel):
     failure_message: str | None = None
 
 
-class TestModelOfferingRequest(BaseModel):
+class TestProviderModelOfferingRequest(BaseModel):
     provider_credential_id: UUID | None = None
     credential_pool_id: UUID | None = None
 
 
-class TestModelOfferingResponse(BaseModel):
+class TestProviderModelOfferingResponse(BaseModel):
     id: UUID
     provider_credential_id: UUID | None = None
     health_status: str
@@ -247,9 +247,8 @@ class TestModelOfferingResponse(BaseModel):
     upstream_status_code: int | None = None
 
 
-class CreateModelOfferingRequest(BaseModel):
+class CreateProviderModelOfferingRequest(BaseModel):
     provider_model_name: str = Field(min_length=1, max_length=255)
-    alias: str | None = Field(default=None, min_length=1, max_length=255)
     version: str | None = Field(default=None, max_length=100)
     modality: str = Field(default="text", max_length=100)
     input_modalities: list[str] = Field(default_factory=lambda: ["text"])
@@ -262,9 +261,8 @@ class CreateModelOfferingRequest(BaseModel):
     rate_limit_hints: dict[str, Any] = Field(default_factory=dict)
 
 
-class UpdateModelOfferingRequest(BaseModel):
+class UpdateProviderModelOfferingRequest(BaseModel):
     provider_model_name: str | None = Field(default=None, min_length=1, max_length=255)
-    alias: str | None = Field(default=None, min_length=1, max_length=255)
     version: str | None = Field(default=None, max_length=100)
     modality: str | None = Field(default=None, max_length=100)
     input_modalities: list[str] | None = None
@@ -283,7 +281,7 @@ class ModelMetadataSyncMode(StrEnum):
     overwrite_catalog = "overwrite_catalog"
 
 
-class SyncModelOfferingsRequest(BaseModel):
+class SyncProviderModelOfferingsRequest(BaseModel):
     metadata_mode: ModelMetadataSyncMode = ModelMetadataSyncMode.fill_missing
 
 
@@ -296,14 +294,13 @@ class ModelSyncSummary(BaseModel):
     failed: int = 0
 
 
-class ModelOfferingResponse(BaseModel):
+class ProviderModelOfferingResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     org_id: UUID
     provider_id: UUID
     provider_model_name: str
-    alias: str | None
     version: str | None
     modality: str
     input_modalities: list[str]
@@ -313,15 +310,10 @@ class ModelOfferingResponse(BaseModel):
     input_price_per_million_tokens: int | None
     output_price_per_million_tokens: int | None
     cached_input_price_per_million_tokens: int | None
-    catalog_input_price_per_million_tokens: int | None
-    catalog_output_price_per_million_tokens: int | None
-    catalog_cached_input_price_per_million_tokens: int | None
     effective_input_price_per_million_tokens: int | None
     effective_output_price_per_million_tokens: int | None
     effective_cached_input_price_per_million_tokens: int | None
     pricing_source: str
-    pricing_catalog_version: str | None
-    pricing_last_refreshed_at: datetime | None
     rate_limit_hints: dict[str, Any]
     metadata_source: str
     metadata_last_synced_at: datetime | None
@@ -330,19 +322,19 @@ class ModelOfferingResponse(BaseModel):
     updated_at: datetime
 
 
-class ModelOfferingPageResponse(BaseModel):
-    items: list[ModelOfferingResponse]
+class ProviderModelOfferingPageResponse(BaseModel):
+    items: list[ProviderModelOfferingResponse]
     total: int
     limit: int
     offset: int
 
 
-class SyncModelOfferingsResponse(BaseModel):
+class SyncProviderModelOfferingsResponse(BaseModel):
     synced_at: datetime
     status: str
     error_message: str | None = None
     summary: ModelSyncSummary = Field(default_factory=ModelSyncSummary)
-    models: list[ModelOfferingResponse] = Field(default_factory=list)
+    models: list[ProviderModelOfferingResponse] = Field(default_factory=list)
 
 
 class ProviderResponse(BaseModel):

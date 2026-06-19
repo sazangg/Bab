@@ -4,13 +4,13 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { ModelOfferingResponse } from './modelOfferingResponse';
 import type { ModelSyncSummary } from './modelSyncSummary';
+import type { ProviderModelOfferingResponse } from './providerModelOfferingResponse';
 
-export interface SyncModelOfferingsResponse {
+export interface SyncProviderModelOfferingsResponse {
   synced_at: string;
   status: string;
   error_message?: string | null;
   summary?: ModelSyncSummary;
-  models?: ModelOfferingResponse[];
+  models?: ProviderModelOfferingResponse[];
 }

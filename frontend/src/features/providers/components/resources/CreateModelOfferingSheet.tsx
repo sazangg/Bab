@@ -28,7 +28,6 @@ import {
 
 const defaultModelValues: ModelOfferingFormInput = {
   provider_model_name: "",
-  alias: "",
   version: "",
   input_modalities: ["text"],
   output_modalities: ["text"],
@@ -71,9 +70,7 @@ export function CreateModelOfferingSheet({
       <SheetContent>
         <SheetHeader>
           <SheetTitle>Add model</SheetTitle>
-          <SheetDescription>
-            Register a model exposed by {providerName}. Alias is optional and provider-scoped.
-          </SheetDescription>
+          <SheetDescription>Register a model exposed by {providerName}.</SheetDescription>
         </SheetHeader>
         <form className="grid gap-4 overflow-y-auto px-6 py-5" onSubmit={form.handleSubmit(onSubmit)}>
           <div className="space-y-1.5">
@@ -89,10 +86,6 @@ export function CreateModelOfferingSheet({
                 {form.formState.errors.provider_model_name.message}
               </p>
             ) : null}
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="detail-provider-model-alias">Alias</Label>
-            <Input id="detail-provider-model-alias" placeholder="fast" {...form.register("alias")} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="detail-provider-model-version">Version</Label>

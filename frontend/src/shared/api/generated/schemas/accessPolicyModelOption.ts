@@ -8,5 +8,4 @@
 export interface AccessPolicyModelOption {
   id: string;
   provider_model_name: string;
-  alias?: string | null;
 }

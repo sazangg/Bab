@@ -4,34 +4,28 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
-import type { ModelOfferingResponseCapabilities } from './modelOfferingResponseCapabilities';
-import type { ModelOfferingResponseRateLimitHints } from './modelOfferingResponseRateLimitHints';
+import type { ProviderModelOfferingResponseCapabilities } from './providerModelOfferingResponseCapabilities';
+import type { ProviderModelOfferingResponseRateLimitHints } from './providerModelOfferingResponseRateLimitHints';
 
-export interface ModelOfferingResponse {
+export interface ProviderModelOfferingResponse {
   id: string;
   org_id: string;
   provider_id: string;
   provider_model_name: string;
-  alias: string | null;
   version: string | null;
   modality: string;
   input_modalities: string[];
   output_modalities: string[];
-  capabilities: ModelOfferingResponseCapabilities;
+  capabilities: ProviderModelOfferingResponseCapabilities;
   context_window: number | null;
   input_price_per_million_tokens: number | null;
   output_price_per_million_tokens: number | null;
   cached_input_price_per_million_tokens: number | null;
-  catalog_input_price_per_million_tokens: number | null;
-  catalog_output_price_per_million_tokens: number | null;
-  catalog_cached_input_price_per_million_tokens: number | null;
   effective_input_price_per_million_tokens: number | null;
   effective_output_price_per_million_tokens: number | null;
   effective_cached_input_price_per_million_tokens: number | null;
   pricing_source: string;
-  pricing_catalog_version: string | null;
-  pricing_last_refreshed_at: string | null;
-  rate_limit_hints: ModelOfferingResponseRateLimitHints;
+  rate_limit_hints: ProviderModelOfferingResponseRateLimitHints;
   metadata_source: string;
   metadata_last_synced_at: string | null;
   is_active: boolean;

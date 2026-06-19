@@ -1,17 +1,19 @@
 from uuid import uuid4
 
 import httpx
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope
 from app.modules.auth.internal.models import Organization
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.providers import facade as providers_facade
+from app.modules.providers.internal.models import ModelCatalogEntry, ProviderModelCatalogMapping
 from app.modules.providers.schemas import (
     CreateProviderCredentialRequest,
     CreateProviderRequest,
     ModelMetadataSyncMode,
-    UpdateModelOfferingRequest,
+    UpdateProviderModelOfferingRequest,
 )
 
 
@@ -64,7 +66,7 @@ async def test_manual_model_metadata_survives_catalog_sync(db_session: AsyncSess
         edited = await providers_facade.update_model_offering(
             provider_id=provider.id,
             model_offering_id=model.id,
-            payload=UpdateModelOfferingRequest(
+            payload=UpdateProviderModelOfferingRequest(
                 context_window=12345,
                 input_price_per_million_tokens=123,
                 output_price_per_million_tokens=456,
@@ -147,7 +149,7 @@ async def test_overwrite_catalog_sync_replaces_manual_model_metadata(
         await providers_facade.update_model_offering(
             provider_id=provider.id,
             model_offering_id=model.id,
-            payload=UpdateModelOfferingRequest(
+            payload=UpdateProviderModelOfferingRequest(
                 context_window=12345,
                 input_modalities=["text"],
                 output_modalities=["text"],
@@ -224,6 +226,12 @@ async def test_fill_missing_sync_keeps_unknown_provider_only_models_safe(
     assert model.input_modalities == ["text"]
     assert model.output_modalities == ["text"]
     assert model.capabilities == {"chat": True}
+    mapping = await db_session.scalar(
+        select(ProviderModelCatalogMapping).where(
+            ProviderModelCatalogMapping.provider_model_offering_id == model.id
+        )
+    )
+    assert mapping is None
 
 
 async def test_replace_sync_reports_disabled_and_reactivated_models(
@@ -336,24 +344,33 @@ async def test_catalog_pricing_tracks_effective_price_and_manual_overrides(
         )
 
     model = synced.models[0]
-    assert model.catalog_input_price_per_million_tokens == 15
-    assert model.catalog_output_price_per_million_tokens == 60
     assert model.effective_input_price_per_million_tokens == 15
     assert model.effective_output_price_per_million_tokens == 60
-    assert model.pricing_source == "catalog"
-    assert model.pricing_catalog_version == "2026-05-31"
-    assert model.pricing_last_refreshed_at is not None
+    assert model.pricing_source == "catalog_mapping"
+    mapping = await db_session.scalar(
+        select(ProviderModelCatalogMapping).where(
+            ProviderModelCatalogMapping.provider_model_offering_id == model.id
+        )
+    )
+    assert mapping is not None
+    catalog_entry = await db_session.scalar(
+        select(ModelCatalogEntry).where(ModelCatalogEntry.id == mapping.catalog_entry_id)
+    )
+    assert catalog_entry is not None
+    assert catalog_entry.canonical_name == "gpt-4o-mini"
+    assert catalog_entry.provider_family == "openai"
+    assert catalog_entry.pricing_currency == "USD"
+    assert catalog_entry.pricing_unit == "million_tokens"
 
     edited = await providers_facade.update_model_offering(
         provider_id=provider.id,
         model_offering_id=model.id,
-        payload=UpdateModelOfferingRequest(input_price_per_million_tokens=25),
+        payload=UpdateProviderModelOfferingRequest(input_price_per_million_tokens=25),
         actor=actor,
         scope=scope,
         db=db_session,
     )
 
-    assert edited.catalog_input_price_per_million_tokens == 15
     assert edited.effective_input_price_per_million_tokens == 25
     assert edited.effective_output_price_per_million_tokens == 60
     assert edited.pricing_source == "manual"

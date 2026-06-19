@@ -47,14 +47,7 @@ export function ProjectAccessSection({
                 {
                   key: "model",
                   header: "Model",
-                  cell: (model) => (
-                    <>
-                      <div className="font-medium">{model.alias ?? model.id}</div>
-                      {model.alias ? (
-                        <div className="text-xs text-muted-foreground">{model.id}</div>
-                      ) : null}
-                    </>
-                  ),
+                  cell: (model) => <div className="font-medium">{model.id}</div>,
                 },
                 { key: "provider", header: "Provider", cell: (model) => model.provider_name },
                 { key: "pool", header: "Pool", cell: (model) => model.pool_name },

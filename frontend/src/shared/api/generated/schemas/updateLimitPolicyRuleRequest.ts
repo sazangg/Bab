@@ -4,6 +4,8 @@
  * Bab API
  * OpenAPI spec version: 0.1.0
  */
+import type { LimitPolicyRuleMatcherInput } from './limitPolicyRuleMatcherInput';
+import type { LimitPolicyRulePartitionInput } from './limitPolicyRulePartitionInput';
 
 export interface UpdateLimitPolicyRuleRequest {
   name?: string | null;
@@ -15,5 +17,7 @@ export interface UpdateLimitPolicyRuleRequest {
   credential_pool_id?: string | null;
   model_offering_id?: string | null;
   access_policy_id?: string | null;
+  matchers?: LimitPolicyRuleMatcherInput[] | null;
+  partitions?: LimitPolicyRulePartitionInput[] | null;
   is_active?: boolean | null;
 }

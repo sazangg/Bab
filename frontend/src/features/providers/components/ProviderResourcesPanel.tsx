@@ -19,31 +19,31 @@ import {
   useDeleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDelete,
   useAddCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPost,
   useCreateCredentialPoolApiV1ProvidersProviderIdPoolsPost,
-  useCreateModelOfferingApiV1ProvidersProviderIdOfferingsPost,
+  useCreateProviderModelOffering,
   useCreateProviderCredentialApiV1ProvidersProviderIdCredentialsPost,
-  useDeactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDelete,
+  useDeactivateProviderModelOffering,
   useDeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete,
   useListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet,
   useListCredentialPoolsApiV1ProvidersProviderIdPoolsGet,
-  useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet,
+  useListProviderModelOfferings,
   useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet,
   useGetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet,
-  useGetModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGet,
+  useGetProviderModelOfferingImpact,
   useGetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet,
-  useSyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost,
-  useTestModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPost,
+  useSyncProviderModelOfferings,
+  useTestProviderModelOffering,
   useTestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost,
   useUpdateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatch,
   useUpdateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatch,
-  useUpdateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatch,
+  useUpdateProviderModelOffering,
   useUpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch,
 } from "@/shared/api/generated/providers/providers";
 import type {
   CredentialPoolResponse,
-  ModelOfferingResponse,
+  ProviderModelOfferingResponse,
   ProviderCredentialResponse,
   ProviderResponse,
-  SyncModelOfferingsResponse,
+  SyncProviderModelOfferingsResponse,
 } from "@/shared/api/generated/schemas";
 
 import {
@@ -102,16 +102,15 @@ function ProviderResourcesContent({
   const [createCredentialOpen, setCreateCredentialOpen] = useState(false);
   const [createPoolOpen, setCreatePoolOpen] = useState(false);
   const [createModelOpen, setCreateModelOpen] = useState(false);
-  const [lastSync, setLastSync] = useState<SyncModelOfferingsResponse | null>(null);
+  const [lastSync, setLastSync] = useState<SyncProviderModelOfferingsResponse | null>(null);
   const [selectedPoolId, setSelectedPoolId] = useState<string | null>(null);
   const [deactivateCredentialTarget, setDeactivateCredentialTarget] =
     useState<ProviderCredentialResponse | null>(null);
   const [deactivatePoolTarget, setDeactivatePoolTarget] = useState<CredentialPoolResponse | null>(
     null,
   );
-  const [deactivateModelTarget, setDeactivateModelTarget] = useState<ModelOfferingResponse | null>(
-    null,
-  );
+  const [deactivateModelTarget, setDeactivateModelTarget] =
+    useState<ProviderModelOfferingResponse | null>(null);
   const [bulkTestProgress, setBulkTestProgress] = useState<{ index: number; total: number } | null>(
     null,
   );
@@ -125,7 +124,7 @@ function ProviderResourcesContent({
     providerId,
     { query: { enabled: Boolean(providerId) } },
   );
-  const modelsQuery = useListModelOfferingsApiV1ProvidersProviderIdOfferingsGet(
+  const modelsQuery = useListProviderModelOfferings(
     providerId,
     modelParams,
     { query: { enabled: Boolean(providerId), placeholderData: keepPreviousData } },
@@ -142,7 +141,7 @@ function ProviderResourcesContent({
     { query: { enabled: Boolean(deactivatePoolTarget) } },
   );
   const modelImpactQuery =
-    useGetModelOfferingImpactApiV1ProvidersProviderIdOfferingsModelOfferingIdImpactGet(
+    useGetProviderModelOfferingImpact(
       providerId,
       deactivateModelTarget?.id ?? "",
       { query: { enabled: Boolean(deactivateModelTarget) } },
@@ -219,7 +218,7 @@ function ProviderResourcesContent({
     useDeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete({
       mutation: { onSuccess: async () => queryClient.invalidateQueries() },
     });
-  const createModel = useCreateModelOfferingApiV1ProvidersProviderIdOfferingsPost({
+  const createModel = useCreateProviderModelOffering({
     mutation: {
       onSuccess: async () => {
         setCreateModelOpen(false);
@@ -227,14 +226,14 @@ function ProviderResourcesContent({
       },
     },
   });
-  const updateModel = useUpdateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdPatch({
+  const updateModel = useUpdateProviderModelOffering({
     mutation: { onSuccess: async () => queryClient.invalidateQueries() },
   });
   const deactivateModel =
-    useDeactivateModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdDelete({
+    useDeactivateProviderModelOffering({
       mutation: { onSuccess: async () => queryClient.invalidateQueries() },
     });
-  const syncModels = useSyncModelOfferingsApiV1ProvidersProviderIdOfferingsSyncPost({
+  const syncModels = useSyncProviderModelOfferings({
     mutation: {
       onSuccess: async (response) => {
         if (response.status === 200) {
@@ -252,7 +251,7 @@ function ProviderResourcesContent({
     useTestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost({
       mutation: { onSettled: async () => queryClient.invalidateQueries() },
     });
-  const testModel = useTestModelOfferingApiV1ProvidersProviderIdOfferingsModelOfferingIdTestPost({
+  const testModel = useTestProviderModelOffering({
     mutation: { onSettled: async () => queryClient.invalidateQueries() },
   });
   const hasActiveCredential = credentials.some((credential) => credential.is_active);
@@ -323,7 +322,7 @@ function ProviderResourcesContent({
     );
   }
 
-  function handleTestModel(model: ModelOfferingResponse) {
+  function handleTestModel(model: ProviderModelOfferingResponse) {
     testModel.mutate(
       { providerId, modelOfferingId: model.id },
       {
@@ -653,7 +652,6 @@ function ProviderResourcesContent({
                     modelOfferingId: model.id,
                     data: {
                       provider_model_name: values.provider_model_name,
-                      alias: values.alias || null,
                       version: values.version || null,
                       modality: combinedModality(values.input_modalities, values.output_modalities),
                       input_modalities: values.input_modalities,
@@ -780,7 +778,6 @@ function ProviderResourcesContent({
               providerId,
               data: {
                 provider_model_name: values.provider_model_name,
-                ...(values.alias ? { alias: values.alias } : {}),
                 ...(values.version ? { version: values.version } : {}),
                 modality: combinedModality(values.input_modalities, values.output_modalities),
                 input_modalities: values.input_modalities,

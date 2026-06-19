@@ -5,4 +5,4 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type UpdateModelOfferingRequestCapabilities = {[key: string]: boolean} | null;
+export type GatewayPolicyDecisionTraceMetadata = { [key: string]: unknown };

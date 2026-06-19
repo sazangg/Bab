@@ -34,7 +34,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Label } from "@/components/ui/label";
-import type { ModelOfferingResponse } from "@/shared/api/generated/schemas";
+import type { ProviderModelOfferingResponse } from "@/shared/api/generated/schemas";
 import { FilterToolbar, type FilterChip } from "@/shared/components/FilterToolbar";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 
@@ -86,7 +86,7 @@ export function ModelsTable({
   canManage,
 }: {
   providerId: string;
-  models: ModelOfferingResponse[];
+  models: ProviderModelOfferingResponse[];
   total: number;
   limit: number;
   offset: number;
@@ -103,18 +103,17 @@ export function ModelsTable({
   onModalityChange: (value: string) => void;
   onStatusChange: (value: string) => void;
   onPageChange: (page: number) => void;
-  onUpdate: (model: ModelOfferingResponse, values: ModelOfferingValues) => void;
-  onDeactivate: (model: ModelOfferingResponse) => void;
-  onReactivate: (model: ModelOfferingResponse) => void;
-  onTest: (model: ModelOfferingResponse) => void;
+  onUpdate: (model: ProviderModelOfferingResponse, values: ModelOfferingValues) => void;
+  onDeactivate: (model: ProviderModelOfferingResponse) => void;
+  onReactivate: (model: ProviderModelOfferingResponse) => void;
+  onTest: (model: ProviderModelOfferingResponse) => void;
   canManage: boolean;
 }) {
-  const [editModel, setEditModel] = useState<ModelOfferingResponse | null>(null);
+  const [editModel, setEditModel] = useState<ProviderModelOfferingResponse | null>(null);
   const editForm = useForm<ModelOfferingFormInput, unknown, ModelOfferingValues>({
     resolver: zodResolver(modelOfferingSchema),
     defaultValues: {
       provider_model_name: "",
-      alias: "",
       version: "",
       input_modalities: ["text"],
       output_modalities: ["text"],
@@ -137,7 +136,6 @@ export function ModelsTable({
     if (!editModel) return;
     editForm.reset({
       provider_model_name: editModel.provider_model_name,
-      alias: editModel.alias ?? "",
       version: editModel.version ?? "",
       input_modalities: editModel.input_modalities?.length
         ? editModel.input_modalities
@@ -176,7 +174,7 @@ export function ModelsTable({
     onStatusChange("all");
   };
 
-  const columns: DataTableColumn<ModelOfferingResponse>[] = [
+  const columns: DataTableColumn<ProviderModelOfferingResponse>[] = [
     {
       key: "model",
       header: "Model",
@@ -188,13 +186,12 @@ export function ModelsTable({
             {model.is_active ? (
               <Link
                 className="w-fit text-xs text-primary hover:underline"
-                to={`/playground?model=${encodeURIComponent(model.alias || model.provider_model_name)}`}
+                to={`/playground?model=${encodeURIComponent(model.provider_model_name)}`}
               >
                 Test in playground
               </Link>
             ) : null}
             <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-              {model.alias ? <span>alias: {model.alias}</span> : null}
               {model.version ? <span>v{model.version}</span> : null}
               {activeCapabilities.length > 0 ? (
                 <div className="flex flex-wrap gap-1">
@@ -257,15 +254,9 @@ export function ModelsTable({
         <div className="flex flex-col">
           <span>
             {model.metadata_source}
-            {model.pricing_catalog_version ? ` · pricing ${model.pricing_catalog_version}` : ""}
           </span>
           {model.metadata_last_synced_at ? (
             <span className="text-[11px]">{formatRelativeFromNow(model.metadata_last_synced_at)}</span>
-          ) : null}
-          {model.pricing_last_refreshed_at ? (
-            <span className="text-[11px]">
-              price {formatRelativeFromNow(model.pricing_last_refreshed_at)}
-            </span>
           ) : null}
         </div>
       ),
@@ -286,7 +277,7 @@ export function ModelsTable({
             header: <span className="sr-only">Actions</span>,
             headClassName: "w-[1%]",
             className: "flex justify-end gap-1",
-            cell: (model: ModelOfferingResponse) => (
+            cell: (model: ProviderModelOfferingResponse) => (
               <>
                 <Button
                   size="icon-sm"
@@ -326,9 +317,7 @@ export function ModelsTable({
                       Edit metadata
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
-                      <Link
-                        to={`/playground?model=${encodeURIComponent(model.alias || model.provider_model_name)}`}
-                      >
+                      <Link to={`/playground?model=${encodeURIComponent(model.provider_model_name)}`}>
                         Test in playground
                       </Link>
                     </DropdownMenuItem>
@@ -387,7 +376,7 @@ export function ModelsTable({
         <Input
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
-          placeholder="Search models or aliases..."
+          placeholder="Search models..."
           className="w-full sm:w-72"
         />
         <DropdownMenu>
@@ -490,10 +479,6 @@ export function ModelsTable({
                   {editForm.formState.errors.provider_model_name.message}
                 </p>
               ) : null}
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-provider-model-alias">Alias</Label>
-              <Input id="edit-provider-model-alias" {...editForm.register("alias")} />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="edit-provider-model-version">Version</Label>

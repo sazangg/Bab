@@ -16,6 +16,11 @@ export interface GuardrailSimulationRequest {
   provider_model?: string | null;
   provider_id?: string | null;
   pool_id?: string | null;
+  provider_model_offering_id?: string | null;
+  public_model_id?: string | null;
+  public_model_name?: string | null;
+  route_candidate_id?: string | null;
+  gateway_endpoint?: string | null;
   messages?: GuardrailSimulationRequestMessagesItem[];
   prompt_text?: string | null;
 }

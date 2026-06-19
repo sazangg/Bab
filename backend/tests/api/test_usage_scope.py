@@ -13,6 +13,7 @@ from app.modules.auth.schemas import (
     AuthenticatedUser,
 )
 from app.modules.keys.internal.models import Project, VirtualKey
+from app.modules.providers.internal.models import CredentialPool, Provider
 from app.modules.usage.internal.models import UsageRecord
 
 
@@ -74,23 +75,38 @@ async def _workspace(db_session: AsyncSession):
     )
     db_session.add_all([key, other_key])
     await db_session.flush()
-    provider_id = uuid4()
+    provider = Provider(
+        org_id=org.id,
+        name="Usage Provider",
+        slug=f"usage-provider-{uuid4()}",
+        base_url="https://provider.example.test",
+    )
+    db_session.add(provider)
+    await db_session.flush()
+    pool = CredentialPool(
+        org_id=org.id,
+        provider_id=provider.id,
+        name="Usage Pool",
+    )
+    db_session.add(pool)
+    await db_session.flush()
     db_session.add_all(
         [
-            _usage(org.id, team.id, project.id, key.id, provider_id, "gpt-5-mini", 10),
+            _usage(org.id, team.id, project.id, key.id, provider.id, pool.id, "gpt-5-mini", 10),
             _usage(
                 org.id,
                 other_team.id,
                 other_project.id,
                 other_key.id,
-                provider_id,
+                provider.id,
+                pool.id,
                 "gpt-5-mini",
                 30,
             ),
         ]
     )
     await db_session.commit()
-    return org, team, project, other_team, other_project, key, other_key, provider_id
+    return org, team, project, other_team, other_project, key, other_key, provider.id
 
 
 def _usage(
@@ -99,6 +115,7 @@ def _usage(
     project_id: UUID,
     virtual_key_id: UUID,
     provider_id: UUID,
+    pool_id: UUID,
     model: str,
     total_tokens: int,
 ) -> UsageRecord:
@@ -107,7 +124,7 @@ def _usage(
         team_id=team_id,
         project_id=project_id,
         virtual_key_id=virtual_key_id,
-        pool_id=uuid4(),
+        pool_id=pool_id,
         provider_id=provider_id,
         provider_credential_id=None,
         requested_model=model,

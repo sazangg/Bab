@@ -8,6 +8,7 @@ os.environ.setdefault("BAB_ENCRYPTION_KEY", "mC2XCkbSXUHnJS1bAgRZ1LMvw4mDhF-GqXF
 os.environ.setdefault("BAB_ALLOW_PRIVATE_PROVIDER_URLS", "true")
 
 import pytest
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.database import Base, get_db
@@ -37,21 +38,38 @@ from app.modules.policies.internal.models import (  # noqa: F401
     AccessPolicyPublicModel,
     AccessPolicyRouteCandidate,
     LimitPolicy,
+    Policy,
     PolicyAssignment,
+    PolicyRevision,
 )
 from app.modules.providers.internal.models import (  # noqa: F401
     CredentialPool,
+    ModelCatalogEntry,
     ModelOffering,
     Provider,
     ProviderCredential,
+    ProviderModelCatalogMapping,
 )
 from app.modules.settings.internal.models import OrganizationSettings  # noqa: F401
-from app.modules.usage.internal.models import UsageRecord  # noqa: F401
+from app.modules.usage.internal.models import (  # noqa: F401
+    GatewayPolicyDecision,
+    GatewayRequest,
+    GatewayRouteAttempt,
+    LimitPolicyCommittedUsage,
+    UsageRecord,
+)
 
 
 @pytest.fixture
 async def db_session() -> AsyncGenerator[AsyncSession]:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
     async with engine.begin() as connection:
