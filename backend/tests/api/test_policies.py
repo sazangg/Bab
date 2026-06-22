@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
@@ -98,6 +100,60 @@ def _public_model_payload(provider_id, pool_id, model_id, *, name: str | None = 
             }
         ],
     }
+
+
+@pytest.mark.asyncio
+async def test_policy_simulation_rejects_invalid_draft_before_target_lookup(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "admin@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    await bootstrap.sync_default_workspace(db_session)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        headers = await _login(client)
+        response = await client.post(
+            "/api/v1/policies/simulations",
+            headers=headers,
+            json={
+                "target": {"virtual_key_id": str(uuid4())},
+                "requested_model": "fast",
+                "gateway_endpoint": "chat_completions",
+                "drafts": [
+                    {
+                        "kind": "limit",
+                        "operation": "add_policy",
+                        "assignment": {"scope_type": "org"},
+                        "limit_policy": {
+                            "name": "Invalid draft",
+                            "rules": [
+                                {
+                                    "name": "Invalid matcher",
+                                    "limit_type": "requests",
+                                    "limit_value": 1,
+                                    "interval_unit": "day",
+                                    "matchers": [
+                                        {
+                                            "dimension": "not_a_dimension",
+                                            "operator": "eq",
+                                            "value_json": "x",
+                                        }
+                                    ],
+                                }
+                            ],
+                        },
+                    }
+                ],
+            },
+        )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "invalid policy simulation draft"
 
 
 @pytest.mark.asyncio

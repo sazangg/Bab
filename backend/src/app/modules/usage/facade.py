@@ -3,16 +3,26 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.auth.internal.models import Team
 from app.modules.guardrails.internal import repository as guardrails_repository
+from app.modules.keys.internal.models import Project, VirtualKey
+from app.modules.keys.schemas import ResolvedAccess
+from app.modules.policies.internal.models import Policy
+from app.modules.providers.internal.models import CredentialPool, Provider
 from app.modules.usage.accounting import UsageAccounting
 from app.modules.usage.internal import repository
+from app.modules.usage.redaction import redact_trace_value
 from app.modules.usage.schemas import (
     CreateGatewayRequest,
     FinalizeGatewayRequest,
     GatewayPolicyDecisionTrace,
+    GatewayRequestResolvedSubject,
+    GatewayRequestTraceListItem,
+    GatewayRequestTraceListResponse,
     GatewayRequestTraceResponse,
     GatewayRequestTraceSummary,
     GatewayRouteAttemptTrace,
+    GatewayTraceTimelineItem,
     GuardrailEventTrace,
     LimitPolicyReservationSummary,
     OrganizationUsageSummary,
@@ -97,6 +107,46 @@ async def finalize_gateway_request(
     await db.commit()
 
 
+async def attach_gateway_request_subject(
+    *,
+    gateway_request_id: UUID | None,
+    subject: GatewayRequestResolvedSubject,
+    db: AsyncSession,
+) -> None:
+    if gateway_request_id is None:
+        return
+    await repository.attach_gateway_request_subject(
+        gateway_request_id=gateway_request_id,
+        subject=subject,
+        db=db,
+    )
+    await db.commit()
+
+
+async def attach_gateway_request_resolution(
+    *,
+    gateway_request_id: UUID | None,
+    resolved: ResolvedAccess,
+    db: AsyncSession,
+) -> None:
+    if gateway_request_id is None:
+        return
+    await repository.attach_gateway_request_resolution(
+        gateway_request_id=gateway_request_id,
+        values={
+            "org_id": resolved.org_id,
+            "team_id": resolved.team_id,
+            "project_id": resolved.project_id,
+            "virtual_key_id": resolved.virtual_key_id,
+            "public_model_id": resolved.public_model_id,
+            "public_model_name": resolved.public_model_name,
+            "routing_mode": resolved.routing_mode,
+        },
+        db=db,
+    )
+    await db.commit()
+
+
 async def create_gateway_route_attempt(*, values: dict, db: AsyncSession) -> UUID:
     route_attempt = await repository.create_gateway_route_attempt(values=values, db=db)
     await db.commit()
@@ -121,6 +171,65 @@ async def create_gateway_policy_decision(*, values: dict, db: AsyncSession) -> U
     decision = await repository.create_gateway_policy_decision(values=values, db=db)
     await db.commit()
     return decision.id
+
+
+async def list_gateway_requests(
+    *,
+    org_id: UUID,
+    window: str,
+    start_at: datetime | None,
+    end_at: datetime | None,
+    team_id: UUID | None,
+    project_id: UUID | None,
+    virtual_key_id: UUID | None,
+    provider_id: UUID | None,
+    public_model_name: str | None,
+    requested_model: str | None,
+    request_id: str | None,
+    status: str | None,
+    fallback: str | None,
+    error_code: str | None,
+    search: str | None,
+    allowed_team_ids: set[UUID] | None,
+    allowed_project_ids: set[UUID] | None,
+    limit: int,
+    offset: int,
+    db: AsyncSession,
+) -> GatewayRequestTraceListResponse:
+    now = datetime.now(UTC)
+    requests = await repository.list_gateway_requests(
+        org_id=org_id,
+        since=start_at or window_start(window),
+        until=end_at,
+        team_id=team_id,
+        project_id=project_id,
+        virtual_key_id=virtual_key_id,
+        provider_id=provider_id,
+        public_model_name=public_model_name,
+        requested_model=requested_model,
+        request_id=request_id,
+        status=status,
+        fallback=fallback,
+        error_code=error_code,
+        search=search,
+        allowed_team_ids=allowed_team_ids,
+        allowed_project_ids=allowed_project_ids,
+        limit=limit,
+        offset=offset,
+        now=now,
+        db=db,
+    )
+    has_more = len(requests) > limit
+    items = [
+        await _to_gateway_request_trace_list_item(request, db=db)
+        for request in requests[:limit]
+    ]
+    return GatewayRequestTraceListResponse(
+        items=items,
+        limit=limit,
+        offset=offset,
+        has_more=has_more,
+    )
 
 
 async def get_gateway_request_trace(
@@ -157,39 +266,391 @@ async def get_gateway_request_trace(
         org_id=org_id,
         db=db,
     )
+    request_trace = GatewayRequestTraceSummary.model_validate(gateway_request)
+    route_attempt_traces = [
+        GatewayRouteAttemptTrace.model_validate(attempt).model_copy(
+            update={
+                "pricing_snapshot": redact_trace_value(attempt.pricing_snapshot),
+                "capability_snapshot": redact_trace_value(attempt.capability_snapshot),
+                "route_snapshot": redact_trace_value(attempt.route_snapshot),
+            }
+        )
+        for attempt in attempts
+    ]
+    policy_decision_traces = [
+        GatewayPolicyDecisionTrace.model_validate(decision).model_copy(
+            update={
+                "dimension_snapshot": redact_trace_value(decision.dimension_snapshot),
+                "metadata": redact_trace_value(decision.metadata_),
+            }
+        )
+        for decision in decisions
+    ]
+    guardrail_event_traces = [
+        GuardrailEventTrace(
+            id=event.id,
+            org_id=event.org_id,
+            policy_id=event.policy_id,
+            policy_revision_id=event.policy_revision_id,
+            rule_id=event.rule_id,
+            decision=event.decision,
+            phase=event.phase,
+            reason=event.reason,
+            team_id=event.team_id,
+            project_id=event.project_id,
+            virtual_key_id=event.virtual_key_id,
+            provider_id=event.provider_id,
+            pool_id=event.pool_id,
+            request_id=event.request_id,
+            gateway_request_id=event.gateway_request_id,
+            route_attempt_id=event.route_attempt_id,
+            requested_model=event.requested_model,
+            provider_model=event.provider_model,
+            metadata=redact_trace_value(event.metadata_),
+            created_at=event.created_at,
+        )
+        for event in events
+    ]
+    usage_record_traces = [
+        record.model_copy(
+            update={"dimension_snapshot": redact_trace_value(record.dimension_snapshot)}
+        )
+        for record in usage_records
+    ]
     return GatewayRequestTraceResponse(
-        request=GatewayRequestTraceSummary.model_validate(gateway_request),
-        route_attempts=[GatewayRouteAttemptTrace.model_validate(attempt) for attempt in attempts],
-        policy_decisions=[
-            GatewayPolicyDecisionTrace.model_validate(decision) for decision in decisions
-        ],
-        guardrail_events=[
-            GuardrailEventTrace(
-                id=event.id,
-                org_id=event.org_id,
-                policy_id=event.policy_id,
-                policy_revision_id=event.policy_revision_id,
-                rule_id=event.rule_id,
-                decision=event.decision,
-                phase=event.phase,
-                reason=event.reason,
-                team_id=event.team_id,
-                project_id=event.project_id,
-                virtual_key_id=event.virtual_key_id,
-                provider_id=event.provider_id,
-                pool_id=event.pool_id,
-                request_id=event.request_id,
-                gateway_request_id=event.gateway_request_id,
-                route_attempt_id=event.route_attempt_id,
-                requested_model=event.requested_model,
-                provider_model=event.provider_model,
-                metadata=event.metadata_,
-                created_at=event.created_at,
-            )
-            for event in events
-        ],
-        usage_records=usage_records,
+        request=request_trace,
+        timeline=_build_gateway_trace_timeline(
+            request=request_trace,
+            route_attempts=route_attempt_traces,
+            policy_decisions=policy_decision_traces,
+            guardrail_events=guardrail_event_traces,
+            usage_records=usage_record_traces,
+        ),
+        route_attempts=route_attempt_traces,
+        policy_decisions=policy_decision_traces,
+        guardrail_events=guardrail_event_traces,
+        usage_records=usage_record_traces,
     )
+
+
+async def _to_gateway_request_trace_list_item(
+    request,
+    *,
+    db: AsyncSession,
+) -> GatewayRequestTraceListItem:
+    attempts = await repository.list_gateway_route_attempts(
+        gateway_request_id=request.id,
+        org_id=request.org_id,
+        db=db,
+    )
+    final_attempt = next(
+        (attempt for attempt in attempts if attempt.id == request.final_route_attempt_id),
+        None,
+    )
+    team = await db.get(Team, request.team_id) if request.team_id else None
+    project = await db.get(Project, request.project_id) if request.project_id else None
+    virtual_key = (
+        await db.get(VirtualKey, request.virtual_key_id) if request.virtual_key_id else None
+    )
+    final_provider = (
+        await db.get(Provider, request.final_provider_id)
+        if request.final_provider_id and final_attempt is None
+        else None
+    )
+    final_pool = (
+        await db.get(CredentialPool, request.final_credential_pool_id)
+        if request.final_credential_pool_id and final_attempt is None
+        else None
+    )
+    final_policy = (
+        await db.get(Policy, request.final_access_policy_id)
+        if request.final_access_policy_id and final_attempt is None
+        else None
+    )
+    involved_provider_ids: list[UUID] = []
+    involved_provider_names: list[str] = []
+    seen_provider_ids: set[UUID] = set()
+    for attempt in attempts:
+        if attempt.provider_id is None or attempt.provider_id in seen_provider_ids:
+            continue
+        seen_provider_ids.add(attempt.provider_id)
+        involved_provider_ids.append(attempt.provider_id)
+        if attempt.provider_name:
+            involved_provider_names.append(attempt.provider_name)
+        else:
+            provider = await db.get(Provider, attempt.provider_id)
+            if provider is not None:
+                involved_provider_names.append(provider.name)
+
+    return GatewayRequestTraceListItem(
+        id=request.id,
+        org_id=request.org_id,
+        team_id=request.team_id,
+        project_id=request.project_id,
+        virtual_key_id=request.virtual_key_id,
+        request_id=request.request_id,
+        gateway_endpoint=request.gateway_endpoint,
+        requested_model=request.requested_model,
+        public_model_name=request.public_model_name,
+        routing_mode=request.routing_mode,
+        final_http_status=request.final_http_status,
+        final_provider_id=request.final_provider_id,
+        final_provider_name=(
+            final_attempt.provider_name
+            if final_attempt is not None
+            else final_provider.name
+            if final_provider is not None
+            else None
+        ),
+        final_credential_pool_id=request.final_credential_pool_id,
+        final_credential_pool_name=(
+            final_attempt.credential_pool_name
+            if final_attempt is not None
+            else final_pool.name
+            if final_pool is not None
+            else None
+        ),
+        final_provider_model=request.final_provider_model,
+        final_access_policy_id=request.final_access_policy_id,
+        final_access_policy_name=(
+            (final_attempt.route_snapshot or {}).get("access_policy_name")
+            if final_attempt is not None
+            else final_policy.name
+            if final_policy is not None
+            else None
+        ),
+        team_name=team.name if team else None,
+        project_name=project.name if project else None,
+        virtual_key_name=virtual_key.name if virtual_key else None,
+        involved_provider_ids=involved_provider_ids,
+        involved_provider_names=involved_provider_names,
+        attempt_count=request.attempt_count,
+        fallback_attempted=request.fallback_attempted,
+        final_error_code=request.final_error_code,
+        started_at=request.started_at,
+        completed_at=request.completed_at,
+        trace_expires_at=request.trace_expires_at,
+        outcome=_gateway_request_outcome(request),
+        duration_ms=_gateway_request_duration_ms(request),
+    )
+
+
+def _gateway_request_duration_ms(request) -> int | None:
+    if request.completed_at is None:
+        return None
+    completed_at = _timeline_sort_timestamp(request.completed_at)
+    started_at = _timeline_sort_timestamp(request.started_at)
+    return max(0, round((completed_at - started_at).total_seconds() * 1000))
+
+
+def _gateway_request_outcome(request) -> str:
+    if request.completed_at is None:
+        return "pending"
+    if (
+        request.final_http_status is not None
+        and 200 <= request.final_http_status < 400
+    ):
+        return "succeeded"
+    denied_codes = {
+        "invalid_virtual_key",
+        "access_denied",
+        "guardrail_denied",
+        "guardrail_output_denied",
+        "limit_exceeded",
+        "request_validation_denied",
+        "request_body_too_large",
+    }
+    denied_statuses = {400, 401, 403, 404, 413, 422, 429}
+    if request.final_error_code in denied_codes:
+        return "denied"
+    if (
+        request.final_http_status in denied_statuses
+        and request.final_error_code is not None
+        and request.final_error_code not in {"provider_upstream_error", "provider_unavailable"}
+    ):
+        return "denied"
+    return "failed"
+
+
+def _build_gateway_trace_timeline(
+    *,
+    request: GatewayRequestTraceSummary,
+    route_attempts: list[GatewayRouteAttemptTrace],
+    policy_decisions: list[GatewayPolicyDecisionTrace],
+    guardrail_events: list[GuardrailEventTrace],
+    usage_records: list[UsageRecordResponse],
+) -> list[GatewayTraceTimelineItem]:
+    items: list[tuple[int, int, GatewayTraceTimelineItem]] = [
+        (
+            0,
+            0,
+            GatewayTraceTimelineItem(
+                timestamp=request.started_at,
+                kind="request",
+                title="Request started",
+                status=_gateway_request_outcome(request),
+                severity="info",
+                summary=request.requested_model,
+                metadata={
+                    "gateway_endpoint": request.gateway_endpoint,
+                    "request_id": request.request_id,
+                    "public_model_name": request.public_model_name,
+                },
+            ),
+        )
+    ]
+    for attempt in route_attempts:
+        items.append(
+            (
+                2,
+                attempt.attempt_index,
+                GatewayTraceTimelineItem(
+                    timestamp=attempt.started_at,
+                    kind="route_attempt",
+                    title="Route attempt started",
+                    status=attempt.status,
+                    route_attempt_id=attempt.id,
+                    severity="info",
+                    summary=_route_attempt_summary(attempt),
+                    metadata={
+                        "attempt_index": attempt.attempt_index,
+                        "provider_name": attempt.provider_name,
+                        "credential_pool_name": attempt.credential_pool_name,
+                        "provider_model": attempt.provider_model,
+                    },
+                ),
+            )
+        )
+        if attempt.completed_at is not None:
+            items.append(
+                (
+                    2,
+                    attempt.attempt_index,
+                    GatewayTraceTimelineItem(
+                        timestamp=attempt.completed_at,
+                        kind="route_attempt",
+                        title="Route attempt completed",
+                        status=attempt.status,
+                        route_attempt_id=attempt.id,
+                        severity=_route_attempt_severity(attempt.status),
+                        summary=attempt.error_code or attempt.failure_reason,
+                        metadata={
+                            "attempt_index": attempt.attempt_index,
+                            "http_status": attempt.http_status,
+                            "latency_ms": attempt.latency_ms,
+                        },
+                    ),
+                )
+            )
+    for decision in policy_decisions:
+        items.append(
+            (
+                1,
+                0,
+                GatewayTraceTimelineItem(
+                    timestamp=decision.created_at,
+                    kind="policy_decision",
+                    title=_policy_decision_title(decision),
+                    status=decision.outcome,
+                    stage=decision.stage,
+                    route_attempt_id=decision.route_attempt_id,
+                    policy_decision_id=decision.id,
+                    severity=_policy_decision_severity(decision.outcome),
+                    summary=decision.reason_code or decision.message,
+                    metadata=decision.metadata,
+                ),
+            )
+        )
+    for event in guardrail_events:
+        items.append(
+            (
+                3,
+                0,
+                GatewayTraceTimelineItem(
+                    timestamp=event.created_at,
+                    kind="guardrail_event",
+                    title="Guardrail event",
+                    status=event.decision,
+                    stage=event.phase,
+                    route_attempt_id=event.route_attempt_id,
+                    guardrail_event_id=event.id,
+                    severity=_guardrail_event_severity(event.decision),
+                    summary=event.reason,
+                    metadata=event.metadata,
+                ),
+            )
+        )
+    for record in usage_records:
+        items.append(
+            (
+                4,
+                record.routing_attempt_index,
+                GatewayTraceTimelineItem(
+                    timestamp=record.created_at,
+                    kind="usage_record",
+                    title="Usage recorded",
+                    status=str(record.http_status),
+                    usage_record_id=record.id,
+                    severity="error" if record.error_code else "success",
+                    summary=record.error_code or record.usage_source,
+                    metadata={
+                        "provider_model": record.provider_model,
+                        "total_tokens": record.total_tokens,
+                        "cost_cents": record.cost_cents,
+                    },
+                ),
+            )
+        )
+    return [
+        item
+        for _kind_order, _attempt_index, item in sorted(
+            items,
+            key=lambda item: (_timeline_sort_timestamp(item[2].timestamp), item[0], item[1]),
+        )
+    ]
+
+
+def _timeline_sort_timestamp(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _route_attempt_summary(attempt: GatewayRouteAttemptTrace) -> str | None:
+    parts = [part for part in (attempt.provider_name, attempt.provider_model) if part]
+    return " / ".join(parts) if parts else None
+
+
+def _route_attempt_severity(status: str) -> str:
+    if status == "succeeded":
+        return "success"
+    if status == "failed":
+        return "error"
+    if status == "blocked":
+        return "warning"
+    return "info"
+
+
+def _policy_decision_title(decision: GatewayPolicyDecisionTrace) -> str:
+    return f"{decision.decision_type.replace('_', ' ').title()} decision"
+
+
+def _policy_decision_severity(outcome: str) -> str:
+    if outcome == "denied":
+        return "error"
+    if outcome == "would_deny":
+        return "warning"
+    if outcome in {"allowed", "reserved", "committed", "selected"}:
+        return "success"
+    return "info"
+
+
+def _guardrail_event_severity(decision: str) -> str:
+    if decision == "blocked":
+        return "error"
+    if decision == "would_block":
+        return "warning"
+    return "info"
 
 
 async def acquire_limit_scope_lock(*, assignment_id: UUID, db: AsyncSession) -> None:

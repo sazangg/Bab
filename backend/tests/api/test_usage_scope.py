@@ -14,7 +14,9 @@ from app.modules.auth.schemas import (
 )
 from app.modules.keys.internal.models import Project, VirtualKey
 from app.modules.providers.internal.models import CredentialPool, Provider
+from app.modules.usage.internal import repository as usage_repository
 from app.modules.usage.internal.models import UsageRecord
+from app.modules.usage.schemas import CreateGatewayRequest, FinalizeGatewayRequest
 
 
 def _principal(
@@ -274,6 +276,100 @@ async def test_usage_scope_validates_project_team_and_virtual_key_filters(
 
 
 @pytest.mark.asyncio
+async def test_trace_request_list_is_scoped_to_team_membership(
+    app_client,
+    db_session: AsyncSession,
+) -> None:
+    org, team, project, _other_team, other_project, key, other_key, provider_id = (
+        await _workspace(db_session)
+    )
+    await _gateway_request(
+        db_session,
+        org_id=org.id,
+        team_id=team.id,
+        project_id=project.id,
+        virtual_key_id=key.id,
+        provider_id=provider_id,
+        request_id="req-visible",
+    )
+    await _gateway_request(
+        db_session,
+        org_id=org.id,
+        team_id=other_project.team_id,
+        project_id=other_project.id,
+        virtual_key_id=other_key.id,
+        provider_id=provider_id,
+        request_id="req-hidden",
+    )
+    await db_session.commit()
+    user = _principal(
+        org_id=org.id,
+        team_memberships=[AuthenticatedTeamMembership(team_id=team.id, role="team_member")],
+    )
+
+    response = await _get(app_client, user, "/api/v1/usage/requests")
+
+    assert response.status_code == 200
+    assert [item["request_id"] for item in response.json()["items"]] == ["req-visible"]
+
+
+@pytest.mark.asyncio
+async def test_trace_request_list_filters_provider_involved_attempts(
+    app_client,
+    db_session: AsyncSession,
+) -> None:
+    org, team, project, _other_team, _other_project, key, _other_key, provider_id = (
+        await _workspace(db_session)
+    )
+    other_provider = Provider(
+        org_id=org.id,
+        name="Failed Primary Provider",
+        slug=f"failed-primary-{uuid4()}",
+        base_url="https://failed.example.test",
+    )
+    db_session.add(other_provider)
+    await db_session.flush()
+    gateway_request = await _gateway_request(
+        db_session,
+        org_id=org.id,
+        team_id=team.id,
+        project_id=project.id,
+        virtual_key_id=key.id,
+        provider_id=provider_id,
+        request_id="req-fallback",
+    )
+    await usage_repository.create_gateway_route_attempt(
+        values={
+            "org_id": org.id,
+            "gateway_request_id": gateway_request.id,
+            "attempt_index": 0,
+            "provider_id": other_provider.id,
+            "provider_name": other_provider.name,
+            "provider_model": "primary-model",
+            "status": "failed",
+            "usage_source": "unknown",
+            "pricing_snapshot": {},
+            "capability_snapshot": {},
+            "route_snapshot": {},
+        },
+        db=db_session,
+    )
+    await db_session.commit()
+
+    response = await _get(
+        app_client,
+        _principal(org_id=org.id, permissions=["usage.view"]),
+        f"/api/v1/usage/requests?provider_id={other_provider.id}",
+    )
+
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert [item["request_id"] for item in items] == ["req-fallback"]
+    assert items[0]["final_provider_id"] == str(provider_id)
+    assert str(other_provider.id) in items[0]["involved_provider_ids"]
+
+
+@pytest.mark.asyncio
 async def test_user_without_usage_scope_is_forbidden(
     app_client,
     db_session: AsyncSession,
@@ -354,3 +450,41 @@ def _activity(
         project_id=project_id,
         metadata_={},
     )
+
+
+async def _gateway_request(
+    db_session: AsyncSession,
+    *,
+    org_id: UUID,
+    team_id: UUID,
+    project_id: UUID,
+    virtual_key_id: UUID,
+    provider_id: UUID,
+    request_id: str,
+):
+    gateway_request = await usage_repository.create_gateway_request(
+        payload=CreateGatewayRequest(
+            org_id=org_id,
+            team_id=team_id,
+            project_id=project_id,
+            virtual_key_id=virtual_key_id,
+            request_id=request_id,
+            gateway_endpoint="chat_completions",
+            requested_model="fast",
+            public_model_name="fast",
+            routing_mode="single_route",
+        ),
+        db=db_session,
+    )
+    await usage_repository.finalize_gateway_request(
+        gateway_request_id=gateway_request.id,
+        payload=FinalizeGatewayRequest(
+            final_http_status=200,
+            final_provider_id=provider_id,
+            final_provider_model="final-model",
+            attempt_count=1,
+            fallback_attempted=False,
+        ),
+        db=db_session,
+    )
+    return gateway_request

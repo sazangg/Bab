@@ -7,11 +7,6 @@ from app.core.database import Scope, transaction
 from app.modules.activity import facade as activity_facade
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys import facade as keys_facade
-from app.modules.policies.dimensions import (
-    PolicyDimensionStage,
-    validate_matcher,
-    validate_partition,
-)
 from app.modules.policies.errors import (
     PolicyAssignmentConflictError,
     PolicyNotFoundError,
@@ -59,16 +54,19 @@ from app.modules.policies.schemas import (
     UpdateLimitPolicyRuleRequest,
     UpdatePolicyAssignmentRequest,
 )
+from app.modules.policies.validation import (
+    FALLBACKABLE_PROVIDER_REASONS,
+    EffectiveAccessPolicyCandidate,
+    EffectiveAccessPolicyPublicModel,
+    fallback_on_values,
+    validate_access_policy_public_model_payload,
+    validate_limit_rule_payload,
+    validate_scoped_access_policy_public_model_payload,
+)
 from app.modules.providers import facade as providers_facade
 from app.modules.providers.errors import ProviderNotFoundError
 
-_FALLBACKABLE_PROVIDER_REASONS = {
-    "timeout",
-    "connection_failed",
-    "circuit_open",
-    "rate_limited",
-    "provider_5xx",
-}
+_FALLBACKABLE_PROVIDER_REASONS = FALLBACKABLE_PROVIDER_REASONS
 
 
 async def list_access_policies(
@@ -155,28 +153,12 @@ async def update_access_policy(
     db: AsyncSession,
     actor: AuthenticatedUser | None = None,
 ) -> AccessPolicyResponse:
+    if payload.public_models is not None:
+        validate_access_policy_public_model_payload(payload.public_models)
     async with transaction(db):
         policy = await _get_access_policy_or_raise(policy_id=policy_id, scope=scope, db=db)
         if not await _can_manage_policy_definition(policy=policy, actor=actor, scope=scope, db=db):
             raise PolicyPermissionError
-        if payload.name is not None:
-            policy.name = payload.name
-        if "description" in payload.model_fields_set:
-            policy.description = payload.description
-        if payload.is_active is not None:
-            policy.is_active = payload.is_active
-        shared_policy = (
-            await repository.get_policy(org_id=scope.org_id, policy_id=policy.policy_id, db=db)
-            if policy.policy_id
-            else None
-        )
-        if shared_policy is not None:
-            if payload.name is not None:
-                shared_policy.name = payload.name
-            if "description" in payload.model_fields_set:
-                shared_policy.description = payload.description
-            if payload.is_active is not None:
-                shared_policy.is_active = payload.is_active
         if payload.public_models is not None:
             await _validate_access_policy_public_models(payload.public_models, scope=scope, db=db)
             await _validate_update_public_model_assignment_conflicts(
@@ -196,6 +178,25 @@ async def update_access_policy(
                     scope=scope,
                     db=db,
                 )
+        if payload.name is not None:
+            policy.name = payload.name
+        if "description" in payload.model_fields_set:
+            policy.description = payload.description
+        if payload.is_active is not None:
+            policy.is_active = payload.is_active
+        shared_policy = (
+            await repository.get_policy(org_id=scope.org_id, policy_id=policy.policy_id, db=db)
+            if policy.policy_id
+            else None
+        )
+        if shared_policy is not None:
+            if payload.name is not None:
+                shared_policy.name = payload.name
+            if "description" in payload.model_fields_set:
+                shared_policy.description = payload.description
+            if payload.is_active is not None:
+                shared_policy.is_active = payload.is_active
+        if payload.public_models is not None:
             await repository.delete_access_policy_public_models(
                 org_id=scope.org_id,
                 access_policy_id=policy.id,
@@ -293,6 +294,8 @@ async def create_limit_policy(
     db: AsyncSession,
     actor: AuthenticatedUser | None = None,
 ) -> LimitPolicyResponse:
+    for rule in payload.rules:
+        await _validate_limit_rule_filters(payload=rule, scope=scope, db=db)
     async with transaction(db):
         shared_policy = await repository.create_policy(
             org_id=scope.org_id,
@@ -317,7 +320,6 @@ async def create_limit_policy(
             db=db,
         )
         for rule in payload.rules:
-            await _validate_limit_rule_filters(payload=rule, scope=scope, db=db)
             created_rule = await repository.create_limit_policy_rule(
                 org_id=scope.org_id,
                 limit_policy_id=policy.id,
@@ -718,23 +720,29 @@ async def create_scoped_policy_assignment(
         scope=scope,
         db=db,
     )
+    if payload.policy_type == "access":
+        assert payload.access_policy is not None
+        await _validate_access_policy_public_models(
+            payload.access_policy.public_models,
+            scope=scope,
+            db=db,
+        )
+        await _validate_scoped_access_policy_narrowing(
+            public_models=payload.access_policy.public_models,
+            scope_type=payload.scope_type,
+            team_id=team_id,
+            project_id=project_id,
+            virtual_key_id=virtual_key_id,
+            scope=scope,
+            db=db,
+        )
+    else:
+        assert payload.limit_policy is not None
+        for rule in payload.limit_policy.rules:
+            await _validate_limit_rule_filters(payload=rule, scope=scope, db=db)
     async with transaction(db):
         if payload.policy_type == "access":
             assert payload.access_policy is not None
-            await _validate_access_policy_public_models(
-                payload.access_policy.public_models,
-                scope=scope,
-                db=db,
-            )
-            await _validate_scoped_access_policy_narrowing(
-                public_models=payload.access_policy.public_models,
-                scope_type=payload.scope_type,
-                team_id=team_id,
-                project_id=project_id,
-                virtual_key_id=virtual_key_id,
-                scope=scope,
-                db=db,
-            )
             shared_policy = await repository.create_policy(
                 org_id=scope.org_id,
                 kind="access",
@@ -815,7 +823,6 @@ async def create_scoped_policy_assignment(
                 db=db,
             )
             for rule in payload.limit_policy.rules:
-                await _validate_limit_rule_filters(payload=rule, scope=scope, db=db)
                 created_rule = await repository.create_limit_policy_rule(
                     org_id=scope.org_id,
                     limit_policy_id=limit_policy.id,
@@ -1580,28 +1587,9 @@ async def _validate_access_policy_public_models(
     scope: Scope,
     db: AsyncSession,
 ) -> None:
-    seen_names: set[str] = set()
+    validate_access_policy_public_model_payload(public_models)
     for public_model in public_models:
-        normalized_name = public_model.public_model_name.strip()
-        if normalized_name in seen_names:
-            raise PolicyValidationError
-        seen_names.add(normalized_name)
-        if public_model.routing_mode == "single_route" and public_model.fallback_on:
-            raise PolicyValidationError
-        if public_model.routing_mode == "ordered_fallback":
-            invalid_reasons = set(public_model.fallback_on) - _FALLBACKABLE_PROVIDER_REASONS
-            if invalid_reasons:
-                raise PolicyValidationError
-        seen_candidates: set[tuple[UUID, UUID, UUID]] = set()
         for candidate in public_model.candidates:
-            candidate_key = (
-                candidate.provider_id,
-                candidate.credential_pool_id,
-                candidate.model_offering_id,
-            )
-            if candidate_key in seen_candidates:
-                raise PolicyValidationError
-            seen_candidates.add(candidate_key)
             await _validate_access_route_candidate(candidate=candidate, scope=scope, db=db)
 
 
@@ -1688,9 +1676,7 @@ async def _publish_access_policy_revision(
 
 
 def _fallback_on_values(public_model: AccessPolicyPublicModelInput) -> list[str]:
-    if public_model.routing_mode != "ordered_fallback":
-        return []
-    return public_model.fallback_on or sorted(_FALLBACKABLE_PROVIDER_REASONS)
+    return fallback_on_values(public_model)
 
 
 def _assignment_applies_to_parent(
@@ -1901,110 +1887,20 @@ async def _validate_scoped_access_policy_public_models(
     scope: Scope,
     db: AsyncSession,
 ) -> None:
-    for public_model in public_models:
-        parent = parent_public_models.get(public_model.public_model_name)
-        if parent is None:
-            raise PolicyValidationError
-        if parent.routing_mode == "single_route" and public_model.routing_mode != "single_route":
-            raise PolicyValidationError
-        if public_model.routing_mode == "ordered_fallback":
-            if parent.routing_mode != "ordered_fallback":
-                raise PolicyValidationError
-            if set(_fallback_on_values(public_model)) - set(parent.fallback_on):
-                raise PolicyValidationError
-            if (
-                public_model.max_route_attempts is not None
-                and parent.max_route_attempts is not None
-                and public_model.max_route_attempts > parent.max_route_attempts
-            ):
-                raise PolicyValidationError
-        parent_candidate_positions = {
-            candidate.key: index for index, candidate in enumerate(parent.candidates)
-        }
-        previous_position = -1
-        for candidate in public_model.candidates:
-            submitted = _EffectivePublicModelCandidate(
-                provider_id=candidate.provider_id,
-                credential_pool_id=candidate.credential_pool_id,
-                model_id=candidate.model_offering_id,
-            )
-            position = parent_candidate_positions.get(submitted.key)
-            if position is None or position < previous_position:
-                raise PolicyValidationError
-            previous_position = position
+    validate_scoped_access_policy_public_model_payload(
+        public_models=public_models,
+        parent_public_models=parent_public_models,
+    )
 
 
-class _EffectivePublicModelCandidate:
-    def __init__(self, *, provider_id: UUID, credential_pool_id: UUID, model_id: UUID) -> None:
-        self.provider_id = provider_id
-        self.credential_pool_id = credential_pool_id
-        self.model_id = model_id
-
-    @property
-    def key(self) -> tuple[UUID, UUID, UUID]:
-        return (self.provider_id, self.credential_pool_id, self.model_id)
-
-
-class _EffectivePublicModel:
-    def __init__(
-        self,
-        *,
-        routing_mode: str,
-        fallback_on: list[str],
-        max_route_attempts: int | None,
-        candidates: list[_EffectivePublicModelCandidate],
-    ) -> None:
-        self.routing_mode = routing_mode
-        self.fallback_on = fallback_on
-        self.max_route_attempts = max_route_attempts
-        self.candidates = candidates
-
-    def with_candidates(
-        self, candidates: list[_EffectivePublicModelCandidate]
-    ) -> "_EffectivePublicModel":
-        return _EffectivePublicModel(
-            routing_mode=self.routing_mode,
-            fallback_on=self.fallback_on,
-            max_route_attempts=self.max_route_attempts,
-            candidates=candidates,
-        )
+_EffectivePublicModelCandidate = EffectiveAccessPolicyCandidate
+_EffectivePublicModel = EffectiveAccessPolicyPublicModel
 
 
 async def _validate_limit_rule_filters(
     *, payload: LimitPolicyRuleInput, scope: Scope, db: AsyncSession
 ) -> None:
-    if payload.limit_type == "tokens_per_request" and (
-        payload.interval_unit != "lifetime" or payload.interval_count != 1
-    ):
-        raise PolicyValidationError
-    if payload.limit_type == "tokens_per_request" and payload.partitions:
-        raise PolicyValidationError
-    seen_partition_positions: set[int] = set()
-    seen_partition_dimensions: set[str] = set()
-    for matcher in payload.matchers:
-        try:
-            validate_matcher(
-                dimension=matcher.dimension,
-                operator=matcher.operator,
-                value=matcher.value_json,
-                stage=PolicyDimensionStage.LIMIT_RESERVATION,
-            )
-        except (PolicyValidationError, ValueError) as exc:
-            raise PolicyValidationError from exc
-    for partition in payload.partitions:
-        if partition.position in seen_partition_positions:
-            raise PolicyValidationError
-        if partition.dimension in seen_partition_dimensions:
-            raise PolicyValidationError
-        seen_partition_positions.add(partition.position)
-        seen_partition_dimensions.add(partition.dimension)
-        try:
-            validate_partition(
-                dimension=partition.dimension,
-                stage=PolicyDimensionStage.LIMIT_RESERVATION,
-            )
-        except (PolicyValidationError, ValueError) as exc:
-            raise PolicyValidationError from exc
+    validate_limit_rule_payload(payload)
     try:
         if payload.provider_id is not None:
             await providers_facade.get_provider(provider_id=payload.provider_id, scope=scope, db=db)

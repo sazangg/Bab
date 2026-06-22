@@ -22,6 +22,7 @@ from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys.internal.models import Project, VirtualKey
 from app.modules.usage import facade
 from app.modules.usage.schemas import (
+    GatewayRequestTraceListResponse,
     GatewayRequestTraceResponse,
     OrganizationUsageSummary,
     SpendInsights,
@@ -36,6 +37,8 @@ RequestScope = Annotated[Scope, Depends(get_scope)]
 CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]
 UsageWindow = Literal["24h", "7d", "30d", "90d", "lifetime"]
 UsageGrain = Literal["hour", "day", "week"]
+GatewayRequestTraceStatus = Literal["succeeded", "failed", "denied", "pending"]
+GatewayRequestTraceFallback = Literal["attempted", "not_attempted"]
 
 
 class OrganizationUsagePage(OrganizationUsageSummary):
@@ -137,6 +140,60 @@ async def list_usage_records(
         allowed_team_ids=usage_scope.allowed_team_ids,
         allowed_project_ids=usage_scope.allowed_project_ids,
         limit=min(max(limit, 1), 500),
+        offset=max(offset, 0),
+        db=db,
+    )
+
+
+@router.get("/requests")
+async def list_gateway_requests(
+    scope: RequestScope,
+    db: DatabaseSession,
+    user: CurrentUser,
+    window: UsageWindow = "30d",
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    team_id: UUID | None = None,
+    project_id: UUID | None = None,
+    virtual_key_id: UUID | None = None,
+    provider_id: UUID | None = None,
+    public_model_name: str | None = None,
+    requested_model: str | None = None,
+    request_id: str | None = None,
+    status: GatewayRequestTraceStatus | None = None,
+    fallback: GatewayRequestTraceFallback | None = None,
+    error_code: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> GatewayRequestTraceListResponse:
+    usage_scope = await _resolve_usage_scope(
+        user=user,
+        org_id=scope.org_id,
+        db=db,
+        team_id=team_id,
+        project_id=project_id,
+        virtual_key_id=virtual_key_id,
+    )
+    return await facade.list_gateway_requests(
+        org_id=scope.org_id,
+        window=window,
+        start_at=start_at,
+        end_at=end_at,
+        team_id=team_id,
+        project_id=project_id,
+        virtual_key_id=virtual_key_id,
+        provider_id=provider_id,
+        public_model_name=public_model_name,
+        requested_model=requested_model,
+        request_id=request_id,
+        status=status,
+        fallback=fallback,
+        error_code=error_code,
+        search=search,
+        allowed_team_ids=usage_scope.allowed_team_ids,
+        allowed_project_ids=usage_scope.allowed_project_ids,
+        limit=min(max(limit, 1), 200),
         offset=max(offset, 0),
         db=db,
     )

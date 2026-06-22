@@ -18,6 +18,7 @@ import type {
   GatewayPolicyDecisionTrace,
   GatewayRequestTraceResponse,
   GatewayRouteAttemptTrace,
+  GatewayTraceTimelineItem,
   GuardrailEventTrace,
   UsageRecordResponse,
 } from "@/shared/api/generated/schemas";
@@ -84,25 +85,49 @@ function TraceErrorAlert({ error, onRetry }: { error: unknown; onRetry: () => vo
 }
 
 function RequestTraceContent({ trace }: { trace: GatewayRequestTraceResponse }) {
-  const request = trace.request;
   return (
     <>
-      <section className="grid gap-3 sm:grid-cols-2">
-        <TraceStat label="Model" value={request.public_model_name ?? request.requested_model} />
-        <TraceStat label="Endpoint" value={request.gateway_endpoint} />
-        <TraceStat
-          label="Status"
-          value={request.final_http_status ? String(request.final_http_status) : "Pending"}
-        />
-        <TraceStat label="Attempts" value={request.attempt_count.toLocaleString()} />
-        <TraceStat label="Fallback" value={request.fallback_attempted ? "Attempted" : "No"} />
-        <TraceStat label="Started" value={new Date(request.started_at).toLocaleString()} />
-      </section>
+      <TraceSummaryBand trace={trace} />
+      <TraceTimelineSection items={trace.timeline ?? []} />
       <TraceAttemptsSection attempts={trace.route_attempts ?? []} />
       <TracePolicySection decisions={trace.policy_decisions ?? []} />
       <TraceGuardrailSection events={trace.guardrail_events ?? []} />
       <TraceUsageSection records={trace.usage_records ?? []} />
     </>
+  );
+}
+
+function TraceSummaryBand({ trace }: { trace: GatewayRequestTraceResponse }) {
+  const request = trace.request;
+  return (
+    <section className="rounded-md border bg-muted/30 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-medium">
+            {request.public_model_name ?? request.requested_model}
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {request.gateway_endpoint} / {shortId(request.request_id ?? request.id)}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {request.final_http_status == null ? (
+            <Badge variant="outline">Pending</Badge>
+          ) : (
+            <HttpStatusBadge status={request.final_http_status} />
+          )}
+          {request.fallback_attempted ? <Badge variant="secondary">Fallback attempted</Badge> : null}
+        </div>
+      </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-3">
+        <TraceStat label="Attempts" value={request.attempt_count.toLocaleString()} />
+        <TraceStat label="Started" value={new Date(request.started_at).toLocaleString()} />
+        <TraceStat
+          label="Completed"
+          value={request.completed_at ? new Date(request.completed_at).toLocaleString() : "Pending"}
+        />
+      </div>
+    </section>
   );
 }
 
@@ -112,6 +137,36 @@ function TraceStat({ label, value }: { label: string; value: string }) {
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="mt-1 truncate text-sm font-medium">{value}</div>
     </div>
+  );
+}
+
+function TraceTimelineSection({ items }: { items: GatewayTraceTimelineItem[] }) {
+  return (
+    <TraceSection title="Timeline" count={items.length}>
+      {items.length === 0 ? (
+        <TraceEmpty />
+      ) : (
+        <div className="space-y-2">
+          {items.map((item, index) => (
+            <div key={`${item.timestamp}-${item.kind}-${index}`} className="rounded-md border bg-background p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="truncate font-medium">{timelineTitle(item)}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {new Date(item.timestamp).toLocaleString()}
+                    {item.stage ? ` / ${item.stage}` : ""}
+                  </div>
+                </div>
+                <Badge variant={timelineBadgeVariant(item)}>{timelineBadgeLabel(item)}</Badge>
+              </div>
+              {item.summary ? (
+                <div className="mt-2 text-xs text-muted-foreground">{item.summary}</div>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      )}
+    </TraceSection>
   );
 }
 
@@ -133,8 +188,8 @@ function TraceAttemptsSection({ attempts }: { attempts: GatewayRouteAttemptTrace
                     {attempt.provider_model ?? attempt.public_model_name ?? "-"}
                   </div>
                 </div>
-                <Badge variant={attempt.status === "success" ? "default" : "secondary"}>
-                  {attempt.status}
+                <Badge variant={routeAttemptBadgeVariant(attempt)}>
+                  {routeAttemptLabel(attempt)}
                 </Badge>
               </div>
               <div className="mt-2 grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
@@ -165,9 +220,9 @@ function TracePolicySection({ decisions }: { decisions: GatewayPolicyDecisionTra
           {decisions.map((decision) => (
             <div key={decision.id} className="rounded-md border bg-background p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="font-medium">{decision.decision_type}</div>
+                <div className="font-medium">{policyDecisionTitle(decision)}</div>
                 <Badge variant={policyDecisionBadgeVariant(decision.outcome)}>
-                  {decision.outcome}
+                  {policyDecisionLabel(decision.outcome)}
                 </Badge>
               </div>
               <div className="mt-1 text-xs text-muted-foreground">
@@ -186,10 +241,73 @@ function TracePolicySection({ decisions }: { decisions: GatewayPolicyDecisionTra
   );
 }
 
+function timelineTitle(item: GatewayTraceTimelineItem) {
+  if (item.title) return item.title;
+  if (item.kind === "request") return "Request";
+  if (item.kind === "route_attempt") return "Route attempt";
+  if (item.kind === "policy_decision") return "Policy decision";
+  if (item.kind === "guardrail_event") return "Guardrail event";
+  if (item.kind === "usage_record") return "Usage recorded";
+  return "Trace event";
+}
+
+function timelineBadgeLabel(item: GatewayTraceTimelineItem) {
+  if (item.kind === "usage_record") return "Limit reserved";
+  if (item.status === "denied" || item.status === "blocked") return "Denied";
+  if (item.status === "would_deny" || item.status === "would_block") return "Would deny";
+  if (item.status === "failed") return "Provider failed";
+  if (item.status === "succeeded" || item.status === "allowed") return "Allowed";
+  return item.status ?? item.kind.replaceAll("_", " ");
+}
+
+function timelineBadgeVariant(item: GatewayTraceTimelineItem) {
+  if (item.severity === "error" || item.status === "denied" || item.status === "blocked") {
+    return "destructive";
+  }
+  if (item.severity === "warning" || item.status === "failed") return "secondary";
+  return "outline";
+}
+
+function routeAttemptLabel(attempt: GatewayRouteAttemptTrace) {
+  if (attempt.fallback_from_attempt_id) return "Fallback attempted";
+  if (attempt.status === "succeeded") return "Allowed";
+  if (attempt.status === "failed") return "Provider failed";
+  if (attempt.status === "blocked") return "Denied";
+  if (attempt.skipped_reason) return "Skipped";
+  return attempt.status.replaceAll("_", " ");
+}
+
+function routeAttemptBadgeVariant(attempt: GatewayRouteAttemptTrace) {
+  if (attempt.status === "succeeded") return "default";
+  if (attempt.status === "failed" || attempt.status === "blocked") return "destructive";
+  return "secondary";
+}
+
+function policyDecisionTitle(decision: GatewayPolicyDecisionTrace) {
+  if (decision.decision_type === "limit") return "Limit policy";
+  if (decision.decision_type === "routing") return "Routing policy";
+  if (decision.decision_type === "access") return "Access policy";
+  return decision.decision_type.replaceAll("_", " ");
+}
+
+function policyDecisionLabel(outcome: string) {
+  if (outcome === "allowed" || outcome === "would_allow") return "Allowed";
+  if (outcome === "denied") return "Denied";
+  if (outcome === "would_deny") return "Would deny";
+  return outcome.replaceAll("_", " ");
+}
+
 function policyDecisionBadgeVariant(outcome: string) {
   if (outcome === "allowed" || outcome === "would_allow") return "default";
-  if (outcome === "denied") return "destructive";
+  if (outcome === "denied" || outcome === "would_deny") return "destructive";
   return "secondary";
+}
+
+function guardrailDecisionLabel(decision: string) {
+  if (decision === "allowed") return "Allowed";
+  if (decision === "blocked") return "Denied";
+  if (decision === "would_block") return "Would deny";
+  return decision.replaceAll("_", " ");
 }
 
 function guardrailDecisionBadgeVariant(decision: string) {
@@ -209,7 +327,7 @@ function TraceGuardrailSection({ events }: { events: GuardrailEventTrace[] }) {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="font-medium">{event.reason}</div>
                 <Badge variant={guardrailDecisionBadgeVariant(event.decision)}>
-                  {event.decision}
+                  {guardrailDecisionLabel(event.decision)}
                 </Badge>
               </div>
               <div className="mt-1 text-xs text-muted-foreground">

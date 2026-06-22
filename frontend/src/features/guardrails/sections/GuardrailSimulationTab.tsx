@@ -6,10 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { PolicySimulationPanel } from "@/features/policies/components/PolicySimulationPanel";
+import { PolicySimulationResult } from "@/features/policies/components/PolicySimulationResult";
 import { useSimulateGuardrailsApiV1GuardrailsSimulatePost } from "@/shared/api/generated/guardrails/guardrails";
 import type {
   GuardrailPolicyResponse,
   GuardrailSimulationResponse,
+  PolicySimulationDraft,
+  PolicySimulationResponse,
 } from "@/shared/api/generated/schemas";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 
@@ -21,7 +25,17 @@ import {
   uuidPattern,
 } from "../lib/guardrail-helpers";
 
-export function GuardrailSimulationTab({ policies }: { policies: GuardrailPolicyResponse[] }) {
+export function GuardrailSimulationTab({
+  policies,
+  policySimulationDrafts = [],
+  policySimulationResult,
+  onPolicySimulationResult,
+}: {
+  policies: GuardrailPolicyResponse[];
+  policySimulationDrafts?: PolicySimulationDraft[];
+  policySimulationResult: PolicySimulationResponse | null;
+  onPolicySimulationResult: (result: PolicySimulationResponse | null) => void;
+}) {
   const [policyId, setPolicyId] = useState("");
   const [model, setModel] = useState("gpt-5-mini");
   const [providerModel, setProviderModel] = useState("");
@@ -71,7 +85,16 @@ export function GuardrailSimulationTab({ policies }: { policies: GuardrailPolicy
   const decisionStatus = result ? guardrailDecisionStatus(result.decision) : null;
 
   return (
-    <Card>
+    <div className="grid gap-4">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+        <PolicySimulationPanel
+          drafts={policySimulationDrafts}
+          onResult={onPolicySimulationResult}
+        />
+        <PolicySimulationResult result={policySimulationResult} />
+      </div>
+
+      <Card>
       <CardHeader>
         <CardTitle>Simulation</CardTitle>
         <CardDescription>
@@ -176,6 +199,7 @@ export function GuardrailSimulationTab({ policies }: { policies: GuardrailPolicy
           </div>
         </div>
       </CardContent>
-    </Card>
+      </Card>
+    </div>
   );
 }

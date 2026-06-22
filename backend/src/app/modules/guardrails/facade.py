@@ -1,22 +1,31 @@
-import asyncio
-import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope, transaction
 from app.modules.activity import facade as activity_facade
 from app.modules.auth.schemas import AuthenticatedUser
-from app.modules.guardrails.detectors.registry import DEFAULT_PII_DETECTOR, get_detector
 from app.modules.guardrails.errors import (
     GuardrailAssignmentConflictError,
     GuardrailAssignmentNotFoundError,
     GuardrailAssignmentTargetNotFoundError,
     GuardrailDeniedError,
     GuardrailPolicyNotFoundError,
+)
+from app.modules.guardrails.evaluation import (
+    GUARDRAIL_SCAN_CHAR_LIMIT as _GUARDRAIL_SCAN_CHAR_LIMIT,
+)
+from app.modules.guardrails.evaluation import (
+    GuardrailReadonlyEvaluation,
+    RuntimeGuardrailAssignmentRef,
+    RuntimeGuardrailPolicyRef,
+    RuntimeGuardrailRuleInput,
+    RuntimeGuardrailRuleRef,
+    RuntimeMatcherInput,
+    evaluate_guardrail_rules_readonly,
+    matched_regex_values,
 )
 from app.modules.guardrails.internal import repository
 from app.modules.guardrails.internal.models import GuardrailAssignment, GuardrailEvent
@@ -39,14 +48,12 @@ from app.modules.guardrails.schemas import (
     UpdateGuardrailAssignmentRequest,
     UpdateGuardrailPolicyRequest,
 )
-from app.modules.policies.dimensions import (
-    PolicyDimensionStage,
-    evaluate_matcher,
-    validate_matcher,
-)
-from app.modules.policies.errors import PolicyValidationError
+from app.modules.guardrails.validation import validate_guardrail_rule_payload
 from app.modules.policies.internal import repository as policies_repository
 from app.modules.policies.internal.models import PolicyRevision
+
+GUARDRAIL_SCAN_CHAR_LIMIT = _GUARDRAIL_SCAN_CHAR_LIMIT
+_matched_regex_values = matched_regex_values
 
 
 @dataclass(frozen=True)
@@ -113,6 +120,7 @@ async def create_policy(
     scope: Scope,
     db: AsyncSession,
 ) -> GuardrailPolicyResponse:
+    _validate_rule_matchers(payload.rules)
     async with transaction(db):
         shared_policy = await policies_repository.create_policy(
             org_id=scope.org_id,
@@ -139,7 +147,6 @@ async def create_policy(
             is_active=payload.is_active,
             db=db,
         )
-        _validate_rule_matchers(payload.rules)
         await repository.replace_rules(
             org_id=scope.org_id,
             policy_id=policy.id,
@@ -169,6 +176,8 @@ async def update_policy(
     scope: Scope,
     db: AsyncSession,
 ) -> GuardrailPolicyResponse:
+    if payload.rules is not None:
+        _validate_rule_matchers(payload.rules)
     async with transaction(db):
         policy = await repository.get_policy(policy_id=policy_id, org_id=scope.org_id, db=db)
         if policy is None:
@@ -189,7 +198,6 @@ async def update_policy(
         if "is_active" in payload.model_fields_set:
             shared_policy.is_active = policy.is_active
         if payload.rules is not None:
-            _validate_rule_matchers(payload.rules)
             revision = await _create_next_active_guardrail_revision(
                 org_id=scope.org_id,
                 shared_policy_id=shared_policy.id,
@@ -764,6 +772,62 @@ async def evaluate_response(
     )
 
 
+async def evaluate_context_readonly(
+    *,
+    context: GuardrailEvaluationContext,
+    detector_mode: str,
+    db: AsyncSession,
+) -> list[GuardrailReadonlyEvaluation]:
+    runtime_rules = await runtime_rules_for_context_readonly(
+        context=context,
+        db=db,
+    )
+    return await evaluate_guardrail_rules_readonly(
+        context=context,
+        rules=runtime_rules,
+        detector_mode=detector_mode,
+        db=db,
+    )
+
+
+async def runtime_rules_for_context_readonly(
+    *,
+    context: GuardrailEvaluationContext,
+    db: AsyncSession,
+) -> list[RuntimeGuardrailRuleInput]:
+    assignments = await repository.list_effective_assignments(
+        org_id=context.org_id,
+        team_id=context.team_id,
+        project_id=context.project_id,
+        virtual_key_id=context.virtual_key_id,
+        db=db,
+    )
+    if not assignments:
+        return []
+    policies = {
+        policy.id: policy
+        for policy in await repository.list_policies(org_id=context.org_id, db=db)
+        if policy.is_active
+    }
+    policy_ids = [
+        assignment.policy_id for assignment in assignments if assignment.policy_id in policies
+    ]
+    rules = await repository.list_policy_rules(org_id=context.org_id, policy_ids=policy_ids, db=db)
+    assignments_by_policy: dict[UUID, list[GuardrailAssignment]] = {}
+    for assignment in assignments:
+        assignments_by_policy.setdefault(assignment.policy_id, []).append(assignment)
+    policy_mode = {policy.id: policy.enforcement_mode for policy in policies.values()}
+    runtime_rules = await _runtime_rules_from_saved_rules(
+        rules=rules,
+        policies=policies,
+        assignments_by_policy=assignments_by_policy,
+        policy_mode=policy_mode,
+        phase=context.phase,
+        db=db,
+    )
+    return runtime_rules
+
+
 async def has_enforced_response_guardrails(
     *,
     context: GuardrailEvaluationContext,
@@ -830,38 +894,39 @@ async def _evaluate_context(
     for assignment in assignments:
         assignments_by_policy.setdefault(assignment.policy_id, []).append(assignment)
     policy_mode = {policy.id: policy.enforcement_mode for policy in policies.values()}
+    runtime_rules = await _runtime_rules_from_saved_rules(
+        rules=rules,
+        policies=policies,
+        assignments_by_policy=assignments_by_policy,
+        policy_mode=policy_mode,
+        phase=context.phase,
+        db=db,
+    )
+    evaluations = await evaluate_guardrail_rules_readonly(
+        context=context,
+        rules=runtime_rules,
+        detector_mode="execute_detectors",
+        db=db,
+    )
     would_deny: list[GuardrailDecisionTrace] = []
-    for rule in rules:
-        if (
-            not rule.is_active
-            or not _rule_applies_to_phase(rule=rule, phase=context.phase)
-            or not await _rule_matchers_apply(rule=rule, context=context, db=db)
-        ):
+    for evaluation in evaluations:
+        if not evaluation.denied or evaluation.policy_id is None:
             continue
-        evaluation = await _evaluate_rule(rule=rule, context=context)
-        if not evaluation["denied"]:
-            continue
-        mode = _effective_rule_mode(
-            policy_mode=policy_mode.get(rule.policy_id, "enforce"),
-            assignments=assignments_by_policy.get(rule.policy_id, []),
-        )
+        mode = "enforce" if evaluation.decision == "blocked" else "dry_run"
         effective_assignment = _effective_rule_assignment(
             mode=mode,
-            assignments=assignments_by_policy.get(rule.policy_id, []),
+            assignments=assignments_by_policy.get(evaluation.policy_id, []),
         )
-        reason = _rule_denial_reason(rule)
-        rule_label = "allowlist" if rule.effect == "allow" else rule.rule_type
-        message = f"{context.phase} blocked by guardrail {rule_label} rule"
         await _record_event(
             context=context,
-            policy_id=rule.policy_id,
-            policy_revision_id=rule.policy_revision_id,
-            rule_id=rule.id,
-            decision="blocked" if mode == "enforce" else "would_block",
-            reason=reason,
+            policy_id=evaluation.policy_id,
+            policy_revision_id=evaluation.policy_revision_id,
+            rule_id=evaluation.rule_id,
+            decision=evaluation.decision,
+            reason=evaluation.reason_code or f"{context.phase}_guardrail_denied",
             metadata=_guardrail_event_metadata(
-                rule=rule,
                 evaluation=evaluation,
+                runtime_rules=runtime_rules,
                 mode=mode,
                 phase=context.phase,
             ),
@@ -869,9 +934,9 @@ async def _evaluate_context(
         )
         if mode == "enforce":
             raise GuardrailDeniedError(
-                detail=message,
-                policy_id=rule.policy_id,
-                policy_revision_id=rule.policy_revision_id,
+                detail=evaluation.message or "Request blocked by guardrail",
+                policy_id=evaluation.policy_id,
+                policy_revision_id=evaluation.policy_revision_id,
                 assignment_id=(
                     effective_assignment.policy_assignment_id or effective_assignment.id
                     if effective_assignment
@@ -888,12 +953,12 @@ async def _evaluate_context(
                 assignment_virtual_key_id=effective_assignment.virtual_key_id
                 if effective_assignment
                 else None,
-                rule_id=rule.id,
+                rule_id=evaluation.rule_id,
             )
         would_deny.append(
             GuardrailDecisionTrace(
-                policy_id=rule.policy_id,
-                policy_revision_id=rule.policy_revision_id,
+                policy_id=evaluation.policy_id,
+                policy_revision_id=evaluation.policy_revision_id,
                 assignment_id=(
                     effective_assignment.policy_assignment_id or effective_assignment.id
                     if effective_assignment
@@ -910,9 +975,9 @@ async def _evaluate_context(
                 assignment_virtual_key_id=effective_assignment.virtual_key_id
                 if effective_assignment
                 else None,
-                rule_id=rule.id,
-                reason_code=reason,
-                message=message,
+                rule_id=evaluation.rule_id,
+                reason_code=evaluation.reason_code or f"{context.phase}_guardrail_denied",
+                message=evaluation.message,
             )
         )
     await _record_event(
@@ -1021,28 +1086,33 @@ async def simulate(
         else _messages_text(payload.messages),
     )
 
+    runtime_rules = await _runtime_rules_from_simulation_rules(
+        rules=rules,
+        policy_id=payload.policy_id,
+        enforcement_mode=enforcement_mode,
+        phase=context.phase,
+        db=db,
+    )
+    evaluations = await evaluate_guardrail_rules_readonly(
+        context=context,
+        rules=runtime_rules,
+        detector_mode="execute_detectors",
+        db=db,
+    )
     matches: list[GuardrailSimulationMatch] = []
-    for rule in rules:
-        is_active = getattr(rule, "is_active", True)
-        if not is_active:
-            continue
-        if not _rule_applies_to_phase(rule=rule, phase=context.phase):
-            continue
-        if not await _rule_matchers_apply(rule=rule, context=context, db=db):
-            continue
-        evaluation = await _evaluate_rule(rule=rule, context=context)
-        if not evaluation["denied"]:
+    for evaluation in evaluations:
+        if not evaluation.denied:
             continue
         decision = "blocked" if enforcement_mode == "enforce" else "warned"
         matches.append(
             GuardrailSimulationMatch(
-                rule_id=getattr(rule, "id", None),
-                rule_type=rule.rule_type,
-                effect=rule.effect,
-                priority=rule.priority,
+                rule_id=evaluation.rule_id,
+                rule_type=evaluation.rule_type,
+                effect=evaluation.effect,
+                priority=_runtime_rule_priority(runtime_rules, evaluation),
                 decision=decision,
-                reason=_rule_denial_reason(rule),
-                matched_values=evaluation["matched_values"],
+                reason=evaluation.reason_code or f"{context.phase}_guardrail_denied",
+                matched_values=evaluation.matched_values,
             )
         )
 
@@ -1053,29 +1123,162 @@ async def simulate(
     )
 
 
-async def _evaluate_rule(*, rule, context: GuardrailEvaluationContext) -> dict:
-    matched_values = await _matched_rule_values(rule=rule, context=context)
-    matches = bool(matched_values)
-    denied = matches if rule.effect == "deny" else not matches
-    return {"denied": denied, "matched_values": matched_values}
+async def _runtime_rules_from_saved_rules(
+    *,
+    rules,
+    policies: dict[UUID, object],
+    assignments_by_policy: dict[UUID, list[GuardrailAssignment]],
+    policy_mode: dict[UUID, str],
+    phase: str,
+    db: AsyncSession,
+) -> list[RuntimeGuardrailRuleInput]:
+    runtime_rules: list[RuntimeGuardrailRuleInput] = []
+    for index, rule in enumerate(rules):
+        if not _rule_applies_to_phase(rule=rule, phase=phase):
+            continue
+        policy = policies.get(rule.policy_id)
+        if policy is None:
+            continue
+        matchers = await repository.list_rule_matchers(
+            org_id=rule.org_id,
+            rule_id=rule.id,
+            db=db,
+        )
+        mode = _effective_rule_mode(
+            policy_mode=policy_mode.get(rule.policy_id, "enforce"),
+            assignments=assignments_by_policy.get(rule.policy_id, []),
+        )
+        effective_assignment = _effective_rule_assignment(
+            mode=mode,
+            assignments=assignments_by_policy.get(rule.policy_id, []),
+        )
+        runtime_rules.append(
+            RuntimeGuardrailRuleInput(
+                policy_ref=RuntimeGuardrailPolicyRef(
+                    policy_key=f"policy:{rule.policy_id}",
+                    policy_id=rule.policy_id,
+                    policy_revision_id=rule.policy_revision_id,
+                    policy_name=getattr(policy, "name", None),
+                    policy_revision_number=None,
+                    enforcement_mode=getattr(policy, "enforcement_mode", "enforce"),
+                ),
+                assignment_refs=[
+                    _runtime_assignment_ref(
+                        assignment=effective_assignment,
+                        assignment_mode=mode,
+                    )
+                ]
+                if effective_assignment
+                else [],
+                rule_ref=RuntimeGuardrailRuleRef(
+                    rule_id=rule.id,
+                    rule_name=None,
+                    rule_index=index,
+                ),
+                phase=phase,
+                source_phase=getattr(rule, "phase", phase),
+                rule_type=rule.rule_type,
+                effect=rule.effect,
+                values=rule.values,
+                config=rule.config or {},
+                matchers=[
+                    RuntimeMatcherInput(
+                        dimension=matcher.dimension,
+                        operator=matcher.operator,
+                        value_json=matcher.value_json,
+                    )
+                    for matcher in matchers
+                ],
+                priority=rule.priority,
+                is_active=rule.is_active,
+                source_created_at=rule.created_at,
+            )
+        )
+    return runtime_rules
 
 
-async def _matched_rule_values(*, rule, context: GuardrailEvaluationContext) -> list[str]:
-    values = [value.strip() for value in rule.values if value.strip()]
-    if rule.rule_type == "prompt_contains":
-        target_text = _guardrail_target_text(context).lower()
-        return [value for value in values if value.lower() in target_text]
-    elif rule.rule_type == "prompt_regex":
-        return await _matched_regex_values(
-            values=values, prompt_text=_guardrail_target_text(context)
+async def _runtime_rules_from_simulation_rules(
+    *,
+    rules,
+    policy_id: UUID | None,
+    enforcement_mode: str,
+    phase: str,
+    db: AsyncSession,
+) -> list[RuntimeGuardrailRuleInput]:
+    runtime_rules: list[RuntimeGuardrailRuleInput] = []
+    for index, rule in enumerate(rules):
+        if not _rule_applies_to_phase(rule=rule, phase=phase):
+            continue
+        rule_id = getattr(rule, "id", None)
+        if rule_id is not None:
+            matchers = await repository.list_rule_matchers(
+                org_id=rule.org_id,
+                rule_id=rule_id,
+                db=db,
+            )
+        else:
+            matchers = getattr(rule, "matchers", [])
+        runtime_rules.append(
+            RuntimeGuardrailRuleInput(
+                policy_ref=RuntimeGuardrailPolicyRef(
+                    policy_key=f"policy:{policy_id}" if policy_id else "draft:guardrail_policy",
+                    policy_id=policy_id,
+                    policy_revision_id=getattr(rule, "policy_revision_id", None),
+                    policy_name=None,
+                    policy_revision_number=None,
+                    enforcement_mode=enforcement_mode,
+                    draft_ref=None if policy_id else "draft:guardrail_policy",
+                ),
+                assignment_refs=[],
+                rule_ref=RuntimeGuardrailRuleRef(
+                    rule_id=rule_id,
+                    rule_name=None,
+                    rule_index=index,
+                    draft_ref=None if rule_id else f"draft:guardrail_policy.rules[{index}]",
+                ),
+                phase=phase,
+                source_phase=getattr(rule, "phase", phase),
+                rule_type=rule.rule_type,
+                effect=rule.effect,
+                values=rule.values,
+                config=getattr(rule, "config", {}) or {},
+                matchers=[
+                    RuntimeMatcherInput(
+                        dimension=matcher.dimension,
+                        operator=matcher.operator,
+                        value_json=matcher.value_json,
+                    )
+                    for matcher in matchers
+                ],
+                priority=rule.priority,
+                is_active=getattr(rule, "is_active", True),
+                source_created_at=getattr(rule, "created_at", None),
+            )
         )
-    elif rule.rule_type == "pii":
-        return await _matched_detector_values(
-            rule=rule,
-            values=values,
-            prompt_text=_guardrail_target_text(context),
-        )
-    return []
+    return runtime_rules
+
+
+def _runtime_assignment_ref(
+    *,
+    assignment: GuardrailAssignment,
+    assignment_mode: str,
+) -> RuntimeGuardrailAssignmentRef:
+    return RuntimeGuardrailAssignmentRef(
+        assignment_id=assignment.policy_assignment_id or assignment.id,
+        assignment_mode=assignment_mode,
+        assignment_scope_type=assignment.scope_type,
+        assignment_scope_label=assignment.scope_type,
+    )
+
+
+def _runtime_rule_priority(
+    rules: list[RuntimeGuardrailRuleInput],
+    evaluation: GuardrailReadonlyEvaluation,
+) -> int:
+    for rule in rules:
+        if rule.rule_ref.rule_id == evaluation.rule_id and rule.rule_type == evaluation.rule_type:
+            return rule.priority
+    return 100
 
 
 def _rule_applies_to_phase(*, rule, phase: str) -> bool:
@@ -1083,127 +1286,37 @@ def _rule_applies_to_phase(*, rule, phase: str) -> bool:
     return rule_phase in {"both", phase}
 
 
-async def _rule_matchers_apply(
+def _guardrail_event_metadata(
     *,
-    rule,
-    context: GuardrailEvaluationContext,
-    db: AsyncSession,
-) -> bool:
-    matchers = getattr(rule, "matchers", None)
-    if matchers is None:
-        matchers = await repository.list_rule_matchers(
-            org_id=context.org_id,
-            rule_id=rule.id,
-            db=db,
-        )
-    if not matchers:
-        return True
-    subject = _guardrail_dimension_subject(context)
-    stage = (
-        PolicyDimensionStage.RESPONSE_GUARDRAIL
-        if context.phase == "response"
-        else PolicyDimensionStage.REQUEST_GUARDRAIL
-    )
-    for matcher in matchers:
-        if not evaluate_matcher(
-            subject=subject,
-            dimension=matcher.dimension,
-            operator=matcher.operator,
-            value=matcher.value_json,
-            stage=stage,
-        ):
-            return False
-    return True
-
-
-def _guardrail_dimension_subject(context: GuardrailEvaluationContext) -> dict:
-    return {
-        "org_id": context.org_id,
-        "team_id": context.team_id,
-        "project_id": context.project_id,
-        "virtual_key_id": context.virtual_key_id,
-        "provider_id": context.provider_id,
-        "credential_pool_id": context.pool_id,
-        "provider_model_offering_id": context.provider_model_offering_id,
-        "public_model_id": context.public_model_id,
-        "public_model_name": context.public_model_name,
-        "route_candidate_id": context.route_candidate_id,
-        "gateway_endpoint": context.gateway_endpoint,
-        "requested_model": context.requested_model,
-        "provider_model": context.provider_model,
-    }
-
-
-def _rule_denial_reason(rule) -> str:
-    if rule.effect == "allow":
-        return f"{rule.rule_type}_allowlist_miss"
-    return f"{rule.rule_type}_{rule.effect}"
-
-
-def _guardrail_event_metadata(*, rule, evaluation: dict, mode: str, phase: str) -> dict:
+    evaluation: GuardrailReadonlyEvaluation,
+    runtime_rules: list[RuntimeGuardrailRuleInput],
+    mode: str,
+    phase: str,
+) -> dict:
     metadata = {
         "enforcement_mode": mode,
         "phase": phase,
     }
-    if rule.effect == "allow":
-        metadata["allowed_values"] = rule.values
+    if evaluation.effect == "allow":
+        metadata["allowed_values"] = _runtime_rule_values(runtime_rules, evaluation)
     else:
         metadata["allowed_values"] = []
-    if rule.rule_type == "pii":
-        metadata["pii_types"] = evaluation["matched_values"]
+    if evaluation.rule_type == "pii":
+        metadata["pii_types"] = evaluation.matched_values
         metadata["matched_values_redacted"] = True
     else:
-        metadata["matched_values"] = evaluation["matched_values"]
+        metadata["matched_values"] = evaluation.matched_values
     return metadata
 
 
-def _guardrail_target_text(context: GuardrailEvaluationContext) -> str:
-    if context.phase == "response":
-        return context.response_text
-    return context.prompt_text
-
-
-async def _matched_detector_values(*, rule, values: list[str], prompt_text: str) -> list[str]:
-    config = getattr(rule, "config", None) or {}
-    detector_name = config.get("detector")
-    if not isinstance(detector_name, str):
-        detector_name = DEFAULT_PII_DETECTOR
-    detector = get_detector(detector_name)
-    if detector is None:
-        return []
-    result = await detector.detect(
-        text=prompt_text[:GUARDRAIL_SCAN_CHAR_LIMIT], values=values, config=config
-    )
-    return result.matched_values
-
-
-_logger = structlog.get_logger(__name__)
-# Text scanned by prompt_regex / PII detectors is capped, and each match runs off the
-# event loop under a wall-clock budget, so a catastrophic-backtracking pattern (in a
-# stored rule or a /simulate payload) cannot hang the worker and starve other requests.
-GUARDRAIL_SCAN_CHAR_LIMIT = 65_536
-GUARDRAIL_REGEX_TIMEOUT_SECONDS = 1.0
-
-
-async def _matched_regex_values(*, values: list[str], prompt_text: str) -> list[str]:
-    text = prompt_text[:GUARDRAIL_SCAN_CHAR_LIMIT]
-    matched: list[str] = []
-    for value in values:
-        try:
-            pattern = re.compile(value, re.IGNORECASE)
-        except re.error:
-            continue
-        try:
-            found = await asyncio.wait_for(
-                asyncio.to_thread(lambda p=pattern, t=text: p.search(t) is not None),
-                timeout=GUARDRAIL_REGEX_TIMEOUT_SECONDS,
-            )
-        except TimeoutError:
-            _logger.warning("guardrail_regex_timeout", pattern_prefix=value[:48])
-            continue
-        if found:
-            matched.append(value)
-    return matched
+def _runtime_rule_values(
+    rules: list[RuntimeGuardrailRuleInput],
+    evaluation: GuardrailReadonlyEvaluation,
+) -> list[str]:
+    for rule in rules:
+        if rule.rule_ref.rule_id == evaluation.rule_id and rule.rule_type == evaluation.rule_type:
+            return rule.values
+    return []
 
 
 async def _record_event(
@@ -1559,22 +1672,7 @@ async def _to_policy_response(
 
 
 def _validate_rule_matchers(rules) -> None:
-    for rule in rules:
-        stage = (
-            PolicyDimensionStage.RESPONSE_GUARDRAIL
-            if rule.phase == "response"
-            else PolicyDimensionStage.REQUEST_GUARDRAIL
-        )
-        for matcher in rule.matchers:
-            try:
-                validate_matcher(
-                    dimension=matcher.dimension,
-                    operator=matcher.operator,
-                    value=matcher.value_json,
-                    stage=stage,
-                )
-            except (PolicyValidationError, ValueError) as exc:
-                raise ValueError("invalid guardrail matcher") from exc
+    validate_guardrail_rule_payload(rules)
 
 
 def _to_assignment_response(

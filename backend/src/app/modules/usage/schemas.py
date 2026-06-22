@@ -1,7 +1,17 @@
+from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
+
+
+@dataclass(frozen=True)
+class GatewayRequestResolvedSubject:
+    org_id: UUID
+    team_id: UUID
+    project_id: UUID
+    virtual_key_id: UUID
 
 
 class RecordUsage(BaseModel):
@@ -11,6 +21,7 @@ class RecordUsage(BaseModel):
     access_policy_id: UUID | None = None
     access_policy_route_id: UUID | None = None
     gateway_request_id: UUID | None = None
+    route_attempt_id: UUID | None = None
     public_model_id: UUID | None = None
     route_candidate_id: UUID | None = None
     limit_policy_ids: list[str] | None = None
@@ -250,12 +261,75 @@ class GuardrailEventTrace(BaseModel):
     created_at: datetime
 
 
+class GatewayTraceTimelineItem(BaseModel):
+    timestamp: datetime
+    kind: Literal[
+        "request",
+        "route_attempt",
+        "policy_decision",
+        "guardrail_event",
+        "usage_record",
+    ]
+    title: str
+    status: str | None = None
+    stage: str | None = None
+    route_attempt_id: UUID | None = None
+    policy_decision_id: UUID | None = None
+    guardrail_event_id: UUID | None = None
+    usage_record_id: UUID | None = None
+    severity: Literal["info", "success", "warning", "error"] = "info"
+    summary: str | None = None
+    metadata: dict = Field(default_factory=dict)
+
+
 class GatewayRequestTraceResponse(BaseModel):
     request: GatewayRequestTraceSummary
+    timeline: list[GatewayTraceTimelineItem] = Field(default_factory=list)
     route_attempts: list[GatewayRouteAttemptTrace] = Field(default_factory=list)
     policy_decisions: list[GatewayPolicyDecisionTrace] = Field(default_factory=list)
     guardrail_events: list[GuardrailEventTrace] = Field(default_factory=list)
     usage_records: list[UsageRecordResponse] = Field(default_factory=list)
+
+
+class GatewayRequestTraceListItem(BaseModel):
+    id: UUID
+    org_id: UUID | None = None
+    team_id: UUID | None = None
+    project_id: UUID | None = None
+    virtual_key_id: UUID | None = None
+    request_id: str | None = None
+    gateway_endpoint: str
+    requested_model: str
+    public_model_name: str | None = None
+    routing_mode: str | None = None
+    final_http_status: int | None = None
+    final_provider_id: UUID | None = None
+    final_provider_name: str | None = None
+    final_credential_pool_id: UUID | None = None
+    final_credential_pool_name: str | None = None
+    final_provider_model: str | None = None
+    final_access_policy_id: UUID | None = None
+    final_access_policy_name: str | None = None
+    team_name: str | None = None
+    project_name: str | None = None
+    virtual_key_name: str | None = None
+    involved_provider_ids: list[UUID] = Field(default_factory=list)
+    involved_provider_names: list[str] = Field(default_factory=list)
+    attempt_count: int
+    fallback_attempted: bool
+    final_error_code: str | None = None
+    started_at: datetime
+    completed_at: datetime | None = None
+    trace_expires_at: datetime
+    outcome: Literal["succeeded", "failed", "denied", "pending"]
+    duration_ms: int | None = None
+
+
+class GatewayRequestTraceListResponse(BaseModel):
+    items: list[GatewayRequestTraceListItem]
+    limit: int
+    offset: int
+    has_more: bool
 
 
 class RecordLimitPolicyReservation(BaseModel):

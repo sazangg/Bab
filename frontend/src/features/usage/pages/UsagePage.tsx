@@ -35,10 +35,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   useGetOrganizationUsageSummaryApiV1UsageSummaryGet,
   useGetOrganizationUsageTimeseriesApiV1UsageTimeseriesGet,
   useGetSpendInsightsApiV1UsageSpendInsightsGet,
+  useListGatewayRequestsApiV1UsageRequestsGet,
 } from "@/shared/api/generated/usage/usage";
 import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
 import { useListProjectsApiV1ProjectsGet } from "@/shared/api/generated/projects/projects";
@@ -49,6 +51,7 @@ import { canViewUsage, hasPermission } from "@/features/auth/lib/permissions";
 import type {
   ActivityEventResponse,
   AuthenticatedUser,
+  GatewayRequestTraceListItem,
   LimitPolicyBudgetBurnRow,
   ProjectResponse,
   TeamResponse,
@@ -75,6 +78,7 @@ type UsageFilterOptions = {
 };
 
 const RECORDS_PAGE_SIZE = 25;
+const REQUESTS_PAGE_SIZE = 25;
 
 export function UsagePage() {
   const currentUserQuery = useMeApiV1AuthMeGet();
@@ -90,6 +94,9 @@ export function UsagePage() {
   const [model, setModel] = useState("all");
   const [virtualKeyId, setVirtualKeyId] = useState("all");
   const [scopeValue, setScopeValue] = useState<UsageScopeValue>("authorized");
+  const [activeTraceTab, setActiveTraceTab] = useState("requests");
+  const [requestSearch, setRequestSearch] = useState("");
+  const [requestPage, setRequestPage] = useState(0);
   const [recordSearch, setRecordSearch] = useState("");
   const [recordPage, setRecordPage] = useState(0);
   const [chartMetric, setChartMetric] = useState<UsageChartMetric>("spend");
@@ -153,7 +160,23 @@ export function UsagePage() {
   const spendInsightsQuery = useGetSpendInsightsApiV1UsageSpendInsightsGet({
     ...usageParams,
   });
+  const resetTracePages = () => {
+    setRequestPage(0);
+    setRecordPage(0);
+  };
+  const trimmedRequestSearch = requestSearch.trim();
   const trimmedRecordSearch = recordSearch.trim();
+  const requestParams = useMemo(() => {
+    const { model: publicModelName, ...baseParams } = usageParams;
+    return {
+      ...baseParams,
+      public_model_name: publicModelName,
+      search: trimmedRequestSearch || undefined,
+      limit: REQUESTS_PAGE_SIZE,
+      offset: requestPage * REQUESTS_PAGE_SIZE,
+    };
+  }, [requestPage, trimmedRequestSearch, usageParams]);
+  const requestsQuery = useListGatewayRequestsApiV1UsageRequestsGet(requestParams);
   const recordsQuery = useQuery({
     queryKey: ["usage-records", usageParams, trimmedRecordSearch, recordPage],
     queryFn: async () => {
@@ -192,6 +215,10 @@ export function UsagePage() {
   const records = recordsQuery.data ?? [];
   const visibleRecords = records.slice(0, RECORDS_PAGE_SIZE);
   const hasNextRecordsPage = records.length > RECORDS_PAGE_SIZE;
+  const requestList =
+    requestsQuery.data?.status === 200
+      ? requestsQuery.data.data
+      : { items: [], has_more: false, limit: REQUESTS_PAGE_SIZE, offset: requestPage * REQUESTS_PAGE_SIZE };
   const totals = summary?.totals;
   const requests = totals?.requests ?? 0;
   const failed = totals?.failed_requests ?? 0;
@@ -231,7 +258,7 @@ export function UsagePage() {
               onValueChange={(value) => {
                 setWindow(value as UsageWindow);
                 setCustomRangeEnabled(false);
-                setRecordPage(0);
+                resetTracePages();
               }}
             >
               <SelectTrigger className="w-36">
@@ -253,13 +280,13 @@ export function UsagePage() {
               onEndDateChange={setEndDate}
               onApply={() => {
                 setCustomRangeEnabled(Boolean(startDate || endDate));
-                setRecordPage(0);
+                resetTracePages();
               }}
               onClear={() => {
                 setStartDate("");
                 setEndDate("");
                 setCustomRangeEnabled(false);
-                setRecordPage(0);
+                resetTracePages();
               }}
             />
             <Button
@@ -272,8 +299,9 @@ export function UsagePage() {
                 setModel("all");
                 setVirtualKeyId("all");
                 setScopeValue("authorized");
+                setRequestSearch("");
                 setRecordSearch("");
-                setRecordPage(0);
+                resetTracePages();
               }}
             >
               Clear filters
@@ -295,7 +323,7 @@ export function UsagePage() {
                 setProjectId("all");
                 setModel("all");
                 setVirtualKeyId("all");
-                setRecordPage(0);
+                resetTracePages();
               }}
             />
           ) : null}
@@ -306,7 +334,7 @@ export function UsagePage() {
             options={providerOptions}
             onChange={(value) => {
               setProviderId(value);
-              setRecordPage(0);
+              resetTracePages();
             }}
           />
           {canViewOrgUsage ? (
@@ -320,7 +348,7 @@ export function UsagePage() {
                   setTeamId(value);
                   setProjectId("all");
                   setVirtualKeyId("all");
-                  setRecordPage(0);
+                  resetTracePages();
                 }}
               />
               <UsageSelect
@@ -335,7 +363,7 @@ export function UsagePage() {
                   if (value !== "all" && project) {
                     setTeamId(project.team_id);
                   }
-                  setRecordPage(0);
+                  resetTracePages();
                 }}
               />
             </>
@@ -347,7 +375,7 @@ export function UsagePage() {
             options={modelOptions}
             onChange={(value) => {
               setModel(value);
-              setRecordPage(0);
+              resetTracePages();
             }}
           />
           <UsageSelect
@@ -357,7 +385,7 @@ export function UsagePage() {
             options={virtualKeyOptions}
             onChange={(value) => {
               setVirtualKeyId(value);
-              setRecordPage(0);
+              resetTracePages();
             }}
           />
         </CardContent>
@@ -476,12 +504,28 @@ export function UsagePage() {
       ) : null}
 
       {summary ? (
-        <UsageRecordsCard
+        <GatewayTraceCard
+          activeTab={activeTraceTab}
+          onActiveTabChange={setActiveTraceTab}
+          requests={requestList.items}
+          requestsHasNext={requestList.has_more}
+          requestsPage={requestPage}
+          requestsPageSize={REQUESTS_PAGE_SIZE}
+          requestsLoading={requestsQuery.isPending}
+          requestsError={requestsQuery.error}
+          requestFilter={requestSearch}
+          onRequestFilterChange={(value) => {
+            setRequestSearch(value);
+            setRequestPage(0);
+          }}
+          onPreviousRequestPage={() => setRequestPage((page) => Math.max(0, page - 1))}
+          onNextRequestPage={() => setRequestPage((page) => page + 1)}
+          onRetryRequests={() => requestsQuery.refetch()}
           records={visibleRecords}
-          isLoading={recordsQuery.isPending}
-          error={recordsQuery.error}
-          filter={recordSearch}
-          onFilterChange={(value) => {
+          recordsLoading={recordsQuery.isPending}
+          recordsError={recordsQuery.error}
+          recordFilter={recordSearch}
+          onRecordFilterChange={(value) => {
             setRecordSearch(value);
             setRecordPage(0);
           }}
@@ -489,13 +533,14 @@ export function UsagePage() {
             ...usageParams,
             search: trimmedRecordSearch || undefined,
           }}
-          page={recordPage}
-          pageSize={RECORDS_PAGE_SIZE}
-          hasNext={hasNextRecordsPage}
-          onPreviousPage={() => setRecordPage((page) => Math.max(0, page - 1))}
-          onNextPage={() => setRecordPage((page) => page + 1)}
-          onRetry={() => recordsQuery.refetch()}
-          onOpenTrace={(record) => setTraceRequestId(record.gateway_request_id ?? null)}
+          recordsPage={recordPage}
+          recordsPageSize={RECORDS_PAGE_SIZE}
+          recordsHasNext={hasNextRecordsPage}
+          onPreviousRecordPage={() => setRecordPage((page) => Math.max(0, page - 1))}
+          onNextRecordPage={() => setRecordPage((page) => page + 1)}
+          onRetryRecords={() => recordsQuery.refetch()}
+          onOpenRequestTrace={(request) => setTraceRequestId(request.id)}
+          onOpenRecordTrace={(record) => setTraceRequestId(record.gateway_request_id ?? null)}
         />
       ) : null}
       <RequestTraceSheet
@@ -812,7 +857,292 @@ function SpendCell({
   );
 }
 
-function UsageRecordsCard({
+function GatewayTraceCard({
+  activeTab,
+  onActiveTabChange,
+  requests,
+  requestsHasNext,
+  requestsPage,
+  requestsPageSize,
+  requestsLoading,
+  requestsError,
+  requestFilter,
+  onRequestFilterChange,
+  onPreviousRequestPage,
+  onNextRequestPage,
+  onRetryRequests,
+  records,
+  recordsLoading,
+  recordsError,
+  recordFilter,
+  onRecordFilterChange,
+  exportParams,
+  recordsPage,
+  recordsPageSize,
+  recordsHasNext,
+  onPreviousRecordPage,
+  onNextRecordPage,
+  onRetryRecords,
+  onOpenRequestTrace,
+  onOpenRecordTrace,
+}: {
+  activeTab: string;
+  onActiveTabChange: (value: string) => void;
+  requests: GatewayRequestTraceListItem[];
+  requestsHasNext: boolean;
+  requestsPage: number;
+  requestsPageSize: number;
+  requestsLoading: boolean;
+  requestsError: unknown;
+  requestFilter: string;
+  onRequestFilterChange: (value: string) => void;
+  onPreviousRequestPage: () => void;
+  onNextRequestPage: () => void;
+  onRetryRequests: () => void;
+  records: UsageRecordResponse[];
+  recordsLoading: boolean;
+  recordsError: unknown;
+  recordFilter: string;
+  onRecordFilterChange: (value: string) => void;
+  exportParams: ReturnType<typeof buildUsageParams> & { search?: string };
+  recordsPage: number;
+  recordsPageSize: number;
+  recordsHasNext: boolean;
+  onPreviousRecordPage: () => void;
+  onNextRecordPage: () => void;
+  onRetryRecords: () => void;
+  onOpenRequestTrace: (request: GatewayRequestTraceListItem) => void;
+  onOpenRecordTrace: (record: UsageRecordResponse) => void;
+}) {
+  return (
+    <Card>
+      <CardHeader className="border-b">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <CardTitle>Request traces</CardTitle>
+          <Tabs value={activeTab} onValueChange={onActiveTabChange}>
+            <TabsList>
+              <TabsTrigger value="requests">Requests</TabsTrigger>
+              <TabsTrigger value="attempts">Attempts</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <Tabs value={activeTab} onValueChange={onActiveTabChange}>
+          <TabsContent value="requests" className="mt-0">
+            <GatewayRequestsTable
+              requests={requests}
+              isLoading={requestsLoading}
+              error={requestsError}
+              filter={requestFilter}
+              onFilterChange={onRequestFilterChange}
+              page={requestsPage}
+              pageSize={requestsPageSize}
+              hasNext={requestsHasNext}
+              onPreviousPage={onPreviousRequestPage}
+              onNextPage={onNextRequestPage}
+              onRetry={onRetryRequests}
+              onOpenTrace={onOpenRequestTrace}
+            />
+          </TabsContent>
+          <TabsContent value="attempts" className="mt-0">
+            <UsageRecordsTable
+              records={records}
+              isLoading={recordsLoading}
+              error={recordsError}
+              filter={recordFilter}
+              onFilterChange={onRecordFilterChange}
+              exportParams={exportParams}
+              page={recordsPage}
+              pageSize={recordsPageSize}
+              hasNext={recordsHasNext}
+              onPreviousPage={onPreviousRecordPage}
+              onNextPage={onNextRecordPage}
+              onRetry={onRetryRecords}
+              onOpenTrace={onOpenRecordTrace}
+            />
+          </TabsContent>
+        </Tabs>
+      </CardContent>
+    </Card>
+  );
+}
+
+function GatewayRequestsTable({
+  requests,
+  isLoading,
+  error,
+  filter,
+  onFilterChange,
+  page,
+  pageSize,
+  hasNext,
+  onPreviousPage,
+  onNextPage,
+  onRetry,
+  onOpenTrace,
+}: {
+  requests: GatewayRequestTraceListItem[];
+  isLoading: boolean;
+  error: unknown;
+  filter: string;
+  onFilterChange: (value: string) => void;
+  page: number;
+  pageSize: number;
+  hasNext: boolean;
+  onPreviousPage: () => void;
+  onNextPage: () => void;
+  onRetry: () => void;
+  onOpenTrace: (request: GatewayRequestTraceListItem) => void;
+}) {
+  const startRequest = page * pageSize + 1;
+  const endRequest = page * pageSize + requests.length;
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="font-medium">Requests</div>
+          <div className="text-xs text-muted-foreground">
+            One row per gateway request, including fallback outcomes.
+          </div>
+        </div>
+        <Input
+          className="h-9 w-72"
+          value={filter}
+          onChange={(event) => onFilterChange(event.target.value)}
+          placeholder="Search request, model, provider..."
+        />
+      </div>
+      <DataTable<GatewayRequestTraceListItem>
+        data={requests}
+        loading={isLoading}
+        error={error ? "Unable to load gateway requests." : undefined}
+        onRetry={onRetry}
+        getRowKey={(request) => request.id}
+        empty={{
+          icon: ChartNoAxesCombined,
+          title: "No matching requests",
+          description: "Gateway requests appear here as soon as proxy traffic is recorded.",
+        }}
+        columns={[
+          {
+            key: "time",
+            header: "Time",
+            className: "whitespace-nowrap text-muted-foreground",
+            cell: (request) => new Date(request.started_at).toLocaleString(),
+          },
+          {
+            key: "model",
+            header: "Model",
+            cell: (request) => (
+              <>
+                <div className="font-medium">{request.public_model_name ?? request.requested_model}</div>
+                <div className="text-xs text-muted-foreground">
+                  {request.final_provider_model ?? request.requested_model}
+                </div>
+              </>
+            ),
+          },
+          {
+            key: "provider",
+            header: "Provider",
+            cell: (request) => (
+              <>
+                <div className="font-medium">{request.final_provider_name ?? "Unresolved"}</div>
+                <div className="text-xs text-muted-foreground">
+                  {formatInvolvedProviders(request)}
+                </div>
+              </>
+            ),
+          },
+          {
+            key: "scope",
+            header: "Scope",
+            cell: (request) => (
+              <>
+                <div className="font-medium">{request.project_name ?? "No project"}</div>
+                <div className="text-xs text-muted-foreground">{request.team_name ?? "No team"}</div>
+              </>
+            ),
+          },
+          {
+            key: "status",
+            header: "Status",
+            cell: (request) => (
+              <>
+                {request.final_http_status == null ? (
+                  <Badge variant="outline">Pending</Badge>
+                ) : (
+                  <HttpStatusBadge status={request.final_http_status} />
+                )}
+                <div className="mt-1 text-xs text-muted-foreground">{formatOutcome(request)}</div>
+              </>
+            ),
+          },
+          {
+            key: "attempts",
+            header: "Attempts",
+            align: "right",
+            cell: (request) => (
+              <div>
+                <div>{request.attempt_count.toLocaleString()}</div>
+                {request.fallback_attempted ? (
+                  <div className="text-xs text-muted-foreground">fallback</div>
+                ) : null}
+              </div>
+            ),
+          },
+          {
+            key: "duration",
+            header: "Duration",
+            align: "right",
+            cell: (request) =>
+              request.duration_ms == null ? (
+                <span className="text-muted-foreground">Pending</span>
+              ) : (
+                `${request.duration_ms}ms`
+              ),
+          },
+          {
+            key: "trace",
+            header: "Trace",
+            align: "right",
+            cell: (request) => (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Open request trace"
+                onClick={() => onOpenTrace(request)}
+              >
+                <Eye />
+              </Button>
+            ),
+          },
+        ]}
+        footer={
+          requests.length > 0 ? (
+            <>
+              <span>
+                Showing {startRequest.toLocaleString()}-{endRequest.toLocaleString()}
+                {hasNext ? " of more requests" : ""}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" disabled={page === 0} onClick={onPreviousPage}>
+                  Previous
+                </Button>
+                <Button variant="outline" size="sm" disabled={!hasNext} onClick={onNextPage}>
+                  Next
+                </Button>
+              </div>
+            </>
+          ) : undefined
+        }
+      />
+    </div>
+  );
+}
+
+function UsageRecordsTable({
   records,
   isLoading,
   error,
@@ -844,150 +1174,161 @@ function UsageRecordsCard({
   const startRecord = page * pageSize + 1;
   const endRecord = page * pageSize + records.length;
   return (
-    <Card>
-      <CardHeader className="border-b">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <CardTitle>Usage records</CardTitle>
-          <div className="flex flex-wrap items-center gap-2">
-            <Input
-              className="h-9 w-72"
-              value={filter}
-              onChange={(event) => onFilterChange(event.target.value)}
-              placeholder="Search model, request, credential..."
-            />
-            <Button variant="outline" size="sm" onClick={() => downloadUsageExport(exportParams)}>
-              <Download data-icon="inline-start" />
-              Export CSV
-            </Button>
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="font-medium">Attempts</div>
+          <div className="text-xs text-muted-foreground">
+            Provider attempts that produced usage records.
           </div>
         </div>
-      </CardHeader>
-      <CardContent>
-        <DataTable<UsageRecordResponse>
-          data={records}
-          loading={isLoading}
-          error={error ? "Unable to load usage records." : undefined}
-          onRetry={onRetry}
-          getRowKey={(record) => record.id}
-          empty={{
-            icon: ChartNoAxesCombined,
-            title: "No matching usage records",
-            description: "Usage appears here once virtual keys start serving requests.",
-          }}
-          columns={[
-            {
-              key: "time",
-              header: "Time",
-              className: "whitespace-nowrap text-muted-foreground",
-              cell: (record) => new Date(record.created_at).toLocaleString(),
-            },
-            {
-              key: "model",
-              header: "Model",
-              cell: (record) => (
-                <>
-                  <div className="font-medium">{record.requested_model}</div>
-                  <div className="text-xs text-muted-foreground">{record.provider_model}</div>
-                </>
-              ),
-            },
-            {
-              key: "credential",
-              header: "Credential",
-              cell: (record) => (
-                <>
-                  <div className="font-medium">{record.provider_credential_name ?? "Unknown"}</div>
-                  <div className="font-mono text-xs text-muted-foreground">
-                    {record.provider_credential_prefix ?? shortId(record.provider_credential_id)}
-                  </div>
-                </>
-              ),
-            },
-            {
-              key: "request",
-              header: "Request",
-              cell: (record) => (
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-xs text-muted-foreground">
-                    {shortId(record.request_id)}
-                  </span>
-                  {record.gateway_request_id ? (
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="Open request trace"
-                      onClick={() => onOpenTrace(record)}
-                    >
-                      <Eye />
-                    </Button>
-                  ) : null}
-                </div>
-              ),
-            },
-            {
-              key: "status",
-              header: "Status",
-              cell: (record) => (
-                <>
-                  <HttpStatusBadge status={record.http_status} />
-                  {record.error_code ? (
-                    <div className="mt-1 text-xs text-muted-foreground">{record.error_code}</div>
-                  ) : null}
-                </>
-              ),
-            },
-            {
-              key: "tokens",
-              header: "Tokens",
-              align: "right",
-              cell: (record) => (record.total_tokens ?? 0).toLocaleString(),
-            },
-            {
-              key: "spend",
-              header: "Spend",
-              align: "right",
-              cell: (record) => (
-                <SpendCell
-                  confirmed={record.confirmed_spend_cents}
-                  estimated={record.estimated_spend_cents}
-                  unknown={record.spend_type === "unknown"}
-                />
-              ),
-            },
-            {
-              key: "latency",
-              header: "Latency",
-              align: "right",
-              cell: (record) => `${record.latency_ms}ms`,
-            },
-          ]}
-          footer={
-            records.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            className="h-9 w-72"
+            value={filter}
+            onChange={(event) => onFilterChange(event.target.value)}
+            placeholder="Search model, request, credential..."
+          />
+          <Button variant="outline" size="sm" onClick={() => downloadUsageExport(exportParams)}>
+            <Download data-icon="inline-start" />
+            Export CSV
+          </Button>
+        </div>
+      </div>
+      <DataTable<UsageRecordResponse>
+        data={records}
+        loading={isLoading}
+        error={error ? "Unable to load usage records." : undefined}
+        onRetry={onRetry}
+        getRowKey={(record) => record.id}
+        empty={{
+          icon: ChartNoAxesCombined,
+          title: "No matching usage records",
+          description: "Usage appears here once virtual keys start serving requests.",
+        }}
+        columns={[
+          {
+            key: "time",
+            header: "Time",
+            className: "whitespace-nowrap text-muted-foreground",
+            cell: (record) => new Date(record.created_at).toLocaleString(),
+          },
+          {
+            key: "model",
+            header: "Model",
+            cell: (record) => (
               <>
-                <span>
-                  Showing {startRecord.toLocaleString()}-{endRecord.toLocaleString()}
-                  {hasNext ? " of more records" : ""}
-                </span>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={page === 0}
-                    onClick={onPreviousPage}
-                  >
-                    Previous
-                  </Button>
-                  <Button variant="outline" size="sm" disabled={!hasNext} onClick={onNextPage}>
-                    Next
-                  </Button>
+                <div className="font-medium">{record.requested_model}</div>
+                <div className="text-xs text-muted-foreground">{record.provider_model}</div>
+              </>
+            ),
+          },
+          {
+            key: "credential",
+            header: "Credential",
+            cell: (record) => (
+              <>
+                <div className="font-medium">{record.provider_credential_name ?? "Unknown"}</div>
+                <div className="font-mono text-xs text-muted-foreground">
+                  {record.provider_credential_prefix ?? shortId(record.provider_credential_id)}
                 </div>
               </>
-            ) : undefined
-          }
-        />
-      </CardContent>
-    </Card>
+            ),
+          },
+          {
+            key: "request",
+            header: "Request",
+            cell: (record) => (
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs text-muted-foreground">
+                  {shortId(record.request_id)}
+                </span>
+                {record.gateway_request_id ? (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Open request trace"
+                    onClick={() => onOpenTrace(record)}
+                  >
+                    <Eye />
+                  </Button>
+                ) : null}
+              </div>
+            ),
+          },
+          {
+            key: "status",
+            header: "Status",
+            cell: (record) => (
+              <>
+                <HttpStatusBadge status={record.http_status} />
+                {record.error_code ? (
+                  <div className="mt-1 text-xs text-muted-foreground">{record.error_code}</div>
+                ) : null}
+              </>
+            ),
+          },
+          {
+            key: "tokens",
+            header: "Tokens",
+            align: "right",
+            cell: (record) => (record.total_tokens ?? 0).toLocaleString(),
+          },
+          {
+            key: "spend",
+            header: "Spend",
+            align: "right",
+            cell: (record) => (
+              <SpendCell
+                confirmed={record.confirmed_spend_cents}
+                estimated={record.estimated_spend_cents}
+                unknown={record.spend_type === "unknown"}
+              />
+            ),
+          },
+          {
+            key: "latency",
+            header: "Latency",
+            align: "right",
+            cell: (record) => `${record.latency_ms}ms`,
+          },
+        ]}
+        footer={
+          records.length > 0 ? (
+            <>
+              <span>
+                Showing {startRecord.toLocaleString()}-{endRecord.toLocaleString()}
+                {hasNext ? " of more records" : ""}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" disabled={page === 0} onClick={onPreviousPage}>
+                  Previous
+                </Button>
+                <Button variant="outline" size="sm" disabled={!hasNext} onClick={onNextPage}>
+                  Next
+                </Button>
+              </div>
+            </>
+          ) : undefined
+        }
+      />
+    </div>
   );
+}
+
+function formatOutcome(request: GatewayRequestTraceListItem) {
+  if (request.final_error_code) return request.final_error_code;
+  if (request.outcome === "succeeded") return "Succeeded";
+  if (request.outcome === "failed") return "Failed";
+  if (request.outcome === "denied") return "Denied";
+  return "Pending";
+}
+
+function formatInvolvedProviders(request: GatewayRequestTraceListItem) {
+  const providers = request.involved_provider_names ?? [];
+  if (providers.length === 0) return "No attempts";
+  if (providers.length === 1) return providers[0];
+  return `${providers[0]} +${providers.length - 1}`;
 }
 
 function SpendDriversCard({ rows }: { rows: UsageBreakdownRow[] }) {

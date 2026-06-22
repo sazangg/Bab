@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope
 from app.modules.auth.schemas import AuthenticatedUser
+from app.modules.policies import simulation
 from app.modules.policies.internal import service
 from app.modules.policies.schemas import (
     AccessPolicyOptionsResponse,
@@ -17,6 +18,8 @@ from app.modules.policies.schemas import (
     LimitPolicyRuleResponse,
     PolicyAssignmentResponse,
     PolicyImpactResponse,
+    PolicySimulationRequest,
+    PolicySimulationResponse,
     ScopedPolicyAssignmentResponse,
     UpdateAccessPolicyRequest,
     UpdateLimitPolicyRequest,
@@ -102,6 +105,21 @@ async def get_access_policy_options(
         exclude_policy_id=exclude_policy_id,
         scope=scope,
         db=db,
+    )
+
+
+async def simulate_active_policies(
+    *,
+    payload: PolicySimulationRequest,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
+) -> PolicySimulationResponse:
+    return await simulation.simulate_active_policies(
+        org_id=scope.org_id,
+        payload=payload,
+        db=db,
+        actor=actor,
     )
 
 

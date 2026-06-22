@@ -14,6 +14,13 @@ from app.api.v1.deps import (
 from app.core.database import Scope, get_db
 from app.modules.auth.internal.models import Team
 from app.modules.auth.schemas import AuthenticatedUser
+from app.modules.keys.errors import (
+    InvalidVirtualKeyError,
+    OrganizationInactiveError,
+    ProjectAccessUnavailableError,
+    ProjectInactiveError,
+    VirtualKeyNotFoundError,
+)
 from app.modules.keys.internal.models import Project, VirtualKey
 from app.modules.policies import facade
 from app.modules.policies.errors import (
@@ -34,6 +41,8 @@ from app.modules.policies.schemas import (
     LimitPolicyRuleResponse,
     PolicyAssignmentResponse,
     PolicyImpactResponse,
+    PolicySimulationRequest,
+    PolicySimulationResponse,
     ScopedPolicyAssignmentResponse,
     UpdateAccessPolicyRequest,
     UpdateLimitPolicyRequest,
@@ -175,6 +184,31 @@ async def get_access_policy_options(
         )
     except PolicyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="policy scope not found") from exc
+
+
+@router.post("/simulations")
+async def simulate_policies(
+    payload: PolicySimulationRequest,
+    _user: ScopedPolicyViewer,
+    scope: RequestScope,
+    db: DatabaseSession,
+) -> PolicySimulationResponse:
+    try:
+        return await facade.simulate_active_policies(
+            payload=payload, scope=scope, db=db, actor=_user
+        )
+    except PolicyValidationError as exc:
+        raise HTTPException(status_code=400, detail="invalid policy simulation draft") from exc
+    except (VirtualKeyNotFoundError, InvalidVirtualKeyError) as exc:
+        raise HTTPException(status_code=404, detail="virtual key not found") from exc
+    except PolicyPermissionError as exc:
+        raise HTTPException(status_code=403, detail="insufficient permissions") from exc
+    except OrganizationInactiveError as exc:
+        raise HTTPException(status_code=403, detail="organization is inactive") from exc
+    except ProjectInactiveError as exc:
+        raise HTTPException(status_code=403, detail="project is inactive") from exc
+    except ProjectAccessUnavailableError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/limits")

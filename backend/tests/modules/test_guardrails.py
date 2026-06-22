@@ -14,6 +14,14 @@ from app.modules.guardrails.errors import (
     GuardrailAssignmentTargetNotFoundError,
     GuardrailDeniedError,
 )
+from app.modules.guardrails.evaluation import (
+    RuntimeGuardrailAssignmentRef,
+    RuntimeGuardrailPolicyRef,
+    RuntimeGuardrailRuleInput,
+    RuntimeGuardrailRuleRef,
+    RuntimeMatcherInput,
+    evaluate_guardrail_rules_readonly,
+)
 from app.modules.guardrails.internal import repository as guardrails_repository
 from app.modules.guardrails.schemas import (
     CreateGuardrailAssignmentRequest,
@@ -57,6 +65,117 @@ def _context(*, org_id, team_id, model: str = "gpt-5-mini") -> GuardrailEvaluati
         requested_model=model,
         provider_model=model,
     )
+
+
+def _runtime_guardrail_rule(
+    *,
+    rule_type: str = "prompt_contains",
+    effect: str = "deny",
+    values: list[str] | None = None,
+    matchers: list[RuntimeMatcherInput] | None = None,
+    enforcement_mode: str = "enforce",
+    assignment_mode: str = "enforce",
+) -> RuntimeGuardrailRuleInput:
+    return RuntimeGuardrailRuleInput(
+        policy_ref=RuntimeGuardrailPolicyRef(
+            policy_key="policy:test",
+            policy_id=uuid4(),
+            policy_revision_id=uuid4(),
+            policy_name="Test guardrail",
+            policy_revision_number=1,
+            enforcement_mode=enforcement_mode,
+        ),
+        assignment_refs=[
+            RuntimeGuardrailAssignmentRef(
+                assignment_id=uuid4(),
+                assignment_mode=assignment_mode,
+                assignment_scope_type="team",
+                assignment_scope_label="Platform",
+            )
+        ],
+        rule_ref=RuntimeGuardrailRuleRef(
+            rule_id=uuid4(),
+            rule_name=None,
+            rule_index=0,
+        ),
+        phase="request",
+        source_phase="request",
+        rule_type=rule_type,
+        effect=effect,
+        values=values or ["secret"],
+        matchers=matchers or [],
+    )
+
+
+async def test_guardrail_readonly_evaluator_reports_block_without_events(
+    db_session: AsyncSession,
+) -> None:
+    org_id = uuid4()
+    context = _context(org_id=org_id, team_id=uuid4()).model_copy(
+        update={"prompt_text": "contains a secret"}
+    )
+
+    results = await evaluate_guardrail_rules_readonly(
+        context=context,
+        rules=[_runtime_guardrail_rule()],
+        detector_mode="execute_detectors",
+        db=db_session,
+    )
+
+    assert len(results) == 1
+    assert results[0].denied is True
+    assert results[0].decision == "blocked"
+    assert results[0].reason_code == "prompt_contains_deny"
+    assert results[0].matched_values == ["secret"]
+    events = await guardrails_facade.list_events(scope=Scope(org_id=org_id), db=db_session)
+    assert events == []
+
+
+async def test_guardrail_readonly_evaluator_respects_matchers_and_detector_mode(
+    db_session: AsyncSession,
+) -> None:
+    context = _context(org_id=uuid4(), team_id=uuid4()).model_copy(
+        update={"prompt_text": "contains a secret", "public_model_name": "fast-general"}
+    )
+
+    skipped = await evaluate_guardrail_rules_readonly(
+        context=context,
+        rules=[
+            _runtime_guardrail_rule(
+                matchers=[
+                    RuntimeMatcherInput(
+                        dimension="public_model_name",
+                        operator="eq",
+                        value_json="slow-general",
+                    )
+                ],
+            )
+        ],
+        detector_mode="execute_detectors",
+        db=db_session,
+    )
+    applicability_only = await evaluate_guardrail_rules_readonly(
+        context=context,
+        rules=[
+            _runtime_guardrail_rule(
+                matchers=[
+                    RuntimeMatcherInput(
+                        dimension="public_model_name",
+                        operator="eq",
+                        value_json="fast-general",
+                    )
+                ],
+            )
+        ],
+        detector_mode="applicability_only",
+        db=db_session,
+    )
+
+    assert skipped[0].decision == "not_applicable"
+    assert skipped[0].detector_evaluated is False
+    assert applicability_only[0].decision == "not_evaluated"
+    assert applicability_only[0].applicability_matched is True
+    assert applicability_only[0].detector_evaluated is False
 
 
 async def test_guardrail_prompt_allow_blocks_missing_prompt(db_session: AsyncSession) -> None:

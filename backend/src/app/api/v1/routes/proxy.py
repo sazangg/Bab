@@ -6,6 +6,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 import httpx
+import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
@@ -27,20 +28,37 @@ from app.modules.keys.errors import (
     AccessDeniedError,
     InvalidVirtualKeyError,
 )
-from app.modules.keys.schemas import ResolveAccessRequest, ResolvedAccess, ResolvedAccessPlan
-from app.modules.policies.dimensions import (
-    ATTEMPT_SCOPED_DIMENSIONS,
-    PolicyDimensionStage,
-    evaluate_matcher,
-    to_dimension_snapshot,
+from app.modules.keys.schemas import (
+    ResolveAccessPlanForSubjectRequest,
+    ResolvedAccess,
+    ResolvedAccessPlan,
+    ResolvedKeySubject,
+    ResolveKeySubjectRequest,
 )
+from app.modules.policies.dimensions import PolicyDimensionStage, to_dimension_snapshot
 from app.modules.policies.internal import repository as policies_repository
+from app.modules.policies.runtime_limits import (
+    RuntimeLimitEvaluationInput,
+    evaluate_runtime_limits_readonly,
+    limit_dimension_subject,
+    limit_policy_window_descriptor,
+    limit_rule_counter_identity,
+    limit_rule_counter_key,
+    limit_rule_counting_unit,
+    limit_rule_matches_runtime_subject,
+)
 from app.modules.providers import facade as providers_facade
 from app.modules.providers.errors import (
     ProviderAdapterNotFoundError,
     ProviderInactiveError,
     ProviderNotFoundError,
     ProviderUpstreamError,
+)
+from app.modules.providers.internal.models import (
+    CredentialPool,
+    ModelOffering,
+    Provider,
+    ProviderCredential,
 )
 from app.modules.providers.schemas import (
     ProviderAnthropicMessagesRequest,
@@ -51,7 +69,6 @@ from app.modules.usage import facade as usage_facade
 from app.modules.usage.accounting import (
     UsageAccounting,
     estimate_request_tokens,
-    subtract_months,
     unknown_usage,
     usage_from_provider_response,
     usage_from_stream_chunks,
@@ -61,12 +78,14 @@ from app.modules.usage.costing.registry import default_cost_calculator_registry
 from app.modules.usage.schemas import (
     CreateGatewayRequest,
     FinalizeGatewayRequest,
+    GatewayRequestResolvedSubject,
     RecordLimitPolicyCommittedUsage,
     RecordLimitPolicyReservation,
     RecordUsage,
 )
 
 router = APIRouter(prefix="/v1", tags=["proxy"])
+logger = structlog.get_logger(__name__)
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 VirtualKeyAuthorization = Annotated[str | None, Header(alias="Authorization")]
 ProviderIdHeader = Annotated[UUID | None, Header(alias="X-Bab-Provider-Id")]
@@ -194,6 +213,7 @@ async def create_chat_completion(
     raw_key = _extract_bearer_token(authorization)
     resolved = None
     gateway_request_id: UUID | None = None
+    current_route_attempt_id: UUID | None = None
     estimated_tokens = 0
     reservation_ids: list[UUID] = []
     try:
@@ -203,14 +223,29 @@ async def create_chat_completion(
             gateway_endpoint="chat_completions",
             db=db,
         )
-        resolved = await keys_facade.resolve_access(
-            payload=ResolveAccessRequest(
-                raw_key=raw_key,
+        key_subject = await keys_facade.resolve_key_subject(
+            payload=ResolveKeySubjectRequest(raw_key=raw_key),
+            db=db,
+        )
+        await _attach_gateway_request_subject(
+            gateway_request_id=gateway_request_id,
+            key_subject=key_subject,
+            db=db,
+        )
+        plan = await keys_facade.resolve_access_plan_for_subject(
+            payload=ResolveAccessPlanForSubjectRequest(
+                subject=key_subject,
                 requested_model=provider_payload.model,
                 provider_id=provider_id,
                 streaming=is_streaming,
                 gateway_endpoint="chat_completions",
             ),
+            db=db,
+        )
+        resolved = _resolved_access_from_attempt(plan=plan, attempt_index=0)
+        await _attach_gateway_request_resolution(
+            gateway_request_id=gateway_request_id,
+            resolved=resolved,
             db=db,
         )
         org_settings = await settings_facade.get_organization_settings(
@@ -226,6 +261,12 @@ async def create_chat_completion(
             db=db,
         )
         _enforce_provider_body_size(raw_body, resolved_provider.max_body_bytes)
+        current_route_attempt_id = await _record_gateway_route_attempt_started(
+            gateway_request_id=gateway_request_id,
+            resolved=resolved,
+            attempt_index=0,
+            db=db,
+        )
         estimated_tokens = estimate_request_tokens(provider_payload.messages)
         reservation_ids = await _enforce_limit_policies(
             resolved=resolved,
@@ -233,6 +274,7 @@ async def create_chat_completion(
             requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
             limit_types=ESTIMATED_LIMIT_TYPES,
             gateway_request_id=gateway_request_id,
+            route_attempt_id=current_route_attempt_id,
             gateway_endpoint="chat_completions",
             db=db,
         )
@@ -240,6 +282,7 @@ async def create_chat_completion(
             resolved=resolved,
             provider_payload=provider_payload,
             gateway_request_id=gateway_request_id,
+            route_attempt_id=current_route_attempt_id,
             gateway_endpoint="chat_completions",
         )
         await _evaluate_guardrail_request(
@@ -254,6 +297,7 @@ async def create_chat_completion(
                 requested_output_tokens=_requested_output_tokens(provider_payload.extra_body),
                 limit_types=REQUEST_LIMIT_TYPES,
                 gateway_request_id=gateway_request_id,
+                route_attempt_id=current_route_attempt_id,
                 gateway_endpoint="chat_completions",
                 db=db,
             )
@@ -304,6 +348,7 @@ async def create_chat_completion(
                     guardrail_context=guardrail_context,
                     estimated_tokens=estimated_tokens,
                     reservation_ids=reservation_ids,
+                    route_attempt_id=current_route_attempt_id,
                     started_at=started_at,
                     db=db,
                 ),
@@ -335,11 +380,66 @@ async def create_chat_completion(
             detail="invalid virtual key",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
+    except HTTPException as exc:
+        if exc.status_code != status.HTTP_413_REQUEST_ENTITY_TOO_LARGE:
+            raise
+        await _release_reservations(reservation_ids=reservation_ids, db=db)
+        if resolved is not None:
+            await _record_gateway_request_validation_decision(
+                gateway_request_id=gateway_request_id,
+                resolved=resolved,
+                db=db,
+            )
+        await _finalize_gateway_route_attempt(
+            route_attempt_id=current_route_attempt_id,
+            status_="blocked",
+            http_status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            error_code="request_body_too_large",
+            failure_reason=None,
+            latency_ms=_elapsed_ms(started_at),
+            usage=unknown_usage(),
+            cost_cents=None,
+            cost_micro_cents=None,
+            db=db,
+        )
+        await _finalize_gateway_request(
+            gateway_request_id=gateway_request_id,
+            resolved=resolved,
+            http_status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            attempt_count=1 if resolved is not None else 0,
+            fallback_attempted=False,
+            error_code="request_body_too_large",
+            db=db,
+            final_route_attempt_id=current_route_attempt_id,
+        )
+        raise
     except ProxyLimitExceededError as exc:
         # A limit policy denied: release any reservations taken earlier in the
         # pipeline (e.g. token/budget reservations from the first enforcement phase)
         # so a request-count denial does not leak them until expiry.
         await _release_reservations(reservation_ids=reservation_ids, db=db)
+        await _finalize_gateway_route_attempt(
+            route_attempt_id=current_route_attempt_id,
+            status_="blocked",
+            http_status=status.HTTP_429_TOO_MANY_REQUESTS,
+            error_code="limit_exceeded",
+            failure_reason=None,
+            latency_ms=_elapsed_ms(started_at),
+            usage=unknown_usage(),
+            cost_cents=None,
+            cost_micro_cents=None,
+            db=db,
+        )
+        await _finalize_gateway_request(
+            gateway_request_id=gateway_request_id,
+            resolved=resolved,
+            http_status=status.HTTP_429_TOO_MANY_REQUESTS,
+            attempt_count=1 if resolved is not None else 0,
+            fallback_attempted=False,
+            error_code="limit_exceeded",
+            db=db,
+            final_route_attempt_id=current_route_attempt_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=exc.detail,
@@ -347,6 +447,28 @@ async def create_chat_completion(
     except AccessDeniedError as exc:
         await _release_reservations(reservation_ids=reservation_ids, db=db)
         if resolved is not None:
+            await _finalize_gateway_route_attempt(
+                route_attempt_id=current_route_attempt_id,
+                status_="blocked",
+                http_status=status.HTTP_403_FORBIDDEN,
+                error_code="access_denied",
+                failure_reason=None,
+                latency_ms=_elapsed_ms(started_at),
+                usage=unknown_usage(),
+                cost_cents=None,
+                cost_micro_cents=None,
+                db=db,
+            )
+            await _finalize_gateway_request(
+                gateway_request_id=gateway_request_id,
+                resolved=resolved,
+                http_status=status.HTTP_403_FORBIDDEN,
+                attempt_count=1,
+                fallback_attempted=False,
+                error_code="access_denied",
+                db=db,
+                final_route_attempt_id=current_route_attempt_id,
+            )
             await _record_proxy_activity(
                 resolved=resolved,
                 action="proxy.denied",
@@ -374,13 +496,38 @@ async def create_chat_completion(
         if resolved is not None:
             await _record_proxy_request(
                 resolved=resolved,
+                gateway_request_id=gateway_request_id,
+                route_attempt_id=current_route_attempt_id,
                 http_status=status.HTTP_403_FORBIDDEN,
                 latency_ms=_elapsed_ms(started_at),
                 usage=unknown_usage(),
                 error_code="guardrail_denied",
+                gateway_endpoint="chat_completions",
                 db=db,
             )
             await _release_reservations(reservation_ids=reservation_ids, db=db)
+            await _finalize_gateway_route_attempt(
+                route_attempt_id=current_route_attempt_id,
+                status_="blocked",
+                http_status=status.HTTP_403_FORBIDDEN,
+                error_code="guardrail_denied",
+                failure_reason=None,
+                latency_ms=_elapsed_ms(started_at),
+                usage=unknown_usage(),
+                cost_cents=None,
+                cost_micro_cents=None,
+                db=db,
+            )
+            await _finalize_gateway_request(
+                gateway_request_id=gateway_request_id,
+                resolved=resolved,
+                http_status=status.HTTP_403_FORBIDDEN,
+                attempt_count=1,
+                fallback_attempted=False,
+                error_code="guardrail_denied",
+                db=db,
+                final_route_attempt_id=current_route_attempt_id,
+            )
             await _record_proxy_activity(
                 resolved=resolved,
                 action="proxy.guardrail_denied",
@@ -402,13 +549,38 @@ async def create_chat_completion(
         if resolved is not None:
             await _record_proxy_request(
                 resolved=resolved,
+                gateway_request_id=gateway_request_id,
+                route_attempt_id=current_route_attempt_id,
                 http_status=status.HTTP_502_BAD_GATEWAY,
                 latency_ms=_elapsed_ms(started_at),
                 usage=unknown_usage(),
                 error_code="provider_unavailable",
+                gateway_endpoint="chat_completions",
                 db=db,
             )
             await _release_reservations(reservation_ids=reservation_ids, db=db)
+            await _finalize_gateway_route_attempt(
+                route_attempt_id=current_route_attempt_id,
+                status_="failed",
+                http_status=status.HTTP_502_BAD_GATEWAY,
+                error_code="provider_unavailable",
+                failure_reason=None,
+                latency_ms=_elapsed_ms(started_at),
+                usage=unknown_usage(),
+                cost_cents=None,
+                cost_micro_cents=None,
+                db=db,
+            )
+            await _finalize_gateway_request(
+                gateway_request_id=gateway_request_id,
+                resolved=resolved,
+                http_status=status.HTTP_502_BAD_GATEWAY,
+                attempt_count=1,
+                fallback_attempted=False,
+                error_code="provider_unavailable",
+                db=db,
+                final_route_attempt_id=current_route_attempt_id,
+            )
             await _record_proxy_activity(
                 resolved=resolved,
                 action="proxy.provider_unavailable",
@@ -427,6 +599,7 @@ async def create_chat_completion(
             await _record_proxy_request(
                 resolved=resolved,
                 gateway_request_id=gateway_request_id,
+                route_attempt_id=current_route_attempt_id,
                 http_status=exc.status_code,
                 latency_ms=_elapsed_ms(started_at),
                 usage=unknown_usage(),
@@ -436,6 +609,28 @@ async def create_chat_completion(
                 db=db,
             )
             await _release_reservations(reservation_ids=reservation_ids, db=db)
+            await _finalize_gateway_route_attempt(
+                route_attempt_id=current_route_attempt_id,
+                status_="failed",
+                http_status=exc.status_code,
+                error_code="provider_upstream_error",
+                failure_reason=exc.failure_reason,
+                latency_ms=_elapsed_ms(started_at),
+                usage=unknown_usage(),
+                cost_cents=None,
+                cost_micro_cents=None,
+                db=db,
+            )
+            await _finalize_gateway_request(
+                gateway_request_id=gateway_request_id,
+                resolved=resolved,
+                http_status=exc.status_code,
+                attempt_count=1,
+                fallback_attempted=False,
+                error_code="provider_upstream_error",
+                db=db,
+                final_route_attempt_id=current_route_attempt_id,
+            )
             await _record_proxy_activity(
                 resolved=resolved,
                 action="proxy.provider_error",
@@ -467,6 +662,7 @@ async def create_chat_completion(
         actual_cost_cents = await _record_proxy_request(
             resolved=resolved,
             gateway_request_id=gateway_request_id,
+            route_attempt_id=current_route_attempt_id,
             http_status=status.HTTP_403_FORBIDDEN,
             latency_ms=_elapsed_ms(started_at),
             usage=usage,
@@ -497,6 +693,8 @@ async def create_chat_completion(
 
     actual_cost_cents = await _record_proxy_request(
         resolved=resolved,
+        gateway_request_id=gateway_request_id,
+        route_attempt_id=current_route_attempt_id,
         http_status=upstream.status_code,
         latency_ms=_elapsed_ms(started_at),
         usage=usage,
@@ -551,9 +749,18 @@ async def create_anthropic_message(
             gateway_endpoint="anthropic_messages",
             db=db,
         )
-        plan = await keys_facade.resolve_access_plan(
-            payload=ResolveAccessRequest(
-                raw_key=raw_key,
+        key_subject = await keys_facade.resolve_key_subject(
+            payload=ResolveKeySubjectRequest(raw_key=raw_key),
+            db=db,
+        )
+        await _attach_gateway_request_subject(
+            gateway_request_id=gateway_request_id,
+            key_subject=key_subject,
+            db=db,
+        )
+        plan = await keys_facade.resolve_access_plan_for_subject(
+            payload=ResolveAccessPlanForSubjectRequest(
+                subject=key_subject,
                 requested_model=provider_payload.model,
                 provider_id=provider_id,
                 gateway_endpoint="anthropic_messages",
@@ -561,6 +768,11 @@ async def create_anthropic_message(
             db=db,
         )
         resolved = _resolved_access_from_attempt(plan=plan, attempt_index=0)
+        await _attach_gateway_request_resolution(
+            gateway_request_id=gateway_request_id,
+            resolved=resolved,
+            db=db,
+        )
         org_settings = await settings_facade.get_organization_settings(
             scope=Scope(org_id=resolved.org_id),
             db=db,
@@ -675,6 +887,7 @@ async def create_anthropic_message(
                 await _record_proxy_request(
                     resolved=resolved,
                     gateway_request_id=gateway_request_id,
+                    route_attempt_id=current_route_attempt_id,
                     http_status=exc.status_code,
                     latency_ms=_elapsed_ms(started_at),
                     usage=unknown_usage(),
@@ -719,6 +932,27 @@ async def create_anthropic_message(
             detail="invalid virtual key",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
+    except HTTPException as exc:
+        if exc.status_code != status.HTTP_413_REQUEST_ENTITY_TOO_LARGE:
+            raise
+        await _release_reservations(reservation_ids=reservation_ids, db=db)
+        if resolved is not None:
+            await _record_gateway_request_validation_decision(
+                gateway_request_id=gateway_request_id,
+                resolved=resolved,
+                db=db,
+            )
+        await _finalize_gateway_request(
+            gateway_request_id=gateway_request_id,
+            resolved=resolved,
+            http_status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            attempt_count=attempted_routes or 1,
+            fallback_attempted=fallback_attempted,
+            error_code="request_body_too_large",
+            db=db,
+            final_route_attempt_id=final_route_attempt_id,
+        )
+        raise
     except ProxyLimitExceededError as exc:
         # A limit policy denied: release any reservations taken earlier in the
         # pipeline (e.g. token/budget reservations from the first enforcement phase)
@@ -744,6 +978,7 @@ async def create_anthropic_message(
             await _record_proxy_request(
                 resolved=resolved,
                 gateway_request_id=gateway_request_id,
+                route_attempt_id=final_route_attempt_id,
                 http_status=status.HTTP_403_FORBIDDEN,
                 latency_ms=_elapsed_ms(started_at),
                 usage=unknown_usage(),
@@ -788,6 +1023,7 @@ async def create_anthropic_message(
             await _record_proxy_request(
                 resolved=resolved,
                 gateway_request_id=gateway_request_id,
+                route_attempt_id=final_route_attempt_id,
                 http_status=status.HTTP_403_FORBIDDEN,
                 latency_ms=_elapsed_ms(started_at),
                 usage=unknown_usage(),
@@ -824,6 +1060,7 @@ async def create_anthropic_message(
             await _record_proxy_request(
                 resolved=resolved,
                 gateway_request_id=gateway_request_id,
+                route_attempt_id=final_route_attempt_id,
                 http_status=status.HTTP_502_BAD_GATEWAY,
                 latency_ms=_elapsed_ms(started_at),
                 usage=unknown_usage(),
@@ -857,6 +1094,8 @@ async def create_anthropic_message(
         if resolved is not None:
             await _record_proxy_request(
                 resolved=resolved,
+                gateway_request_id=gateway_request_id,
+                route_attempt_id=final_route_attempt_id,
                 http_status=exc.status_code,
                 latency_ms=_elapsed_ms(started_at),
                 usage=unknown_usage(),
@@ -929,6 +1168,8 @@ async def create_anthropic_message(
     except GuardrailDeniedError as exc:
         actual_cost_cents = await _record_proxy_request(
             resolved=resolved,
+            gateway_request_id=gateway_request_id,
+            route_attempt_id=final_route_attempt_id,
             http_status=status.HTTP_403_FORBIDDEN,
             latency_ms=_elapsed_ms(started_at),
             usage=usage,
@@ -971,6 +1212,7 @@ async def create_anthropic_message(
     actual_cost_cents = await _record_proxy_request(
         resolved=resolved,
         gateway_request_id=gateway_request_id,
+        route_attempt_id=final_route_attempt_id,
         http_status=upstream.status_code,
         latency_ms=_elapsed_ms(started_at),
         usage=usage,
@@ -1071,9 +1313,18 @@ async def _execute_chat_proxy(
             gateway_endpoint=gateway_endpoint,
             db=db,
         )
-        plan = await keys_facade.resolve_access_plan(
-            payload=ResolveAccessRequest(
-                raw_key=raw_key,
+        key_subject = await keys_facade.resolve_key_subject(
+            payload=ResolveKeySubjectRequest(raw_key=raw_key),
+            db=db,
+        )
+        await _attach_gateway_request_subject(
+            gateway_request_id=gateway_request_id,
+            key_subject=key_subject,
+            db=db,
+        )
+        plan = await keys_facade.resolve_access_plan_for_subject(
+            payload=ResolveAccessPlanForSubjectRequest(
+                subject=key_subject,
                 requested_model=provider_payload.model,
                 provider_id=provider_id,
                 gateway_endpoint=gateway_endpoint,
@@ -1081,6 +1332,11 @@ async def _execute_chat_proxy(
             db=db,
         )
         resolved = _resolved_access_from_attempt(plan=plan, attempt_index=0)
+        await _attach_gateway_request_resolution(
+            gateway_request_id=gateway_request_id,
+            resolved=resolved,
+            db=db,
+        )
         org_settings = await settings_facade.get_organization_settings(
             scope=Scope(org_id=resolved.org_id),
             db=db,
@@ -1191,6 +1447,7 @@ async def _execute_chat_proxy(
                 await _record_proxy_request(
                     resolved=resolved,
                     gateway_request_id=gateway_request_id,
+                    route_attempt_id=current_route_attempt_id,
                     http_status=exc.status_code,
                     latency_ms=_elapsed_ms(started_at),
                     usage=unknown_usage(),
@@ -1235,6 +1492,26 @@ async def _execute_chat_proxy(
             detail="invalid virtual key",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
+    except HTTPException as exc:
+        if exc.status_code != status.HTTP_413_REQUEST_ENTITY_TOO_LARGE:
+            raise
+        await _release_reservations(reservation_ids=reservation_ids, db=db)
+        if resolved is not None:
+            await _record_gateway_request_validation_decision(
+                gateway_request_id=gateway_request_id,
+                resolved=resolved,
+                db=db,
+            )
+        await _finalize_gateway_request(
+            gateway_request_id=gateway_request_id,
+            resolved=resolved,
+            http_status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            attempt_count=attempted_routes or 1,
+            fallback_attempted=fallback_attempted,
+            error_code="request_body_too_large",
+            db=db,
+        )
+        raise
     except ProxyLimitExceededError as exc:
         # A limit policy denied: release any reservations taken earlier in the
         # pipeline (e.g. token/budget reservations from the first enforcement phase)
@@ -1284,6 +1561,7 @@ async def _execute_chat_proxy(
             await _record_proxy_request(
                 resolved=resolved,
                 gateway_request_id=gateway_request_id,
+                route_attempt_id=final_route_attempt_id or current_route_attempt_id,
                 http_status=status.HTTP_403_FORBIDDEN,
                 latency_ms=_elapsed_ms(started_at),
                 usage=unknown_usage(),
@@ -1320,6 +1598,7 @@ async def _execute_chat_proxy(
             await _record_proxy_request(
                 resolved=resolved,
                 gateway_request_id=gateway_request_id,
+                route_attempt_id=final_route_attempt_id or current_route_attempt_id,
                 http_status=status.HTTP_502_BAD_GATEWAY,
                 latency_ms=_elapsed_ms(started_at),
                 usage=unknown_usage(),
@@ -1355,6 +1634,7 @@ async def _execute_chat_proxy(
             await _record_proxy_request(
                 resolved=resolved,
                 gateway_request_id=gateway_request_id,
+                route_attempt_id=final_route_attempt_id or current_route_attempt_id,
                 http_status=exc.status_code,
                 latency_ms=_elapsed_ms(started_at),
                 usage=unknown_usage(),
@@ -1423,6 +1703,7 @@ async def _execute_chat_proxy(
         actual_cost_cents = await _record_proxy_request(
             resolved=resolved,
             gateway_request_id=gateway_request_id,
+            route_attempt_id=final_route_attempt_id,
             http_status=status.HTTP_403_FORBIDDEN,
             latency_ms=_elapsed_ms(started_at),
             usage=usage,
@@ -1478,6 +1759,7 @@ async def _execute_chat_proxy(
     actual_cost_cents = await _record_proxy_request(
         resolved=resolved,
         gateway_request_id=gateway_request_id,
+        route_attempt_id=final_route_attempt_id,
         http_status=upstream.status_code,
         latency_ms=_elapsed_ms(started_at),
         usage=usage,
@@ -1542,6 +1824,7 @@ async def _stream_proxy_response(
     guardrail_context: GuardrailEvaluationContext,
     estimated_tokens: int,
     reservation_ids: list[UUID],
+    route_attempt_id: UUID | None,
     started_at: float,
     db: AsyncSession,
 ):
@@ -1586,11 +1869,13 @@ async def _stream_proxy_response(
         usage_cost_cents = await _record_proxy_request(
             resolved=resolved,
             gateway_request_id=guardrail_context.gateway_request_id,
+            route_attempt_id=route_attempt_id,
             http_status=upstream.status_code,
             latency_ms=_elapsed_ms(started_at),
             usage=usage,
             error_code=error_code,
             provider_credential_id=upstream.provider_credential_id,
+            gateway_endpoint="chat_completions",
             db=db,
         )
         if error_code is None:
@@ -1600,8 +1885,54 @@ async def _stream_proxy_response(
                 cost_cents=usage_cost_cents,
                 db=db,
             )
+            await _finalize_gateway_route_attempt(
+                route_attempt_id=route_attempt_id,
+                status_="succeeded",
+                http_status=upstream.status_code,
+                error_code=None,
+                failure_reason=None,
+                latency_ms=_elapsed_ms(started_at),
+                usage=usage,
+                cost_cents=usage_cost_cents,
+                cost_micro_cents=_calculate_cost_micro_cents(resolved=resolved, usage=usage),
+                usage_source=usage.usage_source,
+                db=db,
+            )
+            await _finalize_gateway_request(
+                gateway_request_id=guardrail_context.gateway_request_id,
+                resolved=resolved,
+                http_status=upstream.status_code,
+                attempt_count=1,
+                fallback_attempted=False,
+                error_code=None,
+                db=db,
+                final_route_attempt_id=route_attempt_id,
+            )
         else:
             await _release_reservations(reservation_ids=reservation_ids, db=db)
+            await _finalize_gateway_route_attempt(
+                route_attempt_id=route_attempt_id,
+                status_="failed",
+                http_status=upstream.status_code,
+                error_code=error_code,
+                failure_reason=error_code,
+                latency_ms=_elapsed_ms(started_at),
+                usage=usage,
+                cost_cents=usage_cost_cents,
+                cost_micro_cents=_calculate_cost_micro_cents(resolved=resolved, usage=usage),
+                usage_source=usage.usage_source,
+                db=db,
+            )
+            await _finalize_gateway_request(
+                gateway_request_id=guardrail_context.gateway_request_id,
+                resolved=resolved,
+                http_status=upstream.status_code,
+                attempt_count=1,
+                fallback_attempted=False,
+                error_code=error_code,
+                db=db,
+                final_route_attempt_id=route_attempt_id,
+            )
             await _record_proxy_activity(
                 resolved=resolved,
                 action="proxy.stream_failed",
@@ -2010,6 +2341,7 @@ async def _record_proxy_request(
     *,
     resolved: ResolvedAccess,
     gateway_request_id: UUID | None = None,
+    route_attempt_id: UUID | None = None,
     http_status: int,
     latency_ms: int,
     usage: UsageAccounting,
@@ -2025,7 +2357,7 @@ async def _record_proxy_request(
 ) -> int | None:
     cost_cents = _calculate_cost_cents(resolved=resolved, usage=usage)
     cost_micro_cents = _calculate_cost_micro_cents(resolved=resolved, usage=usage)
-    dimension_subject = _limit_dimension_subject(
+    dimension_subject = limit_dimension_subject(
         resolved=resolved,
         gateway_endpoint=gateway_endpoint,
     )
@@ -2048,6 +2380,7 @@ async def _record_proxy_request(
             access_policy_id=resolved.access_policy_id,
             access_policy_route_id=resolved.access_policy_route_id,
             gateway_request_id=gateway_request_id,
+            route_attempt_id=route_attempt_id,
             public_model_id=resolved.public_model_id,
             route_candidate_id=resolved.route_candidate_id,
             limit_policy_ids=[str(limit_id) for limit_id in resolved.limit_policy_ids],
@@ -2091,12 +2424,12 @@ async def _record_proxy_request(
     )
     if http_status < 400:
         for limit in resolved.limit_policies:
-            counter_key = await _limit_rule_counter_key(
+            counter_key = await limit_rule_counter_key(
                 limit=limit,
                 subject=dimension_subject,
                 db=db,
             )
-            counting_unit = await _limit_rule_counting_unit(
+            counting_unit = await limit_rule_counting_unit(
                 org_id=resolved.org_id,
                 limit=limit,
                 db=db,
@@ -2111,7 +2444,7 @@ async def _record_proxy_request(
                     limit_policy_assignment_id=limit.limit_policy_assignment_id,
                     counter_key=counter_key,
                     counting_unit=counting_unit,
-                    window_descriptor=_limit_policy_window_descriptor(limit),
+                    window_descriptor=limit_policy_window_descriptor(limit),
                     dimension_snapshot=dimension_snapshot,
                     prompt_tokens=usage.prompt_tokens,
                     completion_tokens=usage.completion_tokens,
@@ -2195,6 +2528,7 @@ async def _record_gateway_route_attempt_started(
 ) -> UUID | None:
     if gateway_request_id is None:
         return None
+    snapshot = await _gateway_route_attempt_snapshot(resolved=resolved, db=db)
     route_attempt_id = await usage_facade.create_gateway_route_attempt(
         values={
             "org_id": resolved.org_id,
@@ -2206,8 +2540,13 @@ async def _record_gateway_route_attempt_started(
             "route_candidate_id": resolved.route_candidate_id,
             "primary_route_candidate_id": resolved.primary_route_candidate_id,
             "provider_id": resolved.provider_id,
+            "provider_name": snapshot["provider_name"],
+            "provider_slug": snapshot["provider_slug"],
             "credential_pool_id": resolved.pool_id,
+            "credential_pool_name": snapshot["credential_pool_name"],
             "provider_credential_id": resolved.provider_key_id,
+            "provider_credential_name": snapshot["provider_credential_name"],
+            "provider_credential_prefix": snapshot["provider_credential_prefix"],
             "provider_model_offering_id": resolved.model_offering_id,
             "provider_model": resolved.provider_model,
             "public_model_name": resolved.public_model_name,
@@ -2216,11 +2555,22 @@ async def _record_gateway_route_attempt_started(
             "pricing_snapshot": {
                 "input_price_per_million_tokens": resolved.input_price_per_million_tokens,
                 "output_price_per_million_tokens": resolved.output_price_per_million_tokens,
+                "provider_model": resolved.provider_model,
             },
-            "capability_snapshot": {},
+            "capability_snapshot": snapshot["capability_snapshot"],
             "route_snapshot": {
                 "routing_mode": resolved.routing_mode,
                 "fallback_disabled_reason": resolved.fallback_disabled_reason,
+                "access_policy_name": snapshot["access_policy_name"],
+                "access_policy_assignment_scope_type": snapshot[
+                    "access_policy_assignment_scope_type"
+                ],
+                "public_model_name": resolved.public_model_name,
+                "provider_name": snapshot["provider_name"],
+                "credential_pool_name": snapshot["credential_pool_name"],
+                "provider_credential_name": snapshot["provider_credential_name"],
+                "provider_model": resolved.provider_model,
+                "provider_model_offering_name": snapshot["provider_model_offering_name"],
             },
             "started_at": datetime.now(UTC),
         },
@@ -2260,11 +2610,68 @@ async def _record_gateway_route_attempt_started(
                 "credential_pool_id": str(resolved.pool_id),
                 "provider_model_offering_id": str(resolved.model_offering_id),
             },
-            "metadata_": {"attempt_index": attempt_index},
+            "metadata_": {
+                "attempt_index": attempt_index,
+                "access_policy_name": snapshot["access_policy_name"],
+                "provider_name": snapshot["provider_name"],
+                "credential_pool_name": snapshot["credential_pool_name"],
+                "provider_model": resolved.provider_model,
+            },
         },
         db=db,
     )
     return route_attempt_id
+
+
+async def _gateway_route_attempt_snapshot(
+    *,
+    resolved: ResolvedAccess,
+    db: AsyncSession,
+) -> dict[str, Any]:
+    provider = await db.get(Provider, resolved.provider_id)
+    pool = await db.get(CredentialPool, resolved.pool_id)
+    credential = (
+        await db.get(ProviderCredential, resolved.provider_key_id)
+        if resolved.provider_key_id is not None
+        else None
+    )
+    offering = await db.get(ModelOffering, resolved.model_offering_id)
+    policy = (
+        await policies_repository.get_policy(
+            policy_id=resolved.access_policy_id,
+            org_id=resolved.org_id,
+            db=db,
+        )
+        if resolved.access_policy_id is not None
+        else None
+    )
+    assignment = (
+        await policies_repository.get_policy_assignment(
+            assignment_id=resolved.access_policy_assignment_id,
+            org_id=resolved.org_id,
+            db=db,
+        )
+        if resolved.access_policy_assignment_id is not None
+        else None
+    )
+    return {
+        "provider_name": provider.name if provider else None,
+        "provider_slug": provider.slug if provider else None,
+        "credential_pool_name": pool.name if pool else None,
+        "provider_credential_name": credential.name if credential else None,
+        "provider_credential_prefix": credential.key_prefix if credential else None,
+        "provider_model_offering_name": offering.provider_model_name if offering else None,
+        "access_policy_name": policy.name if policy else None,
+        "access_policy_assignment_scope_type": assignment.scope_type if assignment else None,
+        "capability_snapshot": {
+            "provider_capabilities": provider.capabilities if provider else {},
+            "integration": provider.supported_integration if provider else None,
+            "model_capabilities": offering.capabilities if offering else {},
+            "input_modalities": offering.input_modalities if offering else [],
+            "output_modalities": offering.output_modalities if offering else [],
+            "context_window": offering.context_window if offering else None,
+        },
+    }
 
 
 async def _finalize_gateway_route_attempt(
@@ -2360,6 +2767,56 @@ async def _record_gateway_access_decision(
     )
 
 
+async def _record_gateway_request_validation_decision(
+    *,
+    gateway_request_id: UUID | None,
+    resolved: ResolvedAccess,
+    db: AsyncSession,
+) -> None:
+    if gateway_request_id is None:
+        return
+    await usage_facade.create_gateway_policy_decision(
+        values={
+            "org_id": resolved.org_id,
+            "gateway_request_id": gateway_request_id,
+            "route_attempt_id": None,
+            "decision_type": "request_validation",
+            "stage": "request_body_validation",
+            "outcome": "denied",
+            "effective_action": "deny",
+            "enforced": True,
+            "policy_id": None,
+            "policy_revision_id": None,
+            "assignment_id": None,
+            "assignment_mode": None,
+            "assignment_scope_type": None,
+            "assignment_team_id": None,
+            "assignment_project_id": None,
+            "assignment_virtual_key_id": None,
+            "rule_id": None,
+            "route_candidate_id": resolved.route_candidate_id,
+            "reason_code": "request_body_too_large",
+            "message": "Request body exceeds the configured size limit.",
+            "dimension_snapshot": {
+                "virtual_key_id": str(resolved.virtual_key_id),
+                "requested_model": resolved.requested_model,
+                "public_model_id": str(resolved.public_model_id)
+                if resolved.public_model_id
+                else None,
+                "public_model_name": resolved.public_model_name,
+                "routing_mode": resolved.routing_mode,
+            },
+            "metadata_": {
+                "provider_id": str(resolved.provider_id),
+                "pool_id": str(resolved.pool_id),
+                "provider_model_offering_id": str(resolved.model_offering_id),
+                "provider_model": resolved.provider_model,
+            },
+        },
+        db=db,
+    )
+
+
 async def _enforce_limit_policies(
     *,
     resolved,
@@ -2382,14 +2839,8 @@ async def _enforce_limit_policies(
     estimated_cost_micro_cents = _calculate_cost_micro_cents(
         resolved=resolved, usage=estimated_usage
     )
-    # Reservations expire well beyond the maximum request lifetime (provider timeout
-    # up to 300s plus retries and streaming drain) so a slow request is not silently
-    # under-counted by the active-reservation summary before it finalizes.
     expires_at = datetime.now(UTC) + timedelta(minutes=15)
-    # Serialize the read-decide-reserve critical section per resolved counter so
-    # concurrent requests for the same limit cannot both pass and overshoot the cap.
-    # Locks are acquired in a stable order to avoid deadlocks and released at commit.
-    dimension_subject = _limit_dimension_subject(
+    dimension_subject = limit_dimension_subject(
         resolved=resolved,
         gateway_endpoint=gateway_endpoint,
     )
@@ -2397,19 +2848,15 @@ async def _enforce_limit_policies(
         limit
         for limit in resolved.limit_policies
         if (limit_types is None or limit.limit_type in limit_types)
-        and await _limit_rule_matches_runtime_subject(
+        and await limit_rule_matches_runtime_subject(
             limit=limit,
             subject=dimension_subject,
             db=db,
         )
     ]
-    dimension_snapshot = to_dimension_snapshot(
-        dimension_subject,
-        stage=PolicyDimensionStage.LIMIT_RESERVATION,
-    )
     for counter_identity in sorted(
         {
-            await _limit_rule_counter_identity(
+            await limit_rule_counter_identity(
                 org_id=resolved.org_id,
                 limit=limit,
                 subject=dimension_subject,
@@ -2419,243 +2866,41 @@ async def _enforce_limit_policies(
         }
     ):
         await usage_facade.acquire_limit_counter_lock(identity=counter_identity, db=db)
-    for limit in matched_limits:
-        if limit.limit_type == "input_tokens" and estimated_input_tokens > limit.limit_value:
-            await _raise_proxy_denial(
-                resolved=resolved,
-                limit=limit,
-                detail="limit policy input token limit exceeded",
-                reason="input_token_limit",
-                current_usage=estimated_input_tokens,
-                reserved_usage=0,
-                attempted_usage=estimated_input_tokens,
-                gateway_request_id=gateway_request_id,
-                route_attempt_id=route_attempt_id,
-                gateway_endpoint=gateway_endpoint,
-                dimension_snapshot=dimension_snapshot,
-                db=db,
-            )
-        if (
-            limit.limit_type == "output_tokens"
-            and requested_output_tokens is not None
-            and requested_output_tokens > limit.limit_value
-        ):
-            await _raise_proxy_denial(
-                resolved=resolved,
-                limit=limit,
-                detail="limit policy output token limit exceeded",
-                reason="output_token_limit",
-                current_usage=requested_output_tokens,
-                reserved_usage=0,
-                attempted_usage=requested_output_tokens,
-                gateway_request_id=gateway_request_id,
-                route_attempt_id=route_attempt_id,
-                gateway_endpoint=gateway_endpoint,
-                dimension_snapshot=dimension_snapshot,
-                db=db,
-            )
-        if limit.limit_type == "tokens_per_request" and requested_total_tokens > limit.limit_value:
-            await _raise_proxy_denial(
-                resolved=resolved,
-                limit=limit,
-                detail="limit policy request token limit exceeded",
-                reason="request_token_limit",
-                current_usage=requested_total_tokens,
-                reserved_usage=0,
-                attempted_usage=requested_total_tokens,
-                gateway_request_id=gateway_request_id,
-                route_attempt_id=route_attempt_id,
-                gateway_endpoint=gateway_endpoint,
-                dimension_snapshot=dimension_snapshot,
-                db=db,
-            )
 
-        since = _limit_policy_window_start(limit.interval_unit, limit.interval_count)
-        window_descriptor = _limit_policy_window_descriptor(limit)
-        counter_key = await _limit_rule_counter_key(
-            limit=limit,
-            subject=dimension_subject,
+    evaluation = await evaluate_runtime_limits_readonly(
+        payload=RuntimeLimitEvaluationInput(
+            resolved=resolved,
+            estimated_input_tokens=estimated_input_tokens,
+            requested_output_tokens=requested_output_tokens,
+            estimated_cost_cents=estimated_cost_cents,
+            estimated_cost_micro_cents=estimated_cost_micro_cents,
+            gateway_endpoint=gateway_endpoint,
+            limit_types=limit_types,
+        ),
+        db=db,
+    )
+    if evaluation.denial is not None:
+        denial = evaluation.denial
+        await _raise_proxy_denial(
+            resolved=resolved,
+            limit=denial.limit,
+            detail=denial.message or "limit policy exceeded",
+            reason=denial.reason_code or "limit_exceeded",
+            current_usage=denial.current_usage,
+            reserved_usage=denial.active_reserved_usage,
+            attempted_usage=denial.attempted_usage,
+            gateway_request_id=gateway_request_id,
+            route_attempt_id=route_attempt_id,
+            gateway_endpoint=gateway_endpoint,
+            dimension_snapshot=evaluation.dimension_snapshot,
             db=db,
         )
-        counting_unit = await _limit_rule_counting_unit(
-            org_id=resolved.org_id,
-            limit=limit,
-            db=db,
-        )
-        (
-            request_count,
-            prompt_tokens,
-            completion_tokens,
-            cost_cents,
-            cost_micro_cents,
-        ) = await usage_facade.summarize_limit_policy_usage(
-            limit_policy_id=limit.limit_policy_id,
-            limit_policy_rule_id=limit.limit_policy_rule_id,
-            limit_policy_assignment_id=limit.limit_policy_assignment_id,
-            counter_key=counter_key,
-            counting_unit=counting_unit,
-            window_descriptor=window_descriptor,
-            since=since,
-            db=db,
-        )
-        reservations = await usage_facade.summarize_active_limit_policy_reservations(
-            limit_policy_id=limit.limit_policy_id,
-            limit_policy_rule_id=limit.limit_policy_rule_id,
-            limit_policy_assignment_id=limit.limit_policy_assignment_id,
-            counter_key=counter_key,
-            counting_unit=counting_unit,
-            window_descriptor=window_descriptor,
-            since=since,
-            now=datetime.now(UTC),
-            db=db,
-        )
-        if limit.limit_type == "requests" and request_count + 1 > limit.limit_value:
-            await _raise_proxy_denial(
-                resolved=resolved,
-                limit=limit,
-                detail="limit policy request limit exceeded",
-                reason="request_limit",
-                current_usage=request_count,
-                reserved_usage=0,
-                attempted_usage=1,
-                gateway_request_id=gateway_request_id,
-                route_attempt_id=route_attempt_id,
-                gateway_endpoint=gateway_endpoint,
-                dimension_snapshot=dimension_snapshot,
-                db=db,
-            )
-        if (
-            limit.limit_type == "requests"
-            and request_count + reservations.requests + 1 > limit.limit_value
-        ):
-            await _raise_proxy_denial(
-                resolved=resolved,
-                limit=limit,
-                detail="limit policy request limit exceeded",
-                reason="request_limit",
-                current_usage=request_count,
-                reserved_usage=reservations.requests,
-                attempted_usage=1,
-                gateway_request_id=gateway_request_id,
-                route_attempt_id=route_attempt_id,
-                gateway_endpoint=gateway_endpoint,
-                dimension_snapshot=dimension_snapshot,
-                db=db,
-            )
-        if (
-            limit.limit_type == "input_tokens"
-            and prompt_tokens + reservations.prompt_tokens + estimated_input_tokens
-            > limit.limit_value
-        ):
-            await _raise_proxy_denial(
-                resolved=resolved,
-                limit=limit,
-                detail="limit policy input token limit exceeded",
-                reason="input_token_limit",
-                current_usage=prompt_tokens,
-                reserved_usage=reservations.prompt_tokens,
-                attempted_usage=estimated_input_tokens,
-                gateway_request_id=gateway_request_id,
-                route_attempt_id=route_attempt_id,
-                gateway_endpoint=gateway_endpoint,
-                dimension_snapshot=dimension_snapshot,
-                db=db,
-            )
-        if (
-            limit.limit_type == "output_tokens"
-            and requested_output_tokens is not None
-            and completion_tokens + reservations.completion_tokens + requested_output_tokens
-            > limit.limit_value
-        ):
-            await _raise_proxy_denial(
-                resolved=resolved,
-                limit=limit,
-                detail="limit policy output token limit exceeded",
-                reason="output_token_limit",
-                current_usage=completion_tokens,
-                reserved_usage=reservations.completion_tokens,
-                attempted_usage=requested_output_tokens,
-                gateway_request_id=gateway_request_id,
-                route_attempt_id=route_attempt_id,
-                gateway_endpoint=gateway_endpoint,
-                db=db,
-            )
-        if limit.limit_type == "budget_cents":
-            if estimated_cost_micro_cents is None:
-                # Fail closed: a budget cap cannot be honored for a model with no
-                # configured pricing, so deny rather than silently letting it pass.
-                await _raise_proxy_denial(
-                    resolved=resolved,
-                    limit=limit,
-                    detail="budget limit cannot be enforced: model has no configured pricing",
-                    reason="budget_unpriced",
-                    current_usage=cost_cents,
-                    reserved_usage=reservations.cost_cents,
-                    attempted_usage=None,
-                    gateway_request_id=gateway_request_id,
-                    route_attempt_id=route_attempt_id,
-                    gateway_endpoint=gateway_endpoint,
-                    dimension_snapshot=dimension_snapshot,
-                    db=db,
-                )
-            # Budget math is in exact micro-cents (1_000_000 == 1 cent) to avoid the
-            # per-request rounding drift that would otherwise mis-gate the cap.
-            elif (
-                cost_micro_cents + reservations.cost_micro_cents + estimated_cost_micro_cents
-                > limit.limit_value * 1_000_000
-            ):
-                await _raise_proxy_denial(
-                    resolved=resolved,
-                    limit=limit,
-                    detail="limit policy budget exceeded",
-                    reason="budget_limit",
-                    current_usage=cost_cents,
-                    reserved_usage=reservations.cost_cents,
-                    attempted_usage=estimated_cost_cents,
-                    gateway_request_id=gateway_request_id,
-                    route_attempt_id=route_attempt_id,
-                    gateway_endpoint=gateway_endpoint,
-                    dimension_snapshot=dimension_snapshot,
-                    db=db,
-                )
-        if (
-            limit.limit_type == "total_tokens"
-            and prompt_tokens
-            + completion_tokens
-            + reservations.prompt_tokens
-            + reservations.completion_tokens
-            + requested_total_tokens
-            > limit.limit_value
-        ):
-            await _raise_proxy_denial(
-                resolved=resolved,
-                limit=limit,
-                detail="limit policy total token limit exceeded",
-                reason="total_token_limit",
-                current_usage=prompt_tokens + completion_tokens,
-                reserved_usage=reservations.prompt_tokens + reservations.completion_tokens,
-                attempted_usage=requested_total_tokens,
-                gateway_request_id=gateway_request_id,
-                route_attempt_id=route_attempt_id,
-                gateway_endpoint=gateway_endpoint,
-                dimension_snapshot=dimension_snapshot,
-                db=db,
-            )
+
     reservation_ids: list[UUID] = []
-    for limit in matched_limits:
+    for result in evaluation.results:
+        limit = result.limit
         if limit.limit_type == "tokens_per_request":
             continue
-        counter_key = await _limit_rule_counter_key(
-            limit=limit,
-            subject=dimension_subject,
-            db=db,
-        )
-        counting_unit = await _limit_rule_counting_unit(
-            org_id=resolved.org_id,
-            limit=limit,
-            db=db,
-        )
-        window_descriptor = _limit_policy_window_descriptor(limit)
         reservation_id = await usage_facade.create_limit_policy_reservation(
             payload=RecordLimitPolicyReservation(
                 org_id=resolved.org_id,
@@ -2665,10 +2910,10 @@ async def _enforce_limit_policies(
                 limit_policy_assignment_id=limit.limit_policy_assignment_id,
                 virtual_key_id=resolved.virtual_key_id,
                 request_id=current_request_id(),
-                counter_key=counter_key,
-                counting_unit=counting_unit,
-                window_descriptor=window_descriptor,
-                dimension_snapshot=dimension_snapshot,
+                counter_key=result.counter_key,
+                counting_unit=result.counting_unit,
+                window_descriptor=result.window_descriptor,
+                dimension_snapshot=evaluation.dimension_snapshot,
                 reserved_prompt_tokens=estimated_input_tokens,
                 reserved_completion_tokens=requested_output_tokens or 0,
                 reserved_total_tokens=requested_total_tokens,
@@ -2689,11 +2934,11 @@ async def _enforce_limit_policies(
             effective_action="allow",
             reason_code="limit_reserved",
             message=None,
-            dimension_snapshot=dimension_snapshot,
+            dimension_snapshot=evaluation.dimension_snapshot,
             metadata={
                 "reservation_id": str(reservation_id),
                 "gateway_endpoint": gateway_endpoint,
-                "counting_unit": counting_unit,
+                "counting_unit": result.counting_unit,
                 "reserved_prompt_tokens": estimated_input_tokens,
                 "reserved_completion_tokens": requested_output_tokens or 0,
                 "reserved_total_tokens": requested_total_tokens,
@@ -2704,163 +2949,6 @@ async def _enforce_limit_policies(
         )
     await db.commit()
     return reservation_ids
-
-
-def _limit_dimension_subject(
-    *,
-    resolved: ResolvedAccess,
-    gateway_endpoint: str | None,
-) -> dict[str, Any]:
-    return {
-        "org_id": resolved.org_id,
-        "team_id": resolved.team_id,
-        "project_id": resolved.project_id,
-        "virtual_key_id": resolved.virtual_key_id,
-        "provider_id": resolved.provider_id,
-        "credential_pool_id": resolved.pool_id,
-        "provider_credential_id": resolved.provider_key_id,
-        "provider_model_offering_id": resolved.model_offering_id,
-        "public_model_id": resolved.public_model_id,
-        "public_model_name": resolved.public_model_name,
-        "route_candidate_id": resolved.route_candidate_id,
-        "access_policy_id": resolved.access_policy_id,
-        "access_policy_revision_id": resolved.access_policy_revision_id,
-        "gateway_endpoint": gateway_endpoint,
-        "requested_model": resolved.requested_model,
-    }
-
-
-async def _limit_rule_matches_runtime_subject(
-    *,
-    limit,
-    subject: dict[str, Any],
-    db: AsyncSession,
-) -> bool:
-    matchers = await policies_repository.list_limit_policy_rule_matchers(
-        org_id=subject["org_id"],
-        rule_id=limit.limit_policy_rule_id,
-        db=db,
-    )
-    for matcher in matchers:
-        if not evaluate_matcher(
-            subject=subject,
-            dimension=matcher.dimension,
-            operator=matcher.operator,
-            value=matcher.value_json,
-            stage=PolicyDimensionStage.LIMIT_RESERVATION,
-        ):
-            return False
-    return True
-
-
-async def _limit_rule_counter_key(
-    *,
-    limit,
-    subject: dict[str, Any],
-    db: AsyncSession,
-) -> str | None:
-    partitions = await policies_repository.list_limit_policy_rule_partitions(
-        org_id=subject["org_id"],
-        rule_id=limit.limit_policy_rule_id,
-        db=db,
-    )
-    if not partitions:
-        return None
-    parts = []
-    for partition in partitions:
-        value = subject.get(partition.dimension)
-        parts.append(f"{partition.dimension}={value}")
-    return "|".join(parts)
-
-
-async def _limit_rule_counter_identity(
-    *,
-    org_id: UUID,
-    limit,
-    subject: dict[str, Any],
-    db: AsyncSession,
-) -> str:
-    counter_key = await _limit_rule_counter_key(limit=limit, subject=subject, db=db)
-    counting_unit = await _limit_rule_counting_unit(org_id=org_id, limit=limit, db=db)
-    window_descriptor = _limit_policy_window_descriptor(limit)
-    return "|".join(
-        (
-            str(org_id),
-            str(limit.limit_policy_id),
-            str(limit.limit_policy_rule_id),
-            str(limit.limit_policy_assignment_id),
-            window_descriptor,
-            counting_unit,
-            counter_key or "unpartitioned",
-        )
-    )
-
-
-async def _limit_rule_counting_unit(*, org_id: UUID, limit, db: AsyncSession) -> str:
-    if limit.limit_type != "requests":
-        return "logical_request"
-    matchers = await policies_repository.list_limit_policy_rule_matchers(
-        org_id=org_id,
-        rule_id=limit.limit_policy_rule_id,
-        db=db,
-    )
-    partitions = await policies_repository.list_limit_policy_rule_partitions(
-        org_id=org_id,
-        rule_id=limit.limit_policy_rule_id,
-        db=db,
-    )
-    dimensions = {matcher.dimension for matcher in matchers} | {
-        partition.dimension for partition in partitions
-    }
-    if dimensions & ATTEMPT_SCOPED_DIMENSIONS:
-        return "route_attempt"
-    return "logical_request"
-
-
-async def _usage_limit_counter_key(
-    *,
-    resolved: ResolvedAccess,
-    subject: dict[str, Any],
-    db: AsyncSession,
-) -> str | None:
-    counter_keys = {
-        counter_key
-        for limit in resolved.limit_policies
-        if (
-            counter_key := await _limit_rule_counter_key(
-                limit=limit,
-                subject=subject,
-                db=db,
-            )
-        )
-        is not None
-    }
-    if len(counter_keys) == 1:
-        return next(iter(counter_keys))
-    return None
-
-
-async def _usage_limit_window_descriptor(*, resolved: ResolvedAccess) -> str | None:
-    descriptors = {
-        _limit_policy_window_descriptor(limit)
-        for limit in resolved.limit_policies
-        if limit.limit_type != "tokens_per_request"
-    }
-    if len(descriptors) == 1:
-        return next(iter(descriptors))
-    return None
-
-
-async def _usage_limit_counting_unit(*, resolved: ResolvedAccess, db: AsyncSession) -> str:
-    counting_units = {
-        await _limit_rule_counting_unit(org_id=resolved.org_id, limit=limit, db=db)
-        for limit in resolved.limit_policies
-        if limit.limit_type == "requests"
-    }
-    if counting_units == {"route_attempt"}:
-        return "route_attempt"
-    return "logical_request"
-
 
 async def _commit_reservations(
     *,
@@ -2881,6 +2969,51 @@ async def _commit_reservations(
 async def _release_reservations(*, reservation_ids: list[UUID], db: AsyncSession) -> None:
     await usage_facade.release_limit_policy_reservations(reservation_ids=reservation_ids, db=db)
     await db.commit()
+
+
+async def _usage_limit_counter_key(
+    *,
+    resolved: ResolvedAccess,
+    subject: dict[str, Any],
+    db: AsyncSession,
+) -> str | None:
+    counter_keys = {
+        counter_key
+        for limit in resolved.limit_policies
+        if (
+            counter_key := await limit_rule_counter_key(
+                limit=limit,
+                subject=subject,
+                db=db,
+            )
+        )
+        is not None
+    }
+    if len(counter_keys) == 1:
+        return next(iter(counter_keys))
+    return None
+
+
+async def _usage_limit_window_descriptor(*, resolved: ResolvedAccess) -> str | None:
+    descriptors = {
+        limit_policy_window_descriptor(limit)
+        for limit in resolved.limit_policies
+        if limit.limit_type != "tokens_per_request"
+    }
+    if len(descriptors) == 1:
+        return next(iter(descriptors))
+    return None
+
+
+async def _usage_limit_counting_unit(*, resolved: ResolvedAccess, db: AsyncSession) -> str:
+    counting_units = {
+        await limit_rule_counting_unit(org_id=resolved.org_id, limit=limit, db=db)
+        for limit in resolved.limit_policies
+        if limit.limit_type == "requests"
+    }
+    if counting_units == {"route_attempt"}:
+        return "route_attempt"
+    return "logical_request"
 
 
 class ProxyLimitExceededError(Exception):
@@ -2945,6 +3078,7 @@ async def _raise_proxy_denial(
     await _record_proxy_request(
         resolved=resolved,
         gateway_request_id=gateway_request_id,
+        route_attempt_id=route_attempt_id,
         http_status=status.HTTP_429_TOO_MANY_REQUESTS,
         latency_ms=0,
         usage=unknown_usage(),
@@ -3286,32 +3420,63 @@ async def _record_proxy_activity(
     )
 
 
+async def _attach_gateway_request_subject(
+    *,
+    gateway_request_id: UUID | None,
+    key_subject: ResolvedKeySubject,
+    db: AsyncSession,
+) -> None:
+    try:
+        await usage_facade.attach_gateway_request_subject(
+            gateway_request_id=gateway_request_id,
+            subject=GatewayRequestResolvedSubject(
+                org_id=key_subject.org_id,
+                team_id=key_subject.team_id,
+                project_id=key_subject.project_id,
+                virtual_key_id=key_subject.virtual_key_id,
+            ),
+            db=db,
+        )
+    except Exception:
+        logger.exception(
+            "gateway_request_subject_attach_failed",
+            gateway_request_id=str(gateway_request_id) if gateway_request_id else None,
+            org_id=str(key_subject.org_id),
+            team_id=str(key_subject.team_id),
+            project_id=str(key_subject.project_id),
+            virtual_key_id=str(key_subject.virtual_key_id),
+        )
+
+
+async def _attach_gateway_request_resolution(
+    *,
+    gateway_request_id: UUID | None,
+    resolved: ResolvedAccess,
+    db: AsyncSession,
+) -> None:
+    try:
+        await usage_facade.attach_gateway_request_resolution(
+            gateway_request_id=gateway_request_id,
+            resolved=resolved,
+            db=db,
+        )
+    except Exception:
+        logger.exception(
+            "gateway_request_resolution_attach_failed",
+            gateway_request_id=str(gateway_request_id) if gateway_request_id else None,
+            org_id=str(resolved.org_id),
+            team_id=str(resolved.team_id),
+            project_id=str(resolved.project_id),
+            virtual_key_id=str(resolved.virtual_key_id),
+            public_model_id=str(resolved.public_model_id) if resolved.public_model_id else None,
+        )
+
+
 def _requested_output_tokens(extra_body: dict[str, Any]) -> int | None:
     value = extra_body.get("max_tokens") or extra_body.get("max_completion_tokens")
     if isinstance(value, int) and value > 0:
         return value
     return None
-
-
-def _limit_policy_window_start(interval_unit: str, interval_count: int) -> datetime | None:
-    now = datetime.now(UTC)
-    if interval_unit == "minute":
-        return now - timedelta(minutes=interval_count)
-    if interval_unit == "hour":
-        return now - timedelta(hours=interval_count)
-    if interval_unit == "day":
-        return now - timedelta(days=interval_count)
-    if interval_unit == "week":
-        return now - timedelta(weeks=interval_count)
-    if interval_unit == "month":
-        return subtract_months(now, interval_count)
-    return None
-
-
-def _limit_policy_window_descriptor(limit) -> str:
-    if limit.interval_unit == "lifetime":
-        return f"{limit.interval_unit}:{limit.interval_count}:lifetime"
-    return f"{limit.interval_unit}:{limit.interval_count}:rolling"
 
 
 def _costing_context(resolved) -> CostingContext:

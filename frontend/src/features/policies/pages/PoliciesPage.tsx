@@ -76,6 +76,8 @@ import {
   LimitRuleFiltersSummary,
   type LimitRuleFilterValue,
 } from "@/features/policies/components/LimitRuleFilterFields";
+import { PolicySimulationPanel } from "@/features/policies/components/PolicySimulationPanel";
+import { PolicySimulationResult } from "@/features/policies/components/PolicySimulationResult";
 import {
   hasAnyProjectAdminMembership,
   hasAnyTeamAdminMembership,
@@ -92,6 +94,8 @@ import type {
   LimitPolicyRuleResponse,
   PolicyAssignmentResponse,
   PolicyImpactResponse,
+  PolicySimulationDraft,
+  PolicySimulationResponse,
   ProjectResponse,
   TeamResponse,
 } from "@/shared/api/generated/schemas";
@@ -106,6 +110,14 @@ import { ModelMultiselect } from "@/shared/components/ModelMultiselect";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatCard } from "@/shared/components/StatCard";
 import { StatusBadge } from "@/shared/components/StatusBadge";
+import {
+  buildAccessCreateSimulationDraft,
+  buildAccessEditSimulationDraft,
+  buildLimitEditSimulationDraft,
+  buildLimitRuleAddSimulationDraft,
+  buildLimitRuleDeleteSimulationDraft,
+  buildLimitRuleEditSimulationDraft,
+} from "./policySimulationDraftBuilders";
 
 type SheetKind = "access" | "limit" | null;
 type LimitRulesSheetState = { policy: LimitPolicyResponse } | null;
@@ -322,9 +334,12 @@ export function PoliciesPage() {
   const [limitRulesSheet, setLimitRulesSheet] = useState<LimitRulesSheetState>(null);
   const [policySettingsSheet, setPolicySettingsSheet] = useState<PolicySettingsSheetState>(null);
   const [assignmentSheet, setAssignmentSheet] = useState<AssignmentSheetState>(null);
+  const [simulationDrafts, setSimulationDrafts] = useState<PolicySimulationDraft[]>([]);
+  const [simulationResult, setSimulationResult] = useState<PolicySimulationResponse | null>(null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
-  const activeTab = searchParams.get("tab") === "limits" ? "limits" : "access";
+  const tabParam = searchParams.get("tab");
+  const activeTab = tabParam === "limits" || tabParam === "simulation" ? tabParam : "access";
   const accessQuery = useListAccessPoliciesApiV1PoliciesAccessGet();
   const limitsQuery = useListLimitPoliciesApiV1PoliciesLimitsGet();
   const assignmentsQuery = useListPolicyAssignmentsApiV1PoliciesAssignmentsGet();
@@ -365,6 +380,7 @@ export function PoliciesPage() {
   const filteredAccessPolicies = accessPolicies.filter(matchesFilters);
   const filteredLimitPolicies = limitPolicies.filter(matchesFilters);
   const currentTabIsLimit = activeTab === "limits";
+  const currentTabIsSimulation = activeTab === "simulation";
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -372,7 +388,7 @@ export function PoliciesPage() {
         description="Access policies define public models and provider candidates. Limit policies define budgets and caps that compose across org, team, project, and key scopes."
         actions={
           <div className="flex items-center gap-2">
-            {canManagePolicies ? (
+            {canManagePolicies && !currentTabIsSimulation ? (
               <Button onClick={() => setSheetKind(currentTabIsLimit ? "limit" : "access")}>
                 <Plus />
                 {currentTabIsLimit ? "New limit policy" : "New access policy"}
@@ -397,75 +413,88 @@ export function PoliciesPage() {
               <ShieldCheck />
               Limit policies
             </TabsTrigger>
+            <TabsTrigger value="simulation">
+              <Route />
+              Simulation
+            </TabsTrigger>
           </TabsList>
         </Tabs>
 
-        <div className="flex flex-col gap-3 rounded-md border bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative w-full sm:max-w-md">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder={`Search ${currentTabIsLimit ? "limit" : "access"} policies`}
-              className="pl-9"
-            />
+        {currentTabIsSimulation ? (
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+            <PolicySimulationPanel drafts={simulationDrafts} onResult={setSimulationResult} />
+            <PolicySimulationResult result={simulationResult} />
           </div>
-          <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger className="w-full sm:w-44">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="inactive">Inactive</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        ) : (
+          <>
+            <div className="flex flex-col gap-3 rounded-md border bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="relative w-full sm:max-w-md">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder={`Search ${currentTabIsLimit ? "limit" : "access"} policies`}
+                  className="pl-9"
+                />
+              </div>
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger className="w-full sm:w-44">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-        <PolicyCard
-          title={currentTabIsLimit ? "Limit policies" : "Access policies"}
-          description={
-            currentTabIsLimit
-              ? "Reusable budgets, request caps, and token caps."
-              : "Reusable public model and provider candidate sets."
-          }
-          icon={currentTabIsLimit ? ShieldCheck : GitBranch}
-        >
-          {currentTabIsLimit ? (
-            <LimitPoliciesTable
-              policies={filteredLimitPolicies}
-              assignmentCount={assignmentCount}
-              isLoading={limitsQuery.isPending}
-              onConfigureRules={(policy) => setLimitRulesSheet({ policy })}
-              onEditPolicy={(policy) => setPolicySettingsSheet({ kind: "limit", policy })}
-              onAssign={(policy) =>
-                setAssignmentSheet({
-                  policyType: "limit",
-                  policyId: policy.id,
-                  sharedPolicyId: policy.policy_id,
-                })
+            <PolicyCard
+              title={currentTabIsLimit ? "Limit policies" : "Access policies"}
+              description={
+                currentTabIsLimit
+                  ? "Reusable budgets, request caps, and token caps."
+                  : "Reusable public model and provider candidate sets."
               }
-              canManageDefinition={canManageDefinition}
-              canAssign={canAssignPolicies}
-            />
-          ) : (
-            <AccessPoliciesTable
-              policies={filteredAccessPolicies}
-              assignmentCount={assignmentCount}
-              isLoading={accessQuery.isPending}
-              onEditPolicy={(policy) => setPolicySettingsSheet({ kind: "access", policy })}
-              onAssign={(policy) =>
-                setAssignmentSheet({
-                  policyType: "access",
-                  policyId: policy.id,
-                  sharedPolicyId: policy.policy_id,
-                })
-              }
-              canManageDefinition={canManageDefinition}
-              canAssign={canAssignPolicies}
-            />
-          )}
-        </PolicyCard>
+              icon={currentTabIsLimit ? ShieldCheck : GitBranch}
+            >
+              {currentTabIsLimit ? (
+                <LimitPoliciesTable
+                  policies={filteredLimitPolicies}
+                  assignmentCount={assignmentCount}
+                  isLoading={limitsQuery.isPending}
+                  onConfigureRules={(policy) => setLimitRulesSheet({ policy })}
+                  onEditPolicy={(policy) => setPolicySettingsSheet({ kind: "limit", policy })}
+                  onAssign={(policy) =>
+                    setAssignmentSheet({
+                      policyType: "limit",
+                      policyId: policy.id,
+                      sharedPolicyId: policy.policy_id,
+                    })
+                  }
+                  canManageDefinition={canManageDefinition}
+                  canAssign={canAssignPolicies}
+                />
+              ) : (
+                <AccessPoliciesTable
+                  policies={filteredAccessPolicies}
+                  assignmentCount={assignmentCount}
+                  isLoading={accessQuery.isPending}
+                  onEditPolicy={(policy) => setPolicySettingsSheet({ kind: "access", policy })}
+                  onAssign={(policy) =>
+                    setAssignmentSheet({
+                      policyType: "access",
+                      policyId: policy.id,
+                      sharedPolicyId: policy.policy_id,
+                    })
+                  }
+                  canManageDefinition={canManageDefinition}
+                  canAssign={canAssignPolicies}
+                />
+              )}
+            </PolicyCard>
+          </>
+        )}
       </div>
 
       <CreatePolicySheet
@@ -475,16 +504,34 @@ export function PoliciesPage() {
           setSheetKind(null);
           await invalidatePolicies();
         }}
+        onPreview={(drafts) => {
+          setSimulationDrafts(drafts);
+          setSimulationResult(null);
+          setSearchParams({ tab: "simulation" });
+          setSheetKind(null);
+        }}
       />
       <LimitRulesSheet
         state={limitRulesSheet}
         onOpenChange={(open) => !open && setLimitRulesSheet(null)}
         onChanged={invalidatePolicies}
+        onPreview={(drafts) => {
+          setSimulationDrafts(drafts);
+          setSimulationResult(null);
+          setSearchParams({ tab: "simulation" });
+          setLimitRulesSheet(null);
+        }}
       />
       <PolicySettingsSheet
         state={policySettingsSheet}
         onOpenChange={(open) => !open && setPolicySettingsSheet(null)}
         onChanged={invalidatePolicies}
+        onPreview={(drafts) => {
+          setSimulationDrafts(drafts);
+          setSimulationResult(null);
+          setSearchParams({ tab: "simulation" });
+          setPolicySettingsSheet(null);
+        }}
       />
       <AssignmentSheet
         state={assignmentSheet}
@@ -501,6 +548,8 @@ export function AccessPolicyDetailPage() {
   const queryClient = useQueryClient();
   const [policySettingsSheet, setPolicySettingsSheet] = useState<PolicySettingsSheetState>(null);
   const [assignmentSheet, setAssignmentSheet] = useState<AssignmentSheetState>(null);
+  const [simulationDrafts, setSimulationDrafts] = useState<PolicySimulationDraft[]>([]);
+  const [simulationResult, setSimulationResult] = useState<PolicySimulationResponse | null>(null);
   const policyQuery = useGetAccessPolicyApiV1PoliciesAccessPolicyIdGet(policyId, {
     query: { enabled: Boolean(policyId) },
   });
@@ -586,10 +635,22 @@ export function AccessPolicyDetailPage() {
         onChanged={invalidatePolicies}
         canManageAssignments={canAssignPolicies}
       />
+      {simulationDrafts.length > 0 ? (
+        <PolicySimulationPreviewSection
+          drafts={simulationDrafts}
+          result={simulationResult}
+          onResult={setSimulationResult}
+        />
+      ) : null}
       <PolicySettingsSheet
         state={policySettingsSheet}
         onOpenChange={(open) => !open && setPolicySettingsSheet(null)}
         onChanged={invalidatePolicies}
+        onPreview={(drafts) => {
+          setSimulationDrafts(drafts);
+          setSimulationResult(null);
+          setPolicySettingsSheet(null);
+        }}
       />
       <AssignmentSheet
         state={assignmentSheet}
@@ -607,6 +668,8 @@ export function LimitPolicyDetailPage() {
   const [limitRulesSheet, setLimitRulesSheet] = useState<LimitRulesSheetState>(null);
   const [policySettingsSheet, setPolicySettingsSheet] = useState<PolicySettingsSheetState>(null);
   const [assignmentSheet, setAssignmentSheet] = useState<AssignmentSheetState>(null);
+  const [simulationDrafts, setSimulationDrafts] = useState<PolicySimulationDraft[]>([]);
+  const [simulationResult, setSimulationResult] = useState<PolicySimulationResponse | null>(null);
   const policyQuery = useGetLimitPolicyApiV1PoliciesLimitsPolicyIdGet(policyId, {
     query: { enabled: Boolean(policyId) },
   });
@@ -698,15 +761,32 @@ export function LimitPolicyDetailPage() {
         onChanged={invalidatePolicies}
         canManageAssignments={canAssignPolicies}
       />
+      {simulationDrafts.length > 0 ? (
+        <PolicySimulationPreviewSection
+          drafts={simulationDrafts}
+          result={simulationResult}
+          onResult={setSimulationResult}
+        />
+      ) : null}
       <LimitRulesSheet
         state={limitRulesSheet}
         onOpenChange={(open) => !open && setLimitRulesSheet(null)}
         onChanged={invalidatePolicies}
+        onPreview={(drafts) => {
+          setSimulationDrafts(drafts);
+          setSimulationResult(null);
+          setLimitRulesSheet(null);
+        }}
       />
       <PolicySettingsSheet
         state={policySettingsSheet}
         onOpenChange={(open) => !open && setPolicySettingsSheet(null)}
         onChanged={invalidatePolicies}
+        onPreview={(drafts) => {
+          setSimulationDrafts(drafts);
+          setSimulationResult(null);
+          setPolicySettingsSheet(null);
+        }}
       />
       <AssignmentSheet
         state={assignmentSheet}
@@ -744,6 +824,26 @@ function PolicyCard({
       </CardHeader>
       <CardContent>{children}</CardContent>
     </Card>
+  );
+}
+
+function PolicySimulationPreviewSection({
+  drafts,
+  result,
+  onResult,
+}: {
+  drafts: PolicySimulationDraft[];
+  result: PolicySimulationResponse | null;
+  onResult: (result: PolicySimulationResponse | null) => void;
+}) {
+  return (
+    <section className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+      <div className="xl:col-span-2">
+        <h2 className="text-base font-semibold">Simulation preview</h2>
+      </div>
+      <PolicySimulationPanel drafts={drafts} onResult={onResult} />
+      <PolicySimulationResult result={result} />
+    </section>
   );
 }
 
@@ -1349,10 +1449,12 @@ function PolicySettingsSheet({
   state,
   onOpenChange,
   onChanged,
+  onPreview,
 }: {
   state: PolicySettingsSheetState;
   onOpenChange: (open: boolean) => void;
   onChanged: () => Promise<void>;
+  onPreview?: (drafts: PolicySimulationDraft[]) => void;
 }) {
   return (
     <Sheet open={Boolean(state)} onOpenChange={onOpenChange}>
@@ -1362,6 +1464,7 @@ function PolicySettingsSheet({
           state={state}
           onOpenChange={onOpenChange}
           onChanged={onChanged}
+          onPreview={onPreview}
         />
       ) : null}
     </Sheet>
@@ -1372,10 +1475,12 @@ function PolicySettingsSheetContent({
   state,
   onOpenChange,
   onChanged,
+  onPreview,
 }: {
   state: NonNullable<PolicySettingsSheetState>;
   onOpenChange: (open: boolean) => void;
   onChanged: () => Promise<void>;
+  onPreview?: (drafts: PolicySimulationDraft[]) => void;
 }) {
   const [name, setName] = useState(state.policy.name);
   const [description, setDescription] = useState(state.policy.description ?? "");
@@ -1439,6 +1544,34 @@ function PolicySettingsSheetContent({
     }
     updateLimitPolicy.mutate({ policyId: state.policy.id, data });
   };
+  const preview = () => {
+    if (!onPreview) return;
+    if (!name.trim()) return;
+    if (state.kind === "access") {
+      if (publicModels.length === 0) return;
+      onPreview([
+        buildAccessEditSimulationDraft(state.policy, {
+          name,
+          description,
+          isActive,
+          publicModels,
+        }),
+      ]);
+      return;
+    }
+    onPreview([
+      buildLimitEditSimulationDraft(state.policy, {
+        name,
+        description,
+        isActive,
+      }),
+    ]);
+  };
+  const actionDisabled =
+    !name.trim() ||
+    (state.kind === "access" && publicModels.length === 0) ||
+    updateAccessPolicy.isPending ||
+    updateLimitPolicy.isPending;
 
   return (
     <SheetContent>
@@ -1549,14 +1682,15 @@ function PolicySettingsSheetContent({
         ) : null}
       </div>
       <SheetFooter>
+        {onPreview ? (
+          <Button type="button" variant="outline" onClick={preview} disabled={actionDisabled}>
+            <Route />
+            Preview
+          </Button>
+        ) : null}
         <Button
           onClick={submit}
-          disabled={
-            !name.trim() ||
-            (state.kind === "access" && publicModels.length === 0) ||
-            updateAccessPolicy.isPending ||
-            updateLimitPolicy.isPending
-          }
+          disabled={actionDisabled}
         >
           Save policy
         </Button>
@@ -1661,10 +1795,12 @@ function CreatePolicySheet({
   kind,
   onOpenChange,
   onCreated,
+  onPreview,
 }: {
   kind: SheetKind;
   onOpenChange: (open: boolean) => void;
   onCreated: () => Promise<void>;
+  onPreview: (drafts: PolicySimulationDraft[]) => void;
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -1806,6 +1942,47 @@ function CreatePolicySheet({
       virtual_key_id: assignmentScope === "virtual_key" ? assignmentVirtualKeyId : null,
       is_active: true,
     };
+  };
+  const simulationDraft = (): PolicySimulationDraft | null => {
+    if (!name.trim()) return null;
+    if (isLimit) {
+      const rules = rulesForSubmit();
+      if (rules.length === 0) return null;
+      return {
+        kind: "limit",
+        operation: "add_policy",
+        assignment: simulationDraftAssignment(
+          assignmentScope,
+          assignmentTeamId,
+          assignmentProjectId,
+          assignmentVirtualKeyId,
+        ),
+        limit_policy: {
+          name: name.trim(),
+          description: description.trim() || null,
+          rules: rules.map(ruleInput),
+          is_active: true,
+        },
+      };
+    }
+    const routes = accessRoutesForSubmit();
+    if (routes.length === 0) return null;
+    return buildAccessCreateSimulationDraft({
+      name,
+      description,
+      publicModels: routes.flatMap(toPublicModelInputs),
+      assignment: simulationDraftAssignment(
+        assignmentScope,
+        assignmentTeamId,
+        assignmentProjectId,
+        assignmentVirtualKeyId,
+      ),
+    });
+  };
+  const preview = () => {
+    const draft = simulationDraft();
+    if (!draft) return;
+    onPreview([draft]);
   };
   const submit = async () => {
     if (!name.trim()) return;
@@ -2110,6 +2287,10 @@ function CreatePolicySheet({
           ) : null}
         </div>
         <SheetFooter>
+          <Button type="button" variant="outline" onClick={preview} disabled={!canSubmit}>
+            <Route />
+            Preview in simulation
+          </Button>
           <Button
             onClick={submit}
             disabled={
@@ -2130,14 +2311,16 @@ function CreatePolicySheet({
   );
 }
 
-function LimitRulesSheet({
+export function LimitRulesSheet({
   state,
   onOpenChange,
   onChanged,
+  onPreview,
 }: {
   state: LimitRulesSheetState;
   onOpenChange: (open: boolean) => void;
   onChanged: () => Promise<void>;
+  onPreview?: (drafts: PolicySimulationDraft[]) => void;
 }) {
   const [editingRule, setEditingRule] = useState<LimitPolicyRuleResponse | null>(null);
   const [name, setName] = useState("Rule");
@@ -2236,6 +2419,18 @@ function LimitRulesSheet({
     }
     createRule.mutate({ policyId: state.policy.id, data: rulePayload });
   };
+  const previewCurrentRule = () => {
+    if (!state || !onPreview || !name.trim() || !hasAnyLimit) return;
+    onPreview([
+      editingRule
+        ? buildLimitRuleEditSimulationDraft(state.policy, editingRule.id, rulePayload)
+        : buildLimitRuleAddSimulationDraft(state.policy, rulePayload),
+    ]);
+  };
+  const previewDeleteRule = (rule: LimitPolicyRuleResponse) => {
+    if (!state || !onPreview) return;
+    onPreview([buildLimitRuleDeleteSimulationDraft(state.policy, rule.id)]);
+  };
   return (
     <Sheet
       open={Boolean(state)}
@@ -2295,6 +2490,16 @@ function LimitRulesSheet({
                             >
                               <SlidersHorizontal />
                             </Button>
+                            {onPreview ? (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label={`Preview delete ${rule.name}`}
+                                onClick={() => previewDeleteRule(rule)}
+                              >
+                                <Route />
+                              </Button>
+                            ) : null}
                             <Button
                               variant="ghost"
                               size="icon"
@@ -2347,6 +2552,17 @@ function LimitRulesSheet({
           ) : null}
         </div>
         <SheetFooter>
+          {onPreview ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={previewCurrentRule}
+              disabled={!name.trim() || !hasAnyLimit}
+            >
+              <Route />
+              Preview
+            </Button>
+          ) : null}
           <Button
             onClick={submit}
             disabled={!name.trim() || !hasAnyLimit || createRule.isPending || updateRule.isPending}
@@ -2798,6 +3014,21 @@ function assignmentTargetReady(
   if (scopeType === "project") return Boolean(projectId);
   if (scopeType === "virtual_key") return Boolean(projectId && virtualKeyId);
   return true;
+}
+
+function simulationDraftAssignment(
+  scopeType: string,
+  teamId: string,
+  projectId: string,
+  virtualKeyId: string,
+): PolicySimulationDraft["assignment"] {
+  if (scopeType === "none") return null;
+  return {
+    scope_type: scopeType as NonNullable<PolicySimulationDraft["assignment"]>["scope_type"],
+    team_id: scopeType === "team" ? teamId : null,
+    project_id: scopeType === "project" ? projectId : null,
+    virtual_key_id: scopeType === "virtual_key" ? virtualKeyId : null,
+  };
 }
 
 function createAccessOptionsParams(
