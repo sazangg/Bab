@@ -23,6 +23,7 @@ from app.modules.guardrails.evaluation import (
     evaluate_guardrail_rules_readonly,
 )
 from app.modules.guardrails.internal import repository as guardrails_repository
+from app.modules.guardrails.internal.models import GuardrailPolicy, GuardrailRule
 from app.modules.guardrails.schemas import (
     CreateGuardrailAssignmentRequest,
     CreateGuardrailPolicyRequest,
@@ -34,7 +35,7 @@ from app.modules.guardrails.schemas import (
     UpdateGuardrailPolicyRequest,
 )
 from app.modules.keys.internal.models import Project, VirtualKey
-from app.modules.policies.internal import repository as policies_repository
+from app.modules.policy_kernel import repository as policy_kernel_repository
 
 
 async def _create_actor_scope(db_session: AsyncSession):
@@ -334,7 +335,7 @@ async def test_guardrail_policy_updates_create_new_active_revision(
     )
     assert stored_policy is not None
     assert stored_policy.policy_id is not None
-    shared_revision = await policies_repository.get_active_policy_revision(
+    shared_revision = await policy_kernel_repository.get_active_policy_revision(
         org_id=scope.org_id,
         policy_id=stored_policy.policy_id,
         db=db_session,
@@ -345,7 +346,73 @@ async def test_guardrail_policy_updates_create_new_active_revision(
     assert [rule.values for rule in updated.rules] == [["classified"]]
 
 
-async def test_guardrail_assignments_dual_write_shared_temporal_assignment(
+async def test_guardrail_policy_and_rules_require_shared_lifecycle_rows(
+    db_session: AsyncSession,
+) -> None:
+    actor, scope, _team = await _create_actor_scope(db_session)
+
+    policy = await guardrails_facade.create_policy(
+        payload=CreateGuardrailPolicyRequest(
+            name="Required shared lifecycle",
+            rules=[
+                GuardrailRuleInput(
+                    rule_type="prompt_contains",
+                    effect="deny",
+                    values=["secret"],
+                )
+            ],
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    stored_policy = await guardrails_repository.get_policy(
+        policy_id=policy.id,
+        org_id=scope.org_id,
+        db=db_session,
+    )
+    assert stored_policy is not None
+    assert stored_policy.policy_id is not None
+    active_revision = await policy_kernel_repository.get_active_policy_revision(
+        org_id=scope.org_id,
+        policy_id=stored_policy.policy_id,
+        db=db_session,
+    )
+    assert active_revision is not None
+    assert policy.rules[0].policy_revision_id == active_revision.id
+    stored_policy_id = stored_policy.id
+
+    db_session.add(
+        GuardrailPolicy(
+            org_id=scope.org_id,
+            name="Missing shared policy",
+            enforcement_mode="enforce",
+            is_active=True,
+        )
+    )
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+    await db_session.rollback()
+
+    db_session.add(
+        GuardrailRule(
+            org_id=scope.org_id,
+            policy_id=stored_policy_id,
+            rule_type="prompt_contains",
+            effect="deny",
+            phase="both",
+            values=["orphan"],
+            config={},
+            priority=100,
+            is_active=True,
+        )
+    )
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+    await db_session.rollback()
+
+
+async def test_guardrail_policy_assignment_is_canonical_assignment_record(
     db_session: AsyncSession,
 ) -> None:
     actor, scope, team = await _create_actor_scope(db_session)
@@ -381,18 +448,18 @@ async def test_guardrail_assignments_dual_write_shared_temporal_assignment(
         org_id=scope.org_id,
         db=db_session,
     )
-    assert stored_assignment is not None
-    assert stored_assignment.policy_assignment_id is not None
-    shared_assignment = await policies_repository.get_policy_assignment(
-        assignment_id=stored_assignment.policy_assignment_id,
+    canonical_assignment = await policy_kernel_repository.get_policy_assignment(
+        assignment_id=assignment.id,
         org_id=scope.org_id,
         db=db_session,
     )
-    assert shared_assignment is not None
-    assert shared_assignment.policy_type == "guardrail"
-    assert shared_assignment.mode == "dry_run"
-    assert shared_assignment.scope_target_key == f"team:{team.id}"
-    assert shared_assignment.effective_to is None
+    assert stored_assignment is not None
+    assert canonical_assignment is not None
+    assert stored_assignment.id == canonical_assignment.id == assignment.id
+    assert canonical_assignment.policy_type == "guardrail"
+    assert canonical_assignment.mode == "dry_run"
+    assert canonical_assignment.scope_target_key == f"team:{team.id}"
+    assert canonical_assignment.effective_to is None
 
     updated = await guardrails_facade.update_assignment(
         assignment_id=assignment.id,
@@ -401,24 +468,94 @@ async def test_guardrail_assignments_dual_write_shared_temporal_assignment(
         scope=scope,
         db=db_session,
     )
-    updated_assignment = await guardrails_repository.get_assignment(
+    await db_session.refresh(canonical_assignment)
+    replacement = await policy_kernel_repository.get_policy_assignment(
         assignment_id=updated.id,
         org_id=scope.org_id,
         db=db_session,
     )
-    assert updated_assignment is not None
-    assert updated_assignment.policy_assignment_id is not None
-    assert updated_assignment.policy_assignment_id != shared_assignment.id
-    await db_session.refresh(shared_assignment)
-    replacement = await policies_repository.get_policy_assignment(
-        assignment_id=updated_assignment.policy_assignment_id,
+    assert updated.id != assignment.id
+    assert canonical_assignment.effective_to is not None
+    assert canonical_assignment.superseded_by_assignment_id == replacement.id
+    assert replacement.mode == "enforce"
+    assert replacement.effective_to is None
+
+
+async def test_guardrail_assignment_update_keeps_shared_assignment_scope_in_sync(
+    db_session: AsyncSession,
+) -> None:
+    actor, scope, team = await _create_actor_scope(db_session)
+    other_team = Team(org_id=scope.org_id, name="Platform 2", slug=f"platform-2-{uuid4()}")
+    db_session.add(other_team)
+    await db_session.flush()
+    project = Project(
+        org_id=scope.org_id,
+        team_id=other_team.id,
+        created_by=actor.id,
+        name="Moved project",
+        slug=f"moved-{uuid4()}",
+    )
+    db_session.add(project)
+    await db_session.flush()
+    policy = await guardrails_facade.create_policy(
+        payload=CreateGuardrailPolicyRequest(
+            name="Assignment scope sync",
+            rules=[GuardrailRuleInput(rule_type="prompt_contains", effect="deny", values=["x"])],
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    assignment = await guardrails_facade.create_assignment(
+        payload=CreateGuardrailAssignmentRequest(
+            policy_id=policy.id,
+            scope_type="team",
+            team_id=team.id,
+            enforcement_mode="dry_run",
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    original_shared = await policy_kernel_repository.get_policy_assignment(
+        assignment_id=assignment.id,
         org_id=scope.org_id,
         db=db_session,
     )
-    assert shared_assignment.effective_to is not None
-    assert shared_assignment.superseded_by_assignment_id == replacement.id
+
+    updated = await guardrails_facade.update_assignment(
+        assignment_id=assignment.id,
+        payload=UpdateGuardrailAssignmentRequest(
+            scope_type="project",
+            project_id=project.id,
+            enforcement_mode="enforce",
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    stored = await guardrails_repository.get_assignment(
+        assignment_id=updated.id,
+        org_id=scope.org_id,
+        db=db_session,
+    )
+    replacement = await policy_kernel_repository.get_policy_assignment(
+        assignment_id=updated.id,
+        org_id=scope.org_id,
+        db=db_session,
+    )
+
+    await db_session.refresh(original_shared)
+    assert original_shared.is_active is False
+    assert original_shared.effective_to is not None
+    assert original_shared.superseded_by_assignment_id == replacement.id
+    assert stored.scope_type == replacement.scope_type == "project"
+    assert stored.team_id is None and replacement.team_id is None
+    assert stored.project_id == replacement.project_id == project.id
+    assert stored.virtual_key_id is None and replacement.virtual_key_id is None
+    assert replacement.scope_target_key == f"project:{project.id}"
     assert replacement.mode == "enforce"
-    assert replacement.effective_to is None
+    assert replacement.is_active is True
 
 
 async def test_guardrail_runtime_ignores_closed_shared_assignment(
@@ -455,8 +592,8 @@ async def test_guardrail_runtime_ignores_closed_shared_assignment(
         org_id=scope.org_id,
         db=db_session,
     )
-    shared_assignment = await policies_repository.get_policy_assignment(
-        assignment_id=stored_assignment.policy_assignment_id,
+    shared_assignment = await policy_kernel_repository.get_policy_assignment(
+        assignment_id=stored_assignment.id,
         org_id=scope.org_id,
         db=db_session,
     )
@@ -1136,9 +1273,8 @@ async def test_deleted_assignment_no_longer_enforces_policy(db_session: AsyncSes
         db=db_session,
     )
     assert stored_assignment is not None
-    assert stored_assignment.policy_assignment_id is not None
-    shared_assignment = await policies_repository.get_policy_assignment(
-        assignment_id=stored_assignment.policy_assignment_id,
+    shared_assignment = await policy_kernel_repository.get_policy_assignment(
+        assignment_id=stored_assignment.id,
         org_id=scope.org_id,
         db=db_session,
     )
@@ -1195,8 +1331,8 @@ async def test_deleted_policy_closes_shared_assignments(
         org_id=scope.org_id,
         db=db_session,
     )
-    shared_assignment = await policies_repository.get_policy_assignment(
-        assignment_id=stored_assignment.policy_assignment_id,
+    shared_assignment = await policy_kernel_repository.get_policy_assignment(
+        assignment_id=stored_assignment.id,
         org_id=scope.org_id,
         db=db_session,
     )
@@ -1215,14 +1351,21 @@ async def test_deleted_policy_closes_shared_assignments(
     )
 
     await db_session.refresh(shared_assignment)
-    shared_policy = await policies_repository.get_policy(
+    shared_policy = await policy_kernel_repository.get_policy(
         org_id=scope.org_id,
         policy_id=shared_policy_id,
+        db=db_session,
+    )
+    stored_policy_after_delete = await guardrails_repository.get_policy(
+        policy_id=policy.id,
+        org_id=scope.org_id,
         db=db_session,
     )
     assert shared_assignment.effective_to is not None
     assert shared_assignment.is_active is False
     assert shared_policy.is_active is False
+    assert stored_policy_after_delete is not None
+    assert stored_policy_after_delete.is_active is False
 
 
 async def test_guardrail_impact_reports_assignment_targets(db_session: AsyncSession) -> None:

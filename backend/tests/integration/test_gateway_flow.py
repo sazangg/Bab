@@ -560,10 +560,12 @@ async def test_limit_committed_usage_migration_backfills_historical_json_usage(
         "team": "00000000000000000000000000000003",
         "project": "00000000000000000000000000000004",
         "virtual_key": "00000000000000000000000000000005",
-        "provider": "00000000000000000000000000000006",
-        "pool": "00000000000000000000000000000007",
-        "policy": "00000000000000000000000000000008",
-        "first_rule": "00000000000000000000000000000009",
+            "provider": "00000000000000000000000000000006",
+            "pool": "00000000000000000000000000000007",
+            "policy": "00000000000000000000000000000008",
+            "shared_policy": "00000000000000000000000000000018",
+            "revision": "00000000000000000000000000000019",
+            "first_rule": "00000000000000000000000000000009",
         "second_rule": "0000000000000000000000000000000a",
         "first_assignment": "0000000000000000000000000000000b",
         "second_assignment": "0000000000000000000000000000000c",
@@ -650,24 +652,53 @@ async def test_limit_committed_usage_migration_backfills_historical_json_usage(
         )
         await connection.execute(
             text(
-                "insert into limit_policies (id, org_id, name, is_active, created_at, updated_at) "
-                "values (:id, :org_id, 'Limit', 1, :now, :now)"
+                "insert into policies (id, org_id, kind, name, is_active, created_at, updated_at) "
+                "values (:id, :org_id, 'limit', 'Limit', 1, :now, :now)"
             ),
-            {"id": ids["policy"], "org_id": ids["org"], "now": now},
+            {"id": ids["shared_policy"], "org_id": ids["org"], "now": now},
+        )
+        await connection.execute(
+            text(
+                "insert into policy_revisions "
+                "(id, org_id, policy_id, revision_number, status, created_at, activated_at) "
+                "values (:id, :org_id, :policy_id, 1, 'active', :now, :now)"
+            ),
+            {
+                "id": ids["revision"],
+                "org_id": ids["org"],
+                "policy_id": ids["shared_policy"],
+                "now": now,
+            },
+        )
+        await connection.execute(
+            text(
+                "insert into limit_policies "
+                "(id, policy_id, org_id, name, is_active, created_at, updated_at) "
+                "values (:id, :policy_id, :org_id, 'Limit', 1, :now, :now)"
+            ),
+            {
+                "id": ids["policy"],
+                "policy_id": ids["shared_policy"],
+                "org_id": ids["org"],
+                "now": now,
+            },
         )
         for rule_id, value in ((ids["first_rule"], 100), (ids["second_rule"], 200)):
             await connection.execute(
                 text(
                     "insert into limit_policy_rules "
-                    "(id, org_id, limit_policy_id, name, limit_type, limit_value, "
+                    "(id, org_id, limit_policy_id, policy_revision_id, name, "
+                    "limit_type, limit_value, "
                     "interval_unit, interval_count, is_active, created_at, updated_at) "
-                    "values (:id, :org_id, :policy_id, 'Requests', 'requests', :value, "
+                    "values (:id, :org_id, :policy_id, :revision_id, "
+                    "'Requests', 'requests', :value, "
                     "'day', 1, 1, :now, :now)"
                 ),
                 {
                     "id": rule_id,
                     "org_id": ids["org"],
                     "policy_id": ids["policy"],
+                    "revision_id": ids["revision"],
                     "value": value,
                     "now": now,
                 },
@@ -691,15 +722,16 @@ async def test_limit_committed_usage_migration_backfills_historical_json_usage(
             await connection.execute(
                 text(
                     "insert into policy_assignments "
-                    f"(id, org_id, policy_type, limit_policy_id, scope_type, {target_column}, "
+                    f"(id, org_id, policy_id, policy_type, scope_type, {target_column}, "
                     "scope_target_key, mode, is_active, created_at, updated_at) "
-                    "values (:id, :org_id, 'limit', :policy_id, :scope_type, :target_id, "
+                    "values (:id, :org_id, :shared_policy_id, 'limit', "
+                    ":scope_type, :target_id, "
                     ":scope_target_key, 'enforce', 1, :now, :now)"
                 ),
                 {
                     "id": assignment_id,
                     "org_id": ids["org"],
-                    "policy_id": ids["policy"],
+                    "shared_policy_id": ids["shared_policy"],
                     "scope_type": scope_type,
                     "target_id": target_id,
                     "scope_target_key": scope_target_key,

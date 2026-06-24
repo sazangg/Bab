@@ -10,7 +10,8 @@ from app.core.config import settings
 from app.core.request_ids import current_request_id
 from app.modules.auth.internal.models import Team
 from app.modules.keys.internal.models import Project, VirtualKey
-from app.modules.policies.internal.models import LimitPolicy, LimitPolicyRule, Policy
+from app.modules.policies.internal.models import LimitPolicy, LimitPolicyRule
+from app.modules.policy_kernel.models import Policy
 from app.modules.providers.internal.models import CredentialPool, Provider, ProviderCredential
 from app.modules.usage.accounting import UsageAccounting, subtract_months
 from app.modules.usage.internal.models import (

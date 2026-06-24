@@ -9,6 +9,7 @@ import type { GuardrailRuleResponse } from './guardrailRuleResponse';
 export interface GuardrailPolicyResponse {
   id: string;
   org_id: string;
+  policy_id: string;
   name: string;
   description: string | null;
   enforcement_mode: string;

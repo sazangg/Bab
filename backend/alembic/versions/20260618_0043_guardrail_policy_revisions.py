@@ -23,7 +23,9 @@ def upgrade() -> None:
         return
     with op.batch_alter_table("guardrail_policies") as batch_op:
         if not _has_column("guardrail_policies", "policy_id"):
-            batch_op.add_column(sa.Column("policy_id", sa.Uuid(), nullable=True))
+            batch_op.add_column(sa.Column("policy_id", sa.Uuid(), nullable=False))
+        else:
+            batch_op.alter_column("policy_id", existing_type=sa.Uuid(), nullable=False)
         if not _has_fk("guardrail_policies", "fk_guardrail_policies_policy_id_policies"):
             batch_op.create_foreign_key(
                 "fk_guardrail_policies_policy_id_policies",
@@ -34,7 +36,13 @@ def upgrade() -> None:
             )
     with op.batch_alter_table("guardrail_rules") as batch_op:
         if not _has_column("guardrail_rules", "policy_revision_id"):
-            batch_op.add_column(sa.Column("policy_revision_id", sa.Uuid(), nullable=True))
+            batch_op.add_column(sa.Column("policy_revision_id", sa.Uuid(), nullable=False))
+        else:
+            batch_op.alter_column(
+                "policy_revision_id",
+                existing_type=sa.Uuid(),
+                nullable=False,
+            )
         if not _has_fk(
             "guardrail_rules",
             "fk_guardrail_rules_policy_revision_id_policy_revisions",

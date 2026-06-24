@@ -9,7 +9,7 @@ import type { AccessPolicyPublicModelResponse } from './accessPolicyPublicModelR
 export interface AccessPolicyResponse {
   id: string;
   org_id: string;
-  policy_id: string | null;
+  policy_id: string;
   name: string;
   description: string | null;
   owning_scope_type: string | null;

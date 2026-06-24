@@ -119,8 +119,6 @@ def upgrade() -> None:
             sa.Column("id", sa.Uuid(), nullable=False),
             sa.Column("org_id", sa.Uuid(), nullable=False),
             sa.Column("policy_type", sa.String(length=20), nullable=False),
-            sa.Column("access_policy_id", sa.Uuid(), nullable=True),
-            sa.Column("limit_policy_id", sa.Uuid(), nullable=True),
             sa.Column("scope_type", sa.String(length=20), nullable=False),
             sa.Column("team_id", sa.Uuid(), nullable=True),
             sa.Column("project_id", sa.Uuid(), nullable=True),
@@ -128,10 +126,6 @@ def upgrade() -> None:
             sa.Column("is_active", sa.Boolean(), nullable=False),
             sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
             sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-            sa.ForeignKeyConstraint(
-                ["access_policy_id"], ["access_policies.id"], ondelete="CASCADE"
-            ),
-            sa.ForeignKeyConstraint(["limit_policy_id"], ["limit_policies.id"], ondelete="CASCADE"),
             sa.ForeignKeyConstraint(["org_id"], ["organizations.id"], ondelete="RESTRICT"),
             sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="CASCADE"),
             sa.ForeignKeyConstraint(["team_id"], ["teams.id"], ondelete="CASCADE"),
@@ -141,8 +135,6 @@ def upgrade() -> None:
         for column_name in (
             "org_id",
             "policy_type",
-            "access_policy_id",
-            "limit_policy_id",
             "scope_type",
             "team_id",
             "project_id",

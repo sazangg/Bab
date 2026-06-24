@@ -12,9 +12,8 @@ class GuardrailPolicy(Base):
     __tablename__ = "guardrail_policies"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    policy_id: Mapped[UUID | None] = mapped_column(
+    policy_id: Mapped[UUID] = mapped_column(
         ForeignKey("policies.id", ondelete="CASCADE"),
-        nullable=True,
         unique=True,
         index=True,
     )
@@ -49,9 +48,8 @@ class GuardrailRule(Base):
         ForeignKey("guardrail_policies.id", ondelete="CASCADE"),
         index=True,
     )
-    policy_revision_id: Mapped[UUID | None] = mapped_column(
+    policy_revision_id: Mapped[UUID] = mapped_column(
         ForeignKey("policy_revisions.id", ondelete="CASCADE"),
-        nullable=True,
         index=True,
     )
     rule_type: Mapped[str] = mapped_column(String(50), index=True)
@@ -93,40 +91,6 @@ class GuardrailRuleMatcher(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
-    )
-
-
-class GuardrailAssignment(Base):
-    __tablename__ = "guardrail_assignments"
-
-    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    org_id: Mapped[UUID] = mapped_column(
-        ForeignKey("organizations.id", ondelete="RESTRICT"),
-        index=True,
-    )
-    policy_id: Mapped[UUID] = mapped_column(
-        ForeignKey("guardrail_policies.id", ondelete="CASCADE"),
-        index=True,
-    )
-    policy_assignment_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("policy_assignments.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
-    scope_type: Mapped[str] = mapped_column(String(50), index=True)
-    team_id: Mapped[UUID | None] = mapped_column(nullable=True, index=True)
-    project_id: Mapped[UUID | None] = mapped_column(nullable=True, index=True)
-    virtual_key_id: Mapped[UUID | None] = mapped_column(nullable=True, index=True)
-    enforcement_mode: Mapped[str] = mapped_column(String(50), default="enforce", index=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
-        onupdate=lambda: datetime.now(UTC),
     )
 
 

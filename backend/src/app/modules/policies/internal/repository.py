@@ -1,7 +1,6 @@
-from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import and_, delete, func, or_, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.auth.internal.models import Team
@@ -14,118 +13,8 @@ from app.modules.policies.internal.models import (
     LimitPolicyRule,
     LimitPolicyRuleMatcher,
     LimitPolicyRulePartition,
-    Policy,
-    PolicyAssignment,
-    PolicyRevision,
 )
-
-
-async def create_policy(
-    *,
-    org_id: UUID,
-    kind: str,
-    name: str,
-    description: str | None,
-    db: AsyncSession,
-) -> Policy:
-    policy = Policy(
-        org_id=org_id,
-        kind=kind,
-        name=name,
-        description=description,
-    )
-    db.add(policy)
-    await db.flush()
-    return policy
-
-
-async def create_policy_revision(
-    *,
-    org_id: UUID,
-    policy_id: UUID,
-    revision_number: int,
-    status: str,
-    created_by: UUID | None,
-    db: AsyncSession,
-) -> PolicyRevision:
-    revision = PolicyRevision(
-        org_id=org_id,
-        policy_id=policy_id,
-        revision_number=revision_number,
-        status=status,
-        created_by=created_by,
-    )
-    db.add(revision)
-    await db.flush()
-    return revision
-
-
-async def get_active_policy_revision(
-    *,
-    org_id: UUID,
-    policy_id: UUID,
-    db: AsyncSession,
-) -> PolicyRevision | None:
-    return await db.scalar(
-        select(PolicyRevision).where(
-            PolicyRevision.org_id == org_id,
-            PolicyRevision.policy_id == policy_id,
-            PolicyRevision.status == "active",
-        )
-    )
-
-
-async def get_latest_policy_revision(
-    *, org_id: UUID, policy_id: UUID, db: AsyncSession
-) -> PolicyRevision | None:
-    return await db.scalar(
-        select(PolicyRevision)
-        .where(PolicyRevision.org_id == org_id, PolicyRevision.policy_id == policy_id)
-        .order_by(PolicyRevision.revision_number.desc())
-        .limit(1)
-    )
-
-
-async def archive_active_policy_revision(
-    *,
-    org_id: UUID,
-    policy_id: UUID,
-    db: AsyncSession,
-) -> PolicyRevision | None:
-    revision = await get_active_policy_revision(org_id=org_id, policy_id=policy_id, db=db)
-    if revision is None:
-        return None
-    revision.status = "archived"
-    revision.archived_at = datetime.now(UTC)
-    await db.flush()
-    return revision
-
-
-async def get_policy(*, org_id: UUID, policy_id: UUID, db: AsyncSession) -> Policy | None:
-    return await db.scalar(
-        select(Policy).where(
-            Policy.org_id == org_id,
-            Policy.id == policy_id,
-        )
-    )
-
-
-def policy_assignment_scope_target_key(
-    *,
-    scope_type: str,
-    team_id: UUID | None,
-    project_id: UUID | None,
-    virtual_key_id: UUID | None,
-) -> str:
-    if scope_type == "org":
-        return "org"
-    if scope_type == "team" and team_id is not None:
-        return f"team:{team_id}"
-    if scope_type == "project" and project_id is not None:
-        return f"project:{project_id}"
-    if scope_type == "virtual_key" and virtual_key_id is not None:
-        return f"virtual_key:{virtual_key_id}"
-    raise ValueError("scope target key requires the matching scoped id")
+from app.modules.policy_kernel.models import PolicyRevision
 
 
 async def create_access_policy(
@@ -134,7 +23,7 @@ async def create_access_policy(
     name: str,
     description: str | None,
     is_active: bool,
-    policy_id: UUID | None = None,
+    policy_id: UUID,
     owning_scope_type: str | None = None,
     owning_team_id: UUID | None = None,
     owning_project_id: UUID | None = None,
@@ -195,7 +84,7 @@ async def create_access_policy_public_model(
     max_route_attempts: int | None,
     is_active: bool,
     db: AsyncSession,
-    policy_revision_id: UUID | None = None,
+    policy_revision_id: UUID,
 ) -> AccessPolicyPublicModel:
     public_model = AccessPolicyPublicModel(
         org_id=org_id,
@@ -276,10 +165,12 @@ async def delete_access_policy_public_models(
     *, org_id: UUID, access_policy_id: UUID, db: AsyncSession
 ) -> None:
     await db.execute(
-        delete(AccessPolicyPublicModel).where(
+        update(AccessPolicyPublicModel)
+        .where(
             AccessPolicyPublicModel.org_id == org_id,
             AccessPolicyPublicModel.access_policy_id == access_policy_id,
         )
+        .values(access_policy_id=None)
     )
     await db.flush()
 
@@ -360,7 +251,7 @@ async def create_limit_policy(
     org_id: UUID,
     values: dict,
     db: AsyncSession,
-    policy_id: UUID | None = None,
+    policy_id: UUID,
 ) -> LimitPolicy:
     policy = LimitPolicy(org_id=org_id, policy_id=policy_id, **values)
     db.add(policy)
@@ -402,7 +293,7 @@ async def create_limit_policy_rule(
     limit_policy_id: UUID,
     values: dict,
     db: AsyncSession,
-    policy_revision_id: UUID | None = None,
+    policy_revision_id: UUID,
 ) -> LimitPolicyRule:
     rule = LimitPolicyRule(
         org_id=org_id,
@@ -420,9 +311,15 @@ async def list_limit_policy_rules(
 ) -> list[LimitPolicyRule]:
     result = await db.scalars(
         select(LimitPolicyRule)
+        .join(LimitPolicy, LimitPolicy.id == LimitPolicyRule.limit_policy_id)
+        .join(PolicyRevision, PolicyRevision.policy_id == LimitPolicy.policy_id)
         .where(
             LimitPolicyRule.org_id == org_id,
             LimitPolicyRule.limit_policy_id == limit_policy_id,
+            LimitPolicy.org_id == org_id,
+            PolicyRevision.org_id == org_id,
+            PolicyRevision.status == "active",
+            LimitPolicyRule.policy_revision_id == PolicyRevision.id,
         )
         .order_by(LimitPolicyRule.created_at.asc())
     )
@@ -545,62 +442,6 @@ async def delete_limit_policy_rule_partitions(
     )
 
 
-async def create_policy_assignment(
-    *,
-    org_id: UUID,
-    values: dict,
-    db: AsyncSession,
-) -> PolicyAssignment:
-    assignment = PolicyAssignment(org_id=org_id, **values)
-    db.add(assignment)
-    await db.flush()
-    return assignment
-
-
-async def find_active_policy_assignment_for_scope(
-    *,
-    org_id: UUID,
-    policy_id: UUID | None = None,
-    policy_type: str,
-    access_policy_id: UUID | None,
-    limit_policy_id: UUID | None,
-    scope_type: str,
-    team_id: UUID | None,
-    project_id: UUID | None,
-    virtual_key_id: UUID | None,
-    db: AsyncSession,
-) -> PolicyAssignment | None:
-    now = datetime.now(UTC)
-    return await db.scalar(
-        select(PolicyAssignment).where(
-            PolicyAssignment.org_id == org_id,
-            PolicyAssignment.policy_id.is_(None)
-            if policy_id is None
-            else PolicyAssignment.policy_id == policy_id,
-            PolicyAssignment.policy_type == policy_type,
-            PolicyAssignment.access_policy_id.is_(None)
-            if access_policy_id is None
-            else PolicyAssignment.access_policy_id == access_policy_id,
-            PolicyAssignment.limit_policy_id.is_(None)
-            if limit_policy_id is None
-            else PolicyAssignment.limit_policy_id == limit_policy_id,
-            PolicyAssignment.scope_type == scope_type,
-            PolicyAssignment.team_id.is_(None)
-            if team_id is None
-            else PolicyAssignment.team_id == team_id,
-            PolicyAssignment.project_id.is_(None)
-            if project_id is None
-            else PolicyAssignment.project_id == project_id,
-            PolicyAssignment.virtual_key_id.is_(None)
-            if virtual_key_id is None
-            else PolicyAssignment.virtual_key_id == virtual_key_id,
-            PolicyAssignment.is_active.is_(True),
-            or_(PolicyAssignment.effective_from.is_(None), PolicyAssignment.effective_from <= now),
-            or_(PolicyAssignment.effective_to.is_(None), PolicyAssignment.effective_to > now),
-        )
-    )
-
-
 async def get_team(*, org_id: UUID, team_id: UUID, db: AsyncSession) -> Team | None:
     return await db.scalar(select(Team).where(Team.org_id == org_id, Team.id == team_id))
 
@@ -617,178 +458,6 @@ async def get_virtual_key(
     return await db.scalar(
         select(VirtualKey).where(VirtualKey.org_id == org_id, VirtualKey.id == virtual_key_id)
     )
-
-
-async def list_policy_assignments(*, org_id: UUID, db: AsyncSession) -> list[PolicyAssignment]:
-    result = await db.scalars(
-        select(PolicyAssignment)
-        .where(PolicyAssignment.org_id == org_id)
-        .order_by(PolicyAssignment.created_at.desc())
-    )
-    return list(result)
-
-
-async def delete_assignments_for_access_policy(
-    *, org_id: UUID, access_policy_id: UUID, db: AsyncSession
-) -> None:
-    await db.execute(
-        delete(PolicyAssignment).where(
-            PolicyAssignment.org_id == org_id,
-            PolicyAssignment.access_policy_id == access_policy_id,
-        )
-    )
-
-
-async def close_assignments_for_access_policy(
-    *, org_id: UUID, access_policy_id: UUID, closed_at: datetime, db: AsyncSession
-) -> None:
-    await db.execute(
-        update(PolicyAssignment)
-        .where(
-            PolicyAssignment.org_id == org_id,
-            PolicyAssignment.access_policy_id == access_policy_id,
-            PolicyAssignment.is_active.is_(True),
-            or_(PolicyAssignment.effective_to.is_(None), PolicyAssignment.effective_to > closed_at),
-        )
-        .values(is_active=False, effective_to=closed_at)
-    )
-
-
-async def delete_assignments_for_limit_policy(
-    *, org_id: UUID, limit_policy_id: UUID, db: AsyncSession
-) -> None:
-    await db.execute(
-        delete(PolicyAssignment).where(
-            PolicyAssignment.org_id == org_id,
-            PolicyAssignment.limit_policy_id == limit_policy_id,
-        )
-    )
-
-
-async def close_assignments_for_limit_policy(
-    *, org_id: UUID, limit_policy_id: UUID, closed_at: datetime, db: AsyncSession
-) -> None:
-    await db.execute(
-        update(PolicyAssignment)
-        .where(
-            PolicyAssignment.org_id == org_id,
-            PolicyAssignment.limit_policy_id == limit_policy_id,
-            PolicyAssignment.is_active.is_(True),
-            or_(PolicyAssignment.effective_to.is_(None), PolicyAssignment.effective_to > closed_at),
-        )
-        .values(is_active=False, effective_to=closed_at)
-    )
-
-
-async def list_active_policy_assignments_for_scope(
-    *,
-    org_id: UUID,
-    scope_type: str,
-    policy_type: str,
-    db: AsyncSession,
-) -> list[PolicyAssignment]:
-    now = datetime.now(UTC)
-    result = await db.scalars(
-        select(PolicyAssignment)
-        .where(
-            PolicyAssignment.org_id == org_id,
-            PolicyAssignment.scope_type == scope_type,
-            PolicyAssignment.policy_type == policy_type,
-            PolicyAssignment.is_active.is_(True),
-            or_(PolicyAssignment.effective_from.is_(None), PolicyAssignment.effective_from <= now),
-            or_(PolicyAssignment.effective_to.is_(None), PolicyAssignment.effective_to > now),
-        )
-        .order_by(PolicyAssignment.created_at)
-    )
-    return list(result)
-
-
-async def list_active_policy_assignments_for_targets(
-    *,
-    org_id: UUID,
-    team_id: UUID,
-    project_id: UUID,
-    virtual_key_id: UUID | None,
-    policy_type: str,
-    db: AsyncSession,
-) -> list[PolicyAssignment]:
-    now = datetime.now(UTC)
-    target_filters = [
-        PolicyAssignment.scope_type == "org",
-        and_(PolicyAssignment.scope_type == "team", PolicyAssignment.team_id == team_id),
-        and_(PolicyAssignment.scope_type == "project", PolicyAssignment.project_id == project_id),
-    ]
-    if virtual_key_id is not None:
-        target_filters.append(
-            and_(
-                PolicyAssignment.scope_type == "virtual_key",
-                PolicyAssignment.virtual_key_id == virtual_key_id,
-            )
-        )
-    result = await db.scalars(
-        select(PolicyAssignment)
-        .where(
-            PolicyAssignment.org_id == org_id,
-            PolicyAssignment.policy_type == policy_type,
-            PolicyAssignment.is_active.is_(True),
-            or_(PolicyAssignment.effective_from.is_(None), PolicyAssignment.effective_from <= now),
-            or_(PolicyAssignment.effective_to.is_(None), PolicyAssignment.effective_to > now),
-            or_(*target_filters),
-        )
-        .order_by(PolicyAssignment.created_at)
-    )
-    return list(result)
-
-
-async def get_policy_assignment(
-    *, assignment_id: UUID, org_id: UUID, db: AsyncSession
-) -> PolicyAssignment | None:
-    return await db.scalar(
-        select(PolicyAssignment).where(
-            PolicyAssignment.id == assignment_id,
-            PolicyAssignment.org_id == org_id,
-        )
-    )
-
-
-async def list_policy_assignments_for_access_policy(
-    *, org_id: UUID, access_policy_id: UUID, active_only: bool, db: AsyncSession
-) -> list[PolicyAssignment]:
-    filters = [
-        PolicyAssignment.org_id == org_id,
-        PolicyAssignment.access_policy_id == access_policy_id,
-    ]
-    if active_only:
-        filters.append(PolicyAssignment.is_active.is_(True))
-        now = datetime.now(UTC)
-        filters.append(
-            or_(PolicyAssignment.effective_from.is_(None), PolicyAssignment.effective_from <= now)
-        )
-        filters.append(
-            or_(PolicyAssignment.effective_to.is_(None), PolicyAssignment.effective_to > now)
-        )
-    result = await db.scalars(select(PolicyAssignment).where(*filters))
-    return list(result)
-
-
-async def list_policy_assignments_for_limit_policy(
-    *, org_id: UUID, limit_policy_id: UUID, active_only: bool, db: AsyncSession
-) -> list[PolicyAssignment]:
-    filters = [
-        PolicyAssignment.org_id == org_id,
-        PolicyAssignment.limit_policy_id == limit_policy_id,
-    ]
-    if active_only:
-        filters.append(PolicyAssignment.is_active.is_(True))
-        now = datetime.now(UTC)
-        filters.append(
-            or_(PolicyAssignment.effective_from.is_(None), PolicyAssignment.effective_from <= now)
-        )
-        filters.append(
-            or_(PolicyAssignment.effective_to.is_(None), PolicyAssignment.effective_to > now)
-        )
-    result = await db.scalars(select(PolicyAssignment).where(*filters))
-    return list(result)
 
 
 async def list_virtual_keys_for_project_ids(

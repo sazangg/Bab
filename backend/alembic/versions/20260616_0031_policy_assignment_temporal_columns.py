@@ -23,7 +23,7 @@ def upgrade() -> None:
         return
 
     if not _has_column("policy_assignments", "policy_id"):
-        op.add_column("policy_assignments", sa.Column("policy_id", sa.Uuid(), nullable=True))
+        op.add_column("policy_assignments", sa.Column("policy_id", sa.Uuid(), nullable=False))
         if op.get_bind().dialect.name != "sqlite":
             op.create_foreign_key(
                 "fk_policy_assignments_policy_id_policies",
@@ -34,6 +34,9 @@ def upgrade() -> None:
                 ondelete="CASCADE",
             )
         op.create_index("ix_policy_assignments_policy_id", "policy_assignments", ["policy_id"])
+    else:
+        with op.batch_alter_table("policy_assignments") as batch_op:
+            batch_op.alter_column("policy_id", existing_type=sa.Uuid(), nullable=False)
 
     if not _has_column("policy_assignments", "scope_target_key"):
         op.add_column(
@@ -96,8 +99,8 @@ def upgrade() -> None:
             "policy_assignments",
             ["policy_id", "scope_type", "scope_target_key"],
             unique=True,
-            sqlite_where=sa.text("policy_id is not null and effective_to is null"),
-            postgresql_where=sa.text("policy_id is not null and effective_to is null"),
+            sqlite_where=sa.text("effective_to is null"),
+            postgresql_where=sa.text("effective_to is null"),
         )
 
 

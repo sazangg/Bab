@@ -24,12 +24,7 @@ from app.modules.auth.schemas import (
     AuthenticatedUser,
 )
 from app.modules.guardrails import facade as guardrails_facade
-from app.modules.guardrails.internal.models import (
-    GuardrailAssignment,
-    GuardrailEvent,
-    GuardrailPolicy,
-    GuardrailRule,
-)
+from app.modules.guardrails.internal.models import GuardrailEvent, GuardrailPolicy, GuardrailRule
 from app.modules.guardrails.schemas import (
     CreateGuardrailAssignmentRequest,
     CreateGuardrailPolicyRequest,
@@ -59,7 +54,6 @@ from app.modules.keys.schemas import (
     UpdateVirtualKeyRequest,
 )
 from app.modules.policies import facade as policies_facade
-from app.modules.policies.draft_validation import validate_policy_simulation_drafts
 from app.modules.policies.errors import (
     PolicyAssignmentConflictError,
     PolicyNotFoundError,
@@ -73,9 +67,6 @@ from app.modules.policies.internal.models import (
     AccessPolicyRouteCandidate,
     LimitPolicy,
     LimitPolicyRule,
-    Policy,
-    PolicyAssignment,
-    PolicyRevision,
 )
 from app.modules.policies.runtime_limits import (
     RuntimeLimitEvaluationInput,
@@ -91,12 +82,19 @@ from app.modules.policies.schemas import (
     LimitPolicyRuleInput,
     LimitPolicyRuleMatcherInput,
     LimitPolicyRulePartitionInput,
-    PolicySimulationRequest,
-    PolicySimulationTarget,
     UpdateAccessPolicyRequest,
     UpdateLimitPolicyRequest,
     UpdateLimitPolicyRuleRequest,
     UpdatePolicyAssignmentRequest,
+)
+from app.modules.policy_kernel import assignment_scope_target_key
+from app.modules.policy_kernel import repository as policy_kernel_repository
+from app.modules.policy_kernel.models import Policy, PolicyAssignment, PolicyRevision
+from app.modules.policy_simulation.draft_validation import validate_policy_simulation_drafts
+from app.modules.policy_simulation.errors import PolicySimulationValidationError
+from app.modules.policy_simulation.schemas import (
+    PolicySimulationRequest,
+    PolicySimulationTarget,
 )
 from app.modules.providers import facade as providers_facade
 from app.modules.providers.internal.models import Provider
@@ -360,7 +358,6 @@ async def _draft_side_effect_counts(db_session: AsyncSession) -> dict[str, int]:
         LimitPolicy,
         LimitPolicyRule,
         GuardrailPolicy,
-        GuardrailAssignment,
         GuardrailRule,
         GuardrailEvent,
         LimitPolicyReservation,
@@ -442,14 +439,15 @@ async def test_policy_runtime_resolves_shared_access_policy_revision(
         fast_model,
         _,
     ) = await _create_project_pool_and_models(db_session)
-    policy = await policies_repository.create_policy(
+    policy = await policy_kernel_repository.create_policy(
         org_id=scope.org_id,
         kind="access",
         name="Shared access",
         description=None,
+        is_active=True,
         db=db_session,
     )
-    revision = await policies_repository.create_policy_revision(
+    revision = await policy_kernel_repository.create_policy_revision(
         org_id=scope.org_id,
         policy_id=policy.id,
         revision_number=1,
@@ -479,14 +477,14 @@ async def test_policy_runtime_resolves_shared_access_policy_revision(
         is_active=True,
         db=db_session,
     )
-    await policies_repository.create_policy_assignment(
+    await policy_kernel_repository.create_policy_assignment(
         org_id=scope.org_id,
         values={
             "policy_id": policy.id,
             "policy_type": "access",
             "scope_type": "team",
             "team_id": team.id,
-            "scope_target_key": policies_repository.policy_assignment_scope_target_key(
+            "scope_target_key": assignment_scope_target_key(
                 scope_type="team",
                 team_id=team.id,
                 project_id=None,
@@ -548,7 +546,7 @@ async def test_facade_assignment_resolves_active_revision_and_traces_it(
         db=db_session,
         actor=actor,
     )
-    active_revision = await policies_repository.get_active_policy_revision(
+    active_revision = await policy_kernel_repository.get_active_policy_revision(
         org_id=scope.org_id,
         policy_id=access.policy_id,
         db=db_session,
@@ -633,7 +631,7 @@ async def test_facade_assignment_resolves_active_revision_and_traces_it(
         db=db_session,
         actor=actor,
     )
-    new_active_revision = await policies_repository.get_active_policy_revision(
+    new_active_revision = await policy_kernel_repository.get_active_policy_revision(
         org_id=scope.org_id,
         policy_id=access.policy_id,
         db=db_session,
@@ -650,9 +648,7 @@ async def test_facade_assignment_resolves_active_revision_and_traces_it(
         )
     ).all()
     assert attempt.access_policy_revision_id == active_revision.id
-    assert {decision.policy_revision_id for decision in refreshed_decisions} == {
-        active_revision.id
-    }
+    assert {decision.policy_revision_id for decision in refreshed_decisions} == {active_revision.id}
 
 
 async def test_access_policy_create_update_publishes_shared_revisions(
@@ -689,7 +685,7 @@ async def test_access_policy_create_update_publishes_shared_revisions(
         org_id=scope.org_id,
         db=db_session,
     )
-    active_revision = await policies_repository.get_active_policy_revision(
+    active_revision = await policy_kernel_repository.get_active_policy_revision(
         org_id=scope.org_id,
         policy_id=legacy_policy.policy_id,
         db=db_session,
@@ -719,7 +715,7 @@ async def test_access_policy_create_update_publishes_shared_revisions(
         db=db_session,
         actor=actor,
     )
-    next_revision = await policies_repository.get_active_policy_revision(
+    next_revision = await policy_kernel_repository.get_active_policy_revision(
         org_id=scope.org_id,
         policy_id=legacy_policy.policy_id,
         db=db_session,
@@ -2102,7 +2098,7 @@ async def test_same_project_access_policies_union_routes(
         db=db_session,
     )
     assert {policy.id for policy in summary.access_policies} == {
-        policy.id for policy in access_policies
+        policy.policy_id for policy in access_policies
     }
     assert {route.access_policy_id for route in summary.routes} == {
         policy.policy_id for policy in access_policies
@@ -2410,9 +2406,16 @@ async def test_resolve_access_plan_orders_candidates_and_handles_streaming_and_p
 async def test_policy_simulation_project_admin_is_target_scoped(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
     other_project = await keys_facade.create_project(
         team_id=team.id,
         payload=CreateProjectRequest(name="Other Console", description=None),
@@ -2488,9 +2491,16 @@ async def test_policy_simulation_project_admin_is_target_scoped(
 async def test_policy_simulation_team_admin_is_target_scoped(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
     other_team = Team(org_id=scope.org_id, name="Other Team", slug=f"other-{uuid4()}")
     db_session.add(other_team)
     await db_session.commit()
@@ -2566,9 +2576,16 @@ async def test_policy_simulation_team_admin_is_target_scoped(
 async def test_policy_simulation_expired_key_with_naive_datetime_is_not_found(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, _team, project, provider, pool, fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=project.team_id,
@@ -2607,9 +2624,16 @@ async def test_policy_simulation_expired_key_with_naive_datetime_is_not_found(
 async def test_policy_simulation_guardrails_require_guardrail_visibility(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, _team, project, provider, pool, fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=project.team_id,
@@ -2688,9 +2712,16 @@ async def test_policy_simulation_guardrails_require_guardrail_visibility(
 async def test_policy_simulation_scoped_admins_cannot_simulate_org_draft_assignments(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=project.team_id,
@@ -2789,9 +2820,16 @@ async def test_policy_simulation_scoped_admins_cannot_simulate_org_draft_assignm
 async def test_policy_simulation_guardrail_draft_scope_is_authorized(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=project.team_id,
@@ -3195,11 +3233,11 @@ async def test_policy_simulation_draft_validation_rejects_invalid_payloads(
         ],
     )
 
-    with pytest.raises(PolicyValidationError):
+    with pytest.raises(PolicySimulationValidationError):
         validate_policy_simulation_drafts(bad_access.drafts)
-    with pytest.raises(PolicyValidationError):
+    with pytest.raises(PolicySimulationValidationError):
         validate_policy_simulation_drafts(bad_limit.drafts)
-    with pytest.raises(PolicyValidationError):
+    with pytest.raises(PolicySimulationValidationError):
         validate_policy_simulation_drafts(bad_guardrail.drafts)
     with pytest.raises(PolicyValidationError):
         await policies_facade.simulate_active_policies(
@@ -3212,9 +3250,16 @@ async def test_policy_simulation_draft_validation_rejects_invalid_payloads(
 async def test_policy_simulation_replace_policy_rejects_bogus_explicit_assignment_ids(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, _team, project, provider, pool, fast_model, _ = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=project.team_id,
@@ -3302,9 +3347,16 @@ async def test_policy_simulation_replace_policy_rejects_bogus_explicit_assignmen
 async def test_policy_simulation_scoped_replacement_ids_do_not_oracle_or_add(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        large_model,
+    ) = await _create_project_pool_and_models(db_session)
     own_access, _own_limit = await _assign_access_and_limit(
         scope=scope,
         team_id=project.team_id,
@@ -3513,9 +3565,16 @@ async def test_policy_simulation_access_draft_can_select_unsaved_route(
 async def test_policy_simulation_access_draft_evaluates_saved_limits(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, _team, project, provider, pool, fast_model, _large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=project.team_id,
@@ -3579,9 +3638,16 @@ async def test_policy_simulation_access_draft_evaluates_saved_limits(
 async def test_policy_simulation_access_add_draft_non_overlapping_child_scope_denies(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        large_model,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=team.id,
@@ -3647,9 +3713,16 @@ async def test_policy_simulation_access_add_draft_non_overlapping_child_scope_de
 async def test_policy_simulation_access_add_draft_narrows_to_allowed_route(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        large_model,
+    ) = await _create_project_pool_and_models(db_session)
     access = await policies_facade.create_access_policy(
         payload=CreateAccessPolicyRequest(
             name="Team access with two routes",
@@ -3751,9 +3824,16 @@ async def test_policy_simulation_access_add_draft_narrows_to_allowed_route(
 async def test_policy_simulation_lower_scope_saved_empty_access_fails_closed(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, _large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=team.id,
@@ -3828,9 +3908,16 @@ async def test_policy_simulation_lower_scope_saved_empty_access_fails_closed(
 async def test_policy_simulation_inactive_lower_scope_access_draft_fails_closed(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, _large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=team.id,
@@ -3892,9 +3979,16 @@ async def test_policy_simulation_inactive_lower_scope_access_draft_fails_closed(
 async def test_policy_simulation_access_draft_active_flags_are_skipped(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, _team, project, provider, pool, fast_model, _large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
     access, _limit = await _assign_access_and_limit(
         scope=scope,
         team_id=project.team_id,
@@ -3988,9 +4082,16 @@ async def test_policy_simulation_access_draft_active_flags_are_skipped(
 async def test_policy_simulation_same_scope_access_draft_ordering_matches_runtime(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, _team, project, provider, pool, fast_model, large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        large_model,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=project.team_id,
@@ -4055,9 +4156,16 @@ async def test_policy_simulation_same_scope_access_draft_ordering_matches_runtim
 async def test_policy_simulation_multiple_access_drafts_have_distinct_refs(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, _team, project, provider, pool, fast_model, large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        large_model,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=project.team_id,
@@ -4213,9 +4321,16 @@ async def test_policy_simulation_access_replace_draft_changes_selected_route(
 async def test_policy_simulation_access_replace_without_assignment_requires_active_policy(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        large_model,
+    ) = await _create_project_pool_and_models(db_session)
     own_access, _limit = await _assign_access_and_limit(
         scope=scope,
         team_id=project.team_id,
@@ -4430,9 +4545,16 @@ async def test_policy_simulation_limit_draft_route_filters_must_match(
 async def test_policy_simulation_inactive_add_limit_draft_is_skipped(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, _team, project, provider, pool, fast_model, _large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=project.team_id,
@@ -4489,9 +4611,16 @@ async def test_policy_simulation_inactive_add_limit_draft_is_skipped(
 async def test_policy_simulation_multiple_limit_drafts_have_distinct_refs(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, _team, project, provider, pool, fast_model, _large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=project.team_id,
@@ -4555,9 +4684,7 @@ async def test_policy_simulation_multiple_limit_drafts_have_distinct_refs(
     )
 
     draft_refs = [item.draft_ref for item in result.limit_results if item.draft_ref]
-    assert {"draft[0]:limit_policy.rules[0]", "draft[1]:limit_policy.rules[0]"} <= set(
-        draft_refs
-    )
+    assert {"draft[0]:limit_policy.rules[0]", "draft[1]:limit_policy.rules[0]"} <= set(draft_refs)
 
 
 async def test_policy_simulation_limit_replace_removes_saved_limit(
@@ -4632,9 +4759,16 @@ async def test_policy_simulation_limit_replace_removes_saved_limit(
 async def test_policy_simulation_inactive_limit_replacement_removes_saved_limit(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, _team, project, provider, pool, fast_model, _large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
     _access, limit = await _assign_access_and_limit(
         scope=scope,
         team_id=project.team_id,
@@ -4692,9 +4826,16 @@ async def test_policy_simulation_inactive_limit_replacement_removes_saved_limit(
 async def test_policy_simulation_inactive_limit_replacement_rule_is_skipped(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, _team, project, provider, pool, fast_model, _large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
     _access, limit = await _assign_access_and_limit(
         scope=scope,
         team_id=project.team_id,
@@ -4752,9 +4893,16 @@ async def test_policy_simulation_inactive_limit_replacement_rule_is_skipped(
 async def test_policy_simulation_limit_replace_preserves_multiple_assignment_ids(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, _large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=project.team_id,
@@ -4849,9 +4997,16 @@ async def test_policy_simulation_limit_replace_preserves_multiple_assignment_ids
 async def test_policy_simulation_limit_replacement_warning_depends_on_counter_identity(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, _team, project, provider, pool, fast_model, _large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=project.team_id,
@@ -4977,9 +5132,16 @@ async def test_policy_simulation_limit_replacement_warning_depends_on_counter_id
 async def test_policy_simulation_limit_replace_without_assignment_requires_active_policy(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, _large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
     _access, own_limit = await _assign_access_and_limit(
         scope=scope,
         team_id=project.team_id,
@@ -5129,9 +5291,16 @@ async def test_policy_simulation_guardrail_draft_blocks_without_events(
 async def test_policy_simulation_inactive_guardrail_add_drafts_are_skipped(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, _team, project, provider, pool, fast_model, _large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=project.team_id,
@@ -5153,9 +5322,7 @@ async def test_policy_simulation_inactive_guardrail_add_drafts_are_skipped(
         {
             "name": "Inactive guardrail draft policy",
             "is_active": False,
-            "rules": [
-                {"rule_type": "prompt_contains", "effect": "deny", "values": ["secret"]}
-            ],
+            "rules": [{"rule_type": "prompt_contains", "effect": "deny", "values": ["secret"]}],
         },
         {
             "name": "Inactive guardrail draft rule",
@@ -5195,9 +5362,16 @@ async def test_policy_simulation_inactive_guardrail_add_drafts_are_skipped(
 async def test_policy_simulation_multiple_guardrail_drafts_have_distinct_refs(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, _team, project, provider, pool, fast_model, _large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=project.team_id,
@@ -5344,9 +5518,16 @@ async def test_policy_simulation_guardrail_replace_removes_saved_policy(
 async def test_policy_simulation_inactive_guardrail_replacement_removes_saved_policy(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, _large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=project.team_id,
@@ -5422,9 +5603,16 @@ async def test_policy_simulation_inactive_guardrail_replacement_removes_saved_po
 async def test_policy_simulation_guardrail_replace_without_assignment_requires_active_policy(
     db_session: AsyncSession,
 ) -> None:
-    actor, scope, team, project, provider, pool, fast_model, _large_model = (
-        await _create_project_pool_and_models(db_session)
-    )
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
     await _assign_access_and_limit(
         scope=scope,
         team_id=project.team_id,
@@ -6230,7 +6418,8 @@ async def test_policy_assignment_can_target_shared_policy_id(
 
     assert access.policy_id is not None
     assert assignment.policy_id == access.policy_id
-    assert assignment.access_policy_id == access.id
+    assert "access_policy_id" not in assignment.model_dump()
+    assert "limit_policy_id" not in assignment.model_dump()
     assert assignment.scope_target_key == f"project:{project.id}"
 
 
@@ -6307,12 +6496,12 @@ async def test_delete_access_policy_closes_assignments_and_preserves_trace_fk(
         actor=actor,
     )
 
-    stored_assignment = await policies_repository.get_policy_assignment(
+    stored_assignment = await policy_kernel_repository.get_policy_assignment(
         assignment_id=assignment.id,
         org_id=scope.org_id,
         db=db_session,
     )
-    active_assignments = await policies_repository.list_active_policy_assignments_for_targets(
+    active_assignments = await policy_kernel_repository.list_active_policy_assignments_for_targets(
         org_id=scope.org_id,
         team_id=project.team_id,
         project_id=project.id,
@@ -6359,12 +6548,12 @@ async def test_delete_limit_policy_closes_assignments_without_deleting_history(
         actor=actor,
     )
 
-    stored_assignment = await policies_repository.get_policy_assignment(
+    stored_assignment = await policy_kernel_repository.get_policy_assignment(
         assignment_id=assignment.id,
         org_id=scope.org_id,
         db=db_session,
     )
-    active_assignments = await policies_repository.list_active_policy_assignments_for_targets(
+    active_assignments = await policy_kernel_repository.list_active_policy_assignments_for_targets(
         org_id=scope.org_id,
         team_id=project.team_id,
         project_id=project.id,
@@ -7160,7 +7349,7 @@ async def test_limit_policy_rule_update_creates_new_revision(
         org_id=scope.org_id,
         db=db_session,
     )
-    active_revision = await policies_repository.get_active_policy_revision(
+    active_revision = await policy_kernel_repository.get_active_policy_revision(
         org_id=scope.org_id,
         policy_id=policy.policy_id,
         db=db_session,
@@ -7207,7 +7396,7 @@ async def test_limit_policy_rule_update_targets_copied_rule_by_source_id(
         scope=scope,
         db=db_session,
     )
-    active_revision = await policies_repository.get_active_policy_revision(
+    active_revision = await policy_kernel_repository.get_active_policy_revision(
         org_id=scope.org_id,
         policy_id=policy.policy_id,
         db=db_session,
@@ -7265,7 +7454,7 @@ async def test_limit_policy_rule_delete_targets_copied_rule_by_source_id(
         scope=scope,
         db=db_session,
     )
-    active_revision = await policies_repository.get_active_policy_revision(
+    active_revision = await policy_kernel_repository.get_active_policy_revision(
         org_id=scope.org_id,
         policy_id=policy.policy_id,
         db=db_session,

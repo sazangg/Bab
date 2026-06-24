@@ -1,20 +1,40 @@
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.request_ids import current_request_id
 from app.modules.auth.internal.models import Team
 from app.modules.guardrails.internal.models import (
-    GuardrailAssignment,
     GuardrailEvent,
     GuardrailPolicy,
     GuardrailRule,
     GuardrailRuleMatcher,
 )
 from app.modules.keys.internal.models import Project, VirtualKey
-from app.modules.policies.internal.models import PolicyAssignment, PolicyRevision
+from app.modules.policy_kernel.models import PolicyAssignment, PolicyRevision
+
+
+@dataclass(frozen=True)
+class GuardrailAssignmentView:
+    id: UUID
+    org_id: UUID
+    policy_id: UUID
+    shared_policy_id: UUID
+    policy_name: str
+    scope_type: str
+    team_id: UUID | None
+    project_id: UUID | None
+    virtual_key_id: UUID | None
+    enforcement_mode: str
+    is_active: bool
+    effective_from: datetime | None
+    effective_to: datetime | None
+    superseded_by_assignment_id: UUID | None
+    created_at: datetime
+    updated_at: datetime
 
 
 async def list_policies(*, org_id: UUID, db: AsyncSession) -> list[GuardrailPolicy]:
@@ -43,7 +63,7 @@ async def create_policy(
     enforcement_mode: str,
     is_active: bool,
     db: AsyncSession,
-    policy_id: UUID | None = None,
+    policy_id: UUID,
 ) -> GuardrailPolicy:
     policy = GuardrailPolicy(
         policy_id=policy_id,
@@ -63,15 +83,16 @@ async def replace_rules(
     org_id: UUID,
     policy_id: UUID,
     rules: list[dict],
+    policy_revision_id: UUID,
     db: AsyncSession,
-    policy_revision_id: UUID | None = None,
 ) -> None:
-    filters = [GuardrailRule.org_id == org_id, GuardrailRule.policy_id == policy_id]
-    if policy_revision_id is None:
-        filters.append(GuardrailRule.policy_revision_id.is_(None))
-    else:
-        filters.append(GuardrailRule.policy_revision_id == policy_revision_id)
-    await db.execute(delete(GuardrailRule).where(*filters))
+    await db.execute(
+        delete(GuardrailRule).where(
+            GuardrailRule.org_id == org_id,
+            GuardrailRule.policy_id == policy_id,
+            GuardrailRule.policy_revision_id == policy_revision_id,
+        )
+    )
     for rule in rules:
         matchers = rule.pop("matchers", [])
         guardrail_rule = GuardrailRule(
@@ -84,11 +105,6 @@ async def replace_rules(
         await db.flush()
         for matcher in matchers:
             db.add(GuardrailRuleMatcher(org_id=org_id, rule_id=guardrail_rule.id, **matcher))
-    await db.flush()
-
-
-async def delete_policy(*, policy: GuardrailPolicy, db: AsyncSession) -> None:
-    await db.delete(policy)
     await db.flush()
 
 
@@ -115,24 +131,13 @@ async def list_policy_rules(
         for guardrail_policy_id, revision_id in active_revisions.all()
     }
     revision_ids = list(active_revision_by_policy.values())
-    legacy_policy_ids = [
-        policy_id for policy_id in policy_ids if policy_id not in active_revision_by_policy
-    ]
-    filters = []
-    if revision_ids:
-        filters.append(GuardrailRule.policy_revision_id.in_(revision_ids))
-    if legacy_policy_ids:
-        filters.append(
-            (GuardrailRule.policy_id.in_(legacy_policy_ids))
-            & (GuardrailRule.policy_revision_id.is_(None))
-        )
-    if not filters:
+    if not revision_ids:
         return []
     result = await db.scalars(
         select(GuardrailRule)
         .where(
             GuardrailRule.org_id == org_id,
-            or_(*filters),
+            GuardrailRule.policy_revision_id.in_(revision_ids),
         )
         .order_by(GuardrailRule.priority, GuardrailRule.created_at)
     )
@@ -156,26 +161,70 @@ async def list_rule_matchers(
     return list(result)
 
 
-async def list_assignments(*, org_id: UUID, db: AsyncSession) -> list[GuardrailAssignment]:
-    result = await db.scalars(
-        select(GuardrailAssignment)
-        .where(GuardrailAssignment.org_id == org_id)
-        .order_by(GuardrailAssignment.created_at.desc())
+def _assignment_view(
+    *, assignment: PolicyAssignment, policy: GuardrailPolicy
+) -> GuardrailAssignmentView:
+    if assignment.policy_id is None:
+        raise ValueError("guardrail assignment requires shared policy id")
+    return GuardrailAssignmentView(
+        id=assignment.id,
+        org_id=assignment.org_id,
+        policy_id=policy.id,
+        shared_policy_id=assignment.policy_id,
+        policy_name=policy.name,
+        scope_type=assignment.scope_type,
+        team_id=assignment.team_id,
+        project_id=assignment.project_id,
+        virtual_key_id=assignment.virtual_key_id,
+        enforcement_mode=assignment.mode,
+        is_active=assignment.is_active,
+        effective_from=assignment.effective_from,
+        effective_to=assignment.effective_to,
+        superseded_by_assignment_id=assignment.superseded_by_assignment_id,
+        created_at=assignment.created_at,
+        updated_at=assignment.updated_at,
     )
-    return list(result)
+
+
+async def list_assignments(*, org_id: UUID, db: AsyncSession) -> list[GuardrailAssignmentView]:
+    rows = await db.execute(
+        select(PolicyAssignment, GuardrailPolicy)
+        .join(GuardrailPolicy, GuardrailPolicy.policy_id == PolicyAssignment.policy_id)
+        .where(
+            PolicyAssignment.org_id == org_id,
+            PolicyAssignment.policy_type == "guardrail",
+            GuardrailPolicy.org_id == org_id,
+        )
+        .order_by(PolicyAssignment.created_at.desc())
+    )
+    return [_assignment_view(assignment=assignment, policy=policy) for assignment, policy in rows]
 
 
 async def list_policy_assignments(
     *, org_id: UUID, policy_id: UUID, active_only: bool, db: AsyncSession
-) -> list[GuardrailAssignment]:
+) -> list[GuardrailAssignmentView]:
+    policy = await get_policy(policy_id=policy_id, org_id=org_id, db=db)
+    if policy is None:
+        return []
     filters = [
-        GuardrailAssignment.org_id == org_id,
-        GuardrailAssignment.policy_id == policy_id,
+        PolicyAssignment.org_id == org_id,
+        PolicyAssignment.policy_id == policy.policy_id,
+        PolicyAssignment.policy_type == "guardrail",
     ]
     if active_only:
-        filters.append(GuardrailAssignment.is_active.is_(True))
-    result = await db.scalars(select(GuardrailAssignment).where(*filters))
-    return list(result)
+        now = datetime.now(UTC)
+        filters.extend(
+            [
+                PolicyAssignment.is_active.is_(True),
+                or_(
+                    PolicyAssignment.effective_from.is_(None),
+                    PolicyAssignment.effective_from <= now,
+                ),
+                or_(PolicyAssignment.effective_to.is_(None), PolicyAssignment.effective_to > now),
+            ]
+        )
+    result = await db.scalars(select(PolicyAssignment).where(*filters))
+    return [_assignment_view(assignment=assignment, policy=policy) for assignment in result]
 
 
 async def get_assignment(
@@ -183,42 +232,23 @@ async def get_assignment(
     assignment_id: UUID,
     org_id: UUID,
     db: AsyncSession,
-) -> GuardrailAssignment | None:
-    return await db.scalar(
-        select(GuardrailAssignment).where(
-            GuardrailAssignment.id == assignment_id,
-            GuardrailAssignment.org_id == org_id,
+) -> GuardrailAssignmentView | None:
+    row = (
+        await db.execute(
+            select(PolicyAssignment, GuardrailPolicy)
+            .join(GuardrailPolicy, GuardrailPolicy.policy_id == PolicyAssignment.policy_id)
+            .where(
+                PolicyAssignment.id == assignment_id,
+                PolicyAssignment.org_id == org_id,
+                PolicyAssignment.policy_type == "guardrail",
+                GuardrailPolicy.org_id == org_id,
+            )
         )
-    )
-
-
-async def create_assignment(
-    *,
-    org_id: UUID,
-    policy_id: UUID,
-    scope_type: str,
-    team_id: UUID | None,
-    project_id: UUID | None,
-    virtual_key_id: UUID | None,
-    enforcement_mode: str,
-    is_active: bool,
-    db: AsyncSession,
-    policy_assignment_id: UUID | None = None,
-) -> GuardrailAssignment:
-    assignment = GuardrailAssignment(
-        org_id=org_id,
-        policy_id=policy_id,
-        policy_assignment_id=policy_assignment_id,
-        scope_type=scope_type,
-        team_id=team_id,
-        project_id=project_id,
-        virtual_key_id=virtual_key_id,
-        enforcement_mode=enforcement_mode,
-        is_active=is_active,
-    )
-    db.add(assignment)
-    await db.flush()
-    return assignment
+    ).first()
+    if row is None:
+        return None
+    assignment, policy = row
+    return _assignment_view(assignment=assignment, policy=policy)
 
 
 async def find_assignment_for_scope(
@@ -230,45 +260,29 @@ async def find_assignment_for_scope(
     project_id: UUID | None,
     virtual_key_id: UUID | None,
     db: AsyncSession,
-) -> GuardrailAssignment | None:
-    return await db.scalar(
-        select(GuardrailAssignment).where(
-            GuardrailAssignment.org_id == org_id,
-            GuardrailAssignment.policy_id == policy_id,
-            GuardrailAssignment.scope_type == scope_type,
-            GuardrailAssignment.team_id.is_(None)
+) -> GuardrailAssignmentView | None:
+    policy = await get_policy(policy_id=policy_id, org_id=org_id, db=db)
+    if policy is None:
+        return None
+    row = await db.scalar(
+        select(PolicyAssignment).where(
+            PolicyAssignment.org_id == org_id,
+            PolicyAssignment.policy_id == policy.policy_id,
+            PolicyAssignment.policy_type == "guardrail",
+            PolicyAssignment.scope_type == scope_type,
+            PolicyAssignment.team_id.is_(None)
             if team_id is None
-            else GuardrailAssignment.team_id == team_id,
-            GuardrailAssignment.project_id.is_(None)
+            else PolicyAssignment.team_id == team_id,
+            PolicyAssignment.project_id.is_(None)
             if project_id is None
-            else GuardrailAssignment.project_id == project_id,
-            GuardrailAssignment.virtual_key_id.is_(None)
+            else PolicyAssignment.project_id == project_id,
+            PolicyAssignment.virtual_key_id.is_(None)
             if virtual_key_id is None
-            else GuardrailAssignment.virtual_key_id == virtual_key_id,
+            else PolicyAssignment.virtual_key_id == virtual_key_id,
+            PolicyAssignment.effective_to.is_(None),
         )
     )
-
-
-async def assignment_target_exists(
-    *,
-    org_id: UUID,
-    scope_type: str,
-    target_id: UUID | None,
-    db: AsyncSession,
-) -> bool:
-    if scope_type == "org":
-        return True
-    if target_id is None:
-        return False
-    model = {
-        "team": Team,
-        "project": Project,
-        "virtual_key": VirtualKey,
-    }.get(scope_type)
-    if model is None:
-        return False
-    exists = await db.scalar(select(model.id).where(model.org_id == org_id, model.id == target_id))
-    return exists is not None
+    return None if row is None else _assignment_view(assignment=row, policy=policy)
 
 
 async def get_team(*, org_id: UUID, team_id: UUID, db: AsyncSession) -> Team | None:
@@ -321,11 +335,6 @@ async def list_virtual_keys_for_project_ids(
     return list(result)
 
 
-async def delete_assignment(*, assignment: GuardrailAssignment, db: AsyncSession) -> None:
-    await db.delete(assignment)
-    await db.flush()
-
-
 async def list_effective_assignments(
     *,
     org_id: UUID,
@@ -333,38 +342,33 @@ async def list_effective_assignments(
     project_id: UUID,
     virtual_key_id: UUID,
     db: AsyncSession,
-) -> list[GuardrailAssignment]:
+) -> list[GuardrailAssignmentView]:
     now = datetime.now(UTC)
-    result = await db.scalars(
-        select(GuardrailAssignment)
-        .outerjoin(
-            PolicyAssignment,
-            GuardrailAssignment.policy_assignment_id == PolicyAssignment.id,
-        )
+    rows = await db.execute(
+        select(PolicyAssignment, GuardrailPolicy)
+        .join(GuardrailPolicy, GuardrailPolicy.policy_id == PolicyAssignment.policy_id)
         .where(
-            GuardrailAssignment.org_id == org_id,
-            GuardrailAssignment.is_active.is_(True),
+            PolicyAssignment.org_id == org_id,
+            PolicyAssignment.policy_type == "guardrail",
+            PolicyAssignment.is_active.is_(True),
+            or_(PolicyAssignment.effective_from.is_(None), PolicyAssignment.effective_from <= now),
+            or_(PolicyAssignment.effective_to.is_(None), PolicyAssignment.effective_to > now),
+            GuardrailPolicy.org_id == org_id,
             or_(
-                GuardrailAssignment.scope_type == "org",
-                GuardrailAssignment.team_id == team_id,
-                GuardrailAssignment.project_id == project_id,
-                GuardrailAssignment.virtual_key_id == virtual_key_id,
-            ),
-            or_(
-                GuardrailAssignment.policy_assignment_id.is_(None),
-                (
-                    (PolicyAssignment.policy_type == "guardrail")
-                    & (PolicyAssignment.is_active.is_(True))
-                    & (
-                        PolicyAssignment.effective_from.is_(None)
-                        | (PolicyAssignment.effective_from <= now)
-                    )
-                    & (PolicyAssignment.effective_to.is_(None))
+                PolicyAssignment.scope_type == "org",
+                and_(PolicyAssignment.scope_type == "team", PolicyAssignment.team_id == team_id),
+                and_(
+                    PolicyAssignment.scope_type == "project",
+                    PolicyAssignment.project_id == project_id,
+                ),
+                and_(
+                    PolicyAssignment.scope_type == "virtual_key",
+                    PolicyAssignment.virtual_key_id == virtual_key_id,
                 ),
             ),
         )
     )
-    return list(result)
+    return [_assignment_view(assignment=assignment, policy=policy) for assignment, policy in rows]
 
 
 async def create_event(

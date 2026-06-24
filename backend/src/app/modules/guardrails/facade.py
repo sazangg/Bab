@@ -28,7 +28,8 @@ from app.modules.guardrails.evaluation import (
     matched_regex_values,
 )
 from app.modules.guardrails.internal import repository
-from app.modules.guardrails.internal.models import GuardrailAssignment, GuardrailEvent
+from app.modules.guardrails.internal.models import GuardrailEvent
+from app.modules.guardrails.internal.repository import GuardrailAssignmentView
 from app.modules.guardrails.schemas import (
     CreateGuardrailAssignmentRequest,
     CreateGuardrailPolicyRequest,
@@ -49,11 +50,19 @@ from app.modules.guardrails.schemas import (
     UpdateGuardrailPolicyRequest,
 )
 from app.modules.guardrails.validation import validate_guardrail_rule_payload
-from app.modules.policies.internal import repository as policies_repository
-from app.modules.policies.internal.models import PolicyRevision
+from app.modules.policy_kernel import (
+    assignment_scope_specificity,
+    assignment_scope_target_key,
+    create_initial_active_revision,
+    create_next_active_revision,
+)
+from app.modules.policy_kernel import repository as policy_kernel_repository
+from app.modules.policy_kernel.models import Policy, PolicyAssignment
+from app.modules.workspace_access import ScopeNotFoundError, WorkspaceAccessService
 
 GUARDRAIL_SCAN_CHAR_LIMIT = _GUARDRAIL_SCAN_CHAR_LIMIT
 _matched_regex_values = matched_regex_values
+_workspace_access = WorkspaceAccessService()
 
 
 @dataclass(frozen=True)
@@ -122,19 +131,17 @@ async def create_policy(
 ) -> GuardrailPolicyResponse:
     _validate_rule_matchers(payload.rules)
     async with transaction(db):
-        shared_policy = await policies_repository.create_policy(
+        shared_policy = await policy_kernel_repository.create_policy(
             org_id=scope.org_id,
             kind="guardrail",
             name=payload.name,
             description=payload.description,
+            is_active=payload.is_active,
             db=db,
         )
-        shared_policy.is_active = payload.is_active
-        revision = await policies_repository.create_policy_revision(
+        revision = await create_initial_active_revision(
             org_id=scope.org_id,
             policy_id=shared_policy.id,
-            revision_number=1,
-            status="active",
             created_by=actor.id,
             db=db,
         )
@@ -182,9 +189,8 @@ async def update_policy(
         policy = await repository.get_policy(policy_id=policy_id, org_id=scope.org_id, db=db)
         if policy is None:
             raise GuardrailPolicyNotFoundError
-        shared_policy = await _ensure_shared_guardrail_policy(
+        shared_policy = await _get_shared_guardrail_policy(
             policy=policy,
-            actor=actor,
             scope=scope,
             db=db,
         )
@@ -198,10 +204,10 @@ async def update_policy(
         if "is_active" in payload.model_fields_set:
             shared_policy.is_active = policy.is_active
         if payload.rules is not None:
-            revision = await _create_next_active_guardrail_revision(
+            revision = await create_next_active_revision(
                 org_id=scope.org_id,
-                shared_policy_id=shared_policy.id,
-                actor_id=actor.id,
+                policy_id=shared_policy.id,
+                created_by=actor.id,
                 db=db,
             )
             await repository.replace_rules(
@@ -225,88 +231,23 @@ async def update_policy(
     return await _to_policy_response(policy, rules, scope=scope, db=db)
 
 
-async def _ensure_shared_guardrail_policy(
+async def _get_shared_guardrail_policy(
     *,
     policy,
-    actor: AuthenticatedUser,
     scope: Scope,
     db: AsyncSession,
-):
-    if policy.policy_id is not None:
-        shared_policy = await policies_repository.get_policy(
-            org_id=scope.org_id,
-            policy_id=policy.policy_id,
-            db=db,
-        )
-        if shared_policy is not None:
-            return shared_policy
-    legacy_rules = await repository.list_policy_rules(
+) -> Policy:
+    shared_policy = await policy_kernel_repository.get_policy(
         org_id=scope.org_id,
-        policy_ids=[policy.id],
+        policy_id=policy.policy_id,
         db=db,
     )
-    shared_policy = await policies_repository.create_policy(
-        org_id=scope.org_id,
-        kind="guardrail",
-        name=policy.name,
-        description=policy.description,
-        db=db,
-    )
-    shared_policy.is_active = policy.is_active
-    policy.policy_id = shared_policy.id
-    revision = await policies_repository.create_policy_revision(
-        org_id=scope.org_id,
-        policy_id=shared_policy.id,
-        revision_number=1,
-        status="active",
-        created_by=actor.id,
-        db=db,
-    )
-    await repository.replace_rules(
-        org_id=scope.org_id,
-        policy_id=policy.id,
-        rules=[
-            {
-                "rule_type": rule.rule_type,
-                "effect": rule.effect,
-                "phase": rule.phase,
-                "values": rule.values,
-                "config": rule.config,
-                "priority": rule.priority,
-                "is_active": rule.is_active,
-            }
-            for rule in legacy_rules
-        ],
-        policy_revision_id=revision.id,
-        db=db,
-    )
+    if shared_policy is None or shared_policy.kind != "guardrail":
+        raise RuntimeError("guardrail policy is missing its shared policy row")
     return shared_policy
 
 
-async def _create_next_active_guardrail_revision(
-    *,
-    org_id: UUID,
-    shared_policy_id: UUID,
-    actor_id: UUID,
-    db: AsyncSession,
-) -> PolicyRevision:
-    active_revision = await policies_repository.archive_active_policy_revision(
-        org_id=org_id,
-        policy_id=shared_policy_id,
-        db=db,
-    )
-    next_revision_number = 1 if active_revision is None else active_revision.revision_number + 1
-    return await policies_repository.create_policy_revision(
-        org_id=org_id,
-        policy_id=shared_policy_id,
-        revision_number=next_revision_number,
-        status="active",
-        created_by=actor_id,
-        db=db,
-    )
-
-
-async def _create_shared_guardrail_assignment(
+async def _create_guardrail_assignment(
     *,
     org_id: UUID,
     shared_policy_id: UUID,
@@ -317,9 +258,9 @@ async def _create_shared_guardrail_assignment(
     mode: str,
     is_active: bool,
     db: AsyncSession,
-):
+) -> PolicyAssignment:
     now = datetime.now(UTC)
-    return await policies_repository.create_policy_assignment(
+    return await policy_kernel_repository.create_policy_assignment(
         org_id=org_id,
         values={
             "policy_id": shared_policy_id,
@@ -328,7 +269,7 @@ async def _create_shared_guardrail_assignment(
             "team_id": team_id,
             "project_id": project_id,
             "virtual_key_id": virtual_key_id,
-            "scope_target_key": policies_repository.policy_assignment_scope_target_key(
+            "scope_target_key": assignment_scope_target_key(
                 scope_type=scope_type,
                 team_id=team_id,
                 project_id=project_id,
@@ -343,7 +284,7 @@ async def _create_shared_guardrail_assignment(
     )
 
 
-async def _replace_shared_guardrail_assignment(
+async def _replace_guardrail_assignment(
     *,
     org_id: UUID,
     previous_assignment_id: UUID | None,
@@ -355,22 +296,35 @@ async def _replace_shared_guardrail_assignment(
     mode: str,
     is_active: bool,
     db: AsyncSession,
-) -> UUID | None:
+) -> PolicyAssignment | None:
     now = datetime.now(UTC)
     previous_assignment = None
     if previous_assignment_id is not None:
-        previous_assignment = await policies_repository.get_policy_assignment(
+        previous_assignment = await policy_kernel_repository.get_policy_assignment(
             assignment_id=previous_assignment_id,
             org_id=org_id,
             db=db,
         )
         if previous_assignment is not None and previous_assignment.effective_to is None:
+            if not is_active:
+                previous_assignment.policy_id = shared_policy_id
+                previous_assignment.scope_type = scope_type
+                previous_assignment.team_id = team_id
+                previous_assignment.project_id = project_id
+                previous_assignment.virtual_key_id = virtual_key_id
+                previous_assignment.scope_target_key = assignment_scope_target_key(
+                    scope_type=scope_type,
+                    team_id=team_id,
+                    project_id=project_id,
+                    virtual_key_id=virtual_key_id,
+                )
+                previous_assignment.mode = mode
             previous_assignment.effective_to = now
             previous_assignment.is_active = False
     if not is_active:
         await db.flush()
-        return previous_assignment_id
-    replacement = await _create_shared_guardrail_assignment(
+        return previous_assignment
+    replacement = await _create_guardrail_assignment(
         org_id=org_id,
         shared_policy_id=shared_policy_id,
         scope_type=scope_type,
@@ -384,18 +338,16 @@ async def _replace_shared_guardrail_assignment(
     if previous_assignment is not None:
         previous_assignment.superseded_by_assignment_id = replacement.id
     await db.flush()
-    return replacement.id
+    return replacement
 
 
-async def _close_shared_guardrail_assignment(
+async def _close_guardrail_assignment(
     *,
     org_id: UUID,
-    assignment_id: UUID | None,
+    assignment_id: UUID,
     db: AsyncSession,
 ) -> None:
-    if assignment_id is None:
-        return
-    assignment = await policies_repository.get_policy_assignment(
+    assignment = await policy_kernel_repository.get_policy_assignment(
         assignment_id=assignment_id,
         org_id=org_id,
         db=db,
@@ -407,7 +359,7 @@ async def _close_shared_guardrail_assignment(
     await db.flush()
 
 
-async def _close_shared_guardrail_assignments_for_policy(
+async def _close_guardrail_policy_assignments(
     *,
     org_id: UUID,
     policy_id: UUID,
@@ -420,9 +372,9 @@ async def _close_shared_guardrail_assignments_for_policy(
         db=db,
     )
     for assignment in assignments:
-        await _close_shared_guardrail_assignment(
+        await _close_guardrail_assignment(
             org_id=org_id,
-            assignment_id=assignment.policy_assignment_id,
+            assignment_id=assignment.id,
             db=db,
         )
 
@@ -438,20 +390,15 @@ async def delete_policy(
         policy = await repository.get_policy(policy_id=policy_id, org_id=scope.org_id, db=db)
         if policy is None:
             raise GuardrailPolicyNotFoundError
-        await _close_shared_guardrail_assignments_for_policy(
+        await _close_guardrail_policy_assignments(
             org_id=scope.org_id,
             policy_id=policy.id,
             db=db,
         )
-        if policy.policy_id is not None:
-            shared_policy = await policies_repository.get_policy(
-                org_id=scope.org_id,
-                policy_id=policy.policy_id,
-                db=db,
-            )
-            if shared_policy is not None:
-                shared_policy.is_active = False
-        await repository.delete_policy(policy=policy, db=db)
+        shared_policy = await _get_shared_guardrail_policy(policy=policy, scope=scope, db=db)
+        shared_policy.is_active = False
+        policy.is_active = False
+        await db.flush()
         await activity_facade.record_admin_event(
             actor=actor,
             category="guardrail",
@@ -498,12 +445,7 @@ async def list_assignments(
     actor: AuthenticatedUser | None = None,
 ) -> list[GuardrailAssignmentResponse]:
     assignments = await _visible_assignments(actor=actor, scope=scope, db=db)
-    policies = await repository.list_policies(org_id=scope.org_id, db=db)
-    policy_names = {policy.id: policy.name for policy in policies}
-    return [
-        _to_assignment_response(item, policy_names.get(item.policy_id, "Unknown policy"))
-        for item in assignments
-    ]
+    return [_to_assignment_response(item) for item in assignments]
 
 
 async def create_assignment(
@@ -521,19 +463,13 @@ async def create_assignment(
         )
         if policy is None:
             raise GuardrailPolicyNotFoundError
-        await _validate_assignment_target(
+        team_id, project_id, virtual_key_id = await _validate_assignment_target(
             org_id=scope.org_id,
             scope_type=payload.scope_type,
             team_id=payload.team_id,
             project_id=payload.project_id,
             virtual_key_id=payload.virtual_key_id,
             db=db,
-        )
-        team_id, project_id, virtual_key_id = _assignment_scope_ids_from_payload(
-            scope_type=payload.scope_type,
-            team_id=payload.team_id,
-            project_id=payload.project_id,
-            virtual_key_id=payload.virtual_key_id,
         )
         existing = await repository.find_assignment_for_scope(
             org_id=scope.org_id,
@@ -546,13 +482,12 @@ async def create_assignment(
         )
         if existing is not None:
             raise GuardrailAssignmentConflictError
-        shared_policy = await _ensure_shared_guardrail_policy(
+        shared_policy = await _get_shared_guardrail_policy(
             policy=policy,
-            actor=actor,
             scope=scope,
             db=db,
         )
-        shared_assignment = await _create_shared_guardrail_assignment(
+        assignment = await _create_guardrail_assignment(
             org_id=scope.org_id,
             shared_policy_id=shared_policy.id,
             scope_type=payload.scope_type,
@@ -561,18 +496,6 @@ async def create_assignment(
             virtual_key_id=virtual_key_id,
             mode=payload.enforcement_mode,
             is_active=payload.is_active,
-            db=db,
-        )
-        assignment = await repository.create_assignment(
-            org_id=scope.org_id,
-            policy_id=payload.policy_id,
-            scope_type=payload.scope_type,
-            team_id=team_id,
-            project_id=project_id,
-            virtual_key_id=virtual_key_id,
-            enforcement_mode=payload.enforcement_mode,
-            is_active=payload.is_active,
-            policy_assignment_id=shared_assignment.id,
             db=db,
         )
         await activity_facade.record_admin_event(
@@ -592,7 +515,14 @@ async def create_assignment(
             },
             db=db,
         )
-    return _to_assignment_response(assignment, policy.name)
+    created = await repository.get_assignment(
+        assignment_id=assignment.id,
+        org_id=scope.org_id,
+        db=db,
+    )
+    if created is None:
+        raise GuardrailAssignmentNotFoundError
+    return _to_assignment_response(created)
 
 
 async def update_assignment(
@@ -627,7 +557,7 @@ async def update_assignment(
             virtual_key_id=payload.virtual_key_id,
             fallback=assignment,
         )
-        await _validate_assignment_target(
+        team_id, project_id, virtual_key_id = await _validate_assignment_target(
             org_id=scope.org_id,
             scope_type=scope_type,
             team_id=team_id,
@@ -646,33 +576,28 @@ async def update_assignment(
         )
         if existing is not None and existing.id != assignment.id:
             raise GuardrailAssignmentConflictError
-        shared_policy = await _ensure_shared_guardrail_policy(
+        shared_policy = await _get_shared_guardrail_policy(
             policy=policy,
-            actor=actor,
             scope=scope,
             db=db,
         )
-        assignment.policy_id = policy_id
-        assignment.scope_type = scope_type
-        assignment.team_id = team_id
-        assignment.project_id = project_id
-        assignment.virtual_key_id = virtual_key_id
-        if payload.enforcement_mode is not None:
-            assignment.enforcement_mode = payload.enforcement_mode
-        if payload.is_active is not None:
-            assignment.is_active = payload.is_active
-        assignment.policy_assignment_id = await _replace_shared_guardrail_assignment(
+        enforcement_mode = payload.enforcement_mode or assignment.enforcement_mode
+        is_active = payload.is_active if payload.is_active is not None else assignment.is_active
+        replacement = await _replace_guardrail_assignment(
             org_id=scope.org_id,
-            previous_assignment_id=assignment.policy_assignment_id,
+            previous_assignment_id=assignment.id,
             shared_policy_id=shared_policy.id,
-            scope_type=assignment.scope_type,
-            team_id=assignment.team_id,
-            project_id=assignment.project_id,
-            virtual_key_id=assignment.virtual_key_id,
-            mode=assignment.enforcement_mode,
-            is_active=assignment.is_active,
+            scope_type=scope_type,
+            team_id=team_id,
+            project_id=project_id,
+            virtual_key_id=virtual_key_id,
+            mode=enforcement_mode,
+            is_active=is_active,
             db=db,
         )
+        if replacement is None:
+            raise GuardrailAssignmentNotFoundError
+        assignment_id = replacement.id
         await activity_facade.record_admin_event(
             actor=actor,
             category="guardrail",
@@ -682,11 +607,18 @@ async def update_assignment(
             project_id=project_id,
             virtual_key_id=virtual_key_id,
             audit_entity_type="guardrail_assignment",
-            audit_entity_id=assignment.id,
-            metadata={"assignment_id": str(assignment.id)},
+            audit_entity_id=assignment_id,
+            metadata={"assignment_id": str(assignment_id)},
             db=db,
         )
-    return _to_assignment_response(assignment, policy.name if policy else "Unknown policy")
+    updated = await repository.get_assignment(
+        assignment_id=assignment_id,
+        org_id=scope.org_id,
+        db=db,
+    )
+    if updated is None:
+        raise GuardrailAssignmentNotFoundError
+    return _to_assignment_response(updated)
 
 
 async def delete_assignment(
@@ -704,12 +636,11 @@ async def delete_assignment(
         )
         if assignment is None:
             raise GuardrailAssignmentNotFoundError
-        await _close_shared_guardrail_assignment(
+        await _close_guardrail_assignment(
             org_id=scope.org_id,
-            assignment_id=assignment.policy_assignment_id,
+            assignment_id=assignment.id,
             db=db,
         )
-        await repository.delete_assignment(assignment=assignment, db=db)
         await activity_facade.record_admin_event(
             actor=actor,
             category="guardrail",
@@ -813,7 +744,7 @@ async def runtime_rules_for_context_readonly(
         assignment.policy_id for assignment in assignments if assignment.policy_id in policies
     ]
     rules = await repository.list_policy_rules(org_id=context.org_id, policy_ids=policy_ids, db=db)
-    assignments_by_policy: dict[UUID, list[GuardrailAssignment]] = {}
+    assignments_by_policy: dict[UUID, list[GuardrailAssignmentView]] = {}
     for assignment in assignments:
         assignments_by_policy.setdefault(assignment.policy_id, []).append(assignment)
     policy_mode = {policy.id: policy.enforcement_mode for policy in policies.values()}
@@ -851,7 +782,7 @@ async def has_enforced_response_guardrails(
         assignment.policy_id for assignment in assignments if assignment.policy_id in policies
     ]
     rules = await repository.list_policy_rules(org_id=context.org_id, policy_ids=policy_ids, db=db)
-    assignments_by_policy: dict[UUID, list[GuardrailAssignment]] = {}
+    assignments_by_policy: dict[UUID, list[GuardrailAssignmentView]] = {}
     for assignment in assignments:
         assignments_by_policy.setdefault(assignment.policy_id, []).append(assignment)
     policy_mode = {policy.id: policy.enforcement_mode for policy in policies.values()}
@@ -890,7 +821,7 @@ async def _evaluate_context(
         assignment.policy_id for assignment in assignments if assignment.policy_id in policies
     ]
     rules = await repository.list_policy_rules(org_id=context.org_id, policy_ids=policy_ids, db=db)
-    assignments_by_policy: dict[UUID, list[GuardrailAssignment]] = {}
+    assignments_by_policy: dict[UUID, list[GuardrailAssignmentView]] = {}
     for assignment in assignments:
         assignments_by_policy.setdefault(assignment.policy_id, []).append(assignment)
     policy_mode = {policy.id: policy.enforcement_mode for policy in policies.values()}
@@ -937,11 +868,7 @@ async def _evaluate_context(
                 detail=evaluation.message or "Request blocked by guardrail",
                 policy_id=evaluation.policy_id,
                 policy_revision_id=evaluation.policy_revision_id,
-                assignment_id=(
-                    effective_assignment.policy_assignment_id or effective_assignment.id
-                    if effective_assignment
-                    else None
-                ),
+                assignment_id=(effective_assignment.id if effective_assignment else None),
                 assignment_mode=mode,
                 assignment_scope_type=effective_assignment.scope_type
                 if effective_assignment
@@ -959,11 +886,7 @@ async def _evaluate_context(
             GuardrailDecisionTrace(
                 policy_id=evaluation.policy_id,
                 policy_revision_id=evaluation.policy_revision_id,
-                assignment_id=(
-                    effective_assignment.policy_assignment_id or effective_assignment.id
-                    if effective_assignment
-                    else None
-                ),
+                assignment_id=(effective_assignment.id if effective_assignment else None),
                 assignment_mode=mode,
                 assignment_scope_type=effective_assignment.scope_type
                 if effective_assignment
@@ -1127,7 +1050,7 @@ async def _runtime_rules_from_saved_rules(
     *,
     rules,
     policies: dict[UUID, object],
-    assignments_by_policy: dict[UUID, list[GuardrailAssignment]],
+    assignments_by_policy: dict[UUID, list[GuardrailAssignmentView]],
     policy_mode: dict[UUID, str],
     phase: str,
     db: AsyncSession,
@@ -1260,11 +1183,11 @@ async def _runtime_rules_from_simulation_rules(
 
 def _runtime_assignment_ref(
     *,
-    assignment: GuardrailAssignment,
+    assignment: GuardrailAssignmentView,
     assignment_mode: str,
 ) -> RuntimeGuardrailAssignmentRef:
     return RuntimeGuardrailAssignmentRef(
-        assignment_id=assignment.policy_assignment_id or assignment.id,
+        assignment_id=assignment.id,
         assignment_mode=assignment_mode,
         assignment_scope_type=assignment.scope_type,
         assignment_scope_label=assignment.scope_type,
@@ -1387,7 +1310,7 @@ def _assignment_scope_ids(
     team_id: UUID | None,
     project_id: UUID | None,
     virtual_key_id: UUID | None,
-    fallback: GuardrailAssignment,
+    fallback: GuardrailAssignmentView,
 ) -> tuple[UUID | None, UUID | None, UUID | None]:
     if scope_type == "team":
         return team_id or fallback.team_id, None, None
@@ -1398,7 +1321,7 @@ def _assignment_scope_ids(
     return None, None, None
 
 
-def _effective_rule_mode(*, policy_mode: str, assignments: list[GuardrailAssignment]) -> str:
+def _effective_rule_mode(*, policy_mode: str, assignments: list[GuardrailAssignmentView]) -> str:
     if policy_mode == "monitor":
         return "dry_run"
     if any(assignment.enforcement_mode == "enforce" for assignment in assignments):
@@ -1409,8 +1332,8 @@ def _effective_rule_mode(*, policy_mode: str, assignments: list[GuardrailAssignm
 def _effective_rule_assignment(
     *,
     mode: str,
-    assignments: list[GuardrailAssignment],
-) -> GuardrailAssignment | None:
+    assignments: list[GuardrailAssignmentView],
+) -> GuardrailAssignmentView | None:
     if not assignments:
         return None
     candidates = (
@@ -1422,28 +1345,7 @@ def _effective_rule_assignment(
 
 
 def _assignment_specificity(scope_type: str) -> int:
-    return {
-        "org": 0,
-        "team": 1,
-        "project": 2,
-        "virtual_key": 3,
-    }.get(scope_type, -1)
-
-
-def _assignment_scope_ids_from_payload(
-    *,
-    scope_type: str,
-    team_id: UUID | None,
-    project_id: UUID | None,
-    virtual_key_id: UUID | None,
-) -> tuple[UUID | None, UUID | None, UUID | None]:
-    if scope_type == "team":
-        return team_id, None, None
-    if scope_type == "project":
-        return None, project_id, None
-    if scope_type == "virtual_key":
-        return None, None, virtual_key_id
-    return None, None, None
+    return assignment_scope_specificity(scope_type)
 
 
 async def _validate_assignment_target(
@@ -1454,46 +1356,19 @@ async def _validate_assignment_target(
     project_id: UUID | None,
     virtual_key_id: UUID | None,
     db: AsyncSession,
-) -> None:
-    if scope_type == "org":
-        if team_id is not None or project_id is not None or virtual_key_id is not None:
-            raise GuardrailAssignmentTargetNotFoundError
-        return
-    if scope_type == "team":
-        if team_id is None or project_id is not None or virtual_key_id is not None:
-            raise GuardrailAssignmentTargetNotFoundError
-        if await repository.get_team(org_id=org_id, team_id=team_id, db=db) is None:
-            raise GuardrailAssignmentTargetNotFoundError
-        return
-    if scope_type == "project":
-        if project_id is None or virtual_key_id is not None:
-            raise GuardrailAssignmentTargetNotFoundError
-        project = await repository.get_project(org_id=org_id, project_id=project_id, db=db)
-        if project is None:
-            raise GuardrailAssignmentTargetNotFoundError
-        if team_id is not None and team_id != project.team_id:
-            raise GuardrailAssignmentTargetNotFoundError
-        return
-    if scope_type == "virtual_key":
-        if virtual_key_id is None:
-            raise GuardrailAssignmentTargetNotFoundError
-        virtual_key = await repository.get_virtual_key(
-            org_id=org_id, virtual_key_id=virtual_key_id, db=db
+) -> tuple[UUID | None, UUID | None, UUID | None]:
+    try:
+        validated = await _workspace_access.validate_assignment_scope(
+            organization_id=org_id,
+            scope_type=scope_type,
+            team_id=team_id,
+            project_id=project_id,
+            virtual_key_id=virtual_key_id,
+            db=db,
         )
-        if virtual_key is None:
-            raise GuardrailAssignmentTargetNotFoundError
-        project = await repository.get_project(
-            org_id=org_id, project_id=virtual_key.project_id, db=db
-        )
-        if project is None:
-            raise GuardrailAssignmentTargetNotFoundError
-        if project_id is not None and project_id != virtual_key.project_id:
-            raise GuardrailAssignmentTargetNotFoundError
-        if team_id is not None and team_id != project.team_id:
-            raise GuardrailAssignmentTargetNotFoundError
-        return
-    else:
-        raise GuardrailAssignmentTargetNotFoundError
+    except ScopeNotFoundError as exc:
+        raise GuardrailAssignmentTargetNotFoundError from exc
+    return validated.team_id, validated.project_id, validated.virtual_key_id
 
 
 def _is_org_guardrail_viewer(actor: AuthenticatedUser) -> bool:
@@ -1524,13 +1399,13 @@ async def _visible_assignments(
     actor: AuthenticatedUser | None,
     scope: Scope,
     db: AsyncSession,
-) -> list[GuardrailAssignment]:
+) -> list[GuardrailAssignmentView]:
     assignments = await repository.list_assignments(org_id=scope.org_id, db=db)
     if actor is None or _is_org_guardrail_viewer(actor):
         return assignments
 
     team_ids, project_ids = _managed_scope_ids(actor)
-    visible: list[GuardrailAssignment] = []
+    visible: list[GuardrailAssignmentView] = []
     for assignment in assignments:
         if assignment.scope_type == "org":
             continue
@@ -1565,7 +1440,7 @@ async def _visible_assignments(
 
 
 async def _impact_from_assignments(
-    *, org_id: UUID, assignments: list[GuardrailAssignment], db: AsyncSession
+    *, org_id: UUID, assignments: list[GuardrailAssignmentView], db: AsyncSession
 ) -> GuardrailImpactResponse:
     teams: dict[UUID, GuardrailImpactTarget] = {}
     projects: dict[UUID, GuardrailImpactTarget] = {}
@@ -1621,7 +1496,7 @@ async def _impact_from_assignments(
 
 
 async def _affected_projects(
-    *, org_id: UUID, assignments: list[GuardrailAssignment], db: AsyncSession
+    *, org_id: UUID, assignments: list[GuardrailAssignmentView], db: AsyncSession
 ) -> list:
     project_ids = [item.project_id for item in assignments if item.project_id is not None]
     team_ids = [item.team_id for item in assignments if item.team_id is not None]
@@ -1661,6 +1536,7 @@ async def _to_policy_response(
     return GuardrailPolicyResponse(
         id=policy.id,
         org_id=policy.org_id,
+        policy_id=policy.policy_id,
         name=policy.name,
         description=policy.description,
         enforcement_mode=policy.enforcement_mode,
@@ -1676,14 +1552,13 @@ def _validate_rule_matchers(rules) -> None:
 
 
 def _to_assignment_response(
-    assignment: GuardrailAssignment,
-    policy_name: str,
+    assignment: GuardrailAssignmentView,
 ) -> GuardrailAssignmentResponse:
     return GuardrailAssignmentResponse(
         id=assignment.id,
         org_id=assignment.org_id,
         policy_id=assignment.policy_id,
-        policy_name=policy_name,
+        policy_name=assignment.policy_name,
         scope_type=assignment.scope_type,
         team_id=assignment.team_id,
         project_id=assignment.project_id,

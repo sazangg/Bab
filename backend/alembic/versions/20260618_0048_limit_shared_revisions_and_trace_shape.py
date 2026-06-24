@@ -74,7 +74,7 @@ def upgrade() -> None:
             op.create_index(name, "limit_policy_committed_usage", columns)
 
     if _has_table("limit_policies") and not _has_column("limit_policies", "policy_id"):
-        op.add_column("limit_policies", sa.Column("policy_id", sa.Uuid(), nullable=True))
+        op.add_column("limit_policies", sa.Column("policy_id", sa.Uuid(), nullable=False))
         op.create_index("ix_limit_policies_policy_id", "limit_policies", ["policy_id"], unique=True)
         _create_fk(
             "fk_limit_policies_policy_id_policies",
@@ -84,12 +84,15 @@ def upgrade() -> None:
             ["id"],
             ondelete="CASCADE",
         )
+    elif _has_table("limit_policies"):
+        with op.batch_alter_table("limit_policies") as batch_op:
+            batch_op.alter_column("policy_id", existing_type=sa.Uuid(), nullable=False)
 
     if _has_table("limit_policy_rules") and not _has_column(
         "limit_policy_rules", "policy_revision_id"
     ):
         op.add_column(
-            "limit_policy_rules", sa.Column("policy_revision_id", sa.Uuid(), nullable=True)
+            "limit_policy_rules", sa.Column("policy_revision_id", sa.Uuid(), nullable=False)
         )
         op.create_index(
             "ix_limit_policy_rules_policy_revision_id",
@@ -104,6 +107,9 @@ def upgrade() -> None:
             ["id"],
             ondelete="CASCADE",
         )
+    elif _has_table("limit_policy_rules"):
+        with op.batch_alter_table("limit_policy_rules") as batch_op:
+            batch_op.alter_column("policy_revision_id", existing_type=sa.Uuid(), nullable=False)
 
     if _has_table("limit_policy_reservations") and not _has_column(
         "limit_policy_reservations", "limit_policy_revision_id"
@@ -219,27 +225,6 @@ def _backfill_policy_assignments() -> None:
     if not all(_has_column("policy_assignments", column_name) for column_name in required_columns):
         return
     connection = op.get_bind()
-    connection.execute(
-        text(
-            "update policy_assignments "
-            "set policy_id = ("
-            "select access_policies.policy_id from access_policies "
-            "where access_policies.id = policy_assignments.access_policy_id"
-            ") "
-            "where policy_type = 'access' and policy_id is null and access_policy_id is not null"
-        )
-    )
-    if _has_table("limit_policies"):
-        connection.execute(
-            text(
-                "update policy_assignments "
-                "set policy_id = ("
-                "select limit_policies.policy_id from limit_policies "
-                "where limit_policies.id = policy_assignments.limit_policy_id"
-                ") "
-                "where policy_type = 'limit' and policy_id is null and limit_policy_id is not null"
-            )
-        )
     connection.execute(
         text(
             "update policy_assignments "

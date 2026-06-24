@@ -14,6 +14,7 @@ from app.modules.policies.internal.models import (
     LimitPolicy,
     LimitPolicyRule,
 )
+from app.modules.policy_kernel import repository as policy_kernel_repository
 from app.modules.providers import facade as providers_facade
 from app.modules.providers.internal.models import (
     CredentialPool,
@@ -80,8 +81,48 @@ async def test_provider_impact_detects_policy_routes_and_recent_usage(
         input_modalities=["text"],
         output_modalities=["text"],
     )
-    policy = AccessPolicy(org_id=org.id, name="Production access")
-    limit_policy = LimitPolicy(org_id=org.id, name="Provider budget")
+    shared_access_policy = await policy_kernel_repository.create_policy(
+        org_id=org.id,
+        kind="access",
+        name="Production access",
+        description=None,
+        is_active=True,
+        db=db_session,
+    )
+    access_revision = await policy_kernel_repository.create_policy_revision(
+        org_id=org.id,
+        policy_id=shared_access_policy.id,
+        revision_number=1,
+        status="active",
+        created_by=None,
+        db=db_session,
+    )
+    shared_limit_policy = await policy_kernel_repository.create_policy(
+        org_id=org.id,
+        kind="limit",
+        name="Provider budget",
+        description=None,
+        is_active=True,
+        db=db_session,
+    )
+    limit_revision = await policy_kernel_repository.create_policy_revision(
+        org_id=org.id,
+        policy_id=shared_limit_policy.id,
+        revision_number=1,
+        status="active",
+        created_by=None,
+        db=db_session,
+    )
+    policy = AccessPolicy(
+        org_id=org.id,
+        policy_id=shared_access_policy.id,
+        name="Production access",
+    )
+    limit_policy = LimitPolicy(
+        org_id=org.id,
+        policy_id=shared_limit_policy.id,
+        name="Provider budget",
+    )
     db_session.add_all([pool, model, policy, limit_policy])
     await db_session.flush()
     membership = CredentialPoolCredential(
@@ -92,6 +133,7 @@ async def test_provider_impact_detects_policy_routes_and_recent_usage(
     public_model = AccessPolicyPublicModel(
         org_id=org.id,
         access_policy_id=policy.id,
+        policy_revision_id=access_revision.id,
         public_model_name="model-a",
         routing_mode="single_route",
         fallback_on=[],
@@ -108,6 +150,7 @@ async def test_provider_impact_detects_policy_routes_and_recent_usage(
     rule = LimitPolicyRule(
         org_id=org.id,
         limit_policy_id=limit_policy.id,
+        policy_revision_id=limit_revision.id,
         name="Provider requests",
         limit_type="requests",
         limit_value=100,

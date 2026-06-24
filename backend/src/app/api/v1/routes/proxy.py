@@ -36,7 +36,6 @@ from app.modules.keys.schemas import (
     ResolveKeySubjectRequest,
 )
 from app.modules.policies.dimensions import PolicyDimensionStage, to_dimension_snapshot
-from app.modules.policies.internal import repository as policies_repository
 from app.modules.policies.runtime_limits import (
     RuntimeLimitEvaluationInput,
     evaluate_runtime_limits_readonly,
@@ -47,6 +46,7 @@ from app.modules.policies.runtime_limits import (
     limit_rule_counting_unit,
     limit_rule_matches_runtime_subject,
 )
+from app.modules.policy_kernel import repository as policy_kernel_repository
 from app.modules.providers import facade as providers_facade
 from app.modules.providers.errors import (
     ProviderAdapterNotFoundError,
@@ -2577,7 +2577,7 @@ async def _record_gateway_route_attempt_started(
         db=db,
     )
     assignment = (
-        await policies_repository.get_policy_assignment(
+        await policy_kernel_repository.get_policy_assignment(
             assignment_id=resolved.access_policy_assignment_id,
             org_id=resolved.org_id,
             db=db,
@@ -2637,7 +2637,7 @@ async def _gateway_route_attempt_snapshot(
     )
     offering = await db.get(ModelOffering, resolved.model_offering_id)
     policy = (
-        await policies_repository.get_policy(
+        await policy_kernel_repository.get_policy(
             policy_id=resolved.access_policy_id,
             org_id=resolved.org_id,
             db=db,
@@ -2646,7 +2646,7 @@ async def _gateway_route_attempt_snapshot(
         else None
     )
     assignment = (
-        await policies_repository.get_policy_assignment(
+        await policy_kernel_repository.get_policy_assignment(
             assignment_id=resolved.access_policy_assignment_id,
             org_id=resolved.org_id,
             db=db,
@@ -2719,7 +2719,7 @@ async def _record_gateway_access_decision(
     if gateway_request_id is None:
         return
     assignment = (
-        await policies_repository.get_policy_assignment(
+        await policy_kernel_repository.get_policy_assignment(
             assignment_id=resolved.access_policy_assignment_id,
             org_id=resolved.org_id,
             db=db,
@@ -3117,7 +3117,7 @@ async def _record_gateway_limit_decision(
 ) -> None:
     if gateway_request_id is None:
         return
-    assignment = await policies_repository.get_policy_assignment(
+    assignment = await policy_kernel_repository.get_policy_assignment(
         assignment_id=limit.limit_policy_assignment_id,
         org_id=resolved.org_id,
         db=db,

@@ -7,7 +7,7 @@ from app.modules.auth.internal.models import Team
 from app.modules.guardrails.internal import repository as guardrails_repository
 from app.modules.keys.internal.models import Project, VirtualKey
 from app.modules.keys.schemas import ResolvedAccess
-from app.modules.policies.internal.models import Policy
+from app.modules.policy_kernel.models import Policy
 from app.modules.providers.internal.models import CredentialPool, Provider
 from app.modules.usage.accounting import UsageAccounting
 from app.modules.usage.internal import repository

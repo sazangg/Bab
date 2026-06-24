@@ -355,12 +355,12 @@ export function PoliciesPage() {
   const accessPolicies = accessQuery.data?.status === 200 ? accessQuery.data.data : [];
   const limitPolicies = limitsQuery.data?.status === 200 ? limitsQuery.data.data : [];
   const assignments = assignmentsQuery.data?.status === 200 ? assignmentsQuery.data.data : [];
-  const assignmentCount = (policyId: string, type: "access" | "limit") =>
-    assignments.filter((assignment) =>
-      type === "access"
-        ? assignment.access_policy_id === policyId
-        : assignment.limit_policy_id === policyId,
-    ).length;
+  const assignmentCount = (policyId: string | null, type: "access" | "limit") =>
+    policyId
+      ? assignments.filter(
+          (assignment) => assignment.policy_type === type && assignment.policy_id === policyId,
+        ).length
+      : 0;
   const invalidatePolicies = async () => {
     await queryClient.invalidateQueries();
   };
@@ -564,7 +564,7 @@ export function AccessPolicyDetailPage() {
   const policy = policyQuery.data?.status === 200 ? policyQuery.data.data : null;
   const assignments =
     assignmentsQuery.data?.status === 200
-      ? assignmentsQuery.data.data.filter((assignment) => assignment.access_policy_id === policyId)
+      ? assignmentsQuery.data.data.filter((assignment) => assignment.policy_id === policy?.policy_id)
       : [];
   const invalidatePolicies = async () => {
     await queryClient.invalidateQueries();
@@ -684,7 +684,7 @@ export function LimitPolicyDetailPage() {
   const policy = policyQuery.data?.status === 200 ? policyQuery.data.data : null;
   const assignments =
     assignmentsQuery.data?.status === 200
-      ? assignmentsQuery.data.data.filter((assignment) => assignment.limit_policy_id === policyId)
+      ? assignmentsQuery.data.data.filter((assignment) => assignment.policy_id === policy?.policy_id)
       : [];
   const invalidatePolicies = async () => {
     await queryClient.invalidateQueries();
@@ -1170,7 +1170,7 @@ function AccessPoliciesTable({
   canAssign,
 }: {
   policies: AccessPolicyResponse[];
-  assignmentCount: (policyId: string, type: "access") => number;
+  assignmentCount: (policyId: string | null, type: "access") => number;
   isLoading: boolean;
   onEditPolicy: (policy: AccessPolicyResponse) => void;
   onAssign: (policy: AccessPolicyResponse) => void;
@@ -1227,13 +1227,13 @@ function AccessPoliciesTable({
     {
       key: "assignments",
       header: "Assignments",
-      cell: (policy) => assignmentCount(policy.id, "access"),
+      cell: (policy) => assignmentCount(policy.policy_id, "access"),
     },
     {
       key: "status",
       header: "Status",
       cell: (policy) => {
-        const status = accessPolicyStatus(policy, assignmentCount(policy.id, "access"));
+        const status = accessPolicyStatus(policy, assignmentCount(policy.policy_id, "access"));
         return <StatusBadge variant={status.variant}>{status.label}</StatusBadge>;
       },
     },
@@ -1307,7 +1307,7 @@ function LimitPoliciesTable({
   canAssign,
 }: {
   policies: LimitPolicyResponse[];
-  assignmentCount: (policyId: string, type: "limit") => number;
+  assignmentCount: (policyId: string | null, type: "limit") => number;
   isLoading: boolean;
   onConfigureRules: (policy: LimitPolicyResponse) => void;
   onEditPolicy: (policy: LimitPolicyResponse) => void;
@@ -1366,13 +1366,13 @@ function LimitPoliciesTable({
     {
       key: "assignments",
       header: "Assignments",
-      cell: (policy) => assignmentCount(policy.id, "limit"),
+      cell: (policy) => assignmentCount(policy.policy_id, "limit"),
     },
     {
       key: "status",
       header: "Status",
       cell: (policy) => {
-        const status = limitPolicyStatus(policy, assignmentCount(policy.id, "limit"));
+        const status = limitPolicyStatus(policy, assignmentCount(policy.policy_id, "limit"));
         return <StatusBadge variant={status.variant}>{status.label}</StatusBadge>;
       },
     },

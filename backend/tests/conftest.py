@@ -27,7 +27,6 @@ from app.modules.auth.internal.models import (  # noqa: F401
     User,
 )
 from app.modules.guardrails.internal.models import (  # noqa: F401
-    GuardrailAssignment,
     GuardrailEvent,
     GuardrailPolicy,
     GuardrailRule,
@@ -38,10 +37,8 @@ from app.modules.policies.internal.models import (  # noqa: F401
     AccessPolicyPublicModel,
     AccessPolicyRouteCandidate,
     LimitPolicy,
-    Policy,
-    PolicyAssignment,
-    PolicyRevision,
 )
+from app.modules.policy_kernel.models import Policy, PolicyAssignment, PolicyRevision  # noqa: F401
 from app.modules.providers.internal.models import (  # noqa: F401
     CredentialPool,
     ModelCatalogEntry,

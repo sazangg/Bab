@@ -26,7 +26,9 @@ def upgrade() -> None:
     foreign_keys = {foreign_key["name"] for foreign_key in _foreign_keys()}
     with op.batch_alter_table("access_policies") as batch_op:
         if "policy_id" not in columns:
-            batch_op.add_column(sa.Column("policy_id", sa.Uuid(), nullable=True))
+            batch_op.add_column(sa.Column("policy_id", sa.Uuid(), nullable=False))
+        else:
+            batch_op.alter_column("policy_id", existing_type=sa.Uuid(), nullable=False)
         if "fk_access_policies_policy_id_policies" not in foreign_keys:
             batch_op.create_foreign_key(
                 "fk_access_policies_policy_id_policies",

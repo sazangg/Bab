@@ -67,26 +67,8 @@ def upgrade() -> None:
             unique=True,
         )
 
-    # At most one ACTIVE assignment per (scope, policy). Implemented as a partial,
-    # expression unique index (COALESCE handles NULL scope ids so org-scoped rows still
-    # collide). Postgres-only: the production database. On SQLite (dev/test) writers
-    # serialize and the create/reactivation service checks enforce the invariant.
-    if bind.dialect.name == "postgresql":
-        nil = "'00000000-0000-0000-0000-000000000000'::uuid"
-        op.execute(
-            sa.text(
-                "CREATE UNIQUE INDEX IF NOT EXISTS uq_active_policy_assignment "
-                "ON policy_assignments ("
-                "org_id, policy_type, "
-                f"COALESCE(access_policy_id, {nil}), "
-                f"COALESCE(limit_policy_id, {nil}), "
-                "scope_type, "
-                f"COALESCE(team_id, {nil}), "
-                f"COALESCE(project_id, {nil}), "
-                f"COALESCE(virtual_key_id, {nil})"
-                ") WHERE is_active"
-            )
-        )
+    # Shared policy assignment uniqueness is owned by the canonical policy_id index
+    # added in the policy assignment temporal migration.
 
 
 def downgrade() -> None:

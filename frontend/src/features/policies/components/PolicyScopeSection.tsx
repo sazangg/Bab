@@ -160,8 +160,8 @@ export function PolicyScopeSection({
     }
     return assignment.scope_type === "project" && assignment.project_id === target.projectId;
   });
-  const accessById = new Map(accessPolicies.map((policy) => [policy.id, policy]));
-  const limitById = new Map(limitPolicies.map((policy) => [policy.id, policy]));
+  const accessById = new Map(accessPolicies.map((policy) => [policy.policy_id, policy]));
+  const limitById = new Map(limitPolicies.map((policy) => [policy.policy_id, policy]));
 
   return (
     <>
@@ -203,8 +203,8 @@ export function PolicyScopeSection({
               {scopedAssignments.map((assignment) => {
                 const policy =
                   assignment.policy_type === "access"
-                    ? accessById.get(assignment.access_policy_id ?? "")
-                    : limitById.get(assignment.limit_policy_id ?? "");
+                    ? accessById.get(assignment.policy_id)
+                    : limitById.get(assignment.policy_id);
                 return (
                   <div key={assignment.id} className="rounded-md border p-3">
                     <div className="flex items-start justify-between gap-3">
@@ -290,15 +290,15 @@ export function PolicyScopeSection({
         assignedAccessPolicyIds={
           new Set(
             scopedAssignments
-              .map((assignment) => assignment.access_policy_id)
-              .filter((policyId): policyId is string => Boolean(policyId)),
+              .filter((assignment) => assignment.policy_type === "access")
+              .map((assignment) => assignment.policy_id),
           )
         }
         assignedLimitPolicyIds={
           new Set(
             scopedAssignments
-              .map((assignment) => assignment.limit_policy_id)
-              .filter((policyId): policyId is string => Boolean(policyId)),
+              .filter((assignment) => assignment.policy_type === "limit")
+              .map((assignment) => assignment.policy_id),
           )
         }
         onOpenChange={(open) => !open && setAssignKind(null)}

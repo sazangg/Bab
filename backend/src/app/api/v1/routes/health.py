@@ -67,7 +67,11 @@ async def readiness_probe(response: Response) -> dict[str, Any]:
     return await readiness_check(response)
 
 
-@router.get("/runtime-info", response_model_exclude_none=True)
+@router.get(
+    "/runtime-info",
+    response_model=RuntimeInfoResponse,
+    response_model_exclude={"migrations": {"error"}},
+)
 async def runtime_info() -> RuntimeInfoResponse:
     try:
         migration_state = await get_migration_state(engine)

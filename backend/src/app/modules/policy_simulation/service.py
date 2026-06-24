@@ -8,29 +8,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import Scope
 from app.modules.auth.internal.models import Team
 from app.modules.auth.schemas import AuthenticatedUser
-from app.modules.guardrails import facade as guardrails_facade
-from app.modules.guardrails.evaluation import (
-    RuntimeGuardrailAssignmentRef,
-    RuntimeGuardrailPolicyRef,
-    RuntimeGuardrailRuleInput,
-    RuntimeGuardrailRuleRef,
-    RuntimeMatcherInput,
-    evaluate_guardrail_rules_readonly,
-)
-from app.modules.guardrails.internal import repository as guardrails_repository
-from app.modules.guardrails.schemas import GuardrailEvaluationContext
 from app.modules.keys.errors import VirtualKeyNotFoundError
 from app.modules.keys.internal import repository as keys_repository
 from app.modules.keys.internal.models import Project
 from app.modules.keys.schemas import ResolvedLimitPolicy
-from app.modules.policies.draft_validation import validate_policy_simulation_drafts
 from app.modules.policies.errors import PolicyPermissionError, PolicyValidationError
 from app.modules.policies.internal import repository as policies_repository
 from app.modules.policies.runtime_limits import (
     RuntimeLimitEvaluationInput,
     evaluate_runtime_limits_readonly,
 )
-from app.modules.policies.schemas import (
+from app.modules.policy_kernel import repository as policy_kernel_repository
+from app.modules.policy_simulation import adapters
+from app.modules.policy_simulation.draft_validation import validate_policy_simulation_drafts
+from app.modules.policy_simulation.errors import (
+    PolicySimulationPermissionError,
+    PolicySimulationValidationError,
+)
+from app.modules.policy_simulation.schemas import (
     PolicySimulationDecision,
     PolicySimulationDraft,
     PolicySimulationGuardrailResult,
@@ -161,7 +156,10 @@ async def simulate_active_policies(
     actor: AuthenticatedUser | None,
     db: AsyncSession,
 ) -> PolicySimulationResponse:
-    validate_policy_simulation_drafts(payload.drafts)
+    try:
+        validate_policy_simulation_drafts(payload.drafts)
+    except PolicySimulationValidationError as exc:
+        raise PolicyValidationError from exc
     target = await _resolve_simulation_target(
         org_id=org_id,
         virtual_key_id=payload.target.virtual_key_id,
@@ -325,97 +323,22 @@ async def simulate_active_policies(
                 )
 
     if payload.include_guardrails:
-        if payload.guardrail_input is None:
-            warnings.append(
-                PolicySimulationWarning(
-                    code="guardrail_content_not_provided",
-                    message=(
-                        "Guardrail detectors were not executed because no sample content "
-                        "was provided."
-                    ),
-                )
-            )
-        for route_candidate_id, resolved, is_primary_attempt in resolved_attempts:
-            for phase in ("request", "response"):
-                context = _guardrail_context(payload=payload, attempt=resolved, phase=phase)
-                detector_mode = _guardrail_detector_mode(payload=payload, phase=phase)
-                rules = await _effective_guardrail_rules(
-                    context=context,
-                    payload=payload,
-                    target=target,
-                    replacement_index=replacement_index,
-                    db=db,
-                )
-                evaluations = await evaluate_guardrail_rules_readonly(
-                    context=context,
-                    rules=rules,
-                    detector_mode=detector_mode,
-                    db=db,
-                )
-                for evaluation in evaluations:
-                    guardrail_results.append(
-                        PolicySimulationGuardrailResult(
-                            route_candidate_id=route_candidate_id,
-                            policy_id=evaluation.policy_id,
-                            policy_name=evaluation.policy_name,
-                            policy_revision_id=evaluation.policy_revision_id,
-                            policy_revision_number=evaluation.policy_revision_number,
-                            rule_id=evaluation.rule_id,
-                            rule_name=evaluation.rule_name,
-                            assignment_id=evaluation.assignment_id,
-                            assignment_mode=evaluation.assignment_mode,
-                            assignment_scope_label=evaluation.assignment_scope_label,
-                            phase=evaluation.phase,
-                            rule_type=evaluation.rule_type,
-                            effect=evaluation.effect,
-                            applicability_matched=evaluation.applicability_matched,
-                            detector_evaluated=evaluation.detector_evaluated,
-                            matched_values=evaluation.matched_values,
-                            decision=evaluation.decision,
-                            reason_code=evaluation.reason_code,
-                            message=evaluation.message,
-                            draft_ref=evaluation.draft_ref,
-                        )
-                    )
-                    if is_primary_attempt and evaluation.denied:
-                        enforced = evaluation.decision == "blocked"
-                        if final_decision != "deny":
-                            final_decision = "deny" if enforced else "would_deny"
-                            denied_stage = f"{phase}_guardrail"
-                            denied_reason = evaluation.reason_code
-                        decisions.append(
-                            PolicySimulationDecision(
-                                decision_type="guardrail",
-                                stage=f"{phase}_guardrail",
-                                outcome="denied" if enforced else "would_deny",
-                                effective_action="deny" if enforced else "would_deny",
-                                enforced=enforced,
-                                policy_id=evaluation.policy_id,
-                                policy_name=evaluation.policy_name,
-                                policy_kind="guardrail",
-                                policy_revision_id=evaluation.policy_revision_id,
-                                policy_revision_number=evaluation.policy_revision_number,
-                                assignment_id=evaluation.assignment_id,
-                                assignment_mode=evaluation.assignment_mode,
-                                assignment_scope_label=evaluation.assignment_scope_label,
-                                rule_id=evaluation.rule_id,
-                                rule_name=evaluation.rule_name,
-                                route_candidate_id=route_candidate_id,
-                                reason_code=evaluation.reason_code,
-                                message=evaluation.message,
-                                draft_ref=evaluation.draft_ref,
-                            )
-                        )
-        if payload.guardrail_input is None or payload.guardrail_input.response_text is None:
-            warnings.append(
-                PolicySimulationWarning(
-                    code="response_guardrail_content_not_provided",
-                    message=(
-                        "Response guardrail detectors were not executed because no response "
-                        "text was provided."
-                    ),
-                )
-            )
+        guardrail_outcome = await adapters.guardrail.simulate_guardrails_for_attempts(
+            payload=payload,
+            attempts=resolved_attempts,
+            target=target,
+            replacement_index=replacement_index.guardrail,
+            initial_final_decision=final_decision,
+            initial_denied_stage=denied_stage,
+            initial_denied_reason=denied_reason,
+            db=db,
+        )
+        guardrail_results.extend(guardrail_outcome.results)
+        decisions.extend(guardrail_outcome.decisions)
+        warnings.extend(guardrail_outcome.warnings)
+        final_decision = guardrail_outcome.final_decision
+        denied_stage = guardrail_outcome.denied_stage
+        denied_reason = guardrail_outcome.denied_reason
 
     return PolicySimulationResponse(
         subject=subject,
@@ -550,25 +473,31 @@ async def _validate_replacement_drafts(
                 shared_policy_id=policy.policy_id,
             )
             continue
-        policy = await guardrails_repository.get_policy(
-            policy_id=draft.existing_policy_id,
-            org_id=org_id,
-            db=db,
-        )
-        if policy is None or not policy.is_active:
-            if _is_scoped_actor(actor):
-                raise PolicyPermissionError
-            raise PolicyValidationError
-        if not await _can_replace_guardrail_policy(
-            actor=actor,
-            target=target,
-            policy=policy,
-            db=db,
-        ):
-            raise PolicyPermissionError
+        try:
+            replacement = await adapters.guardrail.validate_guardrail_replacement_policy(
+                org_id=org_id,
+                policy_id=draft.existing_policy_id,
+                actor_is_scoped=_is_scoped_actor(actor),
+                actor_can_manage_all=(
+                    actor is None
+                    or actor.role in {"org_owner", "org_admin"}
+                    or _has_org_permission(actor, "policies.view")
+                ),
+                assignment_visible=lambda assignment: _assignment_visible_to_actor(
+                    actor=actor,
+                    target=target,
+                    assignment=assignment,
+                    db=db,
+                ),
+                db=db,
+            )
+        except PolicySimulationPermissionError as exc:
+            raise PolicyPermissionError from exc
+        except PolicySimulationValidationError as exc:
+            raise PolicyValidationError from exc
         guardrail[draft.existing_policy_id] = _ReplacementPolicy(
-            concrete_id=policy.id,
-            shared_policy_id=policy.policy_id,
+            concrete_id=replacement.concrete_id,
+            shared_policy_id=replacement.shared_policy_id,
         )
     return _ReplacementIndex(access=access, limit=limit, guardrail=guardrail)
 
@@ -633,47 +562,19 @@ async def _can_replace_policy(
     if _policy_owned_in_actor_scope(actor=actor, policy=policy, target=target):
         return True
     assignments = (
-        await policies_repository.list_policy_assignments_for_access_policy(
+        await policy_kernel_repository.list_policy_assignments_for_policy(
             org_id=target.org_id,
-            access_policy_id=policy.id,
+            policy_id=policy.policy_id,
             active_only=True,
             db=db,
         )
         if kind == "access"
-        else await policies_repository.list_policy_assignments_for_limit_policy(
+        else await policy_kernel_repository.list_policy_assignments_for_policy(
             org_id=target.org_id,
-            limit_policy_id=policy.id,
+            policy_id=policy.policy_id,
             active_only=True,
             db=db,
         )
-    )
-    for assignment in assignments:
-        if await _assignment_visible_to_actor(
-            actor=actor,
-            target=target,
-            assignment=assignment,
-            db=db,
-        ):
-            return True
-    return False
-
-
-async def _can_replace_guardrail_policy(
-    *,
-    actor: AuthenticatedUser | None,
-    target: _SimulationTarget,
-    policy,
-    db: AsyncSession,
-) -> bool:
-    if actor is None:
-        return True
-    if actor.role in {"org_owner", "org_admin"} or _has_org_permission(actor, "policies.view"):
-        return True
-    assignments = await guardrails_repository.list_policy_assignments(
-        org_id=target.org_id,
-        policy_id=policy.id,
-        active_only=True,
-        db=db,
     )
     for assignment in assignments:
         if await _assignment_visible_to_actor(
@@ -979,7 +880,7 @@ async def _effective_access_candidates_with_drafts(
     replacement_index: _ReplacementIndex,
     db: AsyncSession,
 ) -> list[_AccessCandidateRef]:
-    saved_assignments = await policies_repository.list_active_policy_assignments_for_targets(
+    saved_assignments = await policy_kernel_repository.list_active_policy_assignments_for_targets(
         org_id=target.org_id,
         team_id=target.team_id,
         project_id=target.project_id,
@@ -1067,8 +968,7 @@ async def _saved_access_candidates_for_scope(
             if replacement is None:
                 continue
             if (
-                assignment.access_policy_id == replacement.concrete_id
-                or assignment.policy_id == replacement.shared_policy_id
+                assignment.policy_id == replacement.shared_policy_id
             ):
                 replacement_item = item
                 break
@@ -1103,48 +1003,32 @@ async def _access_candidates_from_saved_assignment(
     assignment_ref: _AccessAssignmentRef,
     db: AsyncSession,
 ) -> list[_AccessCandidateRef]:
-    if assignment.policy_id is not None:
-        policy = await policies_repository.get_policy(
-            policy_id=assignment.policy_id,
-            org_id=org_id,
-            db=db,
-        )
-        if policy is None or policy.kind != "access" or not policy.is_active:
-            return []
-        revision = await policies_repository.get_active_policy_revision(
-            org_id=org_id,
-            policy_id=policy.id,
-            db=db,
-        )
-        if revision is None:
-            return []
-        public_models = await policies_repository.list_access_policy_revision_public_models(
-            org_id=org_id,
-            policy_revision_id=revision.id,
-            db=db,
-        )
-    elif assignment.access_policy_id is not None:
-        policy = await policies_repository.get_access_policy(
-            policy_id=assignment.access_policy_id,
-            org_id=org_id,
-            db=db,
-        )
-        if policy is None or policy.policy_id is None or not policy.is_active:
-            return []
-        public_models = await policies_repository.list_access_policy_public_models(
-            org_id=org_id,
-            access_policy_id=policy.id,
-            db=db,
-        )
-    else:
+    policy = await policy_kernel_repository.get_policy(
+        policy_id=assignment.policy_id,
+        org_id=org_id,
+        db=db,
+    )
+    if policy is None or policy.kind != "access" or not policy.is_active:
         return []
+    revision = await policy_kernel_repository.get_active_policy_revision(
+        org_id=org_id,
+        policy_id=policy.id,
+        db=db,
+    )
+    if revision is None:
+        return []
+    public_models = await policies_repository.list_access_policy_revision_public_models(
+        org_id=org_id,
+        policy_revision_id=revision.id,
+        db=db,
+    )
     candidates: list[_AccessCandidateRef] = []
     for public_model in public_models:
         if not public_model.is_active:
             continue
         public_model_ref = _AccessPublicModelRef(
             public_model_id=public_model.id,
-            access_policy_id=public_model.access_policy_id or assignment.policy_id,
+            access_policy_id=assignment.policy_id,
             access_policy_revision_id=public_model.policy_revision_id,
             public_model_name=public_model.public_model_name,
             routing_mode=public_model.routing_mode,
@@ -1266,7 +1150,7 @@ def _assignment_ref_from_saved(assignment) -> _AccessAssignmentRef:
         virtual_key_id=assignment.virtual_key_id,
         assignment_id=assignment.id,
         policy_id=assignment.policy_id,
-        access_policy_id=assignment.access_policy_id,
+        access_policy_id=None,
     )
 
 
@@ -1531,7 +1415,7 @@ async def _saved_limit_policies_for_route_context(
     resolved: _SimulationRouteContext,
     db: AsyncSession,
 ) -> list[ResolvedLimitPolicy]:
-    assignments = await policies_repository.list_active_policy_assignments_for_targets(
+    assignments = await policy_kernel_repository.list_active_policy_assignments_for_targets(
         org_id=target.org_id,
         team_id=target.team_id,
         project_id=target.project_id,
@@ -1541,16 +1425,14 @@ async def _saved_limit_policies_for_route_context(
     )
     limits: list[ResolvedLimitPolicy] = []
     for assignment in assignments:
-        if assignment.limit_policy_id is None:
-            continue
-        policy = await policies_repository.get_limit_policy(
-            policy_id=assignment.limit_policy_id,
+        policy = await policies_repository.get_limit_policy_by_shared_policy(
+            shared_policy_id=assignment.policy_id,
             org_id=target.org_id,
             db=db,
         )
-        if policy is None or policy.policy_id is None or not policy.is_active:
+        if policy is None or not policy.is_active:
             continue
-        active_revision = await policies_repository.get_active_policy_revision(
+        active_revision = await policy_kernel_repository.get_active_policy_revision(
             org_id=target.org_id,
             policy_id=policy.policy_id,
             db=db,
@@ -1669,7 +1551,7 @@ async def _saved_limit_rules_for_replacement(
 ):
     if replacement is None or replacement.shared_policy_id is None:
         return []
-    active_revision = await policies_repository.get_active_policy_revision(
+    active_revision = await policy_kernel_repository.get_active_policy_revision(
         org_id=org_id,
         policy_id=replacement.shared_policy_id,
         db=db,
@@ -1720,210 +1602,6 @@ def _limit_rule_filters_match(*, rule, resolved: _SimulationRouteContext) -> boo
     return True
 
 
-async def _effective_guardrail_rules(
-    *,
-    context: GuardrailEvaluationContext,
-    payload: PolicySimulationRequest,
-    target: _SimulationTarget,
-    replacement_index: _ReplacementIndex,
-    db: AsyncSession,
-) -> list[RuntimeGuardrailRuleInput]:
-    saved_rules = await guardrails_facade.runtime_rules_for_context_readonly(
-        context=context,
-        db=db,
-    )
-    replaced_policy_ids = {
-        replacement_index.guardrail[draft.existing_policy_id].concrete_id
-        for draft in payload.drafts
-        if draft.kind == "guardrail"
-        and draft.operation == "replace_policy"
-        and draft.existing_policy_id is not None
-        and draft.existing_policy_id in replacement_index.guardrail
-    }
-    active_replaced_policy_ids = {
-        rule.policy_ref.policy_id
-        for rule in saved_rules
-        if rule.policy_ref.policy_id in replaced_policy_ids
-    }
-    effective_rules = [
-        rule for rule in saved_rules if rule.policy_ref.policy_id not in replaced_policy_ids
-    ]
-    effective_rules.extend(
-        _runtime_guardrail_draft_rules(
-            payload.drafts,
-            target=target,
-            active_replaced_policy_ids=active_replaced_policy_ids,
-            replacement_index=replacement_index,
-        )
-    )
-    return _sort_runtime_guardrail_rules(effective_rules)
-
-
-def _runtime_guardrail_draft_rules(
-    drafts: list[PolicySimulationDraft],
-    *,
-    target: _SimulationTarget,
-    active_replaced_policy_ids: set[UUID | None],
-    replacement_index: _ReplacementIndex,
-) -> list[RuntimeGuardrailRuleInput]:
-    runtime_rules: list[RuntimeGuardrailRuleInput] = []
-    for draft_index, draft in enumerate(drafts):
-        if draft.kind != "guardrail" or draft.guardrail_policy is None:
-            continue
-        if not draft.guardrail_policy.is_active:
-            continue
-        if not _guardrail_draft_applies(
-            draft=draft,
-            target=target,
-            active_replaced_policy_ids=active_replaced_policy_ids,
-            replacement_index=replacement_index,
-        ):
-            continue
-        assignment_mode = (
-            draft.assignment.guardrail_assignment_mode
-            if draft.assignment and draft.assignment.guardrail_assignment_mode
-            else "enforce"
-        )
-        policy_ref = RuntimeGuardrailPolicyRef(
-            policy_key=f"draft[{draft_index}]:guardrail_policy",
-            policy_id=None,
-            policy_revision_id=None,
-            policy_name=draft.guardrail_policy.name,
-            policy_revision_number=None,
-            enforcement_mode=draft.guardrail_policy.enforcement_mode,
-            draft_ref=f"draft[{draft_index}]:guardrail_policy",
-        )
-        assignment_ref = RuntimeGuardrailAssignmentRef(
-            assignment_id=None,
-            assignment_mode=assignment_mode,
-            assignment_scope_type=draft.assignment.scope_type if draft.assignment else None,
-            assignment_scope_label=draft.assignment.scope_type if draft.assignment else None,
-            draft_ref=f"draft[{draft_index}]:guardrail_policy.assignment",
-        )
-        for rule_index, rule in enumerate(draft.guardrail_policy.rules):
-            if not rule.is_active:
-                continue
-            draft_ref = f"draft[{draft_index}]:guardrail_policy.rules[{rule_index}]"
-            for phase in _guardrail_rule_phases(rule.phase):
-                runtime_rules.append(
-                    RuntimeGuardrailRuleInput(
-                        policy_ref=policy_ref,
-                        assignment_refs=[assignment_ref],
-                        rule_ref=RuntimeGuardrailRuleRef(
-                            rule_id=None,
-                            rule_name=None,
-                            rule_index=rule_index,
-                            draft_ref=draft_ref,
-                        ),
-                        phase=phase,
-                        source_phase=rule.phase,
-                        rule_type=rule.rule_type,
-                        effect=rule.effect,
-                        values=rule.values,
-                        config=rule.config,
-                        matchers=[
-                            RuntimeMatcherInput(
-                                dimension=matcher.dimension,
-                                operator=matcher.operator,
-                                value_json=matcher.value_json,
-                            )
-                            for matcher in rule.matchers
-                        ],
-                        priority=rule.priority,
-                        is_active=rule.is_active,
-                    )
-                )
-    return runtime_rules
-
-
-def _guardrail_draft_applies(
-    *,
-    draft: PolicySimulationDraft,
-    target: _SimulationTarget,
-    active_replaced_policy_ids: set[UUID | None],
-    replacement_index: _ReplacementIndex,
-) -> bool:
-    if draft.operation == "replace_policy":
-        replacement = (
-            replacement_index.guardrail.get(draft.existing_policy_id)
-            if draft.existing_policy_id is not None
-            else None
-        )
-        if replacement is None:
-            return False
-        if draft.assignment is None:
-            return replacement.concrete_id in active_replaced_policy_ids
-    return _draft_assignment_matches_target(draft=draft, target=target)
-
-
-def _sort_runtime_guardrail_rules(
-    rules: list[RuntimeGuardrailRuleInput],
-) -> list[RuntimeGuardrailRuleInput]:
-    return sorted(
-        rules,
-        key=lambda item: (
-            item.priority,
-            item.source_created_at is None,
-            item.source_created_at.isoformat() if item.source_created_at else "",
-            item.rule_ref.rule_index,
-        ),
-    )
-
-
-def _guardrail_rule_phases(source_phase: str) -> list[str]:
-    if source_phase == "both":
-        return ["request", "response"]
-    return [source_phase]
-
-
-def _guardrail_context(
-    *,
-    payload: PolicySimulationRequest,
-    attempt: _SimulationRouteContext,
-    phase: str,
-) -> GuardrailEvaluationContext:
-    guardrail_input = payload.guardrail_input
-    prompt_text = ""
-    response_text = ""
-    if guardrail_input is not None:
-        prompt_text = (
-            guardrail_input.prompt_text
-            if guardrail_input.prompt_text is not None
-            else _messages_text(guardrail_input.messages)
-        )
-        response_text = guardrail_input.response_text or ""
-    return GuardrailEvaluationContext(
-        org_id=attempt.org_id,
-        team_id=attempt.team_id,
-        project_id=attempt.project_id,
-        virtual_key_id=attempt.virtual_key_id,
-        provider_id=attempt.provider_id,
-        pool_id=attempt.pool_id,
-        provider_model_offering_id=attempt.model_offering_id,
-        public_model_id=attempt.public_model_id,
-        public_model_name=attempt.public_model_name,
-        route_candidate_id=attempt.route_candidate_id,
-        gateway_endpoint=payload.gateway_endpoint,
-        requested_model=payload.requested_model,
-        provider_model=attempt.provider_model,
-        prompt_text=prompt_text,
-        response_text=response_text,
-        phase=phase,
-    )
-
-
-def _guardrail_detector_mode(*, payload: PolicySimulationRequest, phase: str) -> str:
-    if payload.guardrail_input is None:
-        return "applicability_only"
-    if phase == "response" and payload.guardrail_input.response_text is None:
-        return "applicability_only"
-    if phase == "request" and not (
-        payload.guardrail_input.prompt_text or payload.guardrail_input.messages
-    ):
-        return "applicability_only"
-    return "execute_detectors"
-
-
 def _estimated_cost_cents(
     *,
     payload: PolicySimulationRequest,
@@ -1964,18 +1642,3 @@ def _costing_context(resolved: _SimulationRouteContext) -> CostingContext:
     )
 
 
-def _messages_text(messages: list[dict[str, Any]]) -> str:
-    return "\n".join(_content_to_text(message.get("content")) for message in messages)
-
-
-def _content_to_text(content: Any) -> str:
-    if content is None:
-        return ""
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        return " ".join(_content_to_text(part) for part in content)
-    if isinstance(content, dict):
-        text = content.get("text")
-        return text if isinstance(text, str) else ""
-    return str(content)

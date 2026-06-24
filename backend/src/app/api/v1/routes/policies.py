@@ -2,7 +2,6 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import (
@@ -12,7 +11,6 @@ from app.api.v1.deps import (
     require_permission_or_scoped_admin,
 )
 from app.core.database import Scope, get_db
-from app.modules.auth.internal.models import Team
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys.errors import (
     InvalidVirtualKeyError,
@@ -21,7 +19,6 @@ from app.modules.keys.errors import (
     ProjectInactiveError,
     VirtualKeyNotFoundError,
 )
-from app.modules.keys.internal.models import Project, VirtualKey
 from app.modules.policies import facade
 from app.modules.policies.errors import (
     PolicyAssignmentConflictError,
@@ -41,14 +38,17 @@ from app.modules.policies.schemas import (
     LimitPolicyRuleResponse,
     PolicyAssignmentResponse,
     PolicyImpactResponse,
-    PolicySimulationRequest,
-    PolicySimulationResponse,
     ScopedPolicyAssignmentResponse,
     UpdateAccessPolicyRequest,
     UpdateLimitPolicyRequest,
     UpdateLimitPolicyRuleRequest,
     UpdatePolicyAssignmentRequest,
 )
+from app.modules.policy_simulation.schemas import (
+    PolicySimulationRequest,
+    PolicySimulationResponse,
+)
+from app.modules.workspace_access import ScopeAccessDeniedError, WorkspaceAccessService
 
 router = APIRouter(prefix="/policies", tags=["policies"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
@@ -59,6 +59,7 @@ ScopedPolicyViewer = Annotated[
 ]
 PolicyAdmin = Annotated[AuthenticatedUser, Depends(require_permission("policies.manage"))]
 AssignmentActor = Annotated[AuthenticatedUser, Depends(get_current_user)]
+workspace_access = WorkspaceAccessService()
 
 
 @router.get("/access")
@@ -91,9 +92,7 @@ async def get_access_policy(
     db: DatabaseSession,
 ) -> AccessPolicyResponse:
     try:
-        return await facade.get_access_policy(
-            policy_id=policy_id, scope=scope, db=db, actor=_user
-        )
+        return await facade.get_access_policy(policy_id=policy_id, scope=scope, db=db, actor=_user)
     except PolicyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="access policy not found") from exc
 
@@ -241,9 +240,7 @@ async def get_limit_policy(
     db: DatabaseSession,
 ) -> LimitPolicyResponse:
     try:
-        return await facade.get_limit_policy(
-            policy_id=policy_id, scope=scope, db=db, actor=_user
-        )
+        return await facade.get_limit_policy(policy_id=policy_id, scope=scope, db=db, actor=_user)
     except PolicyNotFoundError as exc:
         raise HTTPException(status_code=404, detail="limit policy not found") from exc
 
@@ -516,75 +513,15 @@ async def _require_assignment_admin(
     scope: Scope,
     db: AsyncSession,
 ) -> None:
-    if _is_global_assignment_admin(user):
-        return
-    if scope_type == "org":
-        raise HTTPException(status_code=403, detail="insufficient permissions")
-    if await _scoped_assignment_admin(
-        user=user,
-        scope_type=scope_type,
-        team_id=team_id,
-        project_id=project_id,
-        virtual_key_id=virtual_key_id,
-        scope=scope,
-        db=db,
-    ):
-        return
-    raise HTTPException(status_code=403, detail="insufficient permissions")
-
-
-def _is_global_assignment_admin(user: AuthenticatedUser) -> bool:
-    return "*" in user.permissions or user.role in {"org_owner", "org_admin"}
-
-
-async def _scoped_assignment_admin(
-    *,
-    user: AuthenticatedUser,
-    scope_type: str,
-    team_id: UUID | None,
-    project_id: UUID | None,
-    virtual_key_id: UUID | None,
-    scope: Scope,
-    db: AsyncSession,
-) -> bool:
-    team_admin_ids = {item.team_id for item in user.team_memberships if item.role == "team_admin"}
-    project_admin_ids = {
-        item.project_id for item in user.project_memberships if item.role == "project_admin"
-    }
-    if scope_type == "team":
-        if team_id is None:
-            return False
-        exists = await db.scalar(
-            select(Team.id).where(Team.org_id == scope.org_id, Team.id == team_id)
+    try:
+        await workspace_access.require_assignment_admin(
+            actor=user,
+            scope=scope,
+            scope_type=scope_type,
+            team_id=team_id,
+            project_id=project_id,
+            virtual_key_id=virtual_key_id,
+            db=db,
         )
-        return exists is not None and team_id in team_admin_ids
-    if scope_type == "project":
-        if project_id is None:
-            return False
-        project = await db.scalar(
-            select(Project).where(Project.org_id == scope.org_id, Project.id == project_id)
-        )
-        return project is not None and (
-            project.team_id in team_admin_ids or project.id in project_admin_ids
-        )
-    if scope_type == "virtual_key":
-        if virtual_key_id is None:
-            return False
-        virtual_key = await db.scalar(
-            select(VirtualKey).where(
-                VirtualKey.org_id == scope.org_id,
-                VirtualKey.id == virtual_key_id,
-            )
-        )
-        if virtual_key is None:
-            return False
-        project = await db.scalar(
-            select(Project).where(
-                Project.org_id == scope.org_id,
-                Project.id == virtual_key.project_id,
-            )
-        )
-        return project is not None and (
-            project.team_id in team_admin_ids or project.id in project_admin_ids
-        )
-    return False
+    except ScopeAccessDeniedError as exc:
+        raise HTTPException(status_code=403, detail="insufficient permissions") from exc
