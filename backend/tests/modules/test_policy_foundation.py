@@ -5,7 +5,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.auth.internal.models import Organization, Team
+from app.modules.auth.internal.models import Organization
 from app.modules.policies.internal import repository
 from app.modules.policies.internal.models import (
     AccessPolicy,
@@ -18,6 +18,7 @@ from app.modules.policy_kernel import repository as policy_kernel_repository
 from app.modules.policy_kernel.models import PolicyAssignment
 from app.modules.providers.internal.models import CredentialPool, ModelOffering, Provider
 from app.modules.usage.internal.models import GatewayRequest, GatewayRouteAttempt
+from app.modules.workspace.internal.models import Team
 
 
 async def _create_shared_policy(

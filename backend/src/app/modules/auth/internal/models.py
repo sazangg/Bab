@@ -110,30 +110,6 @@ class OrganizationMembership(Base):
     )
 
 
-class Team(Base):
-    __tablename__ = "teams"
-    __table_args__ = (UniqueConstraint("org_id", "slug", name="uq_team_org_slug"),)
-
-    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    org_id: Mapped[UUID] = mapped_column(
-        ForeignKey("organizations.id", ondelete="RESTRICT"),
-        index=True,
-    )
-    name: Mapped[str] = mapped_column(String(255))
-    slug: Mapped[str] = mapped_column(String(100), index=True)
-    description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
-        onupdate=lambda: datetime.now(UTC),
-    )
-
-
 class TeamMembership(Base):
     __tablename__ = "team_memberships"
     __table_args__ = (UniqueConstraint("team_id", "user_id", name="uq_team_membership_user"),)

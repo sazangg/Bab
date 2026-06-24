@@ -27,7 +27,7 @@ from app.modules.keys.errors import (
     VirtualKeyOverlapActiveError,
 )
 from app.modules.keys.internal import repository
-from app.modules.keys.internal.models import Project, VirtualKey
+from app.modules.keys.internal.models import VirtualKey
 from app.modules.keys.runtime_routes import (
     ResolvedAccessPlanExplanation,
     RouteCandidateExplanation,
@@ -92,6 +92,7 @@ from app.modules.settings import facade as settings_facade
 from app.modules.teams import facade as teams_facade
 from app.modules.teams.errors import TeamInactiveError, TeamNotFoundError
 from app.modules.teams.schemas import TeamReadState
+from app.modules.workspace.internal.models import Project
 
 logger = structlog.get_logger(__name__)
 EXPIRING_SOON_DAYS = 7

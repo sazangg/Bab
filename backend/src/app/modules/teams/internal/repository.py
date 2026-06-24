@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.auth.internal.models import Team
+from app.modules.workspace.internal.models import Team
 
 
 async def create_team(

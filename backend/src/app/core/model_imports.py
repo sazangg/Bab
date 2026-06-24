@@ -7,3 +7,4 @@ def import_all_models() -> None:
     from app.modules.providers.internal import models as provider_models  # noqa: F401
     from app.modules.settings.internal import models as settings_models  # noqa: F401
     from app.modules.usage.internal import models as usage_models  # noqa: F401
+    from app.modules.workspace.internal import models as workspace_models  # noqa: F401

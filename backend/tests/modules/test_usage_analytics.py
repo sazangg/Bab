@@ -7,8 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.auth.internal.models import Organization, Team
-from app.modules.keys.internal.models import Project, VirtualKey
+from app.modules.auth.internal.models import Organization
+from app.modules.keys.internal.models import VirtualKey
 from app.modules.policies.internal.models import LimitPolicy, LimitPolicyRule
 from app.modules.policy_kernel import repository as policy_kernel_repository
 from app.modules.policy_kernel.models import PolicyAssignment
@@ -20,6 +20,7 @@ from app.modules.usage.internal.repository import (
     _json_array_contains_postgresql,
     _records_to_totals,
 )
+from app.modules.workspace.internal.models import Project, Team
 
 
 async def _create_usage_identity(db_session: AsyncSession) -> SimpleNamespace:

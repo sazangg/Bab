@@ -9,8 +9,9 @@ from app.modules.auth.internal.models import (
     ProjectMembership,
     TeamMembership,
 )
-from app.modules.keys.internal.models import Project, VirtualKey
+from app.modules.keys.internal.models import VirtualKey
 from app.modules.usage.internal.models import UsageRecord
+from app.modules.workspace.internal.models import Project
 
 
 async def get_organization(*, org_id: UUID, db: AsyncSession) -> Organization | None:

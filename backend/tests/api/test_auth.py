@@ -16,10 +16,10 @@ from app.modules.auth.internal.models import (
     OrganizationMembership,
     ProjectMembership,
     RefreshSession,
-    Team,
     TeamMembership,
     User,
 )
+from app.modules.workspace.internal.models import Team
 
 
 def _parse_api_datetime(value: str) -> datetime:

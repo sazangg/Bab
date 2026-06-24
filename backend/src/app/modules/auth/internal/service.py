@@ -43,7 +43,6 @@ from app.modules.auth.internal.models import (
     Organization,
     OrganizationMembership,
     ProjectMembership,
-    Team,
     TeamMembership,
     User,
 )
@@ -82,6 +81,7 @@ from app.modules.auth.schemas import (
 )
 from app.modules.keys import read_models as key_read_models
 from app.modules.keys.schemas import ProjectMembershipTarget
+from app.modules.workspace.internal.models import Team
 
 MOCK_ADMIN_ID = UUID("00000000-0000-4000-8000-000000000001")
 INVITE_TOKEN_TTL = timedelta(days=7)

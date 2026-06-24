@@ -8,15 +8,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.deps import get_current_user
 from app.core.database import Scope
 from app.modules.activity.internal.models import ActivityEvent
-from app.modules.auth.internal.models import Organization, Team
+from app.modules.auth.internal.models import Organization
 from app.modules.auth.schemas import (
     AuthenticatedProjectMembership,
     AuthenticatedTeamMembership,
     AuthenticatedUser,
 )
-from app.modules.keys.internal.models import Project, VirtualKey
+from app.modules.keys.internal.models import VirtualKey
 from app.modules.policies import facade as policies_facade
 from app.modules.policies.schemas import CreateAccessPolicyRequest, CreatePolicyAssignmentRequest
+from app.modules.workspace.internal.models import Project, Team
 
 
 def _principal(

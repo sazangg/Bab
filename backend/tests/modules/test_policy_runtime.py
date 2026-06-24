@@ -13,7 +13,6 @@ from app.modules.auth.internal.models import (
     AuditEvent,
     Organization,
     OrganizationMembership,
-    Team,
     User,
 )
 from app.modules.auth.schemas import (
@@ -121,6 +120,7 @@ from app.modules.usage.internal.models import (
     UsageRecord,
 )
 from app.modules.usage.schemas import CreateGatewayRequest, RecordUsage
+from app.modules.workspace.internal.models import Team
 
 
 def _public_model_route(

@@ -22,7 +22,6 @@ from app.modules.auth.internal.models import (  # noqa: F401
     Organization,
     OrganizationMembership,
     RefreshSession,
-    Team,
     TeamMembership,
     User,
 )
@@ -31,7 +30,7 @@ from app.modules.guardrails.internal.models import (  # noqa: F401
     GuardrailPolicy,
     GuardrailRule,
 )
-from app.modules.keys.internal.models import Project, VirtualKey  # noqa: F401
+from app.modules.keys.internal.models import VirtualKey  # noqa: F401
 from app.modules.policies.internal.models import (  # noqa: F401
     AccessPolicy,
     AccessPolicyPublicModel,
@@ -55,6 +54,7 @@ from app.modules.usage.internal.models import (  # noqa: F401
     LimitPolicyCommittedUsage,
     UsageRecord,
 )
+from app.modules.workspace.internal import models as workspace_models  # noqa: F401
 
 
 @pytest.fixture

@@ -18,7 +18,6 @@ from app.core.database import Scope
 from app.modules.auth.internal.models import (
     Organization,
     ProjectMembership,
-    Team,
     TeamMembership,
     User,
 )
@@ -34,9 +33,10 @@ from app.modules.guardrails.schemas import (
     CreateGuardrailPolicyRequest,
     UpdateGuardrailAssignmentRequest,
 )
-from app.modules.keys.internal.models import Project, VirtualKey
+from app.modules.keys.internal.models import VirtualKey
 from app.modules.policies import facade as policies_facade
 from app.modules.policies.schemas import CreateLimitPolicyRequest, CreatePolicyAssignmentRequest
+from app.modules.workspace.internal.models import Project, Team
 
 
 def _user(
