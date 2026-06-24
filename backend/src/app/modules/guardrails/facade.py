@@ -58,11 +58,11 @@ from app.modules.policy_kernel import (
 )
 from app.modules.policy_kernel import repository as policy_kernel_repository
 from app.modules.policy_kernel.models import Policy, PolicyAssignment
-from app.modules.workspace_access import ScopeNotFoundError, WorkspaceAccessService
+from app.modules.workspace import facade as workspace_facade
+from app.modules.workspace.errors import WorkspaceScopeNotFoundError
 
 GUARDRAIL_SCAN_CHAR_LIMIT = _GUARDRAIL_SCAN_CHAR_LIMIT
 _matched_regex_values = matched_regex_values
-_workspace_access = WorkspaceAccessService()
 
 
 @dataclass(frozen=True)
@@ -1358,7 +1358,7 @@ async def _validate_assignment_target(
     db: AsyncSession,
 ) -> tuple[UUID | None, UUID | None, UUID | None]:
     try:
-        validated = await _workspace_access.validate_assignment_scope(
+        validated = await workspace_facade.validate_assignment_scope(
             organization_id=org_id,
             scope_type=scope_type,
             team_id=team_id,
@@ -1366,7 +1366,7 @@ async def _validate_assignment_target(
             virtual_key_id=virtual_key_id,
             db=db,
         )
-    except ScopeNotFoundError as exc:
+    except WorkspaceScopeNotFoundError as exc:
         raise GuardrailAssignmentTargetNotFoundError from exc
     return validated.team_id, validated.project_id, validated.virtual_key_id
 
@@ -1413,8 +1413,8 @@ async def _visible_assignments(
             visible.append(assignment)
             continue
         if assignment.project_id is not None:
-            project = await repository.get_project(
-                org_id=scope.org_id,
+            project = await workspace_facade.get_project_identity(
+                scope=scope,
                 project_id=assignment.project_id,
                 db=db,
             )
@@ -1422,15 +1422,15 @@ async def _visible_assignments(
                 visible.append(assignment)
             continue
         if assignment.virtual_key_id is not None:
-            virtual_key = await repository.get_virtual_key(
-                org_id=scope.org_id,
+            virtual_key = await workspace_facade.get_virtual_key_identity(
+                scope=scope,
                 virtual_key_id=assignment.virtual_key_id,
                 db=db,
             )
             if virtual_key is None:
                 continue
-            project = await repository.get_project(
-                org_id=scope.org_id,
+            project = await workspace_facade.get_project_identity(
+                scope=scope,
                 project_id=virtual_key.project_id,
                 db=db,
             )
@@ -1444,13 +1444,13 @@ async def _impact_from_assignments(
 ) -> GuardrailImpactResponse:
     teams: dict[UUID, GuardrailImpactTarget] = {}
     projects: dict[UUID, GuardrailImpactTarget] = {}
+    scope = Scope(org_id=org_id)
     project_models = await _affected_projects(org_id=org_id, assignments=assignments, db=db)
     for project in project_models:
         projects[project.id] = GuardrailImpactTarget(id=project.id, name=project.name)
-    project_names = {project.id: project.name for project in project_models}
-    keys = await repository.list_virtual_keys_for_project_ids(
-        org_id=org_id,
-        project_ids=[project.id for project in project_models],
+    keys = await workspace_facade.list_workspace_virtual_keys(
+        scope=scope,
+        project_ids={project.id for project in project_models},
         db=db,
     )
     virtual_keys = {
@@ -1458,33 +1458,37 @@ async def _impact_from_assignments(
             id=key.id,
             name=key.name,
             project_id=key.project_id,
-            project_name=project_names.get(key.project_id, "Unknown project"),
+            project_name=key.project_name,
         )
         for key in keys
     }
     for assignment in assignments:
         if assignment.scope_type == "team" and assignment.team_id is not None:
-            team = await repository.get_team(org_id=org_id, team_id=assignment.team_id, db=db)
-            if team is not None:
-                teams[team.id] = GuardrailImpactTarget(id=team.id, name=team.name)
-        elif assignment.scope_type == "virtual_key" and assignment.virtual_key_id is not None:
-            key = await repository.get_virtual_key(
-                org_id=org_id,
-                virtual_key_id=assignment.virtual_key_id,
+            labels = await workspace_facade.get_workspace_label_maps(
+                scope=scope,
+                team_ids={assignment.team_id},
+                project_ids=set(),
+                virtual_key_ids=set(),
                 db=db,
             )
-            if key is None:
-                continue
-            project = await repository.get_project(org_id=org_id, project_id=key.project_id, db=db)
-            if project is None:
-                continue
-            virtual_keys[key.id] = GuardrailImpactVirtualKey(
-                id=key.id,
-                name=key.name,
-                project_id=project.id,
-                project_name=project.name,
+            if assignment.team_id in labels.teams:
+                teams[assignment.team_id] = GuardrailImpactTarget(
+                    id=assignment.team_id,
+                    name=labels.teams[assignment.team_id],
+                )
+        elif assignment.scope_type == "virtual_key" and assignment.virtual_key_id is not None:
+            key_options = await workspace_facade.list_workspace_virtual_keys(
+                scope=scope,
+                virtual_key_ids={assignment.virtual_key_id},
+                usable_only=False,
+                db=db,
             )
-            projects[project.id] = GuardrailImpactTarget(id=project.id, name=project.name)
+            for key in key_options:
+                virtual_keys[key.id] = GuardrailImpactVirtualKey(**key.__dict__)
+                projects[key.project_id] = GuardrailImpactTarget(
+                    id=key.project_id,
+                    name=key.project_name,
+                )
     return GuardrailImpactResponse(
         affected_teams=list(teams.values()),
         affected_projects=list(projects.values()),
@@ -1499,18 +1503,31 @@ async def _affected_projects(
     *, org_id: UUID, assignments: list[GuardrailAssignmentView], db: AsyncSession
 ) -> list:
     project_ids = [item.project_id for item in assignments if item.project_id is not None]
-    team_ids = [item.team_id for item in assignments if item.team_id is not None]
+    team_ids = {item.team_id for item in assignments if item.team_id is not None}
     projects = []
     if any(item.scope_type == "org" for item in assignments):
-        projects.extend(await repository.list_all_projects(org_id=org_id, db=db))
+        projects.extend(
+            await workspace_facade.list_workspace_projects(
+                scope=Scope(org_id=org_id),
+                include_all=True,
+                db=db,
+            )
+        )
     if team_ids:
         projects.extend(
-            await repository.list_projects_for_team_ids(org_id=org_id, team_ids=team_ids, db=db)
+            await workspace_facade.list_workspace_projects(
+                scope=Scope(org_id=org_id),
+                team_ids=team_ids,
+                db=db,
+            )
         )
-    for project_id in project_ids:
-        project = await repository.get_project(org_id=org_id, project_id=project_id, db=db)
-        if project is not None:
-            projects.append(project)
+    projects.extend(
+        await workspace_facade.list_workspace_projects(
+            scope=Scope(org_id=org_id),
+            project_ids=set(project_ids),
+            db=db,
+        )
+    )
     return list({project.id: project for project in projects}.values())
 
 

@@ -28,3 +28,15 @@ class TeamResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+
+
+class TeamIdentity(BaseModel):
+    id: UUID
+    org_id: UUID
+    is_active: bool
+
+
+class TeamReadState(BaseModel):
+    id: UUID
+    name: str
+    is_active: bool

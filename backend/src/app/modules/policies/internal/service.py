@@ -70,10 +70,10 @@ from app.modules.policy_kernel import repository as policy_kernel_repository
 from app.modules.policy_kernel.models import PolicyAssignment, PolicyRevision
 from app.modules.providers import facade as providers_facade
 from app.modules.providers.errors import ProviderNotFoundError
-from app.modules.workspace_access import ScopeNotFoundError, WorkspaceAccessService
+from app.modules.workspace import facade as workspace_facade
+from app.modules.workspace.errors import WorkspaceScopeNotFoundError
 
 _FALLBACKABLE_PROVIDER_REASONS = FALLBACKABLE_PROVIDER_REASONS
-_workspace_access = WorkspaceAccessService()
 
 
 async def list_access_policies(
@@ -1708,8 +1708,8 @@ async def _parent_access_public_model_options(
         resolved_team_id = project.team_id
     if virtual_key_id is not None:
         if project_id is None:
-            virtual_key = await repository.get_virtual_key(
-                org_id=scope.org_id, virtual_key_id=virtual_key_id, db=db
+            virtual_key = await workspace_facade.get_virtual_key_identity(
+                scope=scope, virtual_key_id=virtual_key_id, db=db
             )
             if virtual_key is None:
                 raise PolicyNotFoundError
@@ -2134,40 +2134,15 @@ async def _is_admin_for_scope(
     scope: Scope,
     db: AsyncSession,
 ) -> bool:
-    team_admin_ids = {
-        membership.team_id
-        for membership in actor.team_memberships
-        if membership.role == "team_admin"
-    }
-    project_admin_ids = {
-        membership.project_id
-        for membership in actor.project_memberships
-        if membership.role == "project_admin"
-    }
-    if scope_type == "team":
-        return team_id in team_admin_ids
-    if scope_type == "project":
-        if project_id is None:
-            return False
-        project = await repository.get_project(org_id=scope.org_id, project_id=project_id, db=db)
-        return project is not None and (
-            project.id in project_admin_ids or project.team_id in team_admin_ids
-        )
-    if scope_type == "virtual_key":
-        if virtual_key_id is None:
-            return False
-        virtual_key = await repository.get_virtual_key(
-            org_id=scope.org_id, virtual_key_id=virtual_key_id, db=db
-        )
-        if virtual_key is None:
-            return False
-        project = await repository.get_project(
-            org_id=scope.org_id, project_id=virtual_key.project_id, db=db
-        )
-        return project is not None and (
-            project.id in project_admin_ids or project.team_id in team_admin_ids
-        )
-    return False
+    return await workspace_facade.can_manage_assignment_scope(
+        actor=actor,
+        scope=scope,
+        scope_type=scope_type,
+        team_id=team_id,
+        project_id=project_id,
+        virtual_key_id=virtual_key_id,
+        db=db,
+    )
 
 
 async def _can_view_assignment(
@@ -2208,32 +2183,26 @@ async def _policy_impact_from_assignments(
         teams=teams,
         projects=projects,
     )
-    for key, project in await repository.list_virtual_keys_for_project_ids(
-        org_id=scope.org_id,
-        project_ids=list(affected_project_ids),
+    for key in await workspace_facade.list_workspace_virtual_keys(
+        scope=scope,
+        project_ids=affected_project_ids,
         db=db,
     ):
-        virtual_keys[key.id] = PolicyImpactVirtualKey(
-            id=key.id,
-            name=key.name,
-            project_id=project.id,
-            project_name=project.name,
-        )
+        virtual_keys[key.id] = PolicyImpactVirtualKey(**key.__dict__)
     direct_key_ids = [
         assignment.virtual_key_id for assignment in assignments if assignment.virtual_key_id
     ]
-    for key, project in await repository.list_virtual_keys_by_ids(
-        org_id=scope.org_id,
-        virtual_key_ids=direct_key_ids,
+    for key in await workspace_facade.list_workspace_virtual_keys(
+        scope=scope,
+        virtual_key_ids=set(direct_key_ids),
+        usable_only=False,
         db=db,
     ):
-        virtual_keys[key.id] = PolicyImpactVirtualKey(
-            id=key.id,
-            name=key.name,
-            project_id=project.id,
-            project_name=project.name,
+        virtual_keys[key.id] = PolicyImpactVirtualKey(**key.__dict__)
+        projects.setdefault(
+            key.project_id,
+            PolicyImpactTarget(id=key.project_id, name=key.project_name),
         )
-        projects.setdefault(project.id, PolicyImpactTarget(id=project.id, name=project.name))
 
     unusable: dict[UUID, PolicyImpactVirtualKey] = {}
     if exclude_access_policy_id is not None:
@@ -2271,17 +2240,24 @@ async def _affected_project_ids(
     project_ids: set[UUID] = set()
     org_assigned = any(assignment.scope_type == "org" for assignment in assignments)
     if org_assigned:
-        for project in await repository.list_all_projects(org_id=scope.org_id, db=db):
+        for project in await workspace_facade.list_workspace_projects(
+            scope=scope, include_all=True, db=db
+        ):
             project_ids.add(project.id)
             projects[project.id] = PolicyImpactTarget(id=project.id, name=project.name)
 
-    team_ids = [assignment.team_id for assignment in assignments if assignment.team_id]
-    for team_id in team_ids:
-        team = await repository.get_team(org_id=scope.org_id, team_id=team_id, db=db)
-        if team is not None:
-            teams[team.id] = PolicyImpactTarget(id=team.id, name=team.name)
-    for project in await repository.list_projects_for_team_ids(
-        org_id=scope.org_id,
+    team_ids = {assignment.team_id for assignment in assignments if assignment.team_id}
+    labels = await workspace_facade.get_workspace_label_maps(
+        scope=scope,
+        team_ids=team_ids,
+        project_ids=set(),
+        virtual_key_ids=set(),
+        db=db,
+    )
+    for team_id, team_name in labels.teams.items():
+        teams[team_id] = PolicyImpactTarget(id=team_id, name=team_name)
+    for project in await workspace_facade.list_workspace_projects(
+        scope=scope,
         team_ids=team_ids,
         db=db,
     ):
@@ -2291,14 +2267,24 @@ async def _affected_project_ids(
     for assignment in assignments:
         if assignment.project_id is None:
             continue
-        project = await repository.get_project(
-            org_id=scope.org_id,
+        project = await workspace_facade.get_project_identity(
+            scope=scope,
             project_id=assignment.project_id,
             db=db,
         )
         if project is not None:
             project_ids.add(project.id)
-            projects[project.id] = PolicyImpactTarget(id=project.id, name=project.name)
+            project_labels = await workspace_facade.get_workspace_label_maps(
+                scope=scope,
+                team_ids=set(),
+                project_ids={project.id},
+                virtual_key_ids=set(),
+                db=db,
+            )
+            projects[project.id] = PolicyImpactTarget(
+                id=project.id,
+                name=project_labels.projects.get(project.id, str(project.id)),
+            )
     return project_ids
 
 
@@ -2310,7 +2296,9 @@ async def _target_has_routable_access_after_exclusion(
     exclude_access_policy_id: UUID | None,
     db: AsyncSession,
 ) -> bool:
-    project = await repository.get_project(org_id=org_id, project_id=project_id, db=db)
+    project = await workspace_facade.get_project_identity(
+        scope=Scope(org_id=org_id), project_id=project_id, db=db
+    )
     if project is None:
         return False
     assignments = await policy_kernel_repository.list_active_policy_assignments_for_targets(
@@ -2361,7 +2349,7 @@ async def _validate_assignment_target(
     db: AsyncSession,
 ) -> tuple[UUID | None, UUID | None, UUID | None]:
     try:
-        validated = await _workspace_access.validate_assignment_scope(
+        validated = await workspace_facade.validate_assignment_scope(
             organization_id=scope.org_id,
             scope_type=scope_type,
             team_id=team_id,
@@ -2369,7 +2357,7 @@ async def _validate_assignment_target(
             virtual_key_id=virtual_key_id,
             db=db,
         )
-    except ScopeNotFoundError as exc:
+    except WorkspaceScopeNotFoundError as exc:
         if exc.reason == "not_found":
             raise PolicyNotFoundError from exc
         raise PolicyValidationError from exc
@@ -2466,22 +2454,22 @@ async def _assignment_activity_scope_ids(
     if assignment.team_id is not None:
         return assignment.team_id, None
     if assignment.project_id is not None:
-        project = await repository.get_project(
-            org_id=scope.org_id,
+        project = await workspace_facade.get_project_identity(
+            scope=scope,
             project_id=assignment.project_id,
             db=db,
         )
         return (project.team_id if project is not None else None), assignment.project_id
     if assignment.virtual_key_id is not None:
-        virtual_key = await repository.get_virtual_key(
-            org_id=scope.org_id,
+        virtual_key = await workspace_facade.get_virtual_key_identity(
+            scope=scope,
             virtual_key_id=assignment.virtual_key_id,
             db=db,
         )
         if virtual_key is None:
             return None, None
-        project = await repository.get_project(
-            org_id=scope.org_id,
+        project = await workspace_facade.get_project_identity(
+            scope=scope,
             project_id=virtual_key.project_id,
             db=db,
         )

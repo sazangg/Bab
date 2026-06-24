@@ -33,6 +33,27 @@ class ProjectResponse(BaseModel):
     updated_at: datetime
 
 
+class ProjectIdentity(BaseModel):
+    id: UUID
+    org_id: UUID
+    team_id: UUID
+    is_active: bool
+
+
+class ProjectMembershipTarget(BaseModel):
+    id: UUID
+    org_id: UUID
+    team_id: UUID
+    name: str
+    is_active: bool
+
+
+class ProjectOption(BaseModel):
+    id: UUID
+    name: str
+    team_id: UUID
+
+
 class CreateVirtualKeyRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     expires_at: datetime | None = None
@@ -86,6 +107,27 @@ class VirtualKeyResponse(BaseModel):
     revoked_reason: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class VirtualKeyIdentity(BaseModel):
+    id: UUID
+    org_id: UUID
+    project_id: UUID
+
+
+class VirtualKeyOption(BaseModel):
+    id: UUID
+    name: str
+    project_id: UUID
+    project_name: str
+
+
+class VirtualKeyTarget(BaseModel):
+    org_id: UUID
+    team_id: UUID
+    project_id: UUID
+    virtual_key_id: UUID
+    virtual_key_name: str | None
 
 
 class CreatedVirtualKeyResponse(VirtualKeyResponse):

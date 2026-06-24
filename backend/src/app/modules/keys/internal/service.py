@@ -10,8 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import Scope, transaction
 from app.core.security import generate_virtual_key, hash_token
 from app.modules.activity import facade as activity_facade
-from app.modules.auth.internal.models import Team, User
-from app.modules.auth.schemas import AuthenticatedUser
+from app.modules.auth import read_models as auth_read_models
+from app.modules.auth.schemas import AuthenticatedUser, UserLabel
 from app.modules.keys.errors import (
     AccessDeniedError,
     InvalidVirtualKeyError,
@@ -44,6 +44,9 @@ from app.modules.keys.schemas import (
     EffectiveRouteSummary,
     OwnershipChainState,
     ProjectArchiveImpactResponse,
+    ProjectIdentity,
+    ProjectMembershipTarget,
+    ProjectOption,
     ProjectResponse,
     ResolveAccessPlanForSubjectRequest,
     ResolveAccessPlanForVirtualKeyRequest,
@@ -58,10 +61,13 @@ from app.modules.keys.schemas import (
     TeamArchiveImpactResponse,
     UpdateProjectRequest,
     UpdateVirtualKeyRequest,
+    VirtualKeyIdentity,
     VirtualKeyInventoryItem,
     VirtualKeyInventoryPage,
+    VirtualKeyOption,
     VirtualKeyResponse,
     VirtualKeyRevokeImpactResponse,
+    VirtualKeyTarget,
 )
 from app.modules.policies.internal import repository as policies_repository
 from app.modules.policies.internal.models import (
@@ -85,6 +91,7 @@ from app.modules.providers.internal.models import (
 from app.modules.settings import facade as settings_facade
 from app.modules.teams import facade as teams_facade
 from app.modules.teams.errors import TeamInactiveError, TeamNotFoundError
+from app.modules.teams.schemas import TeamReadState
 
 logger = structlog.get_logger(__name__)
 EXPIRING_SOON_DAYS = 7
@@ -162,6 +169,50 @@ async def list_projects(*, scope: Scope, db: AsyncSession) -> list[ProjectRespon
 async def get_project(*, project_id: UUID, scope: Scope, db: AsyncSession) -> ProjectResponse:
     project = await _get_project_or_raise(project_id=project_id, scope=scope, db=db)
     return await _to_project_response(project, db=db)
+
+
+async def get_project_identity(
+    *, project_id: UUID, scope: Scope, db: AsyncSession
+) -> ProjectIdentity | None:
+    project = await repository.get_project(project_id=project_id, org_id=scope.org_id, db=db)
+    if project is None:
+        return None
+    return ProjectIdentity(
+        id=project.id,
+        org_id=project.org_id,
+        team_id=project.team_id,
+        is_active=project.is_active,
+    )
+
+
+async def get_project_membership_target(
+    *, project_id: UUID, scope: Scope, db: AsyncSession
+) -> ProjectMembershipTarget | None:
+    row = await repository.get_project_membership_target(
+        org_id=scope.org_id,
+        project_id=project_id,
+        db=db,
+    )
+    if row is None:
+        return None
+    project_id, org_id, team_id, name, is_active = row
+    return ProjectMembershipTarget(
+        id=project_id,
+        org_id=org_id,
+        team_id=team_id,
+        name=name,
+        is_active=is_active,
+    )
+
+
+async def get_project_team_ids(
+    *, scope: Scope, project_ids: set[UUID] | None = None, db: AsyncSession
+) -> dict[UUID, UUID]:
+    return await repository.get_project_team_ids(
+        org_id=scope.org_id,
+        project_ids=project_ids,
+        db=db,
+    )
 
 
 async def list_team_projects(
@@ -455,8 +506,10 @@ async def list_virtual_key_inventory(
             db=db,
         )
 
+    active_team_ids = await _active_team_ids(scope=scope, db=db)
     rows, total = await repository.list_virtual_key_inventory(
         org_id=scope.org_id,
+        active_team_ids=active_team_ids,
         team_ids=visible_team_ids,
         project_ids=visible_project_ids,
         team_id=team_id,
@@ -502,15 +555,17 @@ async def _list_virtual_key_inventory_with_derived_status(
 ) -> VirtualKeyInventoryPage:
     rows, _ = await repository.list_virtual_key_inventory(
         org_id=scope.org_id,
+        active_team_ids=set(),
         team_ids=visible_team_ids,
         project_ids=visible_project_ids,
         team_id=team_id,
         project_id=project_id,
-        status=status,
+        status=None,
         search=search,
         usage=usage,
         limit=None,
         offset=0,
+        include_total=False,
         db=db,
     )
     items = await _inventory_items_from_rows(
@@ -530,43 +585,62 @@ async def _list_virtual_key_inventory_with_derived_status(
     )
 
 
+async def _active_team_ids(*, scope: Scope, db: AsyncSession) -> set[UUID]:
+    return await teams_facade.list_active_team_ids(scope=scope, db=db)
+
+
 async def _inventory_items_from_rows(
     *,
-    rows: list[tuple[VirtualKey, Project, Team, User | None]],
+    rows: list[tuple[VirtualKey, Project]],
     manageable_team_ids: set[UUID],
     manageable_project_ids: set[UUID],
     can_manage_all: bool,
     db: AsyncSession,
 ) -> list[VirtualKeyInventoryItem]:
     routing_ready = await _batch_inventory_routing_readiness(rows=rows, db=db)
+    if not rows:
+        return []
+    org_id = rows[0][0].org_id
+    scope = Scope(org_id=org_id)
+    team_states = await teams_facade.get_team_read_states(
+        team_ids={project.team_id for _key, project in rows},
+        scope=scope,
+        db=db,
+    )
+    user_ids = {key.created_by for key, _project in rows if key.created_by is not None}
+    user_labels = await auth_read_models.get_user_labels(
+        org_id=org_id,
+        user_ids=user_ids,
+        db=db,
+    )
     return [
         _to_inventory_item(
             virtual_key=virtual_key,
             project=project,
-            team=team,
-            creator=creator,
+            team_state=team_states.get(project.team_id),
+            creator_label=user_labels.get(virtual_key.created_by),
             can_manage=(
                 can_manage_all
-                or team.id in manageable_team_ids
+                or project.team_id in manageable_team_ids
                 or project.id in manageable_project_ids
             ),
             routing_ready=routing_ready.get(virtual_key.id, False),
         )
-        for virtual_key, project, team, creator in rows
+        for virtual_key, project in rows
     ]
 
 
 async def _batch_inventory_routing_readiness(
     *,
-    rows: list[tuple[VirtualKey, Project, Team, User | None]],
+    rows: list[tuple[VirtualKey, Project]],
     db: AsyncSession,
 ) -> dict[UUID, bool]:
     if not rows:
         return {}
     org_id = rows[0][0].org_id
-    team_ids = {team.id for _key, _project, team, _creator in rows}
-    project_ids = {project.id for _key, project, _team, _creator in rows}
-    key_ids = {key.id for key, _project, _team, _creator in rows}
+    team_ids = {project.team_id for _key, project in rows}
+    project_ids = {project.id for _key, project in rows}
+    key_ids = {key.id for key, _project in rows}
     assignments = list(
         await db.scalars(
             select(PolicyAssignment).where(
@@ -681,7 +755,7 @@ async def _batch_inventory_routing_readiness(
 
     scope_order = ("org", "team", "project", "virtual_key")
     readiness: dict[UUID, bool] = {}
-    for key, project, team, _creator in rows:
+    for key, project in rows:
         effective: set[tuple[UUID, UUID, UUID]] | None = None
         for scope_type in scope_order:
             scoped_assignments = [
@@ -690,7 +764,7 @@ async def _batch_inventory_routing_readiness(
                 if assignment.scope_type == scope_type
                 and (
                     scope_type == "org"
-                    or (scope_type == "team" and assignment.team_id == team.id)
+                    or (scope_type == "team" and assignment.team_id == project.team_id)
                     or (scope_type == "project" and assignment.project_id == project.id)
                     or (scope_type == "virtual_key" and assignment.virtual_key_id == key.id)
                 )
@@ -728,6 +802,142 @@ async def get_virtual_key(
         project=project,
         scope=scope,
         db=db,
+    )
+
+
+async def get_virtual_key_identity(
+    *, key_id: UUID, scope: Scope, db: AsyncSession
+) -> VirtualKeyIdentity | None:
+    virtual_key = await repository.get_virtual_key_by_id(
+        org_id=scope.org_id,
+        key_id=key_id,
+        db=db,
+    )
+    if virtual_key is None:
+        return None
+    return VirtualKeyIdentity(
+        id=virtual_key.id,
+        org_id=virtual_key.org_id,
+        project_id=virtual_key.project_id,
+    )
+
+
+async def get_project_labels(
+    *, project_ids: set[UUID], scope: Scope, db: AsyncSession
+) -> dict[UUID, str]:
+    return await repository.get_project_labels(
+        org_id=scope.org_id,
+        project_ids=project_ids,
+        db=db,
+    )
+
+
+async def get_virtual_key_labels(
+    *, virtual_key_ids: set[UUID], scope: Scope, db: AsyncSession
+) -> dict[UUID, str]:
+    return await repository.get_virtual_key_labels(
+        org_id=scope.org_id,
+        virtual_key_ids=virtual_key_ids,
+        db=db,
+    )
+
+
+async def list_project_ids_for_team_ids(
+    *, team_ids: set[UUID], scope: Scope, db: AsyncSession
+) -> set[UUID]:
+    return await repository.list_project_ids_for_team_ids(
+        org_id=scope.org_id,
+        team_ids=team_ids,
+        db=db,
+    )
+
+
+async def list_virtual_key_ids_for_project_ids(
+    *, project_ids: set[UUID], scope: Scope, db: AsyncSession
+) -> set[UUID]:
+    return await repository.list_virtual_key_ids_for_project_ids(
+        org_id=scope.org_id,
+        project_ids=project_ids,
+        db=db,
+    )
+
+
+async def list_project_options(
+    *,
+    scope: Scope,
+    team_ids: set[UUID] | None,
+    project_ids: set[UUID] | None,
+    db: AsyncSession,
+) -> list[ProjectOption]:
+    rows = await repository.list_project_options(
+        org_id=scope.org_id,
+        team_ids=team_ids,
+        project_ids=project_ids,
+        db=db,
+    )
+    return [
+        ProjectOption(id=project_id, name=name, team_id=team_id)
+        for project_id, name, team_id in rows
+    ]
+
+
+async def list_virtual_key_options_for_project_ids(
+    *, project_ids: set[UUID], usable_only: bool, scope: Scope, db: AsyncSession
+) -> list[VirtualKeyOption]:
+    rows = await repository.list_virtual_key_options_for_project_ids(
+        org_id=scope.org_id,
+        project_ids=project_ids,
+        usable_only=usable_only,
+        db=db,
+    )
+    return [
+        VirtualKeyOption(
+            id=key_id,
+            name=key_name,
+            project_id=project_id,
+            project_name=project_name,
+        )
+        for key_id, key_name, project_id, project_name in rows
+    ]
+
+
+async def list_virtual_key_options_by_ids(
+    *, virtual_key_ids: set[UUID], usable_only: bool, scope: Scope, db: AsyncSession
+) -> list[VirtualKeyOption]:
+    rows = await repository.list_virtual_key_options_by_ids(
+        org_id=scope.org_id,
+        virtual_key_ids=virtual_key_ids,
+        usable_only=usable_only,
+        db=db,
+    )
+    return [
+        VirtualKeyOption(
+            id=key_id,
+            name=key_name,
+            project_id=project_id,
+            project_name=project_name,
+        )
+        for key_id, key_name, project_id, project_name in rows
+    ]
+
+
+async def get_usable_virtual_key_target(
+    *, virtual_key_id: UUID, scope: Scope, db: AsyncSession
+) -> VirtualKeyTarget | None:
+    row = await repository.get_usable_virtual_key_target(
+        org_id=scope.org_id,
+        virtual_key_id=virtual_key_id,
+        db=db,
+    )
+    if row is None:
+        return None
+    org_id, team_id, project_id, key_id, key_name = row
+    return VirtualKeyTarget(
+        org_id=org_id,
+        team_id=team_id,
+        project_id=project_id,
+        virtual_key_id=key_id,
+        virtual_key_name=key_name,
     )
 
 
@@ -1041,7 +1251,11 @@ async def resolve_key_subject(
         raw_key=payload.raw_key,
         db=db,
     )
-    team = await db.get(Team, project.team_id)
+    team_labels = await teams_facade.get_team_labels(
+        team_ids={project.team_id},
+        scope=Scope(org_id=virtual_key.org_id),
+        db=db,
+    )
     return ResolvedKeySubject(
         org_id=virtual_key.org_id,
         team_id=project.team_id,
@@ -1049,7 +1263,7 @@ async def resolve_key_subject(
         virtual_key_id=virtual_key.id,
         virtual_key_name=virtual_key.name,
         project_name=project.name,
-        team_name=team.name if team else None,
+        team_name=team_labels.get(project.team_id),
     )
 
 
@@ -2212,9 +2426,13 @@ async def _get_virtual_key_or_raise(
 
 
 async def _to_project_response(project: Project, *, db: AsyncSession) -> ProjectResponse:
-    team = await db.get(Team, project.team_id)
+    team_labels = await teams_facade.get_team_labels(
+        team_ids={project.team_id},
+        scope=Scope(org_id=project.org_id),
+        db=db,
+    )
     return ProjectResponse.model_validate(project).model_copy(
-        update={"team_name": team.name if team else None}
+        update={"team_name": team_labels.get(project.team_id)}
     )
 
 
@@ -2245,8 +2463,18 @@ async def _to_virtual_key_response(
     derived = await _derive_virtual_key_state(
         virtual_key=virtual_key, project=project, scope=scope, db=db
     )
-    creator = await db.get(User, virtual_key.created_by) if virtual_key.created_by else None
-    revoker = await db.get(User, virtual_key.revoked_by) if virtual_key.revoked_by else None
+    user_ids = {
+        user_id
+        for user_id in (virtual_key.created_by, virtual_key.revoked_by)
+        if user_id is not None
+    }
+    user_labels = await auth_read_models.get_user_labels(
+        org_id=virtual_key.org_id,
+        user_ids=user_ids,
+        db=db,
+    )
+    creator = user_labels.get(virtual_key.created_by)
+    revoker = user_labels.get(virtual_key.revoked_by)
     return VirtualKeyResponse(
         id=virtual_key.id,
         org_id=virtual_key.org_id,
@@ -2257,14 +2485,14 @@ async def _to_virtual_key_response(
         status=derived[0],
         is_usable=derived[1],
         created_by=virtual_key.created_by,
-        creator_name=creator.name if creator else None,
+        creator_name=creator.display_name if creator else None,
         creator_email=creator.email if creator else None,
         last_used_at=virtual_key.last_used_at,
         expires_at=virtual_key.expires_at,
         deprecated_at=virtual_key.deprecated_at,
         revoked_at=virtual_key.revoked_at,
         revoked_by=virtual_key.revoked_by,
-        revoker_name=revoker.name if revoker else None,
+        revoker_name=revoker.display_name if revoker else None,
         revoker_email=revoker.email if revoker else None,
         revoked_reason=virtual_key.revoked_reason,
         created_at=virtual_key.created_at,
@@ -2280,15 +2508,15 @@ def _to_inventory_item(
     *,
     virtual_key: VirtualKey,
     project: Project,
-    team: Team,
-    creator: User | None,
+    team_state: TeamReadState | None,
+    creator_label: UserLabel | None,
     can_manage: bool,
     routing_ready: bool,
 ) -> VirtualKeyInventoryItem:
     status, is_usable = _derive_inventory_state(
         virtual_key=virtual_key,
         project=project,
-        team=team,
+        team_is_active=team_state.is_active if team_state else False,
         routing_ready=routing_ready,
     )
     return VirtualKeyInventoryItem(
@@ -2299,15 +2527,15 @@ def _to_inventory_item(
         supersedes_key_id=virtual_key.supersedes_key_id,
         project_name=project.name,
         project_is_active=project.is_active,
-        team_id=team.id,
-        team_name=team.name,
-        team_is_active=team.is_active,
+        team_id=project.team_id,
+        team_name=team_state.name if team_state else "",
+        team_is_active=team_state.is_active if team_state else False,
         status=status,
         is_usable=is_usable,
         can_manage=can_manage,
         created_by=virtual_key.created_by,
-        creator_name=creator.name if creator else None,
-        creator_email=creator.email if creator else None,
+        creator_name=creator_label.display_name if creator_label else None,
+        creator_email=creator_label.email if creator_label else None,
         created_at=virtual_key.created_at,
         expires_at=virtual_key.expires_at,
         deprecated_at=virtual_key.deprecated_at,
@@ -2322,7 +2550,7 @@ def _derive_inventory_state(
     *,
     virtual_key: VirtualKey,
     project: Project,
-    team: Team,
+    team_is_active: bool,
     routing_ready: bool,
 ) -> tuple[str, bool]:
     if virtual_key.revoked_at is not None:
@@ -2332,7 +2560,7 @@ def _derive_inventory_state(
         return "expired", False
     if not project.is_active:
         return "project_archived", False
-    if not team.is_active:
+    if not team_is_active:
         return "team_archived", False
     if not routing_ready:
         return "no_effective_access", False
@@ -2351,7 +2579,7 @@ async def _derive_virtual_key_state(
     project: Project,
     scope: Scope,
     db: AsyncSession,
-    team: Team | None = None,
+    team_is_active: bool | None = None,
 ) -> tuple[str, bool]:
     if virtual_key.revoked_at is not None:
         return "revoked", False
@@ -2359,15 +2587,14 @@ async def _derive_virtual_key_state(
         return "expired", False
     if not project.is_active:
         return "project_archived", False
-    if team is None:
-        try:
-            team_response = await teams_facade.get_team(team_id=project.team_id, scope=scope, db=db)
-            team_active = team_response.is_active
-        except TeamNotFoundError:
-            team_active = False
-    else:
-        team_active = team.is_active
-    if not team_active:
+    if team_is_active is None:
+        team_identity = await teams_facade.get_team_identity(
+            team_id=project.team_id,
+            scope=scope,
+            db=db,
+        )
+        team_is_active = team_identity.is_active if team_identity else False
+    if not team_is_active:
         return "team_archived", False
 
     summary = await _build_effective_access_summary(project=project, virtual_key=virtual_key, db=db)

@@ -19,6 +19,7 @@ from app.core.security import (
     verify_password,
 )
 from app.modules.activity.metadata import sanitize_metadata
+from app.modules.auth import read_models
 from app.modules.auth.errors import (
     DuplicateInviteError,
     InvalidAccessTokenError,
@@ -67,6 +68,7 @@ from app.modules.auth.schemas import (
     MemberProjectMembershipResponse,
     MemberResponse,
     MemberTeamMembershipResponse,
+    OrganizationIdentity,
     ProjectMemberResponse,
     TeamMemberResponse,
     TokenResponse,
@@ -76,8 +78,10 @@ from app.modules.auth.schemas import (
     UpdateTeamMemberRequest,
     UpsertProjectMemberRequest,
     UpsertTeamMemberRequest,
+    UserLabel,
 )
-from app.modules.keys.internal.models import Project
+from app.modules.keys import read_models as key_read_models
+from app.modules.keys.schemas import ProjectMembershipTarget
 
 MOCK_ADMIN_ID = UUID("00000000-0000-4000-8000-000000000001")
 INVITE_TOKEN_TTL = timedelta(days=7)
@@ -192,6 +196,83 @@ async def verify_access_token(token: str, db: AsyncSession) -> AuthenticatedUser
     # Bind the principal to the organization the token was issued for instead of
     # re-deriving it; the org context must come from the signed claim, not a guess.
     return await _principal_for_user(user_id, db, org_id=org_id)
+
+
+async def has_team_membership(
+    *, org_id: UUID, team_id: UUID, user_id: UUID, db: AsyncSession
+) -> bool:
+    membership = await db.scalar(
+        select(TeamMembership).where(
+            TeamMembership.org_id == org_id,
+            TeamMembership.team_id == team_id,
+            TeamMembership.user_id == user_id,
+        )
+    )
+    return membership is not None
+
+
+async def has_team_admin_membership(
+    *, org_id: UUID, team_id: UUID, user_id: UUID, db: AsyncSession
+) -> bool:
+    membership = await db.scalar(
+        select(TeamMembership).where(
+            TeamMembership.org_id == org_id,
+            TeamMembership.team_id == team_id,
+            TeamMembership.user_id == user_id,
+            TeamMembership.role == "team_admin",
+        )
+    )
+    return membership is not None
+
+
+async def has_project_membership(
+    *, org_id: UUID, project_id: UUID, user_id: UUID, db: AsyncSession
+) -> bool:
+    membership = await db.scalar(
+        select(ProjectMembership).where(
+            ProjectMembership.org_id == org_id,
+            ProjectMembership.project_id == project_id,
+            ProjectMembership.user_id == user_id,
+        )
+    )
+    return membership is not None
+
+
+async def has_project_admin_membership(
+    *, org_id: UUID, project_id: UUID, user_id: UUID, db: AsyncSession
+) -> bool:
+    membership = await db.scalar(
+        select(ProjectMembership).where(
+            ProjectMembership.org_id == org_id,
+            ProjectMembership.project_id == project_id,
+            ProjectMembership.user_id == user_id,
+            ProjectMembership.role == "project_admin",
+        )
+    )
+    return membership is not None
+
+
+async def get_organization_identity(
+    *, org_id: UUID, db: AsyncSession
+) -> OrganizationIdentity | None:
+    organization = await db.get(Organization, org_id)
+    if organization is None:
+        return None
+    return OrganizationIdentity(id=organization.id, name=organization.name)
+
+
+async def update_organization_name(
+    *, org_id: UUID, name: str, db: AsyncSession
+) -> None:
+    organization = await db.get(Organization, org_id)
+    if organization is not None:
+        organization.name = name
+
+
+async def get_user_labels(
+    *, org_id: UUID, user_ids: set[UUID], db: AsyncSession
+) -> dict[UUID, UserLabel]:
+    return await read_models.get_user_labels(org_id=org_id, user_ids=user_ids, db=db)
 
 
 async def list_members(*, scope: Scope, db: AsyncSession) -> list[MemberResponse]:
@@ -920,7 +1001,7 @@ async def preview_invite(*, token: str, db: AsyncSession) -> InvitePreviewRespon
         await db.scalar(select(Team).where(Team.id == invite.team_id)) if invite.team_id else None
     )
     project = (
-        await db.scalar(select(Project).where(Project.id == invite.project_id))
+        await _project_target(project_id=invite.project_id, scope=Scope(invite.org_id), db=db)
         if invite.project_id
         else None
     )
@@ -945,7 +1026,7 @@ async def _validate_invite_target(
     payload: CreateInviteRequest,
     scope: Scope,
     db: AsyncSession,
-) -> tuple[Team | None, Project | None]:
+) -> tuple[Team | None, ProjectMembershipTarget | None]:
     return await _validate_scoped_target(payload=payload, scope=scope, db=db)
 
 
@@ -954,7 +1035,7 @@ async def _validate_scoped_target(
     payload: CreateInviteRequest | CreateMemberRequest,
     scope: Scope,
     db: AsyncSession,
-) -> tuple[Team | None, Project | None]:
+) -> tuple[Team | None, ProjectMembershipTarget | None]:
     if payload.team_role and payload.team_id is None:
         raise InvalidInviteTargetError
     if payload.project_role and payload.project_id is None:
@@ -976,14 +1057,8 @@ async def _validate_scoped_target(
 
     project = None
     if payload.project_id:
-        project = await db.scalar(
-            select(Project).where(
-                Project.id == payload.project_id,
-                Project.org_id == scope.org_id,
-                Project.is_active.is_(True),
-            )
-        )
-        if project is None:
+        project = await _project_target(project_id=payload.project_id, scope=scope, db=db)
+        if project is None or not project.is_active:
             raise InvalidInviteTargetError
         if payload.team_id and project.team_id != payload.team_id:
             raise InvalidInviteTargetError
@@ -1019,7 +1094,7 @@ def _ensure_actor_can_create_invite(
     role: str,
     team_id: UUID | None,
     team_role: str | None,
-    project: Project | None,
+    project: ProjectMembershipTarget | None,
     project_role: str | None,
 ) -> None:
     if has_permission(actor, "members.manage"):
@@ -1061,10 +1136,17 @@ def _is_project_admin_actor(*, actor: AuthenticatedUser, project_id: UUID) -> bo
 
 
 async def _project_team_by_id(*, scope: Scope, db: AsyncSession) -> dict[UUID, UUID]:
-    rows = await db.execute(
-        select(Project.id, Project.team_id).where(Project.org_id == scope.org_id)
+    return await key_read_models.get_project_team_ids(scope=scope, db=db)
+
+
+async def _project_target(
+    *, project_id: UUID, scope: Scope, db: AsyncSession
+) -> ProjectMembershipTarget | None:
+    return await key_read_models.get_project_membership_target(
+        project_id=project_id,
+        scope=scope,
+        db=db,
     )
-    return {project_id: team_id for project_id, team_id in rows if team_id is not None}
 
 
 def _actor_can_manage_invite(
@@ -1103,12 +1185,8 @@ async def revoke_invite(
             raise InviteNotFoundError
         project_team_id = None
         if invite.project_id:
-            project_team_id = await db.scalar(
-                select(Project.team_id).where(
-                    Project.id == invite.project_id,
-                    Project.org_id == scope.org_id,
-                )
-            )
+            project = await _project_target(project_id=invite.project_id, scope=scope, db=db)
+            project_team_id = project.team_id if project else None
         if not _actor_can_manage_invite(
             actor=actor,
             invite=invite,
@@ -1252,10 +1330,10 @@ async def _require_team(*, team_id: UUID, scope: Scope, db: AsyncSession) -> Tea
     return team
 
 
-async def _require_project(*, project_id: UUID, scope: Scope, db: AsyncSession) -> Project:
-    project = await db.scalar(
-        select(Project).where(Project.id == project_id, Project.org_id == scope.org_id)
-    )
+async def _require_project(
+    *, project_id: UUID, scope: Scope, db: AsyncSession
+) -> ProjectMembershipTarget:
+    project = await _project_target(project_id=project_id, scope=scope, db=db)
     if project is None:
         raise InvalidAccessTokenError
     return project
@@ -1278,7 +1356,7 @@ def _ensure_actor_can_manage_team_members(
 def _ensure_actor_can_manage_project_members(
     *,
     actor: AuthenticatedUser,
-    project: Project,
+    project: ProjectMembershipTarget,
 ) -> None:
     if has_permission(actor, "projects.manage"):
         return

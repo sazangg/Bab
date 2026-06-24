@@ -2,18 +2,16 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.request_ids import current_request_id
-from app.modules.auth.internal.models import Team
 from app.modules.guardrails.internal.models import (
     GuardrailEvent,
     GuardrailPolicy,
     GuardrailRule,
     GuardrailRuleMatcher,
 )
-from app.modules.keys.internal.models import Project, VirtualKey
 from app.modules.policy_kernel.models import PolicyAssignment, PolicyRevision
 
 
@@ -283,56 +281,6 @@ async def find_assignment_for_scope(
         )
     )
     return None if row is None else _assignment_view(assignment=row, policy=policy)
-
-
-async def get_team(*, org_id: UUID, team_id: UUID, db: AsyncSession) -> Team | None:
-    return await db.scalar(select(Team).where(Team.org_id == org_id, Team.id == team_id))
-
-
-async def get_project(*, org_id: UUID, project_id: UUID, db: AsyncSession) -> Project | None:
-    return await db.scalar(
-        select(Project).where(Project.org_id == org_id, Project.id == project_id)
-    )
-
-
-async def get_virtual_key(
-    *, org_id: UUID, virtual_key_id: UUID, db: AsyncSession
-) -> VirtualKey | None:
-    return await db.scalar(
-        select(VirtualKey).where(VirtualKey.org_id == org_id, VirtualKey.id == virtual_key_id)
-    )
-
-
-async def list_projects_for_team_ids(
-    *, org_id: UUID, team_ids: list[UUID], db: AsyncSession
-) -> list[Project]:
-    if not team_ids:
-        return []
-    result = await db.scalars(
-        select(Project).where(Project.org_id == org_id, Project.team_id.in_(team_ids))
-    )
-    return list(result)
-
-
-async def list_all_projects(*, org_id: UUID, db: AsyncSession) -> list[Project]:
-    result = await db.scalars(select(Project).where(Project.org_id == org_id))
-    return list(result)
-
-
-async def list_virtual_keys_for_project_ids(
-    *, org_id: UUID, project_ids: list[UUID], db: AsyncSession
-) -> list[VirtualKey]:
-    if not project_ids:
-        return []
-    result = await db.scalars(
-        select(VirtualKey).where(
-            VirtualKey.org_id == org_id,
-            VirtualKey.project_id.in_(project_ids),
-            VirtualKey.revoked_at.is_(None),
-            or_(VirtualKey.expires_at.is_(None), VirtualKey.expires_at > func.now()),
-        )
-    )
-    return list(result)
 
 
 async def list_effective_assignments(

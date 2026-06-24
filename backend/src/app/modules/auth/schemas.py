@@ -45,6 +45,17 @@ class AuthenticatedUser(BaseModel):
     project_memberships: list[AuthenticatedProjectMembership] = []
 
 
+class OrganizationIdentity(BaseModel):
+    id: UUID
+    name: str
+
+
+class UserLabel(BaseModel):
+    id: UUID
+    display_name: str | None
+    email: str | None
+
+
 class CreateInviteRequest(BaseModel):
     email: EmailStr
     role: str = Field(

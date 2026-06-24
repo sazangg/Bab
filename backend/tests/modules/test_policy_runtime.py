@@ -9,7 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.routes.projects import create_virtual_key as create_virtual_key_route
 from app.core.database import Scope
 from app.modules.activity.internal.models import ActivityEvent
-from app.modules.auth.internal.models import AuditEvent, Organization, Team, User
+from app.modules.auth.internal.models import (
+    AuditEvent,
+    Organization,
+    OrganizationMembership,
+    Team,
+    User,
+)
 from app.modules.auth.schemas import (
     AuthenticatedProjectMembership,
     AuthenticatedTeamMembership,
@@ -157,6 +163,15 @@ async def _create_project_pool_and_models(db_session: AsyncSession):
     actor_id = uuid4()
     actor_email = f"admin-{actor_id}@example.com"
     db_session.add(User(id=actor_id, email=actor_email, name="Policy Admin"))
+    await db_session.flush()
+    db_session.add(
+        OrganizationMembership(
+            org_id=org.id,
+            user_id=actor_id,
+            role="super_admin",
+            status="active",
+        )
+    )
     await db_session.commit()
     actor = AuthenticatedUser(
         id=actor_id,

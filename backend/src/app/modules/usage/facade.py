@@ -3,9 +3,8 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.auth.internal.models import Team
+from app.core.database import Scope
 from app.modules.guardrails.internal import repository as guardrails_repository
-from app.modules.keys.internal.models import Project, VirtualKey
 from app.modules.keys.schemas import ResolvedAccess
 from app.modules.policy_kernel.models import Policy
 from app.modules.providers.internal.models import CredentialPool, Provider
@@ -30,11 +29,14 @@ from app.modules.usage.schemas import (
     RecordLimitPolicyReservation,
     RecordUsage,
     SpendInsights,
+    UsageBreakdownRow,
     UsageFilterOptions,
     UsageRecordResponse,
     UsageTimeSeriesPoint,
     VirtualKeyUsageSummary,
 )
+from app.modules.workspace import facade as workspace_facade
+from app.modules.workspace.schemas import WorkspaceAllowedScopeIds, WorkspaceLabelMaps
 
 
 async def record_usage(*, payload: RecordUsage, db: AsyncSession) -> None:
@@ -197,6 +199,12 @@ async def list_gateway_requests(
     db: AsyncSession,
 ) -> GatewayRequestTraceListResponse:
     now = datetime.now(UTC)
+    allowed_scope = await _expand_allowed_scope_ids(
+        org_id=org_id,
+        allowed_team_ids=allowed_team_ids,
+        allowed_project_ids=allowed_project_ids,
+        db=db,
+    )
     requests = await repository.list_gateway_requests(
         org_id=org_id,
         since=start_at or window_start(window),
@@ -212,17 +220,30 @@ async def list_gateway_requests(
         fallback=fallback,
         error_code=error_code,
         search=search,
-        allowed_team_ids=allowed_team_ids,
-        allowed_project_ids=allowed_project_ids,
+        allowed_team_ids=allowed_scope.team_ids if allowed_scope is not None else None,
+        allowed_project_ids=allowed_scope.project_ids if allowed_scope is not None else None,
+        allowed_virtual_key_ids=(
+            allowed_scope.virtual_key_ids if allowed_scope is not None else None
+        ),
         limit=limit,
         offset=offset,
         now=now,
         db=db,
     )
     has_more = len(requests) > limit
+    page_requests = requests[:limit]
+    workspace_labels = await _workspace_labels_for_gateway_requests(
+        org_id=org_id,
+        requests=page_requests,
+        db=db,
+    )
     items = [
-        await _to_gateway_request_trace_list_item(request, db=db)
-        for request in requests[:limit]
+        await _to_gateway_request_trace_list_item(
+            request,
+            workspace_labels=workspace_labels,
+            db=db,
+        )
+        for request in page_requests
     ]
     return GatewayRequestTraceListResponse(
         items=items,
@@ -336,6 +357,7 @@ async def get_gateway_request_trace(
 async def _to_gateway_request_trace_list_item(
     request,
     *,
+    workspace_labels: WorkspaceLabelMaps,
     db: AsyncSession,
 ) -> GatewayRequestTraceListItem:
     attempts = await repository.list_gateway_route_attempts(
@@ -346,11 +368,6 @@ async def _to_gateway_request_trace_list_item(
     final_attempt = next(
         (attempt for attempt in attempts if attempt.id == request.final_route_attempt_id),
         None,
-    )
-    team = await db.get(Team, request.team_id) if request.team_id else None
-    project = await db.get(Project, request.project_id) if request.project_id else None
-    virtual_key = (
-        await db.get(VirtualKey, request.virtual_key_id) if request.virtual_key_id else None
     )
     final_provider = (
         await db.get(Provider, request.final_provider_id)
@@ -419,9 +436,15 @@ async def _to_gateway_request_trace_list_item(
             if final_policy is not None
             else None
         ),
-        team_name=team.name if team else None,
-        project_name=project.name if project else None,
-        virtual_key_name=virtual_key.name if virtual_key else None,
+        team_name=workspace_labels.teams.get(request.team_id) if request.team_id else None,
+        project_name=(
+            workspace_labels.projects.get(request.project_id) if request.project_id else None
+        ),
+        virtual_key_name=(
+            workspace_labels.virtual_keys.get(request.virtual_key_id)
+            if request.virtual_key_id
+            else None
+        ),
         involved_provider_ids=involved_provider_ids,
         involved_provider_names=involved_provider_names,
         attempt_count=request.attempt_count,
@@ -757,6 +780,12 @@ async def list_usage_records(
     offset: int = 0,
     db: AsyncSession,
 ) -> list[UsageRecordResponse]:
+    allowed_scope = await _expand_allowed_scope_ids(
+        org_id=org_id,
+        allowed_team_ids=allowed_team_ids,
+        allowed_project_ids=allowed_project_ids,
+        db=db,
+    )
     records = await repository.list_usage_records(
         org_id=org_id,
         since=start_at or window_start(window),
@@ -768,8 +797,11 @@ async def list_usage_records(
         model=model,
         request_id=request_id,
         search=search,
-        allowed_team_ids=allowed_team_ids,
-        allowed_project_ids=allowed_project_ids,
+        allowed_team_ids=allowed_scope.team_ids if allowed_scope is not None else None,
+        allowed_project_ids=allowed_scope.project_ids if allowed_scope is not None else None,
+        allowed_virtual_key_ids=(
+            allowed_scope.virtual_key_ids if allowed_scope is not None else None
+        ),
         limit=limit,
         offset=offset,
         db=db,
@@ -828,7 +860,13 @@ async def get_organization_usage_summary(
     allowed_project_ids: set[UUID] | None = None,
     db: AsyncSession,
 ) -> OrganizationUsageSummary:
-    return await repository.get_organization_usage_summary(
+    allowed_scope = await _expand_allowed_scope_ids(
+        org_id=org_id,
+        allowed_team_ids=allowed_team_ids,
+        allowed_project_ids=allowed_project_ids,
+        db=db,
+    )
+    summary = await repository.get_organization_usage_summary(
         org_id=org_id,
         window=window,
         since=start_at or window_start(window),
@@ -838,10 +876,14 @@ async def get_organization_usage_summary(
         project_id=project_id,
         virtual_key_id=virtual_key_id,
         model=model,
-        allowed_team_ids=allowed_team_ids,
-        allowed_project_ids=allowed_project_ids,
+        allowed_team_ids=allowed_scope.team_ids if allowed_scope is not None else None,
+        allowed_project_ids=allowed_scope.project_ids if allowed_scope is not None else None,
+        allowed_virtual_key_ids=(
+            allowed_scope.virtual_key_ids if allowed_scope is not None else None
+        ),
         db=db,
     )
+    return await _enrich_usage_workspace_breakdowns(org_id=org_id, summary=summary, db=db)
 
 
 async def get_organization_usage_timeseries(
@@ -860,6 +902,12 @@ async def get_organization_usage_timeseries(
     allowed_project_ids: set[UUID] | None = None,
     db: AsyncSession,
 ) -> list[UsageTimeSeriesPoint]:
+    allowed_scope = await _expand_allowed_scope_ids(
+        org_id=org_id,
+        allowed_team_ids=allowed_team_ids,
+        allowed_project_ids=allowed_project_ids,
+        db=db,
+    )
     return await repository.get_organization_usage_timeseries(
         org_id=org_id,
         since=start_at or window_start(window),
@@ -870,8 +918,11 @@ async def get_organization_usage_timeseries(
         project_id=project_id,
         virtual_key_id=virtual_key_id,
         model=model,
-        allowed_team_ids=allowed_team_ids,
-        allowed_project_ids=allowed_project_ids,
+        allowed_team_ids=allowed_scope.team_ids if allowed_scope is not None else None,
+        allowed_project_ids=allowed_scope.project_ids if allowed_scope is not None else None,
+        allowed_virtual_key_ids=(
+            allowed_scope.virtual_key_ids if allowed_scope is not None else None
+        ),
         db=db,
     )
 
@@ -888,15 +939,38 @@ async def get_usage_filter_options(
     allowed_project_ids: set[UUID] | None = None,
     db: AsyncSession,
 ) -> UsageFilterOptions:
-    return await repository.get_usage_filter_options(
+    allowed_scope = await _expand_allowed_scope_ids(
+        org_id=org_id,
+        allowed_team_ids=allowed_team_ids,
+        allowed_project_ids=allowed_project_ids,
+        db=db,
+    )
+    options = await repository.get_usage_filter_options(
         org_id=org_id,
         since=start_at or window_start(window),
         until=end_at,
         team_id=team_id,
         project_id=project_id,
-        allowed_team_ids=allowed_team_ids,
-        allowed_project_ids=allowed_project_ids,
+        allowed_team_ids=allowed_scope.team_ids if allowed_scope is not None else None,
+        allowed_project_ids=allowed_scope.project_ids if allowed_scope is not None else None,
+        allowed_virtual_key_ids=(
+            allowed_scope.virtual_key_ids if allowed_scope is not None else None
+        ),
         db=db,
+    )
+    labels = await _workspace_labels_for_breakdowns(
+        org_id=org_id,
+        team_rows=options.by_team,
+        project_rows=options.by_project,
+        virtual_key_rows=options.by_virtual_key,
+        db=db,
+    )
+    return options.model_copy(
+        update={
+            "by_team": _apply_labels(options.by_team, labels.teams),
+            "by_project": _apply_labels(options.by_project, labels.projects),
+            "by_virtual_key": _apply_labels(options.by_virtual_key, labels.virtual_keys),
+        }
     )
 
 
@@ -915,6 +989,12 @@ async def get_spend_insights(
     allowed_project_ids: set[UUID] | None = None,
     db: AsyncSession,
 ) -> SpendInsights:
+    allowed_scope = await _expand_allowed_scope_ids(
+        org_id=org_id,
+        allowed_team_ids=allowed_team_ids,
+        allowed_project_ids=allowed_project_ids,
+        db=db,
+    )
     return await repository.get_spend_insights(
         org_id=org_id,
         window=window,
@@ -925,8 +1005,11 @@ async def get_spend_insights(
         project_id=project_id,
         virtual_key_id=virtual_key_id,
         model=model,
-        allowed_team_ids=allowed_team_ids,
-        allowed_project_ids=allowed_project_ids,
+        allowed_team_ids=allowed_scope.team_ids if allowed_scope is not None else None,
+        allowed_project_ids=allowed_scope.project_ids if allowed_scope is not None else None,
+        allowed_virtual_key_ids=(
+            allowed_scope.virtual_key_ids if allowed_scope is not None else None
+        ),
         db=db,
     )
 
@@ -942,6 +1025,106 @@ async def get_virtual_key_usage_summary(
         org_id=org_id,
         db=db,
     )
+
+
+async def _expand_allowed_scope_ids(
+    *,
+    org_id: UUID,
+    allowed_team_ids: set[UUID] | None,
+    allowed_project_ids: set[UUID] | None,
+    db: AsyncSession,
+) -> WorkspaceAllowedScopeIds | None:
+    return await workspace_facade.expand_allowed_scope_ids(
+        scope=Scope(org_id=org_id),
+        allowed_team_ids=allowed_team_ids,
+        allowed_project_ids=allowed_project_ids,
+        db=db,
+    )
+
+
+async def _workspace_labels_for_gateway_requests(
+    *,
+    org_id: UUID,
+    requests: list,
+    db: AsyncSession,
+) -> WorkspaceLabelMaps:
+    return await workspace_facade.get_workspace_label_maps(
+        scope=Scope(org_id=org_id),
+        team_ids={request.team_id for request in requests if request.team_id is not None},
+        project_ids={
+            request.project_id for request in requests if request.project_id is not None
+        },
+        virtual_key_ids={
+            request.virtual_key_id
+            for request in requests
+            if request.virtual_key_id is not None
+        },
+        db=db,
+    )
+
+
+async def _enrich_usage_workspace_breakdowns(
+    *,
+    org_id: UUID,
+    summary: OrganizationUsageSummary,
+    db: AsyncSession,
+) -> OrganizationUsageSummary:
+    labels = await _workspace_labels_for_breakdowns(
+        org_id=org_id,
+        team_rows=summary.by_team,
+        project_rows=summary.by_project,
+        virtual_key_rows=summary.by_virtual_key,
+        db=db,
+    )
+    return summary.model_copy(
+        update={
+            "by_team": _apply_labels(summary.by_team, labels.teams),
+            "by_project": _apply_labels(summary.by_project, labels.projects),
+            "by_virtual_key": _apply_labels(summary.by_virtual_key, labels.virtual_keys),
+        }
+    )
+
+
+async def _workspace_labels_for_breakdowns(
+    *,
+    org_id: UUID,
+    team_rows: list[UsageBreakdownRow],
+    project_rows: list[UsageBreakdownRow],
+    virtual_key_rows: list[UsageBreakdownRow],
+    db: AsyncSession,
+) -> WorkspaceLabelMaps:
+    return await workspace_facade.get_workspace_label_maps(
+        scope=Scope(org_id=org_id),
+        team_ids=_breakdown_ids(team_rows),
+        project_ids=_breakdown_ids(project_rows),
+        virtual_key_ids=_breakdown_ids(virtual_key_rows),
+        db=db,
+    )
+
+
+def _breakdown_ids(rows: list[UsageBreakdownRow]) -> set[UUID]:
+    ids: set[UUID] = set()
+    for row in rows:
+        try:
+            ids.add(UUID(row.id))
+        except ValueError:
+            continue
+    return ids
+
+
+def _apply_labels(
+    rows: list[UsageBreakdownRow],
+    labels: dict[UUID, str],
+) -> list[UsageBreakdownRow]:
+    enriched: list[UsageBreakdownRow] = []
+    for row in rows:
+        try:
+            row_id = UUID(row.id)
+        except ValueError:
+            enriched.append(row)
+            continue
+        enriched.append(row.model_copy(update={"label": labels.get(row_id, row.label)}))
+    return enriched
 
 
 def window_start(window: str) -> datetime | None:

@@ -32,7 +32,8 @@ from app.modules.guardrails.schemas import (
     UpdateGuardrailAssignmentRequest,
     UpdateGuardrailPolicyRequest,
 )
-from app.modules.workspace_access import ScopeAccessDeniedError, WorkspaceAccessService
+from app.modules.workspace import facade as workspace_facade
+from app.modules.workspace.errors import WorkspaceAccessDeniedError
 
 router = APIRouter(prefix="/guardrails", tags=["guardrails"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
@@ -43,7 +44,6 @@ GuardrailViewer = Annotated[
 ]
 GuardrailAdmin = Annotated[AuthenticatedUser, Depends(require_permission("guardrails.manage"))]
 AssignmentActor = Annotated[AuthenticatedUser, Depends(get_current_user)]
-workspace_access = WorkspaceAccessService()
 
 
 @router.get("/policies")
@@ -364,7 +364,7 @@ async def _require_assignment_admin(
     db: AsyncSession,
 ) -> None:
     try:
-        await workspace_access.require_assignment_admin(
+        await workspace_facade.require_assignment_admin(
             actor=user,
             scope=scope,
             scope_type=scope_type,
@@ -374,5 +374,5 @@ async def _require_assignment_admin(
             global_permissions={"guardrails.manage"},
             db=db,
         )
-    except ScopeAccessDeniedError as exc:
+    except WorkspaceAccessDeniedError as exc:
         raise HTTPException(status_code=403, detail="insufficient permissions") from exc

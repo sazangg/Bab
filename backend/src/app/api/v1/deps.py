@@ -4,15 +4,14 @@ from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope, get_db
 from app.modules.auth import facade as auth_facade
 from app.modules.auth.errors import InvalidAccessTokenError
-from app.modules.auth.internal.models import ProjectMembership, TeamMembership
 from app.modules.auth.schemas import AuthenticatedUser
-from app.modules.keys.internal.models import Project
+from app.modules.workspace import facade as workspace_facade
+from app.modules.workspace.schemas import WorkspaceProjectIdentity
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
@@ -85,7 +84,7 @@ def require_team_admin_or_permission(permission: str) -> Callable:
     ) -> AuthenticatedUser:
         if auth_facade.has_permission(user, permission) or await _is_team_admin(
             team_id=team_id,
-            user=user,
+            actor=user,
             db=db,
         ):
             return user
@@ -107,8 +106,8 @@ def require_project_team_admin_or_permission(permission: str) -> Callable:
             return user
         project = await _get_project(project_id=project_id, user=user, db=db)
         if project and (
-            await _is_team_admin(team_id=str(project.team_id), user=user, db=db)
-            or await _is_project_admin(project_id=str(project.id), user=user, db=db)
+            await _is_team_admin(team_id=str(project.team_id), actor=user, db=db)
+            or await _is_project_admin(project_id=str(project.id), actor=user, db=db)
         ):
             return user
         raise HTTPException(
@@ -128,7 +127,7 @@ async def require_team_view_or_permission(
 ) -> None:
     if auth_facade.has_permission(user, permission) or await _has_team_membership(
         team_id=team_id,
-        user=user,
+        actor=user,
         db=db,
     ):
         return
@@ -149,8 +148,8 @@ async def require_project_view_or_permission(
         return
     project = await _get_project(project_id=project_id, user=user, db=db)
     if project and (
-        await _has_team_membership(team_id=str(project.team_id), user=user, db=db)
-        or await _has_project_membership(project_id=str(project.id), user=user, db=db)
+        await _has_team_membership(team_id=str(project.team_id), actor=user, db=db)
+        or await _has_project_membership(project_id=str(project.id), actor=user, db=db)
     ):
         return
     raise HTTPException(
@@ -171,80 +170,69 @@ def get_scope(user: Annotated[AuthenticatedUser, Depends(get_current_user)]) -> 
     return Scope(org_id=user.org_id)
 
 
-async def _has_team_membership(*, team_id: str, user: AuthenticatedUser, db: AsyncSession) -> bool:
+async def _has_team_membership(
+    *, team_id: str, actor: AuthenticatedUser, db: AsyncSession
+) -> bool:
     try:
         parsed_team_id = UUID(str(team_id))
     except ValueError:
         return False
-    membership = await db.scalar(
-        select(TeamMembership).where(
-            TeamMembership.org_id == user.org_id,
-            TeamMembership.team_id == parsed_team_id,
-            TeamMembership.user_id == user.id,
-        )
+    return await workspace_facade.has_team_membership(
+        team_id=parsed_team_id,
+        actor=actor,
+        db=db,
     )
-    return membership is not None
 
 
-async def _is_team_admin(*, team_id: str, user: AuthenticatedUser, db: AsyncSession) -> bool:
+async def _is_team_admin(*, team_id: str, actor: AuthenticatedUser, db: AsyncSession) -> bool:
     try:
         parsed_team_id = UUID(str(team_id))
     except ValueError:
         return False
-    membership = await db.scalar(
-        select(TeamMembership).where(
-            TeamMembership.org_id == user.org_id,
-            TeamMembership.team_id == parsed_team_id,
-            TeamMembership.user_id == user.id,
-            TeamMembership.role == "team_admin",
-        )
+    return await workspace_facade.is_team_admin(
+        team_id=parsed_team_id,
+        actor=actor,
+        db=db,
     )
-    return membership is not None
 
 
 async def _has_project_membership(
-    *, project_id: str, user: AuthenticatedUser, db: AsyncSession
+    *, project_id: str, actor: AuthenticatedUser, db: AsyncSession
 ) -> bool:
     try:
         parsed_project_id = UUID(str(project_id))
     except ValueError:
         return False
-    membership = await db.scalar(
-        select(ProjectMembership).where(
-            ProjectMembership.org_id == user.org_id,
-            ProjectMembership.project_id == parsed_project_id,
-            ProjectMembership.user_id == user.id,
-        )
+    return await workspace_facade.has_project_membership(
+        project_id=parsed_project_id,
+        actor=actor,
+        db=db,
     )
-    return membership is not None
 
 
-async def _is_project_admin(*, project_id: str, user: AuthenticatedUser, db: AsyncSession) -> bool:
+async def _is_project_admin(
+    *, project_id: str, actor: AuthenticatedUser, db: AsyncSession
+) -> bool:
     try:
         parsed_project_id = UUID(str(project_id))
     except ValueError:
         return False
-    membership = await db.scalar(
-        select(ProjectMembership).where(
-            ProjectMembership.org_id == user.org_id,
-            ProjectMembership.project_id == parsed_project_id,
-            ProjectMembership.user_id == user.id,
-            ProjectMembership.role == "project_admin",
-        )
+    return await workspace_facade.is_project_admin(
+        project_id=parsed_project_id,
+        actor=actor,
+        db=db,
     )
-    return membership is not None
 
 
 async def _get_project(
     *, project_id: str, user: AuthenticatedUser, db: AsyncSession
-) -> Project | None:
+) -> WorkspaceProjectIdentity | None:
     try:
         parsed_project_id = UUID(str(project_id))
     except ValueError:
         return None
-    return await db.scalar(
-        select(Project).where(
-            Project.id == parsed_project_id,
-            Project.org_id == user.org_id,
-        )
+    return await workspace_facade.get_project_identity(
+        project_id=parsed_project_id,
+        scope=Scope(org_id=user.org_id),
+        db=db,
     )

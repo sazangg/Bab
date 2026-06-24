@@ -48,7 +48,8 @@ from app.modules.policy_simulation.schemas import (
     PolicySimulationRequest,
     PolicySimulationResponse,
 )
-from app.modules.workspace_access import ScopeAccessDeniedError, WorkspaceAccessService
+from app.modules.workspace import facade as workspace_facade
+from app.modules.workspace.errors import WorkspaceAccessDeniedError
 
 router = APIRouter(prefix="/policies", tags=["policies"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
@@ -59,7 +60,6 @@ ScopedPolicyViewer = Annotated[
 ]
 PolicyAdmin = Annotated[AuthenticatedUser, Depends(require_permission("policies.manage"))]
 AssignmentActor = Annotated[AuthenticatedUser, Depends(get_current_user)]
-workspace_access = WorkspaceAccessService()
 
 
 @router.get("/access")
@@ -514,7 +514,7 @@ async def _require_assignment_admin(
     db: AsyncSession,
 ) -> None:
     try:
-        await workspace_access.require_assignment_admin(
+        await workspace_facade.require_assignment_admin(
             actor=user,
             scope=scope,
             scope_type=scope_type,
@@ -523,5 +523,5 @@ async def _require_assignment_admin(
             virtual_key_id=virtual_key_id,
             db=db,
         )
-    except ScopeAccessDeniedError as exc:
+    except WorkspaceAccessDeniedError as exc:
         raise HTTPException(status_code=403, detail="insufficient permissions") from exc

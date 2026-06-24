@@ -11,11 +11,8 @@ from app.modules.auth.schemas import (
     AuthenticatedUser,
 )
 from app.modules.keys.internal.models import Project, VirtualKey
-from app.modules.workspace_access import (
-    ScopeAccessDeniedError,
-    ScopeNotFoundError,
-    WorkspaceAccessService,
-)
+from app.modules.workspace import facade as workspace_facade
+from app.modules.workspace.errors import WorkspaceAccessDeniedError, WorkspaceScopeNotFoundError
 
 
 async def _workspace(db_session: AsyncSession):
@@ -88,27 +85,25 @@ async def test_validate_assignment_scope_normalizes_known_targets(
     org, team, _other_team, project, _other_project, key, _other_org_key = await _workspace(
         db_session
     )
-    service = WorkspaceAccessService()
-
-    org_scope = await service.validate_assignment_scope(
+    org_scope = await workspace_facade.validate_assignment_scope(
         organization_id=org.id,
         scope_type="org",
         db=db_session,
     )
-    team_scope = await service.validate_assignment_scope(
+    team_scope = await workspace_facade.validate_assignment_scope(
         organization_id=org.id,
         scope_type="team",
         team_id=team.id,
         db=db_session,
     )
-    project_scope = await service.validate_assignment_scope(
+    project_scope = await workspace_facade.validate_assignment_scope(
         organization_id=org.id,
         scope_type="project",
         team_id=team.id,
         project_id=project.id,
         db=db_session,
     )
-    key_scope = await service.validate_assignment_scope(
+    key_scope = await workspace_facade.validate_assignment_scope(
         organization_id=org.id,
         scope_type="virtual_key",
         team_id=team.id,
@@ -130,26 +125,24 @@ async def test_validate_assignment_scope_rejects_invalid_relationships(
     org, _team, other_team, project, other_project, key, other_org_key = await _workspace(
         db_session
     )
-    service = WorkspaceAccessService()
-
-    with pytest.raises(ScopeNotFoundError):
-        await service.validate_assignment_scope(
+    with pytest.raises(WorkspaceScopeNotFoundError):
+        await workspace_facade.validate_assignment_scope(
             organization_id=org.id,
             scope_type="project",
             team_id=other_team.id,
             project_id=project.id,
             db=db_session,
         )
-    with pytest.raises(ScopeNotFoundError):
-        await service.validate_assignment_scope(
+    with pytest.raises(WorkspaceScopeNotFoundError):
+        await workspace_facade.validate_assignment_scope(
             organization_id=org.id,
             scope_type="virtual_key",
             project_id=other_project.id,
             virtual_key_id=key.id,
             db=db_session,
         )
-    with pytest.raises(ScopeNotFoundError):
-        await service.validate_assignment_scope(
+    with pytest.raises(WorkspaceScopeNotFoundError):
+        await workspace_facade.validate_assignment_scope(
             organization_id=org.id,
             scope_type="virtual_key",
             virtual_key_id=other_org_key.id,
@@ -164,10 +157,9 @@ async def test_require_assignment_admin_allows_matching_scoped_admins(
     org, team, _other_team, project, _other_project, key, _other_org_key = await _workspace(
         db_session
     )
-    service = WorkspaceAccessService()
     scope = Scope(org_id=org.id)
 
-    await service.require_assignment_admin(
+    await workspace_facade.require_assignment_admin(
         actor=_actor(
             org.id,
             team_memberships=[AuthenticatedTeamMembership(team_id=team.id, role="team_admin")],
@@ -177,7 +169,7 @@ async def test_require_assignment_admin_allows_matching_scoped_admins(
         team_id=team.id,
         db=db_session,
     )
-    await service.require_assignment_admin(
+    await workspace_facade.require_assignment_admin(
         actor=_actor(
             org.id,
             project_memberships=[
@@ -189,7 +181,7 @@ async def test_require_assignment_admin_allows_matching_scoped_admins(
         project_id=project.id,
         db=db_session,
     )
-    await service.require_assignment_admin(
+    await workspace_facade.require_assignment_admin(
         actor=_actor(
             org.id,
             team_memberships=[AuthenticatedTeamMembership(team_id=team.id, role="team_admin")],
@@ -208,17 +200,16 @@ async def test_require_assignment_admin_preserves_global_permission_boundary(
     org, _team, _other_team, _project, _other_project, _key, _other_org_key = await _workspace(
         db_session
     )
-    service = WorkspaceAccessService()
     scope = Scope(org_id=org.id)
 
-    with pytest.raises(ScopeAccessDeniedError):
-        await service.require_assignment_admin(
+    with pytest.raises(WorkspaceAccessDeniedError):
+        await workspace_facade.require_assignment_admin(
             actor=_actor(org.id, permissions=["guardrails.manage"]),
             scope=scope,
             scope_type="org",
             db=db_session,
         )
-    await service.require_assignment_admin(
+    await workspace_facade.require_assignment_admin(
         actor=_actor(org.id, permissions=["guardrails.manage"]),
         scope=scope,
         scope_type="org",
@@ -234,22 +225,21 @@ async def test_require_assignment_admin_denies_unmanaged_scope(
     org, _team, other_team, project, _other_project, key, _other_org_key = await _workspace(
         db_session
     )
-    service = WorkspaceAccessService()
     actor = _actor(
         org.id,
         team_memberships=[AuthenticatedTeamMembership(team_id=other_team.id, role="team_admin")],
     )
 
-    with pytest.raises(ScopeAccessDeniedError):
-        await service.require_assignment_admin(
+    with pytest.raises(WorkspaceAccessDeniedError):
+        await workspace_facade.require_assignment_admin(
             actor=actor,
             scope=Scope(org_id=org.id),
             scope_type="project",
             project_id=project.id,
             db=db_session,
         )
-    with pytest.raises(ScopeAccessDeniedError):
-        await service.require_assignment_admin(
+    with pytest.raises(WorkspaceAccessDeniedError):
+        await workspace_facade.require_assignment_admin(
             actor=actor,
             scope=Scope(org_id=org.id),
             scope_type="virtual_key",

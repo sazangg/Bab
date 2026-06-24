@@ -8,8 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.request_ids import current_request_id
-from app.modules.auth.internal.models import Team
-from app.modules.keys.internal.models import Project, VirtualKey
 from app.modules.policies.internal.models import LimitPolicy, LimitPolicyRule
 from app.modules.policy_kernel.models import Policy
 from app.modules.providers.internal.models import CredentialPool, Provider, ProviderCredential
@@ -188,6 +186,7 @@ async def list_gateway_requests(
     search: str | None,
     allowed_team_ids: set[UUID] | None,
     allowed_project_ids: set[UUID] | None,
+    allowed_virtual_key_ids: set[UUID] | None,
     limit: int,
     offset: int,
     now: datetime,
@@ -252,6 +251,7 @@ async def list_gateway_requests(
         filters,
         allowed_team_ids=allowed_team_ids,
         allowed_project_ids=allowed_project_ids,
+        allowed_virtual_key_ids=allowed_virtual_key_ids,
     )
     result = await db.scalars(
         select(GatewayRequest)
@@ -510,6 +510,7 @@ async def list_usage_records(
     search: str | None,
     allowed_team_ids: set[UUID] | None,
     allowed_project_ids: set[UUID] | None,
+    allowed_virtual_key_ids: set[UUID] | None,
     limit: int | None,
     offset: int,
     db: AsyncSession,
@@ -526,6 +527,7 @@ async def list_usage_records(
         request_id=request_id,
         allowed_team_ids=allowed_team_ids,
         allowed_project_ids=allowed_project_ids,
+        allowed_virtual_key_ids=allowed_virtual_key_ids,
     )
     if search:
         # autoescape escapes %/_ so a literal wildcard in the term matches verbatim.
@@ -641,6 +643,7 @@ async def get_organization_usage_summary(
     model: str | None = None,
     allowed_team_ids: set[UUID] | None = None,
     allowed_project_ids: set[UUID] | None = None,
+    allowed_virtual_key_ids: set[UUID] | None = None,
     db: AsyncSession,
 ) -> OrganizationUsageSummary:
     filters = tuple(
@@ -656,6 +659,7 @@ async def get_organization_usage_summary(
             request_id=None,
             allowed_team_ids=allowed_team_ids,
             allowed_project_ids=allowed_project_ids,
+            allowed_virtual_key_ids=allowed_virtual_key_ids,
         )
     )
     return OrganizationUsageSummary(
@@ -685,18 +689,14 @@ async def get_organization_usage_summary(
         ),
         by_team=await _breakdown(
             UsageRecord.team_id,
-            Team.name,
+            None,
             *filters,
-            join_model=Team,
-            join_on=Team.id == UsageRecord.team_id,
             db=db,
         ),
         by_project=await _breakdown(
             UsageRecord.project_id,
-            Project.name,
+            None,
             *filters,
-            join_model=Project,
-            join_on=Project.id == UsageRecord.project_id,
             db=db,
         ),
         by_access_policy=await _breakdown(
@@ -709,10 +709,8 @@ async def get_organization_usage_summary(
         ),
         by_virtual_key=await _breakdown(
             UsageRecord.virtual_key_id,
-            VirtualKey.name,
+            None,
             *filters,
-            join_model=VirtualKey,
-            join_on=VirtualKey.id == UsageRecord.virtual_key_id,
             db=db,
         ),
         recent_errors=await _recent_errors(*filters, db=db),
@@ -732,6 +730,7 @@ async def get_organization_usage_timeseries(
     model: str | None = None,
     allowed_team_ids: set[UUID] | None = None,
     allowed_project_ids: set[UUID] | None = None,
+    allowed_virtual_key_ids: set[UUID] | None = None,
     db: AsyncSession,
 ) -> list[UsageTimeSeriesPoint]:
     filters = _usage_filters(
@@ -746,6 +745,7 @@ async def get_organization_usage_timeseries(
         request_id=None,
         allowed_team_ids=allowed_team_ids,
         allowed_project_ids=allowed_project_ids,
+        allowed_virtual_key_ids=allowed_virtual_key_ids,
     )
     bucket_expr = _bucket_expression(grain=grain, db=db)
     rows = (
@@ -810,6 +810,7 @@ async def get_usage_filter_options(
     project_id: UUID | None = None,
     allowed_team_ids: set[UUID] | None = None,
     allowed_project_ids: set[UUID] | None = None,
+    allowed_virtual_key_ids: set[UUID] | None = None,
     db: AsyncSession,
 ) -> UsageFilterOptions:
     filters = tuple(
@@ -825,6 +826,7 @@ async def get_usage_filter_options(
             request_id=None,
             allowed_team_ids=allowed_team_ids,
             allowed_project_ids=allowed_project_ids,
+            allowed_virtual_key_ids=allowed_virtual_key_ids,
         )
     )
     return UsageFilterOptions(
@@ -844,26 +846,20 @@ async def get_usage_filter_options(
         ),
         by_team=await _breakdown(
             UsageRecord.team_id,
-            Team.name,
+            None,
             *filters,
-            join_model=Team,
-            join_on=Team.id == UsageRecord.team_id,
             db=db,
         ),
         by_project=await _breakdown(
             UsageRecord.project_id,
-            Project.name,
+            None,
             *filters,
-            join_model=Project,
-            join_on=Project.id == UsageRecord.project_id,
             db=db,
         ),
         by_virtual_key=await _breakdown(
             UsageRecord.virtual_key_id,
-            VirtualKey.name,
+            None,
             *filters,
-            join_model=VirtualKey,
-            join_on=VirtualKey.id == UsageRecord.virtual_key_id,
             db=db,
         ),
     )
@@ -882,6 +878,7 @@ async def get_spend_insights(
     model: str | None,
     allowed_team_ids: set[UUID] | None,
     allowed_project_ids: set[UUID] | None,
+    allowed_virtual_key_ids: set[UUID] | None,
     db: AsyncSession,
 ) -> SpendInsights:
     filters = _usage_filters(
@@ -896,6 +893,7 @@ async def get_spend_insights(
         request_id=None,
         allowed_team_ids=allowed_team_ids,
         allowed_project_ids=allowed_project_ids,
+        allowed_virtual_key_ids=allowed_virtual_key_ids,
     )
     top_spend_drivers = await _breakdown(
         UsageRecord.provider_model,
@@ -921,6 +919,7 @@ async def get_spend_insights(
             model=model,
             allowed_team_ids=allowed_team_ids,
             allowed_project_ids=allowed_project_ids,
+            allowed_virtual_key_ids=allowed_virtual_key_ids,
             db=db,
         ),
     )
@@ -982,6 +981,7 @@ async def _limit_policy_budget_burn(
     model: str | None = None,
     allowed_team_ids: set[UUID] | None = None,
     allowed_project_ids: set[UUID] | None = None,
+    allowed_virtual_key_ids: set[UUID] | None = None,
     db: AsyncSession,
 ) -> list[LimitPolicyBudgetBurnRow]:
     rules = (
@@ -1039,6 +1039,7 @@ async def _limit_policy_budget_burn(
             filters,
             allowed_team_ids=allowed_team_ids,
             allowed_project_ids=allowed_project_ids,
+            allowed_virtual_key_ids=allowed_virtual_key_ids,
         )
         spent_query = select(func.coalesce(func.sum(UsageRecord.cost_cents), 0)).where(*filters)
         spent = (await db.scalar(spent_query)) or 0
@@ -1101,6 +1102,7 @@ def _usage_filters(
     request_id: str | None,
     allowed_team_ids: set[UUID] | None,
     allowed_project_ids: set[UUID] | None,
+    allowed_virtual_key_ids: set[UUID] | None,
 ) -> list:
     filters = [UsageRecord.org_id == org_id]
     if since is not None:
@@ -1123,6 +1125,7 @@ def _usage_filters(
         filters,
         allowed_team_ids=allowed_team_ids,
         allowed_project_ids=allowed_project_ids,
+        allowed_virtual_key_ids=allowed_virtual_key_ids,
     )
     return filters
 
@@ -1132,14 +1135,21 @@ def _add_allowed_scope_filters(
     *,
     allowed_team_ids: set[UUID] | None,
     allowed_project_ids: set[UUID] | None,
+    allowed_virtual_key_ids: set[UUID] | None,
 ) -> None:
-    if allowed_team_ids is None and allowed_project_ids is None:
+    if (
+        allowed_team_ids is None
+        and allowed_project_ids is None
+        and allowed_virtual_key_ids is None
+    ):
         return
     scope_filters = []
     if allowed_team_ids:
         scope_filters.append(UsageRecord.team_id.in_(allowed_team_ids))
     if allowed_project_ids:
         scope_filters.append(UsageRecord.project_id.in_(allowed_project_ids))
+    if allowed_virtual_key_ids:
+        scope_filters.append(UsageRecord.virtual_key_id.in_(allowed_virtual_key_ids))
     filters.append(or_(*scope_filters) if scope_filters else UsageRecord.id.is_(None))
 
 
@@ -1148,14 +1158,21 @@ def _add_allowed_gateway_request_scope_filters(
     *,
     allowed_team_ids: set[UUID] | None,
     allowed_project_ids: set[UUID] | None,
+    allowed_virtual_key_ids: set[UUID] | None,
 ) -> None:
-    if allowed_team_ids is None and allowed_project_ids is None:
+    if (
+        allowed_team_ids is None
+        and allowed_project_ids is None
+        and allowed_virtual_key_ids is None
+    ):
         return
     scope_filters = []
     if allowed_team_ids:
         scope_filters.append(GatewayRequest.team_id.in_(allowed_team_ids))
     if allowed_project_ids:
         scope_filters.append(GatewayRequest.project_id.in_(allowed_project_ids))
+    if allowed_virtual_key_ids:
+        scope_filters.append(GatewayRequest.virtual_key_id.in_(allowed_virtual_key_ids))
     filters.append(or_(*scope_filters) if scope_filters else GatewayRequest.id.is_(None))
 
 
@@ -1294,12 +1311,13 @@ def _logical_request_count_expression():
 
 async def _breakdown(
     group_column,
-    label_column,
+    label_column=None,
     *filters,
     db: AsyncSession,
     join_model=None,
     join_on=None,
 ) -> list[UsageBreakdownRow]:
+    label_column = label_column if label_column is not None else group_column
     query = select(
         group_column,
         label_column,

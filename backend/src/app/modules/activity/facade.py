@@ -3,10 +3,12 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import Scope
 from app.modules.activity.internal import repository
 from app.modules.activity.schemas import ActivityEventResponse, RecordActivityEvent
 from app.modules.auth import facade as auth_facade
 from app.modules.auth.schemas import AuthenticatedUser
+from app.modules.workspace import facade as workspace_facade
 
 
 async def record_event(*, payload: RecordActivityEvent, db: AsyncSession) -> None:
@@ -130,6 +132,12 @@ async def list_events(
     before_id: UUID | None = None,
     limit: int | None = 100,
 ) -> list[ActivityEventResponse]:
+    allowed_scope = await workspace_facade.expand_allowed_scope_ids(
+        scope=Scope(org_id=org_id),
+        allowed_team_ids=allowed_team_ids,
+        allowed_project_ids=allowed_project_ids,
+        db=db,
+    )
     events = await repository.list_activity_events(
         org_id=org_id,
         category=category,
@@ -139,8 +147,11 @@ async def list_events(
         team_id=team_id,
         project_id=project_id,
         virtual_key_id=virtual_key_id,
-        allowed_team_ids=allowed_team_ids,
-        allowed_project_ids=allowed_project_ids,
+        allowed_team_ids=allowed_scope.team_ids if allowed_scope is not None else None,
+        allowed_project_ids=allowed_scope.project_ids if allowed_scope is not None else None,
+        allowed_virtual_key_ids=(
+            allowed_scope.virtual_key_ids if allowed_scope is not None else None
+        ),
         since=since,
         end_at=end_at,
         search=search,

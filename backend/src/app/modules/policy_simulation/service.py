@@ -6,11 +6,8 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope
-from app.modules.auth.internal.models import Team
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys.errors import VirtualKeyNotFoundError
-from app.modules.keys.internal import repository as keys_repository
-from app.modules.keys.internal.models import Project
 from app.modules.keys.schemas import ResolvedLimitPolicy
 from app.modules.policies.errors import PolicyPermissionError, PolicyValidationError
 from app.modules.policies.internal import repository as policies_repository
@@ -41,6 +38,7 @@ from app.modules.providers.errors import ProviderNotFoundError
 from app.modules.usage.accounting import UsageAccounting
 from app.modules.usage.costing.base import CostingContext
 from app.modules.usage.costing.registry import default_cost_calculator_registry
+from app.modules.workspace import facade as workspace_facade
 
 
 @dataclass(frozen=True)
@@ -382,28 +380,19 @@ def _simulation_subject(
 async def _resolve_simulation_target(
     *, org_id: UUID, virtual_key_id: UUID, db: AsyncSession
 ) -> _SimulationTarget:
-    virtual_key = await keys_repository.get_virtual_key_by_id(
-        org_id=org_id,
-        key_id=virtual_key_id,
+    target = await workspace_facade.get_virtual_key_target(
+        scope=Scope(org_id=org_id),
+        virtual_key_id=virtual_key_id,
         db=db,
     )
-    now = datetime.now(UTC)
-    if virtual_key is None or virtual_key.revoked_at is not None:
-        raise VirtualKeyNotFoundError
-    if virtual_key.expires_at is not None and _as_utc(virtual_key.expires_at) <= now:
-        raise VirtualKeyNotFoundError
-    project = await db.get(Project, virtual_key.project_id)
-    if project is None or project.org_id != org_id or not project.is_active:
-        raise VirtualKeyNotFoundError
-    team = await db.get(Team, project.team_id)
-    if team is None or team.org_id != org_id or not team.is_active:
+    if target is None:
         raise VirtualKeyNotFoundError
     return _SimulationTarget(
-        org_id=org_id,
-        team_id=project.team_id,
-        project_id=project.id,
-        virtual_key_id=virtual_key.id,
-        virtual_key_name=virtual_key.name,
+        org_id=target.org_id,
+        team_id=target.team_id,
+        project_id=target.project_id,
+        virtual_key_id=target.virtual_key_id,
+        virtual_key_name=target.virtual_key_name,
     )
 
 
@@ -626,33 +615,20 @@ async def _assignment_visible_to_actor(
             for membership in actor.team_memberships
         )
     if assignment.scope_type == "project":
-        if any(
-            membership.project_id == assignment.project_id and membership.role == "project_admin"
-            for membership in actor.project_memberships
-        ):
-            return True
-        project = await db.get(Project, assignment.project_id)
-        return project is not None and any(
-            membership.team_id == project.team_id and membership.role == "team_admin"
-            for membership in actor.team_memberships
-        )
-    if assignment.scope_type == "virtual_key":
-        virtual_key = await keys_repository.get_virtual_key_by_id(
-            org_id=target.org_id,
-            key_id=assignment.virtual_key_id,
+        return await workspace_facade.can_manage_assignment_scope(
+            actor=actor,
+            scope=Scope(org_id=target.org_id),
+            scope_type="project",
+            project_id=assignment.project_id,
             db=db,
         )
-        if virtual_key is None:
-            return False
-        project = await db.get(Project, virtual_key.project_id)
-        if project is None:
-            return False
-        return any(
-            membership.project_id == project.id and membership.role == "project_admin"
-            for membership in actor.project_memberships
-        ) or any(
-            membership.team_id == project.team_id and membership.role == "team_admin"
-            for membership in actor.team_memberships
+    if assignment.scope_type == "virtual_key":
+        return await workspace_facade.can_manage_assignment_scope(
+            actor=actor,
+            scope=Scope(org_id=target.org_id),
+            scope_type="virtual_key",
+            virtual_key_id=assignment.virtual_key_id,
+            db=db,
         )
     return False
 
@@ -671,36 +647,26 @@ async def _can_simulate_draft_assignment(
         for membership in actor.team_memberships
         if membership.role == "team_admin"
     }
-    project_admin_project_ids = {
-        membership.project_id
-        for membership in actor.project_memberships
-        if membership.role == "project_admin"
-    }
     if assignment.scope_type == "org":
         return False
     if assignment.scope_type == "team":
         return assignment.team_id in team_admin_team_ids
     if assignment.scope_type == "project":
-        if assignment.project_id in project_admin_project_ids:
-            return True
-        project = await db.get(Project, assignment.project_id)
-        return (
-            project is not None
-            and project.org_id == target.org_id
-            and project.team_id in team_admin_team_ids
-        )
-    if assignment.scope_type == "virtual_key":
-        virtual_key = await keys_repository.get_virtual_key_by_id(
-            org_id=target.org_id,
-            key_id=assignment.virtual_key_id,
+        return await workspace_facade.can_manage_assignment_scope(
+            actor=actor,
+            scope=Scope(org_id=target.org_id),
+            scope_type="project",
+            project_id=assignment.project_id,
             db=db,
         )
-        if virtual_key is None or virtual_key.revoked_at is not None:
-            return False
-        project = await db.get(Project, virtual_key.project_id)
-        if project is None or project.org_id != target.org_id:
-            return False
-        return project.id in project_admin_project_ids or project.team_id in team_admin_team_ids
+    if assignment.scope_type == "virtual_key":
+        return await workspace_facade.can_manage_assignment_scope(
+            actor=actor,
+            scope=Scope(org_id=target.org_id),
+            scope_type="virtual_key",
+            virtual_key_id=assignment.virtual_key_id,
+            db=db,
+        )
     return False
 
 

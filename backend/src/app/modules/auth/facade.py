@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope
+from app.modules.auth import read_models
 from app.modules.auth.internal import service
 from app.modules.auth.schemas import (
     AcceptInviteRequest,
@@ -15,6 +16,7 @@ from app.modules.auth.schemas import (
     LoginRequest,
     MemberOptionResponse,
     MemberResponse,
+    OrganizationIdentity,
     ProjectMemberResponse,
     TeamMemberResponse,
     TokenResponse,
@@ -24,6 +26,7 @@ from app.modules.auth.schemas import (
     UpdateTeamMemberRequest,
     UpsertProjectMemberRequest,
     UpsertTeamMemberRequest,
+    UserLabel,
 )
 
 
@@ -45,6 +48,66 @@ async def verify_access_token(token: str, db: AsyncSession) -> AuthenticatedUser
 
 def has_permission(user: AuthenticatedUser, permission: str) -> bool:
     return service.has_permission(user, permission)
+
+
+async def has_team_membership(
+    *, org_id: UUID, team_id: UUID, user_id: UUID, db: AsyncSession
+) -> bool:
+    return await service.has_team_membership(
+        org_id=org_id,
+        team_id=team_id,
+        user_id=user_id,
+        db=db,
+    )
+
+
+async def has_team_admin_membership(
+    *, org_id: UUID, team_id: UUID, user_id: UUID, db: AsyncSession
+) -> bool:
+    return await service.has_team_admin_membership(
+        org_id=org_id,
+        team_id=team_id,
+        user_id=user_id,
+        db=db,
+    )
+
+
+async def has_project_membership(
+    *, org_id: UUID, project_id: UUID, user_id: UUID, db: AsyncSession
+) -> bool:
+    return await service.has_project_membership(
+        org_id=org_id,
+        project_id=project_id,
+        user_id=user_id,
+        db=db,
+    )
+
+
+async def has_project_admin_membership(
+    *, org_id: UUID, project_id: UUID, user_id: UUID, db: AsyncSession
+) -> bool:
+    return await service.has_project_admin_membership(
+        org_id=org_id,
+        project_id=project_id,
+        user_id=user_id,
+        db=db,
+    )
+
+
+async def get_organization_identity(
+    *, org_id: UUID, db: AsyncSession
+) -> OrganizationIdentity | None:
+    return await service.get_organization_identity(org_id=org_id, db=db)
+
+
+async def update_organization_name(*, org_id: UUID, name: str, db: AsyncSession) -> None:
+    await service.update_organization_name(org_id=org_id, name=name, db=db)
+
+
+async def get_user_labels(
+    *, org_id: UUID, user_ids: set[UUID], db: AsyncSession
+) -> dict[UUID, UserLabel]:
+    return await read_models.get_user_labels(org_id=org_id, user_ids=user_ids, db=db)
 
 
 async def list_members(*, scope: Scope, db: AsyncSession) -> list[MemberResponse]:

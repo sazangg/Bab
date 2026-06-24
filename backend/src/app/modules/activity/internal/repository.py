@@ -8,7 +8,6 @@ from app.core.request_ids import current_request_id
 from app.modules.activity.internal.models import ActivityEvent
 from app.modules.activity.metadata import sanitize_metadata
 from app.modules.activity.schemas import RecordActivityEvent
-from app.modules.keys.internal.models import Project, VirtualKey
 
 
 async def create_activity_event(
@@ -39,6 +38,7 @@ async def list_activity_events(
     virtual_key_id: UUID | None = None,
     allowed_team_ids: set[UUID] | None = None,
     allowed_project_ids: set[UUID] | None = None,
+    allowed_virtual_key_ids: set[UUID] | None = None,
     since: datetime | None = None,
     end_at: datetime | None = None,
     search: str | None = None,
@@ -92,33 +92,18 @@ async def list_activity_events(
         query = query.where(ActivityEvent.project_id == project_id)
     if virtual_key_id is not None:
         query = query.where(ActivityEvent.virtual_key_id == virtual_key_id)
-    if allowed_team_ids is not None or allowed_project_ids is not None:
+    if (
+        allowed_team_ids is not None
+        or allowed_project_ids is not None
+        or allowed_virtual_key_ids is not None
+    ):
         scope_filters = []
         if allowed_team_ids:
             scope_filters.append(ActivityEvent.team_id.in_(allowed_team_ids))
-            team_project_ids = select(Project.id).where(
-                Project.org_id == org_id,
-                Project.team_id.in_(allowed_team_ids),
-            )
-            scope_filters.append(ActivityEvent.project_id.in_(team_project_ids))
-            scope_filters.append(
-                ActivityEvent.virtual_key_id.in_(
-                    select(VirtualKey.id).where(
-                        VirtualKey.org_id == org_id,
-                        VirtualKey.project_id.in_(team_project_ids),
-                    )
-                )
-            )
         if allowed_project_ids:
             scope_filters.append(ActivityEvent.project_id.in_(allowed_project_ids))
-            scope_filters.append(
-                ActivityEvent.virtual_key_id.in_(
-                    select(VirtualKey.id).where(
-                        VirtualKey.org_id == org_id,
-                        VirtualKey.project_id.in_(allowed_project_ids),
-                    )
-                )
-            )
+        if allowed_virtual_key_ids:
+            scope_filters.append(ActivityEvent.virtual_key_id.in_(allowed_virtual_key_ids))
         query = query.where(or_(*scope_filters) if scope_filters else ActivityEvent.id.is_(None))
     query = query.order_by(ActivityEvent.created_at.desc(), ActivityEvent.id.desc())
     if limit is not None:

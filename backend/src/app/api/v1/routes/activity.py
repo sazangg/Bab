@@ -7,7 +7,6 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, get_scope
@@ -17,7 +16,9 @@ from app.modules.activity import facade
 from app.modules.activity.schemas import ActivityEventResponse
 from app.modules.auth import facade as auth_facade
 from app.modules.auth.schemas import AuthenticatedUser
-from app.modules.keys.internal.models import Project, VirtualKey
+from app.modules.workspace import facade as workspace_facade
+from app.modules.workspace.errors import WorkspaceScopeNotFoundError
+from app.modules.workspace.schemas import WorkspaceProjectIdentity
 
 router = APIRouter(prefix="/activity", tags=["activity"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
@@ -280,49 +281,28 @@ async def _validate_filter_relationships(
     team_id: UUID | None,
     project_id: UUID | None,
     virtual_key_id: UUID | None,
-) -> Project | None:
-    project: Project | None = None
-    if project_id is not None:
-        project = await db.scalar(
-            select(Project).where(Project.org_id == org_id, Project.id == project_id)
+) -> WorkspaceProjectIdentity | None:
+    try:
+        validation = await workspace_facade.validate_filter_relationships(
+            scope=Scope(org_id=org_id),
+            team_id=team_id,
+            project_id=project_id,
+            virtual_key_id=virtual_key_id,
+            db=db,
         )
-        if project is None:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="insufficient permissions",
-            )
-        if team_id is not None and project.team_id != team_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="project does not belong to team",
-            )
-    if virtual_key_id is not None:
-        virtual_key = await db.scalar(
-            select(VirtualKey).where(
-                VirtualKey.org_id == org_id,
-                VirtualKey.id == virtual_key_id,
-            )
-        )
-        if virtual_key is None:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="insufficient permissions",
-            )
-        if project_id is not None and virtual_key.project_id != project_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="virtual key does not belong to project",
-            )
-        if project is None:
-            project = await db.scalar(
-                select(Project).where(
-                    Project.org_id == org_id,
-                    Project.id == virtual_key.project_id,
-                )
-            )
-        if project is None or (team_id is not None and project.team_id != team_id):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="virtual key does not belong to team",
-            )
-    return project
+    except WorkspaceScopeNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=_filter_validation_error_detail(exc.reason),
+        ) from exc
+    return validation.project
+
+
+def _filter_validation_error_detail(reason: str) -> str:
+    if reason == "project_team_mismatch":
+        return "project does not belong to team"
+    if reason == "virtual_key_project_mismatch":
+        return "virtual key does not belong to project"
+    if reason == "virtual_key_team_mismatch":
+        return "virtual key does not belong to team"
+    return "insufficient permissions"

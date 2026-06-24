@@ -14,7 +14,13 @@ from app.modules.teams.errors import (
     TeamSlugAlreadyExistsError,
 )
 from app.modules.teams.internal import repository
-from app.modules.teams.schemas import CreateTeamRequest, TeamResponse, UpdateTeamRequest
+from app.modules.teams.schemas import (
+    CreateTeamRequest,
+    TeamIdentity,
+    TeamReadState,
+    TeamResponse,
+    UpdateTeamRequest,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -66,6 +72,39 @@ async def list_teams(*, scope: Scope, db: AsyncSession) -> list[TeamResponse]:
 async def get_team(*, team_id: UUID, scope: Scope, db: AsyncSession) -> TeamResponse:
     team = await _get_team_or_raise(team_id=team_id, scope=scope, db=db)
     return TeamResponse.model_validate(team)
+
+
+async def get_team_identity(
+    *, team_id: UUID, scope: Scope, db: AsyncSession
+) -> TeamIdentity | None:
+    team = await repository.get_team(org_id=scope.org_id, team_id=team_id, db=db)
+    if team is None:
+        return None
+    return TeamIdentity(id=team.id, org_id=team.org_id, is_active=team.is_active)
+
+
+async def get_team_labels(
+    *, team_ids: set[UUID], scope: Scope, db: AsyncSession
+) -> dict[UUID, str]:
+    return await repository.get_team_labels(org_id=scope.org_id, team_ids=team_ids, db=db)
+
+
+async def get_team_read_states(
+    *, team_ids: set[UUID], scope: Scope, db: AsyncSession
+) -> dict[UUID, TeamReadState]:
+    rows = await repository.get_team_read_states(
+        org_id=scope.org_id,
+        team_ids=team_ids,
+        db=db,
+    )
+    return {
+        team_id: TeamReadState(id=team_id, name=name, is_active=is_active)
+        for team_id, (name, is_active) in rows.items()
+    }
+
+
+async def list_active_team_ids(*, scope: Scope, db: AsyncSession) -> set[UUID]:
+    return await repository.list_active_team_ids(org_id=scope.org_id, db=db)
 
 
 async def ensure_team_active(*, team_id: UUID, scope: Scope, db: AsyncSession) -> TeamResponse:
