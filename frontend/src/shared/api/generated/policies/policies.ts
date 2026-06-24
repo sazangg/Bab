@@ -37,6 +37,8 @@ import type {
   LimitPolicyRuleResponse,
   PolicyAssignmentResponse,
   PolicyImpactResponse,
+  PolicySimulationRequest,
+  PolicySimulationResponse,
   ScopedPolicyAssignmentResponse,
   UpdateAccessPolicyRequest,
   UpdateLimitPolicyRequest,
@@ -792,7 +794,96 @@ export function useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet<TData = A
 
 
 
-export type listLimitPoliciesApiV1PoliciesLimitsGetResponse200 = {
+export type simulatePoliciesApiV1PoliciesSimulationsPostResponse200 = {
+  data: PolicySimulationResponse
+  status: 200
+}
+
+export type simulatePoliciesApiV1PoliciesSimulationsPostResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type simulatePoliciesApiV1PoliciesSimulationsPostResponseSuccess = (simulatePoliciesApiV1PoliciesSimulationsPostResponse200) & {
+  headers: Headers;
+};
+export type simulatePoliciesApiV1PoliciesSimulationsPostResponseError = (simulatePoliciesApiV1PoliciesSimulationsPostResponse422) & {
+  headers: Headers;
+};
+
+export type simulatePoliciesApiV1PoliciesSimulationsPostResponse = (simulatePoliciesApiV1PoliciesSimulationsPostResponseSuccess | simulatePoliciesApiV1PoliciesSimulationsPostResponseError)
+
+export const getSimulatePoliciesApiV1PoliciesSimulationsPostUrl = () => {
+
+
+
+
+  return `/api/v1/policies/simulations`
+}
+
+/**
+ * @summary Simulate Policies
+ */
+export const simulatePoliciesApiV1PoliciesSimulationsPost = async (policySimulationRequest: PolicySimulationRequest, options?: RequestInit): Promise<simulatePoliciesApiV1PoliciesSimulationsPostResponse> => {
+
+  return apiMutator<simulatePoliciesApiV1PoliciesSimulationsPostResponse>(getSimulatePoliciesApiV1PoliciesSimulationsPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      policySimulationRequest,)
+  }
+);}
+
+
+
+
+export const getSimulatePoliciesApiV1PoliciesSimulationsPostMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof simulatePoliciesApiV1PoliciesSimulationsPost>>, TError,{data: PolicySimulationRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof simulatePoliciesApiV1PoliciesSimulationsPost>>, TError,{data: PolicySimulationRequest}, TContext> => {
+
+const mutationKey = ['simulatePoliciesApiV1PoliciesSimulationsPost'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof simulatePoliciesApiV1PoliciesSimulationsPost>>, {data: PolicySimulationRequest}> = (props) => {
+          const {data} = props ?? {};
+
+          return  simulatePoliciesApiV1PoliciesSimulationsPost(data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SimulatePoliciesApiV1PoliciesSimulationsPostMutationResult = NonNullable<Awaited<ReturnType<typeof simulatePoliciesApiV1PoliciesSimulationsPost>>>
+    export type SimulatePoliciesApiV1PoliciesSimulationsPostMutationBody = PolicySimulationRequest
+    export type SimulatePoliciesApiV1PoliciesSimulationsPostMutationError = HTTPValidationError
+
+    /**
+ * @summary Simulate Policies
+ */
+export const useSimulatePoliciesApiV1PoliciesSimulationsPost = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof simulatePoliciesApiV1PoliciesSimulationsPost>>, TError,{data: PolicySimulationRequest}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof simulatePoliciesApiV1PoliciesSimulationsPost>>,
+        TError,
+        {data: PolicySimulationRequest},
+        TContext
+      > => {
+      return useMutation(getSimulatePoliciesApiV1PoliciesSimulationsPostMutationOptions(options), queryClient);
+    }
+    export type listLimitPoliciesApiV1PoliciesLimitsGetResponse200 = {
   data: LimitPolicyResponse[]
   status: 200
 }

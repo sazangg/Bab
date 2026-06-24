@@ -74,7 +74,7 @@ class AccessPolicyResponse(BaseModel):
 
     id: UUID
     org_id: UUID
-    policy_id: UUID | None
+    policy_id: UUID
     name: str
     description: str | None
     owning_scope_type: str | None
@@ -202,7 +202,7 @@ class LimitPolicyRuleResponse(BaseModel):
     id: UUID
     org_id: UUID
     limit_policy_id: UUID
-    policy_revision_id: UUID | None
+    policy_revision_id: UUID
     name: str
     limit_type: str
     limit_value: int
@@ -224,7 +224,7 @@ class LimitPolicyResponse(BaseModel):
 
     id: UUID
     org_id: UUID
-    policy_id: UUID | None
+    policy_id: UUID
     name: str
     description: str | None
     owning_scope_type: str | None
@@ -268,10 +268,8 @@ class PolicyAssignmentResponse(BaseModel):
 
     id: UUID
     org_id: UUID
-    policy_id: UUID | None
+    policy_id: UUID
     policy_type: str
-    access_policy_id: UUID | None
-    limit_policy_id: UUID | None
     scope_type: str
     team_id: UUID | None
     project_id: UUID | None
@@ -336,3 +334,5 @@ class PolicyImpactResponse(BaseModel):
     affected_virtual_key_count: int = 0
     virtual_keys_would_become_unusable: list[PolicyImpactVirtualKey] = Field(default_factory=list)
     virtual_keys_would_become_unusable_count: int = 0
+
+

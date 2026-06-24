@@ -23,6 +23,11 @@ from app.modules.policies.schemas import (
     UpdateLimitPolicyRuleRequest,
     UpdatePolicyAssignmentRequest,
 )
+from app.modules.policy_simulation import service as simulation_service
+from app.modules.policy_simulation.schemas import (
+    PolicySimulationRequest,
+    PolicySimulationResponse,
+)
 
 
 async def list_access_policies(
@@ -102,6 +107,21 @@ async def get_access_policy_options(
         exclude_policy_id=exclude_policy_id,
         scope=scope,
         db=db,
+    )
+
+
+async def simulate_active_policies(
+    *,
+    payload: PolicySimulationRequest,
+    scope: Scope,
+    db: AsyncSession,
+    actor: AuthenticatedUser | None = None,
+) -> PolicySimulationResponse:
+    return await simulation_service.simulate_active_policies(
+        org_id=scope.org_id,
+        payload=payload,
+        db=db,
+        actor=actor,
     )
 
 

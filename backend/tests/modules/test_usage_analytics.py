@@ -9,7 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.auth.internal.models import Organization, Team
 from app.modules.keys.internal.models import Project, VirtualKey
-from app.modules.policies.internal.models import LimitPolicy, LimitPolicyRule, PolicyAssignment
+from app.modules.policies.internal.models import LimitPolicy, LimitPolicyRule
+from app.modules.policy_kernel import repository as policy_kernel_repository
+from app.modules.policy_kernel.models import PolicyAssignment
 from app.modules.providers.internal.models import CredentialPool, Provider
 from app.modules.usage import facade as usage_facade
 from app.modules.usage.internal.models import LimitPolicyCommittedUsage, UsageRecord
@@ -63,6 +65,58 @@ async def _create_usage_identity(db_session: AsyncSession) -> SimpleNamespace:
         virtual_key_id=virtual_key.id,
         provider_id=provider.id,
         pool_id=pool.id,
+    )
+
+
+async def _create_limit_policy_fixture(
+    db_session: AsyncSession,
+    *,
+    org_id,
+    policy_id,
+    rule_id,
+    name: str,
+    rule_name: str,
+    limit_type: str,
+    limit_value: int,
+    interval_unit: str = "month",
+    interval_count: int = 1,
+) -> None:
+    shared_policy = await policy_kernel_repository.create_policy(
+        org_id=org_id,
+        kind="limit",
+        name=name,
+        description=None,
+        is_active=True,
+        db=db_session,
+    )
+    revision = await policy_kernel_repository.create_policy_revision(
+        org_id=org_id,
+        policy_id=shared_policy.id,
+        revision_number=1,
+        status="active",
+        created_by=None,
+        db=db_session,
+    )
+    db_session.add(
+        LimitPolicy(
+            id=policy_id,
+            policy_id=shared_policy.id,
+            org_id=org_id,
+            name=name,
+        )
+    )
+    db_session.add(
+        LimitPolicyRule(
+            id=rule_id,
+            org_id=org_id,
+            limit_policy_id=policy_id,
+            policy_revision_id=revision.id,
+            name=rule_name,
+            limit_type=limit_type,
+            limit_value=limit_value,
+            interval_unit=interval_unit,
+            interval_count=interval_count,
+        )
     )
 
 
@@ -129,24 +183,15 @@ async def test_spend_insights_returns_limit_policy_budget_burn(db_session: Async
     project_id = identity.project_id
     limit_policy_id = uuid4()
     limit_policy_rule_id = uuid4()
-    db_session.add(
-        LimitPolicy(
-            id=limit_policy_id,
-            org_id=org_id,
-            name="Platform budget",
-        )
-    )
-    db_session.add(
-        LimitPolicyRule(
-            id=limit_policy_rule_id,
-            org_id=org_id,
-            limit_policy_id=limit_policy_id,
-            name="Monthly budget",
-            limit_type="budget_cents",
-            limit_value=1000,
-            interval_unit="month",
-            interval_count=1,
-        )
+    await _create_limit_policy_fixture(
+        db_session,
+        org_id=org_id,
+        policy_id=limit_policy_id,
+        rule_id=limit_policy_rule_id,
+        name="Platform budget",
+        rule_name="Monthly budget",
+        limit_type="budget_cents",
+        limit_value=1000,
     )
     db_session.add(
         UsageRecord(
@@ -193,24 +238,15 @@ async def test_budget_burn_uses_policy_rule_interval_not_usage_window(
     project_id = identity.project_id
     limit_policy_id = uuid4()
     limit_policy_rule_id = uuid4()
-    db_session.add(
-        LimitPolicy(
-            id=limit_policy_id,
-            org_id=org_id,
-            name="Monthly cap",
-        )
-    )
-    db_session.add(
-        LimitPolicyRule(
-            id=limit_policy_rule_id,
-            org_id=org_id,
-            limit_policy_id=limit_policy_id,
-            name="Monthly budget",
-            limit_type="budget_cents",
-            limit_value=1000,
-            interval_unit="month",
-            interval_count=1,
-        )
+    await _create_limit_policy_fixture(
+        db_session,
+        org_id=org_id,
+        policy_id=limit_policy_id,
+        rule_id=limit_policy_rule_id,
+        name="Monthly cap",
+        rule_name="Monthly budget",
+        limit_type="budget_cents",
+        limit_value=1000,
     )
     db_session.add(
         UsageRecord(
@@ -254,24 +290,16 @@ async def test_budget_burn_filters_by_limit_window_descriptor(
     project_id = identity.project_id
     limit_policy_id = uuid4()
     limit_policy_rule_id = uuid4()
-    db_session.add(
-        LimitPolicy(
-            id=limit_policy_id,
-            org_id=org_id,
-            name="Daily cap",
-        )
-    )
-    db_session.add(
-        LimitPolicyRule(
-            id=limit_policy_rule_id,
-            org_id=org_id,
-            limit_policy_id=limit_policy_id,
-            name="Daily budget",
-            limit_type="budget_cents",
-            limit_value=1000,
-            interval_unit="day",
-            interval_count=1,
-        )
+    await _create_limit_policy_fixture(
+        db_session,
+        org_id=org_id,
+        policy_id=limit_policy_id,
+        rule_id=limit_policy_rule_id,
+        name="Daily cap",
+        rule_name="Daily budget",
+        limit_type="budget_cents",
+        limit_value=1000,
+        interval_unit="day",
     )
     shared = {
         "org_id": org_id,
@@ -478,9 +506,26 @@ async def test_limit_policy_usage_matches_exact_json_uuid_values(
     org_id = identity.org_id
     team_id = identity.team_id
     project_id = identity.project_id
+    shared_policy = await policy_kernel_repository.create_policy(
+        org_id=org_id,
+        kind="limit",
+        name="Exact policy",
+        description=None,
+        is_active=True,
+        db=db_session,
+    )
+    revision = await policy_kernel_repository.create_policy_revision(
+        org_id=org_id,
+        policy_id=shared_policy.id,
+        revision_number=1,
+        status="active",
+        created_by=None,
+        db=db_session,
+    )
     db_session.add(
         LimitPolicy(
             id=target_policy_id,
+            policy_id=shared_policy.id,
             org_id=org_id,
             name="Exact policy",
         )
@@ -490,6 +535,7 @@ async def test_limit_policy_usage_matches_exact_json_uuid_values(
             id=target_rule_id,
             org_id=org_id,
             limit_policy_id=target_policy_id,
+            policy_revision_id=revision.id,
             name="Exact rule",
             limit_type="requests",
             limit_value=100,
@@ -499,8 +545,8 @@ async def test_limit_policy_usage_matches_exact_json_uuid_values(
         PolicyAssignment(
             id=target_assignment_id,
             org_id=org_id,
+            policy_id=shared_policy.id,
             policy_type="limit",
-            limit_policy_id=target_policy_id,
             scope_type="project",
             project_id=project_id,
             scope_target_key=f"project:{project_id}",
@@ -591,18 +637,15 @@ async def test_budget_burn_matches_exact_json_policy_and_rule_ids(
     project_id = identity.project_id
     policy_id = uuid4()
     rule_id = uuid4()
-    db_session.add(LimitPolicy(id=policy_id, org_id=org_id, name="Budget"))
-    db_session.add(
-        LimitPolicyRule(
-            id=rule_id,
-            org_id=org_id,
-            limit_policy_id=policy_id,
-            name="Monthly",
-            limit_type="budget_cents",
-            limit_value=1000,
-            interval_unit="month",
-            interval_count=1,
-        )
+    await _create_limit_policy_fixture(
+        db_session,
+        org_id=org_id,
+        policy_id=policy_id,
+        rule_id=rule_id,
+        name="Budget",
+        rule_name="Monthly",
+        limit_type="budget_cents",
+        limit_value=1000,
     )
     shared = {
         "org_id": org_id,

@@ -262,7 +262,7 @@ async def test_gateway_request_trace_returns_runtime_rows(db_session: AsyncSessi
             "outcome": "selected",
             "enforced": True,
             "dimension_snapshot": {"public_model_name": "fast"},
-            "metadata_": {"reason": "priority"},
+            "metadata_": {"reason": "priority", "api_key": "sk-secret"},
         },
         db=db_session,
     )
@@ -282,7 +282,7 @@ async def test_gateway_request_trace_returns_runtime_rows(db_session: AsyncSessi
         request_id="req-trace",
         requested_model="fast",
         provider_model="gpt-4o-mini",
-        metadata={"phase": "request"},
+        metadata={"phase": "request", "prompt_text": "do not expose"},
         gateway_request_id=gateway_request.id,
         route_attempt_id=attempt.id,
         db=db_session,
@@ -322,8 +322,23 @@ async def test_gateway_request_trace_returns_runtime_rows(db_session: AsyncSessi
     assert trace is not None
     assert trace.request.id == gateway_request.id
     assert trace.route_attempts[0].id == attempt.id
-    assert trace.policy_decisions[0].metadata == {"reason": "priority"}
-    assert trace.guardrail_events[0].metadata == {"phase": "request"}
+    assert trace.timeline
+    assert trace.timeline[0].kind == "request"
+    assert {item.kind for item in trace.timeline} == {
+        "request",
+        "route_attempt",
+        "policy_decision",
+        "guardrail_event",
+        "usage_record",
+    }
+    assert trace.policy_decisions[0].metadata == {
+        "reason": "priority",
+        "api_key": "[redacted]",
+    }
+    assert trace.guardrail_events[0].metadata == {
+        "phase": "request",
+        "prompt_text": "[redacted]",
+    }
     assert trace.usage_records[0].total_tokens == 15
 
 

@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import Scope
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys.internal import service
+from app.modules.keys.runtime_routes import ResolvedAccessPlanExplanation
 from app.modules.keys.schemas import (
     AccessibleModel,
     CreatedVirtualKeyResponse,
@@ -13,9 +14,13 @@ from app.modules.keys.schemas import (
     EffectiveAccessSummary,
     ProjectArchiveImpactResponse,
     ProjectResponse,
+    ResolveAccessPlanForSubjectRequest,
+    ResolveAccessPlanForVirtualKeyRequest,
     ResolveAccessRequest,
     ResolvedAccess,
     ResolvedAccessPlan,
+    ResolvedKeySubject,
+    ResolveKeySubjectRequest,
     RotateVirtualKeyRequest,
     TeamArchiveImpactResponse,
     UpdateProjectRequest,
@@ -258,6 +263,36 @@ async def resolve_access_plan(
     *, payload: ResolveAccessRequest, db: AsyncSession
 ) -> ResolvedAccessPlan:
     return await service.resolve_access_plan(payload=payload, db=db)
+
+
+async def resolve_key_subject(
+    *, payload: ResolveKeySubjectRequest, db: AsyncSession
+) -> ResolvedKeySubject:
+    return await service.resolve_key_subject(payload=payload, db=db)
+
+
+async def resolve_access_plan_for_subject(
+    *, payload: ResolveAccessPlanForSubjectRequest, db: AsyncSession
+) -> ResolvedAccessPlan:
+    return await service.resolve_access_plan_for_subject(payload=payload, db=db)
+
+
+async def resolve_access_plan_for_virtual_key(
+    *,
+    org_id: UUID,
+    payload: ResolveAccessPlanForVirtualKeyRequest,
+    db: AsyncSession,
+) -> ResolvedAccessPlan:
+    return await service.resolve_access_plan_for_virtual_key(org_id=org_id, payload=payload, db=db)
+
+
+async def explain_access_plan_for_virtual_key(
+    *,
+    org_id: UUID,
+    payload: ResolveAccessPlanForVirtualKeyRequest,
+    db: AsyncSession,
+) -> ResolvedAccessPlanExplanation:
+    return await service.explain_access_plan_for_virtual_key(org_id=org_id, payload=payload, db=db)
 
 
 async def list_accessible_models(*, raw_key: str, db: AsyncSession) -> list[AccessibleModel]:

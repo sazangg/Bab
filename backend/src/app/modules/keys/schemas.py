@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -205,17 +206,50 @@ class ResolveAccessRequest(BaseModel):
     gateway_endpoint: str | None = None
 
 
+class ResolveKeySubjectRequest(BaseModel):
+    raw_key: str = Field(min_length=1)
+
+
+class ResolvedKeySubject(BaseModel):
+    org_id: UUID
+    team_id: UUID
+    project_id: UUID
+    virtual_key_id: UUID
+    virtual_key_name: str | None = None
+    project_name: str | None = None
+    team_name: str | None = None
+
+
+class ResolveAccessPlanForSubjectRequest(BaseModel):
+    subject: ResolvedKeySubject
+    requested_model: str = Field(min_length=1, max_length=255)
+    gateway_endpoint: str | None = None
+    streaming: bool = False
+    provider_id: UUID | None = None
+
+
+class ResolveAccessPlanForVirtualKeyRequest(BaseModel):
+    virtual_key_id: UUID
+    requested_model: str = Field(min_length=1, max_length=255)
+    gateway_endpoint: str | None = None
+    streaming: bool = False
+    provider_id: UUID | None = None
+
+
 class ResolvedLimitPolicy(BaseModel):
-    limit_policy_assignment_id: UUID
-    limit_policy_id: UUID
+    limit_policy_assignment_id: UUID | None
+    limit_policy_id: UUID | None
     limit_policy_revision_id: UUID | None = None
     limit_policy_name: str
-    limit_policy_rule_id: UUID
+    limit_policy_rule_id: UUID | None
     name: str
     limit_type: str
     limit_value: int
     interval_unit: str
     interval_count: int
+    matchers: list[dict[str, Any]] = Field(default_factory=list)
+    partitions: list[dict[str, Any]] = Field(default_factory=list)
+    draft_ref: str | None = None
 
 
 class ResolvedAccess(BaseModel):

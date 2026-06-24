@@ -8,10 +8,8 @@
 export interface PolicyAssignmentResponse {
   id: string;
   org_id: string;
-  policy_id: string | null;
+  policy_id: string;
   policy_type: string;
-  access_policy_id: string | null;
-  limit_policy_id: string | null;
   scope_type: string;
   team_id: string | null;
   project_id: string | null;

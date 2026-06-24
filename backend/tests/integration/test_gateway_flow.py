@@ -21,6 +21,7 @@ from app.modules.usage.internal.models import (
     GatewayPolicyDecision,
     GatewayRequest,
     GatewayRouteAttempt,
+    UsageRecord,
 )
 
 
@@ -559,10 +560,12 @@ async def test_limit_committed_usage_migration_backfills_historical_json_usage(
         "team": "00000000000000000000000000000003",
         "project": "00000000000000000000000000000004",
         "virtual_key": "00000000000000000000000000000005",
-        "provider": "00000000000000000000000000000006",
-        "pool": "00000000000000000000000000000007",
-        "policy": "00000000000000000000000000000008",
-        "first_rule": "00000000000000000000000000000009",
+            "provider": "00000000000000000000000000000006",
+            "pool": "00000000000000000000000000000007",
+            "policy": "00000000000000000000000000000008",
+            "shared_policy": "00000000000000000000000000000018",
+            "revision": "00000000000000000000000000000019",
+            "first_rule": "00000000000000000000000000000009",
         "second_rule": "0000000000000000000000000000000a",
         "first_assignment": "0000000000000000000000000000000b",
         "second_assignment": "0000000000000000000000000000000c",
@@ -649,24 +652,53 @@ async def test_limit_committed_usage_migration_backfills_historical_json_usage(
         )
         await connection.execute(
             text(
-                "insert into limit_policies (id, org_id, name, is_active, created_at, updated_at) "
-                "values (:id, :org_id, 'Limit', 1, :now, :now)"
+                "insert into policies (id, org_id, kind, name, is_active, created_at, updated_at) "
+                "values (:id, :org_id, 'limit', 'Limit', 1, :now, :now)"
             ),
-            {"id": ids["policy"], "org_id": ids["org"], "now": now},
+            {"id": ids["shared_policy"], "org_id": ids["org"], "now": now},
+        )
+        await connection.execute(
+            text(
+                "insert into policy_revisions "
+                "(id, org_id, policy_id, revision_number, status, created_at, activated_at) "
+                "values (:id, :org_id, :policy_id, 1, 'active', :now, :now)"
+            ),
+            {
+                "id": ids["revision"],
+                "org_id": ids["org"],
+                "policy_id": ids["shared_policy"],
+                "now": now,
+            },
+        )
+        await connection.execute(
+            text(
+                "insert into limit_policies "
+                "(id, policy_id, org_id, name, is_active, created_at, updated_at) "
+                "values (:id, :policy_id, :org_id, 'Limit', 1, :now, :now)"
+            ),
+            {
+                "id": ids["policy"],
+                "policy_id": ids["shared_policy"],
+                "org_id": ids["org"],
+                "now": now,
+            },
         )
         for rule_id, value in ((ids["first_rule"], 100), (ids["second_rule"], 200)):
             await connection.execute(
                 text(
                     "insert into limit_policy_rules "
-                    "(id, org_id, limit_policy_id, name, limit_type, limit_value, "
+                    "(id, org_id, limit_policy_id, policy_revision_id, name, "
+                    "limit_type, limit_value, "
                     "interval_unit, interval_count, is_active, created_at, updated_at) "
-                    "values (:id, :org_id, :policy_id, 'Requests', 'requests', :value, "
+                    "values (:id, :org_id, :policy_id, :revision_id, "
+                    "'Requests', 'requests', :value, "
                     "'day', 1, 1, :now, :now)"
                 ),
                 {
                     "id": rule_id,
                     "org_id": ids["org"],
                     "policy_id": ids["policy"],
+                    "revision_id": ids["revision"],
                     "value": value,
                     "now": now,
                 },
@@ -690,15 +722,16 @@ async def test_limit_committed_usage_migration_backfills_historical_json_usage(
             await connection.execute(
                 text(
                     "insert into policy_assignments "
-                    f"(id, org_id, policy_type, limit_policy_id, scope_type, {target_column}, "
+                    f"(id, org_id, policy_id, policy_type, scope_type, {target_column}, "
                     "scope_target_key, mode, is_active, created_at, updated_at) "
-                    "values (:id, :org_id, 'limit', :policy_id, :scope_type, :target_id, "
+                    "values (:id, :org_id, :shared_policy_id, 'limit', "
+                    ":scope_type, :target_id, "
                     ":scope_target_key, 'enforce', 1, :now, :now)"
                 ),
                 {
                     "id": assignment_id,
                     "org_id": ids["org"],
-                    "policy_id": ids["policy"],
+                    "shared_policy_id": ids["shared_policy"],
                     "scope_type": scope_type,
                     "target_id": target_id,
                     "scope_target_key": scope_target_key,
@@ -1057,6 +1090,8 @@ async def test_native_anthropic_messages_applies_output_guardrails(
     events = events_response.json()
     assert len(events) == 1
     assert events[0]["metadata"]["matched_values"] == ["blocked output"]
+    assert records[0]["route_attempt_id"] is not None
+    assert events[0]["route_attempt_id"] == records[0]["route_attempt_id"]
 
 
 @pytest.mark.asyncio
@@ -1474,6 +1509,7 @@ async def test_gateway_enforces_virtual_key_request_rate_limit(app_client, db_se
         assert limit_record["error_code"] == "limit_policy_denied"
         assert limit_record["gateway_endpoint"] == "chat_completions"
         assert limit_record["gateway_request_id"] is not None
+        assert limit_record["route_attempt_id"] is not None
 
         decisions = (
             await db_session.scalars(
@@ -1491,6 +1527,7 @@ async def test_gateway_enforces_virtual_key_request_rate_limit(app_client, db_se
         assert decisions[-1].effective_action == "deny"
         assert decisions[-1].assignment_id is not None
         assert decisions[-1].rule_id is not None
+        assert str(decisions[-1].route_attempt_id) == limit_record["route_attempt_id"]
         assert decisions[-1].dimension_snapshot["limit_type"] == "requests"
         assert decisions[-1].metadata_["current_usage"] == 2
 
@@ -1878,6 +1915,13 @@ async def test_input_guardrail_denial_does_not_consume_request_limit(
         blocked_event = next(event for event in events if event["decision"] == "blocked")
         assert blocked_event["gateway_request_id"] is not None
         assert blocked_event["route_attempt_id"] is not None
+        blocked_usage_record = await db_session.scalar(
+            select(UsageRecord).where(
+                UsageRecord.gateway_request_id == UUID(blocked_event["gateway_request_id"])
+            )
+        )
+        assert blocked_usage_record is not None
+        assert blocked_usage_record.route_attempt_id == UUID(blocked_event["route_attempt_id"])
         decisions = (
             await db_session.scalars(
                 select(GatewayPolicyDecision)
@@ -2192,6 +2236,7 @@ async def test_chat_completion_falls_back_to_second_public_model_candidate(
             json={"model": "chat-large", "messages": [{"role": "user", "content": "hello"}]},
         )
         usage = await client.get("/api/v1/usage/records", headers=admin_headers)
+        trace_list = await client.get("/api/v1/usage/requests", headers=admin_headers)
         summary = await client.get("/api/v1/usage/summary", headers=admin_headers)
 
     assert response.status_code == 200
@@ -2210,6 +2255,16 @@ async def test_chat_completion_falls_back_to_second_public_model_candidate(
     assert records[0]["gateway_request_id"] == records[1]["gateway_request_id"]
     assert records[1]["attempt_failure_reason"] == "provider_5xx"
     assert records[1]["is_final_attempt"] is False
+    assert trace_list.status_code == 200
+    trace_items = trace_list.json()["items"]
+    assert len(trace_items) == 1
+    assert trace_items[0]["fallback_attempted"] is True
+    assert trace_items[0]["final_provider_model"] == "secondary-chat"
+    assert trace_items[0]["final_provider_name"] == "Secondary fallback"
+    assert set(trace_items[0]["involved_provider_names"]) == {
+        "Primary fallback",
+        "Secondary fallback",
+    }
     totals = summary.json()["totals"]
     assert totals["requests"] == 1
     assert totals["successful_requests"] == 1
@@ -2233,6 +2288,20 @@ async def test_chat_completion_falls_back_to_second_public_model_candidate(
     assert [attempt.status for attempt in route_attempts] == ["failed", "succeeded"]
     assert route_attempts[0].failure_reason == "provider_5xx"
     assert gateway_requests[0].final_route_attempt_id == route_attempts[1].id
+    usage_records = (
+        (
+            await db_session.execute(
+                select(UsageRecord).order_by(UsageRecord.is_final_attempt.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(usage_records) == 2
+    assert usage_records[0].is_final_attempt is False
+    assert usage_records[0].route_attempt_id == route_attempts[0].id
+    assert usage_records[1].is_final_attempt is True
+    assert usage_records[1].route_attempt_id == route_attempts[1].id
     decisions = (
         (
             await db_session.execute(
@@ -2410,6 +2479,30 @@ async def test_chat_completion_returns_primary_error_when_fallback_exhausts(
     assert gateway_requests[0].final_http_status == 503
     assert gateway_requests[0].final_provider_model == "secondary-exhausted-chat"
     assert gateway_requests[0].final_error_code == "provider_upstream_error"
+    route_attempts = (
+        (
+            await db_session.execute(
+                select(GatewayRouteAttempt).order_by(GatewayRouteAttempt.attempt_index)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    usage_records = (
+        (
+            await db_session.execute(
+                select(UsageRecord).order_by(UsageRecord.is_final_attempt.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert [attempt.status for attempt in route_attempts] == ["failed", "failed"]
+    assert usage_records[0].is_final_attempt is False
+    assert usage_records[0].route_attempt_id == route_attempts[0].id
+    assert usage_records[1].is_final_attempt is True
+    assert usage_records[1].route_attempt_id == route_attempts[1].id
+    assert gateway_requests[0].final_route_attempt_id == route_attempts[1].id
     app_client.dependency_overrides.clear()
 
 

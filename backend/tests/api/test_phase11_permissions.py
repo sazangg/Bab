@@ -10,8 +10,10 @@ from app.api.v1.deps import (
     require_team_view_or_permission,
 )
 from app.api.v1.routes.guardrails import _require_assignment_admin as require_guardrail_assignment
+from app.api.v1.routes.guardrails import create_assignment as create_guardrail_assignment
 from app.api.v1.routes.guardrails import update_assignment as update_guardrail_assignment
 from app.api.v1.routes.policies import _require_assignment_admin as require_policy_assignment
+from app.api.v1.routes.policies import create_policy_assignment
 from app.core.database import Scope
 from app.modules.auth.internal.models import (
     Organization,
@@ -33,6 +35,8 @@ from app.modules.guardrails.schemas import (
     UpdateGuardrailAssignmentRequest,
 )
 from app.modules.keys.internal.models import Project, VirtualKey
+from app.modules.policies import facade as policies_facade
+from app.modules.policies.schemas import CreateLimitPolicyRequest, CreatePolicyAssignmentRequest
 
 
 def _user(
@@ -421,6 +425,149 @@ async def _guardrail_assignment(*, db_session: AsyncSession, org_id, scope_type:
         db=db_session,
     )
     return policy, assignment
+
+
+async def _limit_policy(*, db_session: AsyncSession, org_id):
+    actor = _user(org_id=org_id, role="org_admin")
+    return await policies_facade.create_limit_policy(
+        payload=CreateLimitPolicyRequest(name=f"Limit {uuid4()}"),
+        actor=actor,
+        scope=Scope(org_id=org_id),
+        db=db_session,
+    )
+
+
+async def test_assignment_routes_reject_cross_org_team_targets(
+    db_session: AsyncSession,
+) -> None:
+    org, _team, _project, _other_team, _other_project, cross_org_project, *_ = await _workspace(
+        db_session
+    )
+    actor = _user(org_id=org.id, role="org_admin")
+    limit = await _limit_policy(db_session=db_session, org_id=org.id)
+    guardrail_policy = await guardrails_facade.create_policy(
+        payload=CreateGuardrailPolicyRequest(name=f"Guard {uuid4()}"),
+        actor=actor,
+        scope=Scope(org_id=org.id),
+        db=db_session,
+    )
+
+    with pytest.raises(HTTPException) as policy_exc:
+        await create_policy_assignment(
+            payload=CreatePolicyAssignmentRequest(
+                policy_id=limit.policy_id,
+                policy_type="limit",
+                scope_type="team",
+                team_id=cross_org_project.team_id,
+            ),
+            _user=actor,
+            scope=Scope(org_id=org.id),
+            db=db_session,
+        )
+    with pytest.raises(HTTPException) as guardrail_exc:
+        await create_guardrail_assignment(
+            payload=CreateGuardrailAssignmentRequest(
+                policy_id=guardrail_policy.id,
+                scope_type="team",
+                team_id=cross_org_project.team_id,
+            ),
+            actor=actor,
+            scope=Scope(org_id=org.id),
+            db=db_session,
+        )
+
+    assert policy_exc.value.status_code == 404
+    assert guardrail_exc.value.status_code == 404
+
+
+async def test_assignment_routes_reject_project_team_mismatch(
+    db_session: AsyncSession,
+) -> None:
+    org, _team, project, other_team, *_ = await _workspace(db_session)
+    actor = _user(org_id=org.id, role="org_admin")
+    limit = await _limit_policy(db_session=db_session, org_id=org.id)
+    guardrail_policy = await guardrails_facade.create_policy(
+        payload=CreateGuardrailPolicyRequest(name=f"Guard {uuid4()}"),
+        actor=actor,
+        scope=Scope(org_id=org.id),
+        db=db_session,
+    )
+
+    with pytest.raises(HTTPException) as policy_exc:
+        await create_policy_assignment(
+            payload=CreatePolicyAssignmentRequest(
+                policy_id=limit.policy_id,
+                policy_type="limit",
+                scope_type="project",
+                team_id=other_team.id,
+                project_id=project.id,
+            ),
+            _user=actor,
+            scope=Scope(org_id=org.id),
+            db=db_session,
+        )
+    with pytest.raises(HTTPException) as guardrail_exc:
+        await create_guardrail_assignment(
+            payload=CreateGuardrailAssignmentRequest(
+                policy_id=guardrail_policy.id,
+                scope_type="project",
+                team_id=other_team.id,
+                project_id=project.id,
+            ),
+            actor=actor,
+            scope=Scope(org_id=org.id),
+            db=db_session,
+        )
+
+    assert policy_exc.value.status_code == 400
+    assert guardrail_exc.value.status_code == 404
+
+
+async def test_assignment_routes_reject_virtual_key_parent_mismatches(
+    db_session: AsyncSession,
+) -> None:
+    org, _team, _project, other_team, other_project, _cross_org, key, _other_key = await _workspace(
+        db_session
+    )
+    actor = _user(org_id=org.id, role="org_admin")
+    limit = await _limit_policy(db_session=db_session, org_id=org.id)
+    guardrail_policy = await guardrails_facade.create_policy(
+        payload=CreateGuardrailPolicyRequest(name=f"Guard {uuid4()}"),
+        actor=actor,
+        scope=Scope(org_id=org.id),
+        db=db_session,
+    )
+
+    for project_id, team_id in ((other_project.id, None), (None, other_team.id)):
+        with pytest.raises(HTTPException) as policy_exc:
+            await create_policy_assignment(
+                payload=CreatePolicyAssignmentRequest(
+                    policy_id=limit.policy_id,
+                    policy_type="limit",
+                    scope_type="virtual_key",
+                    project_id=project_id,
+                    team_id=team_id,
+                    virtual_key_id=key.id,
+                ),
+                _user=actor,
+                scope=Scope(org_id=org.id),
+                db=db_session,
+            )
+        with pytest.raises(HTTPException) as guardrail_exc:
+            await create_guardrail_assignment(
+                payload=CreateGuardrailAssignmentRequest(
+                    policy_id=guardrail_policy.id,
+                    scope_type="virtual_key",
+                    project_id=project_id,
+                    team_id=team_id,
+                    virtual_key_id=key.id,
+                ),
+                actor=actor,
+                scope=Scope(org_id=org.id),
+                db=db_session,
+            )
+        assert policy_exc.value.status_code == 400
+        assert guardrail_exc.value.status_code == 404
 
 
 async def test_project_admin_cannot_move_other_project_guardrail_assignment(

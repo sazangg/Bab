@@ -11,7 +11,7 @@ export interface LimitPolicyRuleResponse {
   id: string;
   org_id: string;
   limit_policy_id: string;
-  policy_revision_id: string | null;
+  policy_revision_id: string;
   name: string;
   limit_type: string;
   limit_value: number;

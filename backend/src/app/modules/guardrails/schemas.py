@@ -80,7 +80,7 @@ class GuardrailRuleResponse(BaseModel):
     id: UUID
     org_id: UUID
     policy_id: UUID
-    policy_revision_id: UUID | None = None
+    policy_revision_id: UUID
     rule_type: str
     effect: str
     phase: str
@@ -114,6 +114,7 @@ class GuardrailPolicyResponse(BaseModel):
 
     id: UUID
     org_id: UUID
+    policy_id: UUID
     name: str
     description: str | None
     enforcement_mode: str

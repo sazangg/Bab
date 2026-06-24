@@ -35,6 +35,11 @@ class UsageRecord(Base):
         nullable=True,
         index=True,
     )
+    route_attempt_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("gateway_route_attempts.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
     public_model_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("access_policy_public_models.id", ondelete="RESTRICT"),
         nullable=True,

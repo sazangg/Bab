@@ -133,6 +133,17 @@ async def get_virtual_key(
     )
 
 
+async def get_virtual_key_by_id(
+    *,
+    org_id: UUID,
+    key_id: UUID,
+    db: AsyncSession,
+) -> VirtualKey | None:
+    return await db.scalar(
+        select(VirtualKey).where(VirtualKey.org_id == org_id, VirtualKey.id == key_id)
+    )
+
+
 async def get_virtual_key_by_hash(*, key_hash: str, db: AsyncSession) -> VirtualKey | None:
     return await db.scalar(select(VirtualKey).where(VirtualKey.key_hash == key_hash))
 

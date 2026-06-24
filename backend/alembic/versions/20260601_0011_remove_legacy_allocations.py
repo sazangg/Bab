@@ -25,7 +25,6 @@ def upgrade() -> None:
         ("virtual_keys", ("allocation_id", "custom_allocation_id")),
         ("usage_records", ("allocation_id",)),
         ("activity_events", ("allocation_id",)),
-        ("guardrail_assignments", ("allocation_id",)),
         ("guardrail_events", ("allocation_id",)),
     ):
         _drop_columns_if_present(table_name, column_names)

@@ -33,7 +33,13 @@ def upgrade() -> None:
                 nullable=True,
             )
         if "policy_revision_id" not in columns:
-            batch_op.add_column(sa.Column("policy_revision_id", sa.Uuid(), nullable=True))
+            batch_op.add_column(sa.Column("policy_revision_id", sa.Uuid(), nullable=False))
+        else:
+            batch_op.alter_column(
+                "policy_revision_id",
+                existing_type=sa.Uuid(),
+                nullable=False,
+            )
         if "fk_access_policy_public_models_policy_revision_id" not in foreign_keys:
             batch_op.create_foreign_key(
                 "fk_access_policy_public_models_policy_revision_id",

@@ -33,6 +33,8 @@ import type {
   GuardrailAssignmentResponse,
   GuardrailPolicyResponse,
   GuardrailRuleInput,
+  PolicySimulationDraft,
+  PolicySimulationResponse,
 } from "@/shared/api/generated/schemas";
 import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
 import { httpClient } from "@/shared/api/http-client";
@@ -80,6 +82,9 @@ export function GuardrailsPage() {
   );
   const [policyForm, setPolicyForm] = useState<PolicyFormState>(emptyPolicyForm);
   const [assignmentForm, setAssignmentForm] = useState<AssignmentFormState>(emptyAssignmentForm);
+  const [simulationDrafts, setSimulationDrafts] = useState<PolicySimulationDraft[]>([]);
+  const [policySimulationResult, setPolicySimulationResult] =
+    useState<PolicySimulationResponse | null>(null);
   const { confirmWithImpact, dialog: impactDialog } = useGuardrailImpactConfirmation();
 
   const requestedTab = searchParams.get("tab");
@@ -330,10 +335,10 @@ export function GuardrailsPage() {
     setAssignmentSheetOpen(true);
   };
 
-  const submitPolicy = async () => {
+  const buildPolicyPayload = () => {
     if (!policyForm.name.trim()) {
       toast.error("Policy name is required.");
-      return;
+      return null;
     }
     const rules: GuardrailRuleInput[] = [];
     for (const [index, rule] of policyForm.rules.entries()) {
@@ -341,7 +346,7 @@ export function GuardrailsPage() {
       const validationError = validateRuleForm(rule, index, values);
       if (validationError) {
         toast.error(validationError);
-        return;
+        return null;
       }
       rules.push({
         rule_type: rule.rule_type,
@@ -358,13 +363,18 @@ export function GuardrailsPage() {
         is_active: rule.is_active,
       });
     }
-    const payload = {
+    return {
       name: policyForm.name.trim(),
       description: policyForm.description.trim() || null,
       enforcement_mode: policyForm.enforcement_mode,
       is_active: policyForm.is_active,
       rules,
     };
+  };
+
+  const submitPolicy = async () => {
+    const payload = buildPolicyPayload();
+    if (!payload) return;
     if (editingPolicy) {
       if (editingPolicy.is_active && !payload.is_active) {
         confirmWithImpact({
@@ -410,6 +420,37 @@ export function GuardrailsPage() {
     } catch {
       toast.error("Policy could not be saved.");
     }
+  };
+
+  const previewPolicy = () => {
+    const payload = buildPolicyPayload();
+    if (!payload) return;
+    const scopeType = assignmentForm.scope_type as ScopeType | "none";
+    if (
+      !editingPolicy &&
+      scopeType !== "none" &&
+      scopeType !== "org" &&
+      !assignmentForm.scope_id.trim()
+    ) {
+      toast.error("Choose a scope.");
+      return;
+    }
+    setSimulationDrafts([
+      {
+        kind: "guardrail",
+        operation: editingPolicy ? "replace_policy" : "add_policy",
+        existing_policy_id: editingPolicy?.id ?? null,
+        assignment: editingPolicy
+          ? null
+          : guardrailSimulationDraftAssignment(scopeType, assignmentForm),
+        guardrail_policy: payload,
+      },
+    ]);
+    setPolicySimulationResult(null);
+    setPolicySheetOpen(false);
+    const next = new URLSearchParams(searchParams);
+    next.set("tab", "simulation");
+    setSearchParams(next, { replace: true });
   };
 
   const submitAssignment = () => {
@@ -518,7 +559,12 @@ export function GuardrailsPage() {
         </TabsContent>
 
         <TabsContent value="simulation">
-          <GuardrailSimulationTab policies={policies} />
+          <GuardrailSimulationTab
+            policies={policies}
+            policySimulationDrafts={simulationDrafts}
+            policySimulationResult={policySimulationResult}
+            onPolicySimulationResult={setPolicySimulationResult}
+          />
         </TabsContent>
 
         <TabsContent value="events">
@@ -541,6 +587,7 @@ export function GuardrailsPage() {
         setAssignmentForm={setAssignmentForm}
         assignmentScopeOptions={assignmentScopeOptions}
         onSubmit={submitPolicy}
+        onPreview={previewPolicy}
         isPending={createPolicy.isPending || updatePolicy.isPending}
       />
 
@@ -565,4 +612,19 @@ export function GuardrailsPage() {
       {impactDialog}
     </div>
   );
+}
+
+function guardrailSimulationDraftAssignment(
+  scopeType: ScopeType | "none",
+  assignmentForm: AssignmentFormState,
+): PolicySimulationDraft["assignment"] {
+  if (scopeType === "none") return null;
+  return {
+    scope_type: scopeType,
+    team_id: scopeType === "team" ? assignmentForm.scope_id : null,
+    project_id: scopeType === "project" ? assignmentForm.scope_id : null,
+    virtual_key_id: scopeType === "virtual_key" ? assignmentForm.scope_id : null,
+    guardrail_assignment_mode:
+      assignmentForm.enforcement_mode === "dry_run" ? "dry_run" : "enforce",
+  };
 }

@@ -18,7 +18,18 @@ from app.api.v1.routes.proxy import (
 from app.core.database import Scope
 from app.modules.activity.internal.models import ActivityEvent
 from app.modules.auth.internal.models import AuditEvent, Organization, Team, User
-from app.modules.auth.schemas import AuthenticatedUser
+from app.modules.auth.schemas import (
+    AuthenticatedProjectMembership,
+    AuthenticatedTeamMembership,
+    AuthenticatedUser,
+)
+from app.modules.guardrails import facade as guardrails_facade
+from app.modules.guardrails.internal.models import GuardrailEvent, GuardrailPolicy, GuardrailRule
+from app.modules.guardrails.schemas import (
+    CreateGuardrailAssignmentRequest,
+    CreateGuardrailPolicyRequest,
+    GuardrailRuleInput,
+)
 from app.modules.keys import facade as keys_facade
 from app.modules.keys.errors import (
     AccessDeniedError,
@@ -29,12 +40,14 @@ from app.modules.keys.errors import (
     ProjectNotFoundError,
     SecretDeliveryDisabledError,
     VirtualKeyAlreadyRevokedError,
+    VirtualKeyNotFoundError,
     VirtualKeyOverlapActiveError,
 )
 from app.modules.keys.internal.models import VirtualKey
 from app.modules.keys.schemas import (
     CreateProjectRequest,
     CreateVirtualKeyRequest,
+    ResolveAccessPlanForVirtualKeyRequest,
     ResolveAccessRequest,
     RotateVirtualKeyRequest,
     UpdateProjectRequest,
@@ -44,9 +57,21 @@ from app.modules.policies import facade as policies_facade
 from app.modules.policies.errors import (
     PolicyAssignmentConflictError,
     PolicyNotFoundError,
+    PolicyPermissionError,
     PolicyValidationError,
 )
 from app.modules.policies.internal import repository as policies_repository
+from app.modules.policies.internal.models import (
+    AccessPolicy,
+    AccessPolicyPublicModel,
+    AccessPolicyRouteCandidate,
+    LimitPolicy,
+    LimitPolicyRule,
+)
+from app.modules.policies.runtime_limits import (
+    RuntimeLimitEvaluationInput,
+    evaluate_runtime_limits_readonly,
+)
 from app.modules.policies.schemas import (
     AccessPolicyPublicModelInput,
     AccessPolicyRouteCandidateInput,
@@ -61,6 +86,15 @@ from app.modules.policies.schemas import (
     UpdateLimitPolicyRequest,
     UpdateLimitPolicyRuleRequest,
     UpdatePolicyAssignmentRequest,
+)
+from app.modules.policy_kernel import assignment_scope_target_key
+from app.modules.policy_kernel import repository as policy_kernel_repository
+from app.modules.policy_kernel.models import Policy, PolicyAssignment, PolicyRevision
+from app.modules.policy_simulation.draft_validation import validate_policy_simulation_drafts
+from app.modules.policy_simulation.errors import PolicySimulationValidationError
+from app.modules.policy_simulation.schemas import (
+    PolicySimulationRequest,
+    PolicySimulationTarget,
 )
 from app.modules.providers import facade as providers_facade
 from app.modules.providers.internal.models import Provider
@@ -313,6 +347,27 @@ async def _record_usage_for_resolved(
     )
 
 
+async def _draft_side_effect_counts(db_session: AsyncSession) -> dict[str, int]:
+    models = [
+        Policy,
+        PolicyRevision,
+        PolicyAssignment,
+        AccessPolicy,
+        AccessPolicyPublicModel,
+        AccessPolicyRouteCandidate,
+        LimitPolicy,
+        LimitPolicyRule,
+        GuardrailPolicy,
+        GuardrailRule,
+        GuardrailEvent,
+        LimitPolicyReservation,
+    ]
+    return {
+        model.__tablename__: await db_session.scalar(select(func.count(model.id)))
+        for model in models
+    }
+
+
 async def test_policy_runtime_grants_pool_model_access(db_session: AsyncSession) -> None:
     (
         actor,
@@ -384,14 +439,15 @@ async def test_policy_runtime_resolves_shared_access_policy_revision(
         fast_model,
         _,
     ) = await _create_project_pool_and_models(db_session)
-    policy = await policies_repository.create_policy(
+    policy = await policy_kernel_repository.create_policy(
         org_id=scope.org_id,
         kind="access",
         name="Shared access",
         description=None,
+        is_active=True,
         db=db_session,
     )
-    revision = await policies_repository.create_policy_revision(
+    revision = await policy_kernel_repository.create_policy_revision(
         org_id=scope.org_id,
         policy_id=policy.id,
         revision_number=1,
@@ -421,14 +477,14 @@ async def test_policy_runtime_resolves_shared_access_policy_revision(
         is_active=True,
         db=db_session,
     )
-    await policies_repository.create_policy_assignment(
+    await policy_kernel_repository.create_policy_assignment(
         org_id=scope.org_id,
         values={
             "policy_id": policy.id,
             "policy_type": "access",
             "scope_type": "team",
             "team_id": team.id,
-            "scope_target_key": policies_repository.policy_assignment_scope_target_key(
+            "scope_target_key": assignment_scope_target_key(
                 scope_type="team",
                 team_id=team.id,
                 project_id=None,
@@ -490,7 +546,7 @@ async def test_facade_assignment_resolves_active_revision_and_traces_it(
         db=db_session,
         actor=actor,
     )
-    active_revision = await policies_repository.get_active_policy_revision(
+    active_revision = await policy_kernel_repository.get_active_policy_revision(
         org_id=scope.org_id,
         policy_id=access.policy_id,
         db=db_session,
@@ -575,7 +631,7 @@ async def test_facade_assignment_resolves_active_revision_and_traces_it(
         db=db_session,
         actor=actor,
     )
-    new_active_revision = await policies_repository.get_active_policy_revision(
+    new_active_revision = await policy_kernel_repository.get_active_policy_revision(
         org_id=scope.org_id,
         policy_id=access.policy_id,
         db=db_session,
@@ -592,9 +648,7 @@ async def test_facade_assignment_resolves_active_revision_and_traces_it(
         )
     ).all()
     assert attempt.access_policy_revision_id == active_revision.id
-    assert {decision.policy_revision_id for decision in refreshed_decisions} == {
-        active_revision.id
-    }
+    assert {decision.policy_revision_id for decision in refreshed_decisions} == {active_revision.id}
 
 
 async def test_access_policy_create_update_publishes_shared_revisions(
@@ -631,7 +685,7 @@ async def test_access_policy_create_update_publishes_shared_revisions(
         org_id=scope.org_id,
         db=db_session,
     )
-    active_revision = await policies_repository.get_active_policy_revision(
+    active_revision = await policy_kernel_repository.get_active_policy_revision(
         org_id=scope.org_id,
         policy_id=legacy_policy.policy_id,
         db=db_session,
@@ -661,7 +715,7 @@ async def test_access_policy_create_update_publishes_shared_revisions(
         db=db_session,
         actor=actor,
     )
-    next_revision = await policies_repository.get_active_policy_revision(
+    next_revision = await policy_kernel_repository.get_active_policy_revision(
         org_id=scope.org_id,
         policy_id=legacy_policy.policy_id,
         db=db_session,
@@ -2044,7 +2098,7 @@ async def test_same_project_access_policies_union_routes(
         db=db_session,
     )
     assert {policy.id for policy in summary.access_policies} == {
-        policy.id for policy in access_policies
+        policy.policy_id for policy in access_policies
     }
     assert {route.access_policy_id for route in summary.routes} == {
         policy.policy_id for policy in access_policies
@@ -2321,6 +2375,23 @@ async def test_resolve_access_plan_orders_candidates_and_handles_streaming_and_p
     assert [attempt.provider_id for attempt in pinned_plan.attempts] == [fallback_provider.id]
     assert pinned_plan.provider_pinned is True
     assert pinned_plan.fallback_disabled_reason == "provider_pinned"
+    explanation = await keys_facade.explain_access_plan_for_virtual_key(
+        org_id=scope.org_id,
+        payload=ResolveAccessPlanForVirtualKeyRequest(
+            virtual_key_id=created_key.id,
+            requested_model="chat-large",
+            provider_id=fallback_provider.id,
+        ),
+        db=db_session,
+    )
+    assert explanation.plan is not None
+    assert [
+        (candidate.provider_id, candidate.selected, candidate.skipped_reason)
+        for candidate in explanation.candidates
+    ] == [
+        (provider.id, False, "provider_pinned_mismatch"),
+        (fallback_provider.id, True, None),
+    ]
     resolved_streaming = await keys_facade.resolve_access(
         payload=ResolveAccessRequest(
             raw_key=created_key.key,
@@ -2330,6 +2401,3592 @@ async def test_resolve_access_plan_orders_candidates_and_handles_streaming_and_p
         db=db_session,
     )
     assert resolved_streaming.fallback_disabled_reason == "streaming_fallback_phase_2"
+
+
+async def test_policy_simulation_project_admin_is_target_scoped(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
+    other_project = await keys_facade.create_project(
+        team_id=team.id,
+        payload=CreateProjectRequest(name="Other Console", description=None),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    for item in (project, other_project):
+        await _assign_access_and_limit(
+            scope=scope,
+            team_id=item.team_id,
+            project_id=item.id,
+            provider_id=provider.id,
+            pool_id=pool.id,
+            model_ids=[fast_model.id],
+            db_session=db_session,
+        )
+    own_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Own project key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    other_key = await keys_facade.create_virtual_key(
+        project_id=other_project.id,
+        payload=CreateVirtualKeyRequest(name="Other project key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    project_admin = AuthenticatedUser(
+        id=uuid4(),
+        org_id=scope.org_id,
+        email="project-admin@example.com",
+        role="org_member",
+        permissions=[],
+        project_memberships=[
+            AuthenticatedProjectMembership(project_id=project.id, role="project_admin")
+        ],
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=own_key.id),
+            requested_model="missing",
+            gateway_endpoint="chat_completions",
+            include_limits=False,
+            include_guardrails=False,
+        ),
+        scope=scope,
+        db=db_session,
+        actor=project_admin,
+    )
+
+    assert result.subject.team_id == team.id
+    assert result.subject.project_id == project.id
+    with pytest.raises(PolicyPermissionError):
+        await policies_facade.simulate_active_policies(
+            payload=PolicySimulationRequest(
+                target=PolicySimulationTarget(virtual_key_id=other_key.id),
+                requested_model="missing",
+                gateway_endpoint="chat_completions",
+                include_limits=False,
+                include_guardrails=False,
+            ),
+            scope=scope,
+            db=db_session,
+            actor=project_admin,
+        )
+
+
+async def test_policy_simulation_team_admin_is_target_scoped(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
+    other_team = Team(org_id=scope.org_id, name="Other Team", slug=f"other-{uuid4()}")
+    db_session.add(other_team)
+    await db_session.commit()
+    other_project = await keys_facade.create_project(
+        team_id=other_team.id,
+        payload=CreateProjectRequest(name="Other Team Console", description=None),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    for item in (project, other_project):
+        await _assign_access_and_limit(
+            scope=scope,
+            team_id=item.team_id,
+            project_id=item.id,
+            provider_id=provider.id,
+            pool_id=pool.id,
+            model_ids=[fast_model.id],
+            db_session=db_session,
+        )
+    team_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Team key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    other_key = await keys_facade.create_virtual_key(
+        project_id=other_project.id,
+        payload=CreateVirtualKeyRequest(name="Other team key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    team_admin = AuthenticatedUser(
+        id=uuid4(),
+        org_id=scope.org_id,
+        email="team-admin@example.com",
+        role="org_member",
+        permissions=[],
+        team_memberships=[AuthenticatedTeamMembership(team_id=team.id, role="team_admin")],
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=team_key.id),
+            requested_model="missing",
+            gateway_endpoint="chat_completions",
+            include_limits=False,
+            include_guardrails=False,
+        ),
+        scope=scope,
+        db=db_session,
+        actor=team_admin,
+    )
+
+    assert result.subject.team_id == team.id
+    with pytest.raises(PolicyPermissionError):
+        await policies_facade.simulate_active_policies(
+            payload=PolicySimulationRequest(
+                target=PolicySimulationTarget(virtual_key_id=other_key.id),
+                requested_model="missing",
+                gateway_endpoint="chat_completions",
+                include_limits=False,
+                include_guardrails=False,
+            ),
+            scope=scope,
+            db=db_session,
+            actor=team_admin,
+        )
+
+
+async def test_policy_simulation_expired_key_with_naive_datetime_is_not_found(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Naive expired key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    virtual_key = await db_session.get(VirtualKey, created_key.id)
+    assert virtual_key is not None
+    virtual_key.expires_at = (datetime.now(UTC) - timedelta(days=1)).replace(tzinfo=None)
+    await db_session.flush()
+
+    with pytest.raises(VirtualKeyNotFoundError):
+        await policies_facade.simulate_active_policies(
+            payload=PolicySimulationRequest(
+                target=PolicySimulationTarget(virtual_key_id=created_key.id),
+                requested_model="fast",
+                gateway_endpoint="chat_completions",
+                include_limits=False,
+                include_guardrails=False,
+            ),
+            scope=scope,
+            db=db_session,
+        )
+
+
+async def test_policy_simulation_guardrails_require_guardrail_visibility(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Guardrail visibility key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    policy_viewer = AuthenticatedUser(
+        id=uuid4(),
+        org_id=scope.org_id,
+        email="policy-viewer@example.com",
+        role="org_member",
+        permissions=["policies.view"],
+    )
+
+    await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="missing",
+            gateway_endpoint="chat_completions",
+            include_limits=False,
+            include_guardrails=False,
+        ),
+        scope=scope,
+        db=db_session,
+        actor=policy_viewer,
+    )
+    with pytest.raises(PolicyPermissionError):
+        await policies_facade.simulate_active_policies(
+            payload=PolicySimulationRequest(
+                target=PolicySimulationTarget(virtual_key_id=created_key.id),
+                requested_model="missing",
+                gateway_endpoint="chat_completions",
+                include_limits=False,
+                include_guardrails=True,
+            ),
+            scope=scope,
+            db=db_session,
+            actor=policy_viewer,
+        )
+    with pytest.raises(PolicyPermissionError):
+        await policies_facade.simulate_active_policies(
+            payload=PolicySimulationRequest(
+                target=PolicySimulationTarget(virtual_key_id=created_key.id),
+                requested_model="missing",
+                gateway_endpoint="chat_completions",
+                include_limits=False,
+                include_guardrails=False,
+                drafts=[
+                    {
+                        "kind": "guardrail",
+                        "operation": "add_policy",
+                        "assignment": {"scope_type": "org"},
+                        "guardrail_policy": {
+                            "name": "Draft guardrail",
+                            "rules": [{"rule_type": "prompt_contains", "values": ["secret"]}],
+                        },
+                    }
+                ],
+            ),
+            scope=scope,
+            db=db_session,
+            actor=policy_viewer,
+        )
+
+
+async def test_policy_simulation_scoped_admins_cannot_simulate_org_draft_assignments(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Draft scope key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    project_admin = AuthenticatedUser(
+        id=uuid4(),
+        org_id=scope.org_id,
+        email="draft-project-admin@example.com",
+        role="org_member",
+        permissions=[],
+        project_memberships=[
+            AuthenticatedProjectMembership(project_id=project.id, role="project_admin")
+        ],
+    )
+    team_admin = AuthenticatedUser(
+        id=uuid4(),
+        org_id=scope.org_id,
+        email="draft-team-admin@example.com",
+        role="org_member",
+        permissions=[],
+        team_memberships=[AuthenticatedTeamMembership(team_id=team.id, role="team_admin")],
+    )
+    org_viewer = AuthenticatedUser(
+        id=uuid4(),
+        org_id=scope.org_id,
+        email="draft-org-viewer@example.com",
+        role="org_member",
+        permissions=["policies.view"],
+    )
+    draft = {
+        "kind": "access",
+        "operation": "add_policy",
+        "assignment": {"scope_type": "org"},
+        "access_policy": {
+            "name": "Org draft access",
+            "public_models": [
+                {
+                    "public_model_name": "fast",
+                    "routing_mode": "single_route",
+                    "candidates": [
+                        {
+                            "provider_id": str(provider.id),
+                            "credential_pool_id": str(pool.id),
+                            "model_offering_id": str(fast_model.id),
+                        }
+                    ],
+                }
+            ],
+        },
+    }
+
+    for scoped_actor in (project_admin, team_admin):
+        with pytest.raises(PolicyPermissionError):
+            await policies_facade.simulate_active_policies(
+                payload=PolicySimulationRequest(
+                    target=PolicySimulationTarget(virtual_key_id=created_key.id),
+                    requested_model="fast",
+                    gateway_endpoint="chat_completions",
+                    include_limits=False,
+                    include_guardrails=False,
+                    drafts=[draft],
+                ),
+                scope=scope,
+                db=db_session,
+                actor=scoped_actor,
+            )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            include_limits=False,
+            include_guardrails=False,
+            drafts=[draft],
+        ),
+        scope=scope,
+        db=db_session,
+        actor=org_viewer,
+    )
+    assert result.final_decision == "allow"
+
+
+async def test_policy_simulation_guardrail_draft_scope_is_authorized(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Guardrail draft scope key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    team_admin = AuthenticatedUser(
+        id=uuid4(),
+        org_id=scope.org_id,
+        email="guardrail-draft-team-admin@example.com",
+        role="org_member",
+        permissions=[],
+        team_memberships=[AuthenticatedTeamMembership(team_id=team.id, role="team_admin")],
+    )
+
+    with pytest.raises(PolicyPermissionError):
+        await policies_facade.simulate_active_policies(
+            payload=PolicySimulationRequest(
+                target=PolicySimulationTarget(virtual_key_id=created_key.id),
+                requested_model="fast",
+                gateway_endpoint="chat_completions",
+                include_limits=False,
+                include_guardrails=False,
+                drafts=[
+                    {
+                        "kind": "guardrail",
+                        "operation": "add_policy",
+                        "assignment": {"scope_type": "org"},
+                        "guardrail_policy": {
+                            "name": "Org guardrail draft",
+                            "rules": [{"rule_type": "prompt_contains", "values": ["secret"]}],
+                        },
+                    }
+                ],
+            ),
+            scope=scope,
+            db=db_session,
+            actor=team_admin,
+        )
+
+
+async def test_resolve_access_plan_for_virtual_key_is_read_only(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    access = await policies_facade.create_access_policy(
+        payload=CreateAccessPolicyRequest(
+            name="Read-only simulation access",
+            public_models=[
+                _public_model_route(
+                    provider_id=provider.id,
+                    credential_pool_id=pool.id,
+                    model_offering_id=fast_model.id,
+                    public_model_name="fast",
+                )
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    await policies_facade.create_policy_assignment(
+        payload=CreatePolicyAssignmentRequest(
+            policy_type="access",
+            policy_id=access.policy_id,
+            scope_type="project",
+            project_id=project.id,
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Simulation key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    plan = await keys_facade.resolve_access_plan_for_virtual_key(
+        org_id=scope.org_id,
+        payload=ResolveAccessPlanForVirtualKeyRequest(
+            virtual_key_id=created_key.id,
+            requested_model="fast",
+        ),
+        db=db_session,
+    )
+    stored_key = await db_session.get(VirtualKey, created_key.id)
+
+    assert plan.virtual_key_id == created_key.id
+    assert plan.attempts[0].provider_id == provider.id
+    assert stored_key is not None
+    assert stored_key.last_used_at is None
+
+
+async def test_active_policy_simulation_reports_selected_route(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Simulation selected route key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            include_limits=False,
+            include_guardrails=False,
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    assert result.final_decision == "allow"
+    assert result.public_model_name == "fast"
+    assert [(attempt.selected, attempt.would_attempt) for attempt in result.route_attempts] == [
+        (True, True)
+    ]
+    assert result.decisions[0].decision_type == "provider_routing"
+    assert result.decisions[0].outcome == "selected"
+
+
+async def test_active_policy_simulation_limit_denial_does_not_reserve(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        max_tokens_per_request=1,
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Simulation limit key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            estimated_input_tokens=2,
+            include_guardrails=False,
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    reservation_count = await db_session.scalar(select(func.count(LimitPolicyReservation.id)))
+
+    assert result.final_decision == "deny"
+    assert result.denied_stage == "limit_reservation"
+    assert result.limit_results[0].would_deny is True
+    assert result.limit_results[0].reason_code == "request_token_limit"
+    assert reservation_count == 0
+
+
+async def test_active_policy_simulation_guardrail_content_and_applicability(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    guardrail = await guardrails_facade.create_policy(
+        payload=CreateGuardrailPolicyRequest(
+            name="Simulation guardrail",
+            rules=[
+                GuardrailRuleInput(
+                    rule_type="prompt_contains",
+                    effect="deny",
+                    values=["secret"],
+                )
+            ],
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    await guardrails_facade.create_assignment(
+        payload=CreateGuardrailAssignmentRequest(
+            policy_id=guardrail.id,
+            scope_type="team",
+            team_id=team.id,
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Simulation guardrail key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    blocked = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            include_limits=False,
+            guardrail_input={"prompt_text": "contains a secret"},
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    applicability_only = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            include_limits=False,
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    assert blocked.final_decision == "deny"
+    assert blocked.denied_stage == "request_guardrail"
+    assert blocked.guardrail_results[0].decision == "blocked"
+    assert blocked.guardrail_results[0].matched_values == ["secret"]
+    assert applicability_only.final_decision == "allow"
+    assert applicability_only.guardrail_results[0].decision == "not_evaluated"
+    assert {warning.code for warning in applicability_only.warnings} >= {
+        "guardrail_content_not_provided",
+        "response_guardrail_content_not_provided",
+    }
+
+
+async def test_policy_simulation_draft_validation_rejects_invalid_payloads(
+    db_session: AsyncSession,
+) -> None:
+    provider_id = uuid4()
+    pool_id = uuid4()
+    model_id = uuid4()
+    bad_access = PolicySimulationRequest(
+        target=PolicySimulationTarget(virtual_key_id=uuid4()),
+        requested_model="fast",
+        gateway_endpoint="chat_completions",
+        drafts=[
+            {
+                "kind": "access",
+                "operation": "add_policy",
+                "assignment": {"scope_type": "org"},
+                "access_policy": {
+                    "name": "Bad access draft",
+                    "public_models": [
+                        {
+                            "public_model_name": "fast",
+                            "routing_mode": "single_route",
+                            "candidates": [
+                                {
+                                    "provider_id": str(provider_id),
+                                    "credential_pool_id": str(pool_id),
+                                    "model_offering_id": str(model_id),
+                                },
+                                {
+                                    "provider_id": str(provider_id),
+                                    "credential_pool_id": str(pool_id),
+                                    "model_offering_id": str(model_id),
+                                },
+                            ],
+                        }
+                    ],
+                },
+            }
+        ],
+    )
+    bad_limit = PolicySimulationRequest(
+        target=PolicySimulationTarget(virtual_key_id=uuid4()),
+        requested_model="fast",
+        gateway_endpoint="chat_completions",
+        drafts=[
+            {
+                "kind": "limit",
+                "operation": "add_policy",
+                "assignment": {"scope_type": "org"},
+                "limit_policy": {
+                    "name": "Bad limit draft",
+                    "rules": [
+                        {
+                            "name": "Bad matcher",
+                            "limit_type": "requests",
+                            "limit_value": 1,
+                            "interval_unit": "day",
+                            "matchers": [
+                                {
+                                    "dimension": "not_a_dimension",
+                                    "operator": "eq",
+                                    "value_json": "x",
+                                }
+                            ],
+                        }
+                    ],
+                },
+            }
+        ],
+    )
+    bad_guardrail = PolicySimulationRequest(
+        target=PolicySimulationTarget(virtual_key_id=uuid4()),
+        requested_model="fast",
+        gateway_endpoint="chat_completions",
+        drafts=[
+            {
+                "kind": "guardrail",
+                "operation": "add_policy",
+                "assignment": {"scope_type": "org"},
+                "guardrail_policy": {
+                    "name": "Bad guardrail draft",
+                    "rules": [
+                        {
+                            "rule_type": "prompt_contains",
+                            "effect": "deny",
+                            "values": ["secret"],
+                            "matchers": [
+                                {
+                                    "dimension": "not_a_dimension",
+                                    "operator": "eq",
+                                    "value_json": "x",
+                                }
+                            ],
+                        }
+                    ],
+                },
+            }
+        ],
+    )
+
+    with pytest.raises(PolicySimulationValidationError):
+        validate_policy_simulation_drafts(bad_access.drafts)
+    with pytest.raises(PolicySimulationValidationError):
+        validate_policy_simulation_drafts(bad_limit.drafts)
+    with pytest.raises(PolicySimulationValidationError):
+        validate_policy_simulation_drafts(bad_guardrail.drafts)
+    with pytest.raises(PolicyValidationError):
+        await policies_facade.simulate_active_policies(
+            payload=bad_limit,
+            scope=Scope(org_id=uuid4()),
+            db=db_session,
+        )
+
+
+async def test_policy_simulation_replace_policy_rejects_bogus_explicit_assignment_ids(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Bogus replacement key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    base = {
+        "target": {"virtual_key_id": str(created_key.id)},
+        "requested_model": "fast",
+        "gateway_endpoint": "chat_completions",
+        "include_limits": False,
+        "include_guardrails": False,
+    }
+    drafts = [
+        {
+            "kind": "access",
+            "operation": "replace_policy",
+            "existing_policy_id": str(uuid4()),
+            "assignment": {"scope_type": "project", "project_id": str(project.id)},
+            "access_policy": {
+                "name": "Bogus access replacement",
+                "public_models": [
+                    {
+                        "public_model_name": "fast",
+                        "routing_mode": "single_route",
+                        "candidates": [
+                            {
+                                "provider_id": str(provider.id),
+                                "credential_pool_id": str(pool.id),
+                                "model_offering_id": str(fast_model.id),
+                            }
+                        ],
+                    }
+                ],
+            },
+        },
+        {
+            "kind": "limit",
+            "operation": "replace_policy",
+            "existing_policy_id": str(uuid4()),
+            "assignment": {"scope_type": "project", "project_id": str(project.id)},
+            "limit_policy": {
+                "name": "Bogus limit replacement",
+                "rules": [
+                    {
+                        "name": "Requests",
+                        "limit_type": "requests",
+                        "limit_value": 1,
+                        "interval_unit": "day",
+                    }
+                ],
+            },
+        },
+        {
+            "kind": "guardrail",
+            "operation": "replace_policy",
+            "existing_policy_id": str(uuid4()),
+            "assignment": {"scope_type": "project", "project_id": str(project.id)},
+            "guardrail_policy": {
+                "name": "Bogus guardrail replacement",
+                "rules": [{"rule_type": "prompt_contains", "values": ["secret"]}],
+            },
+        },
+    ]
+
+    for draft in drafts:
+        with pytest.raises(PolicyValidationError):
+            await policies_facade.simulate_active_policies(
+                payload=PolicySimulationRequest(**(base | {"drafts": [draft]})),
+                scope=scope,
+                db=db_session,
+            )
+
+
+async def test_policy_simulation_scoped_replacement_ids_do_not_oracle_or_add(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    own_access, _own_limit = await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    other_project = await keys_facade.create_project(
+        team_id=team.id,
+        payload=CreateProjectRequest(name="Replacement oracle other project", description=None),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    other_access, _other_limit = await _assign_access_and_limit(
+        scope=scope,
+        team_id=other_project.team_id,
+        project_id=other_project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[large_model.id],
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Replacement oracle key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    project_admin = AuthenticatedUser(
+        id=uuid4(),
+        org_id=scope.org_id,
+        email="replacement-project-admin@example.com",
+        role="org_member",
+        permissions=[],
+        project_memberships=[
+            AuthenticatedProjectMembership(project_id=project.id, role="project_admin")
+        ],
+    )
+
+    async def replace(existing_policy_id) -> None:
+        await policies_facade.simulate_active_policies(
+            payload=PolicySimulationRequest(
+                target=PolicySimulationTarget(virtual_key_id=created_key.id),
+                requested_model="fast",
+                gateway_endpoint="chat_completions",
+                include_limits=False,
+                include_guardrails=False,
+                drafts=[
+                    {
+                        "kind": "access",
+                        "operation": "replace_policy",
+                        "existing_policy_id": str(existing_policy_id),
+                        "assignment": {"scope_type": "project", "project_id": str(project.id)},
+                        "access_policy": {
+                            "name": "Unauthorized replacement",
+                            "public_models": [
+                                {
+                                    "public_model_name": "fast",
+                                    "routing_mode": "single_route",
+                                    "candidates": [
+                                        {
+                                            "provider_id": str(provider.id),
+                                            "credential_pool_id": str(pool.id),
+                                            "model_offering_id": str(large_model.id),
+                                        }
+                                    ],
+                                }
+                            ],
+                        },
+                    }
+                ],
+            ),
+            scope=scope,
+            db=db_session,
+            actor=project_admin,
+        )
+
+    with pytest.raises(PolicyPermissionError):
+        await replace(uuid4())
+    with pytest.raises(PolicyPermissionError):
+        await replace(other_access.id)
+
+    allowed = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            include_limits=False,
+            include_guardrails=False,
+            drafts=[
+                {
+                    "kind": "access",
+                    "operation": "replace_policy",
+                    "existing_policy_id": str(own_access.id),
+                    "access_policy": {
+                        "name": "Authorized replacement",
+                        "public_models": [
+                            {
+                                "public_model_name": "fast",
+                                "routing_mode": "single_route",
+                                "candidates": [
+                                    {
+                                        "provider_id": str(provider.id),
+                                        "credential_pool_id": str(pool.id),
+                                        "model_offering_id": str(large_model.id),
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                }
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+        actor=project_admin,
+    )
+    assert allowed.final_decision == "allow"
+
+
+async def test_policy_simulation_access_draft_can_select_unsaved_route(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Access draft key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="draft-fast",
+            gateway_endpoint="chat_completions",
+            include_limits=False,
+            include_guardrails=False,
+            drafts=[
+                {
+                    "kind": "access",
+                    "operation": "add_policy",
+                    "assignment": {"scope_type": "project", "project_id": str(project.id)},
+                    "access_policy": {
+                        "name": "Draft access",
+                        "public_models": [
+                            {
+                                "public_model_name": "draft-fast",
+                                "routing_mode": "single_route",
+                                "candidates": [
+                                    {
+                                        "provider_id": str(provider.id),
+                                        "credential_pool_id": str(pool.id),
+                                        "model_offering_id": str(fast_model.id),
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                }
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    selected = next(attempt for attempt in result.route_attempts if attempt.selected)
+    assert result.final_decision == "allow"
+    assert result.public_model_name == "draft-fast"
+    assert selected.access_policy_id is None
+    assert selected.public_model_id is None
+    assert selected.route_candidate_id is None
+    assert selected.provider_id == provider.id
+    assert selected.draft_ref == "draft[0]:access_policy.public_models[0].candidates[0]"
+    selected_decision = next(
+        decision
+        for decision in result.decisions
+        if decision.decision_type == "provider_routing" and decision.outcome == "selected"
+    )
+    assert selected_decision.draft_ref == selected.draft_ref
+
+
+async def test_policy_simulation_access_draft_evaluates_saved_limits(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        max_tokens_per_request=1,
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Access draft saved limit key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="draft-fast",
+            gateway_endpoint="chat_completions",
+            estimated_input_tokens=2,
+            include_guardrails=False,
+            drafts=[
+                {
+                    "kind": "access",
+                    "operation": "add_policy",
+                    "assignment": {"scope_type": "project", "project_id": str(project.id)},
+                    "access_policy": {
+                        "name": "Draft access saved limit",
+                        "public_models": [
+                            {
+                                "public_model_name": "draft-fast",
+                                "routing_mode": "single_route",
+                                "candidates": [
+                                    {
+                                        "provider_id": str(provider.id),
+                                        "credential_pool_id": str(pool.id),
+                                        "model_offering_id": str(fast_model.id),
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                }
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    assert result.final_decision == "deny"
+    assert result.denied_stage == "limit_reservation"
+    assert result.limit_results[0].draft_ref is None
+    selected = next(attempt for attempt in result.route_attempts if attempt.selected)
+    assert selected.access_policy_id is None
+
+
+async def test_policy_simulation_access_add_draft_non_overlapping_child_scope_denies(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=team.id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        scope_type="team",
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Access draft non-overlap key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            include_limits=False,
+            include_guardrails=False,
+            drafts=[
+                {
+                    "kind": "access",
+                    "operation": "add_policy",
+                    "assignment": {"scope_type": "project", "project_id": str(project.id)},
+                    "access_policy": {
+                        "name": "Non-overlap project draft",
+                        "public_models": [
+                            {
+                                "public_model_name": "fast",
+                                "routing_mode": "single_route",
+                                "candidates": [
+                                    {
+                                        "provider_id": str(provider.id),
+                                        "credential_pool_id": str(pool.id),
+                                        "model_offering_id": str(large_model.id),
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                }
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    assert result.final_decision == "deny"
+    assert result.denied_stage == "access_resolution"
+    assert result.route_attempts == []
+    assert not any(
+        decision.decision_type == "provider_routing" and decision.outcome == "selected"
+        for decision in result.decisions
+    )
+
+
+async def test_policy_simulation_access_add_draft_narrows_to_allowed_route(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    access = await policies_facade.create_access_policy(
+        payload=CreateAccessPolicyRequest(
+            name="Team access with two routes",
+            public_models=[
+                {
+                    "public_model_name": "fast",
+                    "routing_mode": "ordered_fallback",
+                    "fallback_on": ["provider_5xx"],
+                    "max_route_attempts": 2,
+                    "candidates": [
+                        {
+                            "provider_id": provider.id,
+                            "credential_pool_id": pool.id,
+                            "model_offering_id": fast_model.id,
+                            "priority": 1,
+                            "weight": 1,
+                        },
+                        {
+                            "provider_id": provider.id,
+                            "credential_pool_id": pool.id,
+                            "model_offering_id": large_model.id,
+                            "priority": 2,
+                            "weight": 1,
+                        },
+                    ],
+                }
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    await policies_facade.create_policy_assignment(
+        payload=CreatePolicyAssignmentRequest(
+            policy_type="access",
+            policy_id=access.policy_id,
+            scope_type="team",
+            team_id=team.id,
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Access draft overlap key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            include_limits=False,
+            include_guardrails=False,
+            drafts=[
+                {
+                    "kind": "access",
+                    "operation": "add_policy",
+                    "assignment": {"scope_type": "project", "project_id": str(project.id)},
+                    "access_policy": {
+                        "name": "Project narrowing draft",
+                        "public_models": [
+                            {
+                                "public_model_name": "fast",
+                                "routing_mode": "single_route",
+                                "candidates": [
+                                    {
+                                        "provider_id": str(provider.id),
+                                        "credential_pool_id": str(pool.id),
+                                        "model_offering_id": str(large_model.id),
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                }
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    selected_attempts = [attempt for attempt in result.route_attempts if attempt.selected]
+    selected_decisions = [
+        decision
+        for decision in result.decisions
+        if decision.decision_type == "provider_routing" and decision.outcome == "selected"
+    ]
+    assert result.final_decision == "allow"
+    assert len(selected_attempts) == 1
+    assert selected_attempts[0].provider_model == large_model.provider_model_name
+    assert selected_attempts[0].draft_ref == "draft[0]:access_policy.public_models[0].candidates[0]"
+    assert len(selected_decisions) == 1
+    assert selected_decisions[0].draft_ref == selected_attempts[0].draft_ref
+
+
+async def test_policy_simulation_lower_scope_saved_empty_access_fails_closed(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=team.id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        scope_type="team",
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Fail closed simulation key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    project_access = await policies_facade.create_access_policy(
+        payload=CreateAccessPolicyRequest(
+            name="Inactive project access",
+            public_models=[
+                AccessPolicyPublicModelInput(
+                    public_model_name="fast",
+                    routing_mode="single_route",
+                    is_active=False,
+                    candidates=[
+                        AccessPolicyRouteCandidateInput(
+                            provider_id=provider.id,
+                            credential_pool_id=pool.id,
+                            model_offering_id=fast_model.id,
+                        )
+                    ],
+                )
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    await policies_facade.create_policy_assignment(
+        payload=CreatePolicyAssignmentRequest(
+            policy_type="access",
+            policy_id=project_access.policy_id,
+            scope_type="project",
+            project_id=project.id,
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            include_limits=False,
+            include_guardrails=False,
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    assert result.final_decision == "deny"
+    assert result.denied_stage == "access_resolution"
+    assert result.route_attempts == []
+    with pytest.raises(AccessDeniedError):
+        await keys_facade.resolve_access(
+            payload=ResolveAccessRequest(raw_key=created_key.key, requested_model="fast"),
+            db=db_session,
+        )
+
+
+async def test_policy_simulation_inactive_lower_scope_access_draft_fails_closed(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=team.id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        scope_type="team",
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Inactive draft access key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            include_limits=False,
+            include_guardrails=False,
+            drafts=[
+                {
+                    "kind": "access",
+                    "operation": "add_policy",
+                    "assignment": {"scope_type": "project", "project_id": str(project.id)},
+                    "access_policy": {
+                        "name": "Inactive draft access",
+                        "is_active": False,
+                        "public_models": [
+                            {
+                                "public_model_name": "fast",
+                                "candidates": [
+                                    {
+                                        "provider_id": str(provider.id),
+                                        "credential_pool_id": str(pool.id),
+                                        "model_offering_id": str(fast_model.id),
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                }
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    assert result.final_decision == "deny"
+    assert result.denied_stage == "access_resolution"
+    assert result.route_attempts == []
+
+
+async def test_policy_simulation_access_draft_active_flags_are_skipped(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    access, _limit = await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Access active flags key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    for draft_policy in (
+        {
+            "name": "Inactive replacement",
+            "is_active": False,
+            "public_models": [
+                {
+                    "public_model_name": "fast",
+                    "candidates": [
+                        {
+                            "provider_id": str(provider.id),
+                            "credential_pool_id": str(pool.id),
+                            "model_offering_id": str(fast_model.id),
+                        }
+                    ],
+                }
+            ],
+        },
+        {
+            "name": "Inactive public model replacement",
+            "public_models": [
+                {
+                    "public_model_name": "fast",
+                    "is_active": False,
+                    "candidates": [
+                        {
+                            "provider_id": str(provider.id),
+                            "credential_pool_id": str(pool.id),
+                            "model_offering_id": str(fast_model.id),
+                        }
+                    ],
+                }
+            ],
+        },
+        {
+            "name": "Inactive candidate replacement",
+            "public_models": [
+                {
+                    "public_model_name": "fast",
+                    "candidates": [
+                        {
+                            "provider_id": str(provider.id),
+                            "credential_pool_id": str(pool.id),
+                            "model_offering_id": str(fast_model.id),
+                            "is_active": False,
+                        }
+                    ],
+                }
+            ],
+        },
+    ):
+        result = await policies_facade.simulate_active_policies(
+            payload=PolicySimulationRequest(
+                target=PolicySimulationTarget(virtual_key_id=created_key.id),
+                requested_model="fast",
+                gateway_endpoint="chat_completions",
+                include_limits=False,
+                include_guardrails=False,
+                drafts=[
+                    {
+                        "kind": "access",
+                        "operation": "replace_policy",
+                        "existing_policy_id": str(access.id),
+                        "access_policy": draft_policy,
+                    }
+                ],
+            ),
+            scope=scope,
+            db=db_session,
+        )
+        assert result.final_decision == "deny"
+        assert result.route_attempts == []
+
+
+async def test_policy_simulation_same_scope_access_draft_ordering_matches_runtime(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Same scope ordering key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    async def selected_model(*, priority: int = 100, weight: int = 100) -> str | None:
+        result = await policies_facade.simulate_active_policies(
+            payload=PolicySimulationRequest(
+                target=PolicySimulationTarget(virtual_key_id=created_key.id),
+                requested_model="fast",
+                gateway_endpoint="chat_completions",
+                include_limits=False,
+                include_guardrails=False,
+                drafts=[
+                    {
+                        "kind": "access",
+                        "operation": "add_policy",
+                        "assignment": {"scope_type": "project", "project_id": str(project.id)},
+                        "access_policy": {
+                            "name": "Same scope draft",
+                            "public_models": [
+                                {
+                                    "public_model_name": "fast",
+                                    "candidates": [
+                                        {
+                                            "provider_id": str(provider.id),
+                                            "credential_pool_id": str(pool.id),
+                                            "model_offering_id": str(large_model.id),
+                                            "priority": priority,
+                                            "weight": weight,
+                                        }
+                                    ],
+                                }
+                            ],
+                        },
+                    }
+                ],
+            ),
+            scope=scope,
+            db=db_session,
+        )
+        selected = next(attempt for attempt in result.route_attempts if attempt.selected)
+        return selected.provider_model
+
+    assert await selected_model() == fast_model.provider_model_name
+    assert await selected_model(priority=1) == large_model.provider_model_name
+    assert await selected_model(weight=101) == large_model.provider_model_name
+
+
+async def test_policy_simulation_multiple_access_drafts_have_distinct_refs(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Distinct access refs key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            include_limits=False,
+            include_guardrails=False,
+            drafts=[
+                {
+                    "kind": "access",
+                    "operation": "add_policy",
+                    "assignment": {"scope_type": "project", "project_id": str(project.id)},
+                    "access_policy": {
+                        "name": "Access draft one",
+                        "public_models": [
+                            {
+                                "public_model_name": "fast",
+                                "routing_mode": "single_route",
+                                "candidates": [
+                                    {
+                                        "provider_id": str(provider.id),
+                                        "credential_pool_id": str(pool.id),
+                                        "model_offering_id": str(fast_model.id),
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                },
+                {
+                    "kind": "access",
+                    "operation": "add_policy",
+                    "assignment": {"scope_type": "project", "project_id": str(project.id)},
+                    "access_policy": {
+                        "name": "Access draft two",
+                        "public_models": [
+                            {
+                                "public_model_name": "other",
+                                "routing_mode": "single_route",
+                                "candidates": [
+                                    {
+                                        "provider_id": str(provider.id),
+                                        "credential_pool_id": str(pool.id),
+                                        "model_offering_id": str(large_model.id),
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                },
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    draft_refs = [attempt.draft_ref for attempt in result.route_attempts if attempt.draft_ref]
+    assert {
+        "draft[0]:access_policy.public_models[0].candidates[0]",
+        "draft[1]:access_policy.public_models[0].candidates[0]",
+    } <= set(draft_refs)
+
+
+async def test_policy_simulation_access_replace_draft_changes_selected_route(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    access, _limit = await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Access replace draft key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            include_limits=False,
+            include_guardrails=False,
+            drafts=[
+                {
+                    "kind": "access",
+                    "operation": "replace_policy",
+                    "existing_policy_id": str(access.id),
+                    "access_policy": {
+                        "name": "Replacement access",
+                        "public_models": [
+                            {
+                                "public_model_name": "fast",
+                                "routing_mode": "single_route",
+                                "candidates": [
+                                    {
+                                        "provider_id": str(provider.id),
+                                        "credential_pool_id": str(pool.id),
+                                        "model_offering_id": str(large_model.id),
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                }
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    selected = [attempt for attempt in result.route_attempts if attempt.selected]
+    assert len(selected) == 1
+    assert selected[-1].draft_ref == "draft[0]:access_policy.public_models[0].candidates[0]"
+    assert selected[-1].provider_model == large_model.provider_model_name
+    assert result.public_model_name == "fast"
+
+
+async def test_policy_simulation_access_replace_without_assignment_requires_active_policy(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    own_access, _limit = await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    other_project = await keys_facade.create_project(
+        team_id=team.id,
+        payload=CreateProjectRequest(name="Other replace project", description=None),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    other_access, _other_limit = await _assign_access_and_limit(
+        scope=scope,
+        team_id=other_project.team_id,
+        project_id=other_project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[large_model.id],
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Access off-target replace key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            include_limits=False,
+            include_guardrails=False,
+            drafts=[
+                {
+                    "kind": "access",
+                    "operation": "replace_policy",
+                    "existing_policy_id": str(other_access.id),
+                    "access_policy": {
+                        "name": "Off-target replacement access",
+                        "public_models": [
+                            {
+                                "public_model_name": "fast",
+                                "routing_mode": "single_route",
+                                "candidates": [
+                                    {
+                                        "provider_id": str(provider.id),
+                                        "credential_pool_id": str(pool.id),
+                                        "model_offering_id": str(large_model.id),
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                }
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    selected = next(attempt for attempt in result.route_attempts if attempt.selected)
+    assert selected.access_policy_id == own_access.policy_id
+    assert selected.draft_ref is None
+
+
+async def test_policy_simulation_limit_draft_denies_without_reserving(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Limit draft key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            estimated_input_tokens=2,
+            include_guardrails=False,
+            drafts=[
+                {
+                    "kind": "limit",
+                    "operation": "add_policy",
+                    "assignment": {"scope_type": "project", "project_id": str(project.id)},
+                    "limit_policy": {
+                        "name": "Draft token cap",
+                        "rules": [
+                            {
+                                "name": "Draft request cap",
+                                "limit_type": "tokens_per_request",
+                                "limit_value": 1,
+                                "interval_unit": "lifetime",
+                            }
+                        ],
+                    },
+                }
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    reservation_count = await db_session.scalar(select(func.count(LimitPolicyReservation.id)))
+
+    draft_result = next(item for item in result.limit_results if item.draft_ref is not None)
+    assert result.final_decision == "deny"
+    assert draft_result.policy_id is None
+    assert draft_result.rule_id is None
+    assert draft_result.assignment_id is None
+    assert draft_result.would_deny is True
+    assert draft_result.draft_ref == "draft[0]:limit_policy.rules[0]"
+    assert result.decisions[-1].draft_ref == draft_result.draft_ref
+    assert {warning.code for warning in result.warnings} >= {"draft_limit_counter_starts_at_zero"}
+    assert reservation_count == 0
+
+
+async def test_policy_simulation_limit_draft_route_filters_must_match(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Limit draft filter key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            estimated_input_tokens=2,
+            include_guardrails=False,
+            drafts=[
+                {
+                    "kind": "limit",
+                    "operation": "add_policy",
+                    "assignment": {"scope_type": "project", "project_id": str(project.id)},
+                    "limit_policy": {
+                        "name": "Mismatched draft token cap",
+                        "rules": [
+                            {
+                                "name": "Wrong model cap",
+                                "limit_type": "tokens_per_request",
+                                "limit_value": 1,
+                                "interval_unit": "lifetime",
+                                "model_offering_id": str(large_model.id),
+                            }
+                        ],
+                    },
+                }
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    assert result.final_decision == "allow"
+    assert all(item.draft_ref is None for item in result.limit_results)
+
+
+async def test_policy_simulation_inactive_add_limit_draft_is_skipped(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Inactive add limit draft key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            estimated_input_tokens=2,
+            include_guardrails=False,
+            drafts=[
+                {
+                    "kind": "limit",
+                    "operation": "add_policy",
+                    "assignment": {"scope_type": "project", "project_id": str(project.id)},
+                    "limit_policy": {
+                        "name": "Inactive draft limit",
+                        "is_active": False,
+                        "rules": [
+                            {
+                                "name": "Inactive policy cap",
+                                "limit_type": "tokens_per_request",
+                                "limit_value": 1,
+                                "interval_unit": "lifetime",
+                            }
+                        ],
+                    },
+                }
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    assert result.final_decision == "allow"
+    assert all(item.draft_ref is None for item in result.limit_results)
+    assert not result.warnings
+
+
+async def test_policy_simulation_multiple_limit_drafts_have_distinct_refs(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Distinct limit refs key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            include_guardrails=False,
+            drafts=[
+                {
+                    "kind": "limit",
+                    "operation": "add_policy",
+                    "assignment": {"scope_type": "project", "project_id": str(project.id)},
+                    "limit_policy": {
+                        "name": "Draft one",
+                        "rules": [
+                            {
+                                "name": "One",
+                                "limit_type": "requests",
+                                "limit_value": 100,
+                                "interval_unit": "day",
+                            }
+                        ],
+                    },
+                },
+                {
+                    "kind": "limit",
+                    "operation": "add_policy",
+                    "assignment": {"scope_type": "project", "project_id": str(project.id)},
+                    "limit_policy": {
+                        "name": "Draft two",
+                        "rules": [
+                            {
+                                "name": "Two",
+                                "limit_type": "requests",
+                                "limit_value": 100,
+                                "interval_unit": "day",
+                            }
+                        ],
+                    },
+                },
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    draft_refs = [item.draft_ref for item in result.limit_results if item.draft_ref]
+    assert {"draft[0]:limit_policy.rules[0]", "draft[1]:limit_policy.rules[0]"} <= set(draft_refs)
+
+
+async def test_policy_simulation_limit_replace_removes_saved_limit(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    _access, limit = await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        max_tokens_per_request=1,
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Limit replace key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            estimated_input_tokens=2,
+            include_guardrails=False,
+            drafts=[
+                {
+                    "kind": "limit",
+                    "operation": "replace_policy",
+                    "existing_policy_id": str(limit.id),
+                    "limit_policy": {
+                        "name": "Replacement limit",
+                        "rules": [
+                            {
+                                "name": "Replacement request cap",
+                                "limit_type": "tokens_per_request",
+                                "limit_value": 100,
+                                "interval_unit": "lifetime",
+                            }
+                        ],
+                    },
+                }
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    assert result.final_decision == "allow"
+    replacement = next(
+        item for item in result.limit_results if item.draft_ref == "draft[0]:limit_policy.rules[0]"
+    )
+    assert replacement.policy_id == limit.id
+    assert replacement.limit_value == 100
+
+
+async def test_policy_simulation_inactive_limit_replacement_removes_saved_limit(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    _access, limit = await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        max_tokens_per_request=1,
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Inactive limit replacement key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            estimated_input_tokens=2,
+            include_guardrails=False,
+            drafts=[
+                {
+                    "kind": "limit",
+                    "operation": "replace_policy",
+                    "existing_policy_id": str(limit.id),
+                    "limit_policy": {
+                        "name": "Inactive replacement limit",
+                        "is_active": False,
+                        "rules": [
+                            {
+                                "name": "Inactive replacement cap",
+                                "limit_type": "tokens_per_request",
+                                "limit_value": 1,
+                                "interval_unit": "lifetime",
+                            }
+                        ],
+                    },
+                }
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    assert result.final_decision == "allow"
+    assert all(item.policy_id != limit.id for item in result.limit_results)
+    assert not result.warnings
+
+
+async def test_policy_simulation_inactive_limit_replacement_rule_is_skipped(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    _access, limit = await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        max_tokens_per_request=1,
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Inactive limit rule replacement key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            estimated_input_tokens=2,
+            include_guardrails=False,
+            drafts=[
+                {
+                    "kind": "limit",
+                    "operation": "replace_policy",
+                    "existing_policy_id": str(limit.id),
+                    "limit_policy": {
+                        "name": "Replacement limit with inactive rule",
+                        "rules": [
+                            {
+                                "name": "Inactive replacement cap",
+                                "limit_type": "tokens_per_request",
+                                "limit_value": 1,
+                                "interval_unit": "lifetime",
+                                "is_active": False,
+                            }
+                        ],
+                    },
+                }
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    assert result.final_decision == "allow"
+    assert all(item.policy_id != limit.id for item in result.limit_results)
+    assert not result.warnings
+
+
+async def test_policy_simulation_limit_replace_preserves_multiple_assignment_ids(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    limit = await policies_facade.create_limit_policy(
+        payload=CreateLimitPolicyRequest(
+            name="Shared multi-assignment limit",
+            rules=[
+                LimitPolicyRuleInput(
+                    name="Requests",
+                    limit_type="requests",
+                    limit_value=100,
+                    interval_unit="day",
+                )
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    org_assignment = await policies_facade.create_policy_assignment(
+        payload=CreatePolicyAssignmentRequest(
+            policy_type="limit",
+            policy_id=limit.policy_id,
+            scope_type="org",
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    project_assignment = await policies_facade.create_policy_assignment(
+        payload=CreatePolicyAssignmentRequest(
+            policy_type="limit",
+            policy_id=limit.policy_id,
+            scope_type="project",
+            project_id=project.id,
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Multi-assignment limit replacement key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            include_guardrails=False,
+            drafts=[
+                {
+                    "kind": "limit",
+                    "operation": "replace_policy",
+                    "existing_policy_id": str(limit.id),
+                    "limit_policy": {
+                        "name": "Replacement shared limit",
+                        "rules": [
+                            {
+                                "name": "Requests",
+                                "limit_type": "requests",
+                                "limit_value": 100,
+                                "interval_unit": "day",
+                            }
+                        ],
+                    },
+                }
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    replacement_results = [
+        item
+        for item in result.limit_results
+        if item.policy_id == limit.id and item.draft_ref == "draft[0]:limit_policy.rules[0]"
+    ]
+    assert {item.assignment_id for item in replacement_results} == {
+        org_assignment.id,
+        project_assignment.id,
+    }
+
+
+async def test_policy_simulation_limit_replacement_warning_depends_on_counter_identity(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    limit = await policies_facade.create_limit_policy(
+        payload=CreateLimitPolicyRequest(
+            name="Warning identity limit",
+            rules=[
+                LimitPolicyRuleInput(
+                    name="Saved requests",
+                    limit_type="requests",
+                    limit_value=100,
+                    interval_unit="day",
+                )
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    await policies_facade.create_policy_assignment(
+        payload=CreatePolicyAssignmentRequest(
+            policy_type="limit",
+            policy_id=limit.policy_id,
+            scope_type="project",
+            project_id=project.id,
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Limit warning identity key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    async def warning_codes_for(draft: dict) -> set[str]:
+        result = await policies_facade.simulate_active_policies(
+            payload=PolicySimulationRequest(
+                target=PolicySimulationTarget(virtual_key_id=created_key.id),
+                requested_model="fast",
+                gateway_endpoint="chat_completions",
+                include_guardrails=False,
+                drafts=[draft],
+            ),
+            scope=scope,
+            db=db_session,
+        )
+        return {warning.code for warning in result.warnings}
+
+    preserved_replacement = {
+        "kind": "limit",
+        "operation": "replace_policy",
+        "existing_policy_id": str(limit.id),
+        "limit_policy": {
+            "name": "Preserved replacement",
+            "rules": [
+                {
+                    "name": "Saved requests",
+                    "limit_type": "requests",
+                    "limit_value": 100,
+                    "interval_unit": "day",
+                }
+            ],
+        },
+    }
+    explicit_assignment = preserved_replacement | {
+        "assignment": {"scope_type": "project", "project_id": str(project.id)}
+    }
+    unmatched_rule = {
+        "kind": "limit",
+        "operation": "replace_policy",
+        "existing_policy_id": str(limit.id),
+        "limit_policy": {
+            "name": "Replacement with new rule",
+            "rules": [
+                {
+                    "name": "Saved requests",
+                    "limit_type": "requests",
+                    "limit_value": 100,
+                    "interval_unit": "day",
+                },
+                {
+                    "name": "New requests",
+                    "limit_type": "requests",
+                    "limit_value": 100,
+                    "interval_unit": "day",
+                },
+            ],
+        },
+    }
+    add_policy = {
+        "kind": "limit",
+        "operation": "add_policy",
+        "assignment": {"scope_type": "project", "project_id": str(project.id)},
+        "limit_policy": {
+            "name": "Added limit",
+            "rules": [
+                {
+                    "name": "Added requests",
+                    "limit_type": "requests",
+                    "limit_value": 100,
+                    "interval_unit": "day",
+                }
+            ],
+        },
+    }
+
+    assert await warning_codes_for(preserved_replacement) == set()
+    assert await warning_codes_for(explicit_assignment) == {
+        "draft_limit_assignment_counter_starts_at_zero"
+    }
+    assert "draft_limit_counter_starts_at_zero" in await warning_codes_for(unmatched_rule)
+    assert await warning_codes_for(add_policy) == {"draft_limit_counter_starts_at_zero"}
+
+
+async def test_policy_simulation_limit_replace_without_assignment_requires_active_policy(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    _access, own_limit = await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        max_tokens_per_request=100,
+        db_session=db_session,
+    )
+    other_project = await keys_facade.create_project(
+        team_id=team.id,
+        payload=CreateProjectRequest(name="Other limit replace project", description=None),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    _other_access, other_limit = await _assign_access_and_limit(
+        scope=scope,
+        team_id=other_project.team_id,
+        project_id=other_project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        max_tokens_per_request=1,
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Limit off-target replace key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            estimated_input_tokens=2,
+            include_guardrails=False,
+            drafts=[
+                {
+                    "kind": "limit",
+                    "operation": "replace_policy",
+                    "existing_policy_id": str(other_limit.id),
+                    "limit_policy": {
+                        "name": "Off-target replacement limit",
+                        "rules": [
+                            {
+                                "name": "Off-target request cap",
+                                "limit_type": "tokens_per_request",
+                                "limit_value": 1,
+                                "interval_unit": "lifetime",
+                            }
+                        ],
+                    },
+                }
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    assert result.final_decision == "allow"
+    assert any(item.policy_id == own_limit.id for item in result.limit_results)
+    assert all(item.draft_ref is None for item in result.limit_results)
+
+
+async def test_policy_simulation_guardrail_draft_blocks_without_events(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Guardrail draft key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            include_limits=False,
+            guardrail_input={"prompt_text": "contains a draft secret"},
+            drafts=[
+                {
+                    "kind": "guardrail",
+                    "operation": "add_policy",
+                    "assignment": {
+                        "scope_type": "project",
+                        "project_id": str(project.id),
+                        "guardrail_assignment_mode": "enforce",
+                    },
+                    "guardrail_policy": {
+                        "name": "Draft guardrail",
+                        "rules": [
+                            {
+                                "rule_type": "prompt_contains",
+                                "effect": "deny",
+                                "values": ["draft secret"],
+                            }
+                        ],
+                    },
+                }
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    events = await guardrails_facade.list_events(scope=scope, db=db_session)
+
+    draft_result = next(item for item in result.guardrail_results if item.draft_ref is not None)
+    assert result.final_decision == "deny"
+    assert result.denied_stage == "request_guardrail"
+    assert draft_result.policy_id is None
+    assert draft_result.rule_id is None
+    assert draft_result.assignment_id is None
+    assert draft_result.decision == "blocked"
+    assert draft_result.draft_ref == "draft[0]:guardrail_policy.rules[0]"
+    assert result.decisions[-1].draft_ref == draft_result.draft_ref
+    assert events == []
+
+
+async def test_policy_simulation_inactive_guardrail_add_drafts_are_skipped(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Inactive guardrail drafts key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    for guardrail_policy in (
+        {
+            "name": "Inactive guardrail draft policy",
+            "is_active": False,
+            "rules": [{"rule_type": "prompt_contains", "effect": "deny", "values": ["secret"]}],
+        },
+        {
+            "name": "Inactive guardrail draft rule",
+            "rules": [
+                {
+                    "rule_type": "prompt_contains",
+                    "effect": "deny",
+                    "values": ["secret"],
+                    "is_active": False,
+                }
+            ],
+        },
+    ):
+        result = await policies_facade.simulate_active_policies(
+            payload=PolicySimulationRequest(
+                target=PolicySimulationTarget(virtual_key_id=created_key.id),
+                requested_model="fast",
+                gateway_endpoint="chat_completions",
+                include_limits=False,
+                guardrail_input={"prompt_text": "secret"},
+                drafts=[
+                    {
+                        "kind": "guardrail",
+                        "operation": "add_policy",
+                        "assignment": {"scope_type": "project", "project_id": str(project.id)},
+                        "guardrail_policy": guardrail_policy,
+                    }
+                ],
+            ),
+            scope=scope,
+            db=db_session,
+        )
+        assert result.final_decision == "allow"
+        assert result.guardrail_results == []
+
+
+async def test_policy_simulation_multiple_guardrail_drafts_have_distinct_refs(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Distinct guardrail refs key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            include_limits=False,
+            guardrail_input={"prompt_text": "alpha beta"},
+            drafts=[
+                {
+                    "kind": "guardrail",
+                    "operation": "add_policy",
+                    "assignment": {"scope_type": "project", "project_id": str(project.id)},
+                    "guardrail_policy": {
+                        "name": "Alpha guardrail",
+                        "rules": [{"rule_type": "prompt_contains", "values": ["alpha"]}],
+                    },
+                },
+                {
+                    "kind": "guardrail",
+                    "operation": "add_policy",
+                    "assignment": {"scope_type": "project", "project_id": str(project.id)},
+                    "guardrail_policy": {
+                        "name": "Beta guardrail",
+                        "rules": [{"rule_type": "prompt_contains", "values": ["beta"]}],
+                    },
+                },
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    draft_refs = [item.draft_ref for item in result.guardrail_results if item.draft_ref]
+    assert {
+        "draft[0]:guardrail_policy.rules[0]",
+        "draft[1]:guardrail_policy.rules[0]",
+    } <= set(draft_refs)
+
+
+async def test_policy_simulation_guardrail_replace_removes_saved_policy(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    guardrail = await guardrails_facade.create_policy(
+        payload=CreateGuardrailPolicyRequest(
+            name="Saved guardrail",
+            rules=[
+                GuardrailRuleInput(rule_type="prompt_contains", effect="deny", values=["secret"])
+            ],
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    await guardrails_facade.create_assignment(
+        payload=CreateGuardrailAssignmentRequest(
+            policy_id=guardrail.id,
+            scope_type="team",
+            team_id=team.id,
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Guardrail replace key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            include_limits=False,
+            guardrail_input={"prompt_text": "contains a secret"},
+            drafts=[
+                {
+                    "kind": "guardrail",
+                    "operation": "replace_policy",
+                    "existing_policy_id": str(guardrail.id),
+                    "guardrail_policy": {
+                        "name": "Replacement guardrail",
+                        "rules": [
+                            {
+                                "rule_type": "prompt_contains",
+                                "effect": "deny",
+                                "values": ["other"],
+                            }
+                        ],
+                    },
+                }
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    assert result.final_decision == "allow"
+    assert all(item.policy_id != guardrail.id for item in result.guardrail_results)
+    assert any(
+        item.draft_ref == "draft[0]:guardrail_policy.rules[0]" for item in result.guardrail_results
+    )
+
+
+async def test_policy_simulation_inactive_guardrail_replacement_removes_saved_policy(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    guardrail = await guardrails_facade.create_policy(
+        payload=CreateGuardrailPolicyRequest(
+            name="Saved active guardrail",
+            rules=[
+                GuardrailRuleInput(rule_type="prompt_contains", effect="deny", values=["secret"])
+            ],
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    await guardrails_facade.create_assignment(
+        payload=CreateGuardrailAssignmentRequest(
+            policy_id=guardrail.id,
+            scope_type="team",
+            team_id=team.id,
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Inactive guardrail replacement key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            include_limits=False,
+            guardrail_input={"prompt_text": "secret"},
+            drafts=[
+                {
+                    "kind": "guardrail",
+                    "operation": "replace_policy",
+                    "existing_policy_id": str(guardrail.id),
+                    "guardrail_policy": {
+                        "name": "Inactive replacement guardrail",
+                        "is_active": False,
+                        "rules": [
+                            {
+                                "rule_type": "prompt_contains",
+                                "effect": "deny",
+                                "values": ["secret"],
+                            }
+                        ],
+                    },
+                }
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    assert result.final_decision == "allow"
+    assert result.guardrail_results == []
+
+
+async def test_policy_simulation_guardrail_replace_without_assignment_requires_active_policy(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    other_project = await keys_facade.create_project(
+        team_id=team.id,
+        payload=CreateProjectRequest(name="Other guardrail replace project", description=None),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    guardrail = await guardrails_facade.create_policy(
+        payload=CreateGuardrailPolicyRequest(
+            name="Off-target saved guardrail",
+            rules=[
+                GuardrailRuleInput(rule_type="prompt_contains", effect="deny", values=["secret"])
+            ],
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    await guardrails_facade.create_assignment(
+        payload=CreateGuardrailAssignmentRequest(
+            policy_id=guardrail.id,
+            scope_type="project",
+            project_id=other_project.id,
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Guardrail off-target replace key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            include_limits=False,
+            guardrail_input={"prompt_text": "contains replacement secret"},
+            drafts=[
+                {
+                    "kind": "guardrail",
+                    "operation": "replace_policy",
+                    "existing_policy_id": str(guardrail.id),
+                    "guardrail_policy": {
+                        "name": "Off-target replacement guardrail",
+                        "rules": [
+                            {
+                                "rule_type": "prompt_contains",
+                                "effect": "deny",
+                                "values": ["replacement secret"],
+                            }
+                        ],
+                    },
+                }
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    assert result.final_decision == "allow"
+    assert result.guardrail_results == []
+
+
+async def test_policy_simulation_guardrail_draft_priority_interleaves_with_saved(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    guardrail = await guardrails_facade.create_policy(
+        payload=CreateGuardrailPolicyRequest(
+            name="Low priority saved guardrail",
+            rules=[
+                GuardrailRuleInput(
+                    rule_type="prompt_contains",
+                    effect="deny",
+                    values=["saved secret"],
+                    priority=100,
+                )
+            ],
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    await guardrails_facade.create_assignment(
+        payload=CreateGuardrailAssignmentRequest(
+            policy_id=guardrail.id,
+            scope_type="team",
+            team_id=team.id,
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Guardrail priority key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            include_limits=False,
+            guardrail_input={"prompt_text": "draft secret and saved secret"},
+            drafts=[
+                {
+                    "kind": "guardrail",
+                    "operation": "add_policy",
+                    "assignment": {"scope_type": "project", "project_id": str(project.id)},
+                    "guardrail_policy": {
+                        "name": "High priority draft guardrail",
+                        "rules": [
+                            {
+                                "rule_type": "prompt_contains",
+                                "effect": "deny",
+                                "values": ["draft secret"],
+                                "priority": 1,
+                            }
+                        ],
+                    },
+                }
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    first_block = next(item for item in result.guardrail_results if item.decision == "blocked")
+    assert first_block.draft_ref == "draft[0]:guardrail_policy.rules[0]"
+    first_guardrail_decision = next(
+        decision for decision in result.decisions if decision.decision_type == "guardrail"
+    )
+    assert first_guardrail_decision.draft_ref == "draft[0]:guardrail_policy.rules[0]"
+
+    tie_result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            include_limits=False,
+            guardrail_input={"prompt_text": "draft secret and saved secret"},
+            drafts=[
+                {
+                    "kind": "guardrail",
+                    "operation": "add_policy",
+                    "assignment": {"scope_type": "project", "project_id": str(project.id)},
+                    "guardrail_policy": {
+                        "name": "Same priority draft guardrail",
+                        "rules": [
+                            {
+                                "rule_type": "prompt_contains",
+                                "effect": "deny",
+                                "values": ["draft secret"],
+                                "priority": 100,
+                            }
+                        ],
+                    },
+                }
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+
+    first_tie_block = next(
+        item for item in tie_result.guardrail_results if item.decision == "blocked"
+    )
+    assert first_tie_block.policy_id == guardrail.id
+    assert first_tie_block.draft_ref is None
+    first_tie_decision = next(
+        decision for decision in tie_result.decisions if decision.decision_type == "guardrail"
+    )
+    assert first_tie_decision.policy_id == guardrail.id
+    assert first_tie_decision.draft_ref is None
+
+
+async def test_policy_simulation_with_drafts_writes_no_side_effect_rows(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="No side effects draft key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    before = await _draft_side_effect_counts(db_session)
+
+    result = await policies_facade.simulate_active_policies(
+        payload=PolicySimulationRequest(
+            target=PolicySimulationTarget(virtual_key_id=created_key.id),
+            requested_model="fast",
+            gateway_endpoint="chat_completions",
+            estimated_input_tokens=2,
+            guardrail_input={"prompt_text": "contains a draft secret"},
+            drafts=[
+                {
+                    "kind": "access",
+                    "operation": "add_policy",
+                    "assignment": {"scope_type": "project", "project_id": str(project.id)},
+                    "access_policy": {
+                        "name": "Draft access no side effects",
+                        "public_models": [
+                            {
+                                "public_model_name": "fast",
+                                "routing_mode": "single_route",
+                                "candidates": [
+                                    {
+                                        "provider_id": str(provider.id),
+                                        "credential_pool_id": str(pool.id),
+                                        "model_offering_id": str(fast_model.id),
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                },
+                {
+                    "kind": "limit",
+                    "operation": "add_policy",
+                    "assignment": {"scope_type": "project", "project_id": str(project.id)},
+                    "limit_policy": {
+                        "name": "Draft limit no side effects",
+                        "rules": [
+                            {
+                                "name": "Draft request cap",
+                                "limit_type": "tokens_per_request",
+                                "limit_value": 1,
+                                "interval_unit": "lifetime",
+                            }
+                        ],
+                    },
+                },
+                {
+                    "kind": "guardrail",
+                    "operation": "add_policy",
+                    "assignment": {
+                        "scope_type": "project",
+                        "project_id": str(project.id),
+                        "guardrail_assignment_mode": "enforce",
+                    },
+                    "guardrail_policy": {
+                        "name": "Draft guardrail no side effects",
+                        "rules": [
+                            {
+                                "rule_type": "prompt_contains",
+                                "effect": "deny",
+                                "values": ["draft secret"],
+                            }
+                        ],
+                    },
+                },
+            ],
+        ),
+        scope=scope,
+        db=db_session,
+    )
+    after = await _draft_side_effect_counts(db_session)
+
+    assert result.final_decision == "deny"
+    assert any(attempt.draft_ref for attempt in result.route_attempts)
+    assert any(item.draft_ref for item in result.limit_results)
+    assert any(item.draft_ref for item in result.guardrail_results)
+    assert after == before
+
+
+async def test_runtime_limit_evaluator_reports_denial_without_reserving(
+    db_session: AsyncSession,
+) -> None:
+    (
+        actor,
+        scope,
+        _team,
+        project,
+        provider,
+        pool,
+        fast_model,
+        _large_model,
+    ) = await _create_project_pool_and_models(db_session)
+    await _assign_access_and_limit(
+        scope=scope,
+        team_id=project.team_id,
+        project_id=project.id,
+        provider_id=provider.id,
+        pool_id=pool.id,
+        model_ids=[fast_model.id],
+        max_tokens_per_request=1,
+        db_session=db_session,
+    )
+    created_key = await keys_facade.create_virtual_key(
+        project_id=project.id,
+        payload=CreateVirtualKeyRequest(name="Evaluator key"),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    resolved = await keys_facade.resolve_access(
+        payload=ResolveAccessRequest(raw_key=created_key.key, requested_model="fast"),
+        db=db_session,
+    )
+
+    evaluation = await evaluate_runtime_limits_readonly(
+        payload=RuntimeLimitEvaluationInput(
+            resolved=resolved,
+            estimated_input_tokens=2,
+            requested_output_tokens=None,
+            estimated_cost_cents=0,
+            estimated_cost_micro_cents=0,
+            limit_types={"tokens_per_request"},
+        ),
+        db=db_session,
+    )
+
+    assert evaluation.denial is not None
+    assert evaluation.denial.reason_code == "request_token_limit"
+    assert evaluation.denial.current_usage == 2
+    assert evaluation.denial.active_reserved_usage == 0
+    assert evaluation.denial.attempted_usage == 2
 
 
 async def test_resolve_access_plan_filters_candidates_by_gateway_endpoint(
@@ -2761,7 +6418,8 @@ async def test_policy_assignment_can_target_shared_policy_id(
 
     assert access.policy_id is not None
     assert assignment.policy_id == access.policy_id
-    assert assignment.access_policy_id == access.id
+    assert "access_policy_id" not in assignment.model_dump()
+    assert "limit_policy_id" not in assignment.model_dump()
     assert assignment.scope_target_key == f"project:{project.id}"
 
 
@@ -2838,12 +6496,12 @@ async def test_delete_access_policy_closes_assignments_and_preserves_trace_fk(
         actor=actor,
     )
 
-    stored_assignment = await policies_repository.get_policy_assignment(
+    stored_assignment = await policy_kernel_repository.get_policy_assignment(
         assignment_id=assignment.id,
         org_id=scope.org_id,
         db=db_session,
     )
-    active_assignments = await policies_repository.list_active_policy_assignments_for_targets(
+    active_assignments = await policy_kernel_repository.list_active_policy_assignments_for_targets(
         org_id=scope.org_id,
         team_id=project.team_id,
         project_id=project.id,
@@ -2890,12 +6548,12 @@ async def test_delete_limit_policy_closes_assignments_without_deleting_history(
         actor=actor,
     )
 
-    stored_assignment = await policies_repository.get_policy_assignment(
+    stored_assignment = await policy_kernel_repository.get_policy_assignment(
         assignment_id=assignment.id,
         org_id=scope.org_id,
         db=db_session,
     )
-    active_assignments = await policies_repository.list_active_policy_assignments_for_targets(
+    active_assignments = await policy_kernel_repository.list_active_policy_assignments_for_targets(
         org_id=scope.org_id,
         team_id=project.team_id,
         project_id=project.id,
@@ -3691,7 +7349,7 @@ async def test_limit_policy_rule_update_creates_new_revision(
         org_id=scope.org_id,
         db=db_session,
     )
-    active_revision = await policies_repository.get_active_policy_revision(
+    active_revision = await policy_kernel_repository.get_active_policy_revision(
         org_id=scope.org_id,
         policy_id=policy.policy_id,
         db=db_session,
@@ -3738,7 +7396,7 @@ async def test_limit_policy_rule_update_targets_copied_rule_by_source_id(
         scope=scope,
         db=db_session,
     )
-    active_revision = await policies_repository.get_active_policy_revision(
+    active_revision = await policy_kernel_repository.get_active_policy_revision(
         org_id=scope.org_id,
         policy_id=policy.policy_id,
         db=db_session,
@@ -3796,7 +7454,7 @@ async def test_limit_policy_rule_delete_targets_copied_rule_by_source_id(
         scope=scope,
         db=db_session,
     )
-    active_revision = await policies_repository.get_active_policy_revision(
+    active_revision = await policy_kernel_repository.get_active_policy_revision(
         org_id=scope.org_id,
         policy_id=policy.policy_id,
         db=db_session,

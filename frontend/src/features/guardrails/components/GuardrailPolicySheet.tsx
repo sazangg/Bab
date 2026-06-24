@@ -1,4 +1,4 @@
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Route, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,6 +47,7 @@ export function GuardrailPolicySheet({
   setAssignmentForm,
   assignmentScopeOptions,
   onSubmit,
+  onPreview,
   isPending,
 }: {
   open: boolean;
@@ -58,6 +59,7 @@ export function GuardrailPolicySheet({
   setAssignmentForm: (form: AssignmentFormState) => void;
   assignmentScopeOptions: ScopeOptions;
   onSubmit: () => void;
+  onPreview: () => void;
   isPending: boolean;
 }) {
   return (
@@ -210,6 +212,10 @@ export function GuardrailPolicySheet({
           </div>
         </div>
         <SheetFooter>
+          <Button variant="outline" onClick={onPreview} disabled={isPending}>
+            <Route data-icon="inline-start" />
+            Preview in simulation
+          </Button>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>
             Cancel
           </Button>

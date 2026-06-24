@@ -11,7 +11,7 @@ export interface GuardrailRuleResponse {
   id: string;
   org_id: string;
   policy_id: string;
-  policy_revision_id?: string | null;
+  policy_revision_id: string;
   rule_type: string;
   effect: string;
   phase: string;

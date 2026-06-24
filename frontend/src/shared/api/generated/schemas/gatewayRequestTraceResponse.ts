@@ -7,11 +7,13 @@
 import type { GatewayPolicyDecisionTrace } from './gatewayPolicyDecisionTrace';
 import type { GatewayRequestTraceSummary } from './gatewayRequestTraceSummary';
 import type { GatewayRouteAttemptTrace } from './gatewayRouteAttemptTrace';
+import type { GatewayTraceTimelineItem } from './gatewayTraceTimelineItem';
 import type { GuardrailEventTrace } from './guardrailEventTrace';
 import type { UsageRecordResponse } from './usageRecordResponse';
 
 export interface GatewayRequestTraceResponse {
   request: GatewayRequestTraceSummary;
+  timeline?: GatewayTraceTimelineItem[];
   route_attempts?: GatewayRouteAttemptTrace[];
   policy_decisions?: GatewayPolicyDecisionTrace[];
   guardrail_events?: GuardrailEventTrace[];

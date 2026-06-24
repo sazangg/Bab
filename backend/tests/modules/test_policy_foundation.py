@@ -7,23 +7,55 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.auth.internal.models import Organization, Team
 from app.modules.policies.internal import repository
-from app.modules.policies.internal.models import AccessPolicyPublicModel
+from app.modules.policies.internal.models import (
+    AccessPolicy,
+    AccessPolicyPublicModel,
+    LimitPolicy,
+    LimitPolicyRule,
+)
+from app.modules.policy_kernel import assignment_scope_target_key
+from app.modules.policy_kernel import repository as policy_kernel_repository
+from app.modules.policy_kernel.models import PolicyAssignment
 from app.modules.providers.internal.models import CredentialPool, ModelOffering, Provider
 from app.modules.usage.internal.models import GatewayRequest, GatewayRouteAttempt
+
+
+async def _create_shared_policy(
+    db_session: AsyncSession,
+    *,
+    org_id,
+    kind: str,
+    name: str,
+):
+    return await policy_kernel_repository.create_policy(
+        org_id=org_id,
+        kind=kind,
+        name=name,
+        description=None,
+        is_active=True,
+        db=db_session,
+    )
+
+
+async def _create_revision(db_session: AsyncSession, *, org_id, policy_id, status: str = "active"):
+    return await policy_kernel_repository.create_policy_revision(
+        org_id=org_id,
+        policy_id=policy_id,
+        revision_number=1,
+        status=status,
+        created_by=None,
+        db=db_session,
+    )
 
 
 async def test_shared_policy_revision_active_uniqueness(db_session: AsyncSession) -> None:
     org = Organization(name="Shared Policy Org", slug=f"shared-policy-{uuid4()}")
     db_session.add(org)
     await db_session.flush()
-    policy = await repository.create_policy(
-        org_id=org.id,
-        kind="access",
-        name="Access policy",
-        description=None,
-        db=db_session,
+    policy = await _create_shared_policy(
+        db_session, org_id=org.id, kind="access", name="Access policy"
     )
-    active = await repository.create_policy_revision(
+    active = await policy_kernel_repository.create_policy_revision(
         org_id=org.id,
         policy_id=policy.id,
         revision_number=1,
@@ -31,7 +63,7 @@ async def test_shared_policy_revision_active_uniqueness(db_session: AsyncSession
         created_by=None,
         db=db_session,
     )
-    await repository.create_policy_revision(
+    await policy_kernel_repository.create_policy_revision(
         org_id=org.id,
         policy_id=policy.id,
         revision_number=2,
@@ -41,7 +73,7 @@ async def test_shared_policy_revision_active_uniqueness(db_session: AsyncSession
     )
 
     assert (
-        await repository.get_active_policy_revision(
+        await policy_kernel_repository.get_active_policy_revision(
             org_id=org.id,
             policy_id=policy.id,
             db=db_session,
@@ -49,7 +81,7 @@ async def test_shared_policy_revision_active_uniqueness(db_session: AsyncSession
     ).id == active.id
 
     with pytest.raises(IntegrityError):
-        await repository.create_policy_revision(
+        await policy_kernel_repository.create_policy_revision(
             org_id=org.id,
             policy_id=policy.id,
             revision_number=3,
@@ -65,18 +97,16 @@ async def test_sqlite_fk_rejects_shared_policy_id_in_legacy_access_policy_fk(
     org = Organization(name="Legacy FK Org", slug=f"legacy-fk-{uuid4()}")
     db_session.add(org)
     await db_session.flush()
-    policy = await repository.create_policy(
-        org_id=org.id,
-        kind="access",
-        name="Shared access",
-        description=None,
-        db=db_session,
+    policy = await _create_shared_policy(
+        db_session, org_id=org.id, kind="access", name="Shared access"
     )
+    revision = await _create_revision(db_session, org_id=org.id, policy_id=policy.id)
 
     db_session.add(
         AccessPolicyPublicModel(
             org_id=org.id,
             access_policy_id=policy.id,
+            policy_revision_id=revision.id,
             public_model_name="fast",
         )
     )
@@ -91,15 +121,12 @@ async def test_sqlite_fk_rejects_legacy_access_policy_id_in_shared_policy_fk(
     org = Organization(name="Shared FK Org", slug=f"shared-fk-{uuid4()}")
     db_session.add(org)
     await db_session.flush()
-    policy = await repository.create_policy(
-        org_id=org.id,
-        kind="access",
-        name="Shared access",
-        description=None,
-        db=db_session,
+    policy = await _create_shared_policy(
+        db_session, org_id=org.id, kind="access", name="Shared access"
     )
     access_policy = await repository.create_access_policy(
         org_id=org.id,
+        policy_id=policy.id,
         name="Legacy access",
         description=None,
         is_active=True,
@@ -134,17 +161,13 @@ async def test_shared_policy_assignment_open_scope_uniqueness(
     org = Organization(name="Shared Assignment Org", slug=f"shared-assignment-{uuid4()}")
     db_session.add(org)
     await db_session.flush()
-    policy = await repository.create_policy(
-        org_id=org.id,
-        kind="access",
-        name="Access policy",
-        description=None,
-        db=db_session,
+    policy = await _create_shared_policy(
+        db_session, org_id=org.id, kind="access", name="Access policy"
     )
     team = Team(org_id=org.id, name="Assignment Team", slug=f"assignment-team-{uuid4()}")
     db_session.add(team)
     await db_session.flush()
-    team_target = repository.policy_assignment_scope_target_key(
+    team_target = assignment_scope_target_key(
         scope_type="team",
         team_id=team.id,
         project_id=None,
@@ -153,7 +176,7 @@ async def test_shared_policy_assignment_open_scope_uniqueness(
 
     assert team_target == f"team:{team.id}"
     assert (
-        repository.policy_assignment_scope_target_key(
+        assignment_scope_target_key(
             scope_type="org",
             team_id=None,
             project_id=None,
@@ -162,14 +185,14 @@ async def test_shared_policy_assignment_open_scope_uniqueness(
         == "org"
     )
     with pytest.raises(ValueError):
-        repository.policy_assignment_scope_target_key(
+        assignment_scope_target_key(
             scope_type="project",
             team_id=None,
             project_id=None,
             virtual_key_id=None,
         )
 
-    await repository.create_policy_assignment(
+    await policy_kernel_repository.create_policy_assignment(
         org_id=org.id,
         values={
             "policy_id": policy.id,
@@ -183,7 +206,7 @@ async def test_shared_policy_assignment_open_scope_uniqueness(
         },
         db=db_session,
     )
-    await repository.create_policy_assignment(
+    await policy_kernel_repository.create_policy_assignment(
         org_id=org.id,
         values={
             "policy_id": policy.id,
@@ -198,7 +221,7 @@ async def test_shared_policy_assignment_open_scope_uniqueness(
     )
 
     with pytest.raises(IntegrityError):
-        await repository.create_policy_assignment(
+        await policy_kernel_repository.create_policy_assignment(
             org_id=org.id,
             values={
                 "policy_id": policy.id,
@@ -213,26 +236,118 @@ async def test_shared_policy_assignment_open_scope_uniqueness(
         )
 
 
+async def test_access_policy_requires_shared_policy_link(db_session: AsyncSession) -> None:
+    org = Organization(name="Access Link Org", slug=f"access-link-{uuid4()}")
+    db_session.add(org)
+    await db_session.flush()
+    db_session.add(
+        AccessPolicy(
+            org_id=org.id,
+            name="Missing shared policy",
+            description=None,
+            is_active=True,
+        )
+    )
+
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+
+
+async def test_limit_policy_requires_shared_policy_link(db_session: AsyncSession) -> None:
+    org = Organization(name="Limit Link Org", slug=f"limit-link-{uuid4()}")
+    db_session.add(org)
+    await db_session.flush()
+    db_session.add(
+        LimitPolicy(
+            org_id=org.id,
+            name="Missing shared policy",
+            description=None,
+            is_active=True,
+        )
+    )
+
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+
+
+async def test_access_public_model_requires_policy_revision_link(
+    db_session: AsyncSession,
+) -> None:
+    org = Organization(name="Public Model Link Org", slug=f"public-model-link-{uuid4()}")
+    db_session.add(org)
+    await db_session.flush()
+    db_session.add(
+        AccessPolicyPublicModel(
+            org_id=org.id,
+            public_model_name="fast",
+        )
+    )
+
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+
+
+async def test_limit_rule_requires_policy_revision_link(db_session: AsyncSession) -> None:
+    org = Organization(name="Limit Rule Link Org", slug=f"limit-rule-link-{uuid4()}")
+    db_session.add(org)
+    await db_session.flush()
+    shared_policy = await _create_shared_policy(
+        db_session, org_id=org.id, kind="limit", name="Request limits"
+    )
+    limit_policy = await repository.create_limit_policy(
+        org_id=org.id,
+        policy_id=shared_policy.id,
+        values={"name": "Request limits", "description": None, "is_active": True},
+        db=db_session,
+    )
+    db_session.add(
+        LimitPolicyRule(
+            org_id=org.id,
+            limit_policy_id=limit_policy.id,
+            name="Missing revision",
+            limit_type="requests",
+            limit_value=100,
+        )
+    )
+
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+
+
+async def test_policy_assignment_requires_shared_policy_link(db_session: AsyncSession) -> None:
+    org = Organization(name="Assignment Link Org", slug=f"assignment-link-{uuid4()}")
+    db_session.add(org)
+    await db_session.flush()
+    team = Team(org_id=org.id, name="Assignment Link Team", slug=f"assignment-link-{uuid4()}")
+    db_session.add(team)
+    await db_session.flush()
+    db_session.add(
+        PolicyAssignment(
+            org_id=org.id,
+            policy_type="access",
+            scope_type="team",
+            team_id=team.id,
+            scope_target_key=f"team:{team.id}",
+            mode="enforce",
+            is_active=True,
+        )
+    )
+
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+
+
 async def test_access_public_models_can_belong_to_policy_revision(
     db_session: AsyncSession,
 ) -> None:
     org = Organization(name="Access Revision Org", slug=f"access-revision-{uuid4()}")
     db_session.add(org)
     await db_session.flush()
-    policy = await repository.create_policy(
-        org_id=org.id,
-        kind="access",
-        name="Access policy",
-        description=None,
-        db=db_session,
+    policy = await _create_shared_policy(
+        db_session, org_id=org.id, kind="access", name="Access policy"
     )
-    revision = await repository.create_policy_revision(
-        org_id=org.id,
-        policy_id=policy.id,
-        revision_number=1,
-        status="draft",
-        created_by=None,
-        db=db_session,
+    revision = await _create_revision(
+        db_session, org_id=org.id, policy_id=policy.id, status="draft"
     )
 
     public_model = await repository.create_access_policy_public_model(
@@ -285,20 +400,11 @@ async def test_revision_route_candidates_store_provider_model_offering_id(
     org = Organization(name="Access Route Revision Org", slug=f"access-route-{uuid4()}")
     db_session.add(org)
     await db_session.flush()
-    policy = await repository.create_policy(
-        org_id=org.id,
-        kind="access",
-        name="Access policy",
-        description=None,
-        db=db_session,
+    policy = await _create_shared_policy(
+        db_session, org_id=org.id, kind="access", name="Access policy"
     )
-    revision = await repository.create_policy_revision(
-        org_id=org.id,
-        policy_id=policy.id,
-        revision_number=1,
-        status="draft",
-        created_by=None,
-        db=db_session,
+    revision = await _create_revision(
+        db_session, org_id=org.id, policy_id=policy.id, status="draft"
     )
     provider = Provider(
         org_id=org.id,
@@ -359,8 +465,13 @@ async def test_limit_rule_matchers_and_partitions_are_rule_scoped(
     org = Organization(name="Limit Matcher Org", slug=f"limit-matcher-{uuid4()}")
     db_session.add(org)
     await db_session.flush()
+    shared_policy = await _create_shared_policy(
+        db_session, org_id=org.id, kind="limit", name="Request limits"
+    )
+    revision = await _create_revision(db_session, org_id=org.id, policy_id=shared_policy.id)
     policy = await repository.create_limit_policy(
         org_id=org.id,
+        policy_id=shared_policy.id,
         values={
             "name": "Request limits",
             "description": None,
@@ -379,6 +490,7 @@ async def test_limit_rule_matchers_and_partitions_are_rule_scoped(
             "interval_count": 1,
             "is_active": True,
         },
+        policy_revision_id=revision.id,
         db=db_session,
     )
 
@@ -471,8 +583,13 @@ async def test_limit_rule_partitions_are_unique_per_rule(
     org = Organization(name="Partition Unique Org", slug=f"partition-unique-{uuid4()}")
     db_session.add(org)
     await db_session.flush()
+    shared_policy = await _create_shared_policy(
+        db_session, org_id=org.id, kind="limit", name="Limits"
+    )
+    revision = await _create_revision(db_session, org_id=org.id, policy_id=shared_policy.id)
     policy = await repository.create_limit_policy(
         org_id=org.id,
+        policy_id=shared_policy.id,
         values={"name": "Limits", "description": None, "is_active": True},
         db=db_session,
     )
@@ -487,6 +604,7 @@ async def test_limit_rule_partitions_are_unique_per_rule(
             "interval_count": 1,
             "is_active": True,
         },
+        policy_revision_id=revision.id,
         db=db_session,
     )
     await repository.create_limit_policy_rule_partition(

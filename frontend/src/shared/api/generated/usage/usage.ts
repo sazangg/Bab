@@ -21,12 +21,14 @@ import type {
 
 import type {
   ExportUsageRecordsApiV1UsageRecordsExportGetParams,
+  GatewayRequestTraceListResponse,
   GatewayRequestTraceResponse,
   GetOrganizationUsageSummaryApiV1UsageSummaryGetParams,
   GetOrganizationUsageTimeseriesApiV1UsageTimeseriesGetParams,
   GetSpendInsightsApiV1UsageSpendInsightsGetParams,
   GetUsageFilterOptionsApiV1UsageFilterOptionsGetParams,
   HTTPValidationError,
+  ListGatewayRequestsApiV1UsageRequestsGetParams,
   ListUsageRecordsApiV1UsageRecordsGetParams,
   OrganizationUsagePage,
   SpendInsights,
@@ -281,6 +283,132 @@ export function useListUsageRecordsApiV1UsageRecordsGet<TData = Awaited<ReturnTy
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getListUsageRecordsApiV1UsageRecordsGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+export type listGatewayRequestsApiV1UsageRequestsGetResponse200 = {
+  data: GatewayRequestTraceListResponse
+  status: 200
+}
+
+export type listGatewayRequestsApiV1UsageRequestsGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type listGatewayRequestsApiV1UsageRequestsGetResponseSuccess = (listGatewayRequestsApiV1UsageRequestsGetResponse200) & {
+  headers: Headers;
+};
+export type listGatewayRequestsApiV1UsageRequestsGetResponseError = (listGatewayRequestsApiV1UsageRequestsGetResponse422) & {
+  headers: Headers;
+};
+
+export type listGatewayRequestsApiV1UsageRequestsGetResponse = (listGatewayRequestsApiV1UsageRequestsGetResponseSuccess | listGatewayRequestsApiV1UsageRequestsGetResponseError)
+
+export const getListGatewayRequestsApiV1UsageRequestsGetUrl = (params?: ListGatewayRequestsApiV1UsageRequestsGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/usage/requests?${stringifiedParams}` : `/api/v1/usage/requests`
+}
+
+/**
+ * @summary List Gateway Requests
+ */
+export const listGatewayRequestsApiV1UsageRequestsGet = async (params?: ListGatewayRequestsApiV1UsageRequestsGetParams, options?: RequestInit): Promise<listGatewayRequestsApiV1UsageRequestsGetResponse> => {
+
+  return apiMutator<listGatewayRequestsApiV1UsageRequestsGetResponse>(getListGatewayRequestsApiV1UsageRequestsGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListGatewayRequestsApiV1UsageRequestsGetQueryKey = (params?: ListGatewayRequestsApiV1UsageRequestsGetParams,) => {
+    return [
+    `/api/v1/usage/requests`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListGatewayRequestsApiV1UsageRequestsGetQueryOptions = <TData = Awaited<ReturnType<typeof listGatewayRequestsApiV1UsageRequestsGet>>, TError = HTTPValidationError>(params?: ListGatewayRequestsApiV1UsageRequestsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listGatewayRequestsApiV1UsageRequestsGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListGatewayRequestsApiV1UsageRequestsGetQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listGatewayRequestsApiV1UsageRequestsGet>>> = ({ signal }) => listGatewayRequestsApiV1UsageRequestsGet(params, { signal });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listGatewayRequestsApiV1UsageRequestsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListGatewayRequestsApiV1UsageRequestsGetQueryResult = NonNullable<Awaited<ReturnType<typeof listGatewayRequestsApiV1UsageRequestsGet>>>
+export type ListGatewayRequestsApiV1UsageRequestsGetQueryError = HTTPValidationError
+
+
+export function useListGatewayRequestsApiV1UsageRequestsGet<TData = Awaited<ReturnType<typeof listGatewayRequestsApiV1UsageRequestsGet>>, TError = HTTPValidationError>(
+ params: undefined |  ListGatewayRequestsApiV1UsageRequestsGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listGatewayRequestsApiV1UsageRequestsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listGatewayRequestsApiV1UsageRequestsGet>>,
+          TError,
+          Awaited<ReturnType<typeof listGatewayRequestsApiV1UsageRequestsGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListGatewayRequestsApiV1UsageRequestsGet<TData = Awaited<ReturnType<typeof listGatewayRequestsApiV1UsageRequestsGet>>, TError = HTTPValidationError>(
+ params?: ListGatewayRequestsApiV1UsageRequestsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listGatewayRequestsApiV1UsageRequestsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listGatewayRequestsApiV1UsageRequestsGet>>,
+          TError,
+          Awaited<ReturnType<typeof listGatewayRequestsApiV1UsageRequestsGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListGatewayRequestsApiV1UsageRequestsGet<TData = Awaited<ReturnType<typeof listGatewayRequestsApiV1UsageRequestsGet>>, TError = HTTPValidationError>(
+ params?: ListGatewayRequestsApiV1UsageRequestsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listGatewayRequestsApiV1UsageRequestsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List Gateway Requests
+ */
+
+export function useListGatewayRequestsApiV1UsageRequestsGet<TData = Awaited<ReturnType<typeof listGatewayRequestsApiV1UsageRequestsGet>>, TError = HTTPValidationError>(
+ params?: ListGatewayRequestsApiV1UsageRequestsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listGatewayRequestsApiV1UsageRequestsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListGatewayRequestsApiV1UsageRequestsGetQueryOptions(params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

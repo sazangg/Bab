@@ -13,6 +13,7 @@ export interface UsageRecordResponse {
   access_policy_id?: string | null;
   access_policy_route_id?: string | null;
   gateway_request_id?: string | null;
+  route_attempt_id?: string | null;
   public_model_id?: string | null;
   route_candidate_id?: string | null;
   limit_policy_ids?: string[] | null;
