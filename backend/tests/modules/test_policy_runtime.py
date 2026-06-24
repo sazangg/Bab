@@ -7,14 +7,6 @@ from sqlalchemy import event, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.routes.projects import create_virtual_key as create_virtual_key_route
-from app.api.v1.routes.proxy import (
-    ProxyLimitExceededError,
-    _create_gateway_request,
-    _enforce_limit_policies,
-    _record_gateway_access_decision,
-    _record_gateway_route_attempt_started,
-    _record_proxy_request,
-)
 from app.core.database import Scope
 from app.modules.activity.internal.models import ActivityEvent
 from app.modules.auth.internal.models import AuditEvent, Organization, Team, User
@@ -23,6 +15,9 @@ from app.modules.auth.schemas import (
     AuthenticatedTeamMembership,
     AuthenticatedUser,
 )
+from app.modules.gateway import accounting as gateway_accounting
+from app.modules.gateway import limits as gateway_limits
+from app.modules.gateway import tracing as gateway_tracing
 from app.modules.guardrails import facade as guardrails_facade
 from app.modules.guardrails.internal.models import GuardrailEvent, GuardrailPolicy, GuardrailRule
 from app.modules.guardrails.schemas import (
@@ -580,18 +575,18 @@ async def test_facade_assignment_resolves_active_revision_and_traces_it(
     assert resolved.access_policy_revision_id == active_revision.id
     assert resolved.access_policy_assignment_id == assignment.id
 
-    gateway_request_id = await _create_gateway_request(
+    gateway_request_id = await gateway_tracing.create_gateway_request(
         resolved=resolved,
         gateway_endpoint="chat_completions",
         db=db_session,
     )
     assert gateway_request_id is not None
-    await _record_gateway_access_decision(
+    await gateway_tracing.record_gateway_access_decision(
         gateway_request_id=gateway_request_id,
         resolved=resolved,
         db=db_session,
     )
-    route_attempt_id = await _record_gateway_route_attempt_started(
+    route_attempt_id = await gateway_tracing.record_gateway_route_attempt_started(
         gateway_request_id=gateway_request_id,
         resolved=resolved,
         attempt_index=0,
@@ -6601,8 +6596,8 @@ async def test_limit_policy_request_limit_is_enforced(db_session: AsyncSession) 
         db=db_session,
     )
 
-    with pytest.raises(ProxyLimitExceededError) as exc:
-        await _enforce_limit_policies(
+    with pytest.raises(gateway_limits.GatewayLimitDeniedError) as exc:
+        await gateway_limits.enforce_limit_policies(
             resolved=resolved,
             estimated_input_tokens=1,
             requested_output_tokens=1,
@@ -6661,7 +6656,7 @@ async def test_limit_policy_runtime_skips_unmatched_rule_matchers(
         db=db_session,
     )
 
-    reservation_ids = await _enforce_limit_policies(
+    reservation_ids = await gateway_limits.enforce_limit_policies(
         resolved=resolved,
         estimated_input_tokens=1,
         requested_output_tokens=0,
@@ -6725,8 +6720,8 @@ async def test_limit_policy_runtime_enforces_matching_rule_matchers(
     )
     await _record_usage_for_resolved(resolved=resolved, db_session=db_session)
 
-    with pytest.raises(ProxyLimitExceededError) as exc:
-        await _enforce_limit_policies(
+    with pytest.raises(gateway_limits.GatewayLimitDeniedError) as exc:
+        await gateway_limits.enforce_limit_policies(
             resolved=resolved,
             estimated_input_tokens=1,
             requested_output_tokens=0,
@@ -6827,13 +6822,13 @@ async def test_limit_policy_runtime_active_reservations_are_partitioned(
         db=db_session,
     )
 
-    await _enforce_limit_policies(
+    await gateway_limits.enforce_limit_policies(
         resolved=fast_resolved,
         estimated_input_tokens=1,
         requested_output_tokens=0,
         db=db_session,
     )
-    await _enforce_limit_policies(
+    await gateway_limits.enforce_limit_policies(
         resolved=slow_resolved,
         estimated_input_tokens=1,
         requested_output_tokens=0,
@@ -6864,8 +6859,8 @@ async def test_limit_policy_runtime_active_reservations_are_partitioned(
         "fast",
         "slow",
     ]
-    with pytest.raises(ProxyLimitExceededError) as exc:
-        await _enforce_limit_policies(
+    with pytest.raises(gateway_limits.GatewayLimitDeniedError) as exc:
+        await gateway_limits.enforce_limit_policies(
             resolved=fast_resolved,
             estimated_input_tokens=1,
             requested_output_tokens=0,
@@ -6930,7 +6925,7 @@ async def test_limit_policy_runtime_locks_resolved_counter_identity(
 
     monkeypatch.setattr(usage_facade, "acquire_limit_counter_lock", capture_counter_lock)
 
-    await _enforce_limit_policies(
+    await gateway_limits.enforce_limit_policies(
         resolved=resolved,
         estimated_input_tokens=1,
         requested_output_tokens=0,
@@ -6992,13 +6987,13 @@ async def test_limit_policy_runtime_attempt_scoped_dimensions_use_route_attempt_
         db=db_session,
     )
 
-    await _enforce_limit_policies(
+    await gateway_limits.enforce_limit_policies(
         resolved=resolved,
         estimated_input_tokens=1,
         requested_output_tokens=0,
         db=db_session,
     )
-    await _record_proxy_request(
+    await gateway_accounting.record_proxy_request(
         resolved=resolved,
         http_status=200,
         latency_ms=10,
@@ -7111,7 +7106,7 @@ async def test_limit_policy_runtime_committed_usage_is_partitioned(
         payload=ResolveAccessRequest(raw_key=created_key.key, requested_model="slow"),
         db=db_session,
     )
-    await _record_proxy_request(
+    await gateway_accounting.record_proxy_request(
         resolved=fast_resolved,
         http_status=200,
         latency_ms=10,
@@ -7121,15 +7116,15 @@ async def test_limit_policy_runtime_committed_usage_is_partitioned(
         db=db_session,
     )
 
-    await _enforce_limit_policies(
+    await gateway_limits.enforce_limit_policies(
         resolved=slow_resolved,
         estimated_input_tokens=1,
         requested_output_tokens=0,
         db=db_session,
     )
 
-    with pytest.raises(ProxyLimitExceededError) as exc:
-        await _enforce_limit_policies(
+    with pytest.raises(gateway_limits.GatewayLimitDeniedError) as exc:
+        await gateway_limits.enforce_limit_policies(
             resolved=fast_resolved,
             estimated_input_tokens=1,
             requested_output_tokens=0,
@@ -7174,7 +7169,7 @@ async def test_tokens_per_request_limit_does_not_create_reservation(
         db=db_session,
     )
 
-    reservation_ids = await _enforce_limit_policies(
+    reservation_ids = await gateway_limits.enforce_limit_policies(
         resolved=resolved,
         estimated_input_tokens=1,
         requested_output_tokens=1,
@@ -7691,14 +7686,14 @@ async def test_reused_limit_policy_counts_per_assignment(db_session: AsyncSessio
         db=db_session,
     )
 
-    await _enforce_limit_policies(
+    await gateway_limits.enforce_limit_policies(
         resolved=second_resolved,
         estimated_input_tokens=1,
         requested_output_tokens=0,
         db=db_session,
     )
-    with pytest.raises(ProxyLimitExceededError) as exc:
-        await _enforce_limit_policies(
+    with pytest.raises(gateway_limits.GatewayLimitDeniedError) as exc:
+        await gateway_limits.enforce_limit_policies(
             resolved=first_resolved,
             estimated_input_tokens=1,
             requested_output_tokens=0,
@@ -7899,4 +7894,7 @@ async def test_policy_impact_reports_affected_targets_and_unusable_keys(
     assert impact.affected_virtual_keys[0].id == key.id
     assert impact.virtual_keys_would_become_unusable_count == 1
     assert impact.virtual_keys_would_become_unusable[0].id == key.id
+
+
+
 

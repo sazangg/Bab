@@ -4,13 +4,15 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.routes.proxy import _enforce_provider_body_size
 from app.core.database import Scope
 from app.modules.auth.internal.models import Organization
 from app.modules.auth.schemas import AuthenticatedUser
+from app.modules.gateway.provider_execution import (
+    ProviderBodyTooLargeError,
+    enforce_provider_body_size,
+)
 from app.modules.providers import facade as providers_facade
 from app.modules.providers.errors import (
     ProviderCredentialRequiredError,
@@ -1220,7 +1222,7 @@ def test_provider_concurrency_slot_tracks_limit_changes() -> None:
 
 
 def test_provider_body_size_guard_rejects_oversized_payloads() -> None:
-    with pytest.raises(HTTPException) as exc_info:
-        _enforce_provider_body_size(b"too-large", max_body_bytes=3)
+    with pytest.raises(ProviderBodyTooLargeError) as exc_info:
+        enforce_provider_body_size(b"too-large", max_body_bytes=3)
 
-    assert exc_info.value.status_code == 413
+    assert exc_info.value.detail == "request body exceeds provider limit"

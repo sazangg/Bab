@@ -1092,6 +1092,13 @@ async def test_native_anthropic_messages_applies_output_guardrails(
     assert events[0]["metadata"]["matched_values"] == ["blocked output"]
     assert records[0]["route_attempt_id"] is not None
     assert events[0]["route_attempt_id"] == records[0]["route_attempt_id"]
+    route_attempt = await db_session.get(
+        GatewayRouteAttempt,
+        UUID(records[0]["route_attempt_id"]),
+    )
+    assert route_attempt is not None
+    assert route_attempt.status == "blocked"
+    assert route_attempt.error_code == "guardrail_output_denied"
 
 
 @pytest.mark.asyncio
@@ -1530,6 +1537,59 @@ async def test_gateway_enforces_virtual_key_request_rate_limit(app_client, db_se
         assert str(decisions[-1].route_attempt_id) == limit_record["route_attempt_id"]
         assert decisions[-1].dimension_snapshot["limit_type"] == "requests"
         assert decisions[-1].metadata_["current_usage"] == 2
+        route_attempt = await db_session.get(
+            GatewayRouteAttempt,
+            UUID(limit_record["route_attempt_id"]),
+        )
+        assert route_attempt is not None
+        assert route_attempt.status == "blocked"
+        assert route_attempt.error_code == "limit_exceeded"
+
+
+@pytest.mark.asyncio
+async def test_provider_body_size_failure_closes_route_attempt(app_client, db_session) -> None:
+    await sync_default_workspace(db_session)
+
+    async def upstream_handler(_request: httpx.Request) -> httpx.Response:
+        raise AssertionError("provider should not be called after body-size rejection")
+
+    async def override_proxy_http_client() -> AsyncGenerator[httpx.AsyncClient]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(upstream_handler)) as client:
+            yield client
+
+    app_client.dependency_overrides[get_proxy_http_client] = override_proxy_http_client
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://test",
+    ) as client:
+        admin_headers = await _login(client)
+        virtual_key, _credential_id, provider_id = await _provision_gateway_path(
+            client,
+            admin_headers,
+        )
+        update_response = await client.patch(
+            f"/api/v1/providers/{provider_id}",
+            headers=admin_headers,
+            json={"max_body_bytes": 20},
+        )
+        assert update_response.status_code == 200
+
+        proxy_response = await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": f"Bearer {virtual_key}"},
+            json={
+                "model": "gpt-test",
+                "messages": [{"role": "user", "content": "body exceeds provider max"}],
+            },
+        )
+
+    assert proxy_response.status_code == 413
+    assert proxy_response.json()["detail"] == "request body exceeds provider limit"
+    route_attempt = await db_session.scalar(select(GatewayRouteAttempt))
+    assert route_attempt is not None
+    assert route_attempt.status == "blocked"
+    assert route_attempt.error_code == "request_body_too_large"
 
 
 @pytest.mark.asyncio
@@ -1922,6 +1982,13 @@ async def test_input_guardrail_denial_does_not_consume_request_limit(
         )
         assert blocked_usage_record is not None
         assert blocked_usage_record.route_attempt_id == UUID(blocked_event["route_attempt_id"])
+        route_attempt = await db_session.get(
+            GatewayRouteAttempt,
+            UUID(blocked_event["route_attempt_id"]),
+        )
+        assert route_attempt is not None
+        assert route_attempt.status == "blocked"
+        assert route_attempt.error_code == "guardrail_denied"
         decisions = (
             await db_session.scalars(
                 select(GatewayPolicyDecision)
