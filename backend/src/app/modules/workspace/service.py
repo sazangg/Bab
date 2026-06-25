@@ -7,7 +7,7 @@ from app.modules.auth import facade as auth_facade
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys import facade as keys_facade
 from app.modules.teams import facade as teams_facade
-from app.modules.workspace.errors import WorkspaceAccessDeniedError, WorkspaceScopeNotFoundError
+from app.modules.workspace.errors import WorkspaceScopeNotFoundError
 from app.modules.workspace.schemas import (
     ValidatedScope,
     WorkspaceAllowedScopeIds,
@@ -20,74 +20,6 @@ from app.modules.workspace.schemas import (
     WorkspaceVirtualKeyOption,
     WorkspaceVirtualKeyTarget,
 )
-
-
-async def require_assignment_admin(
-    *,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    scope_type: str,
-    db: AsyncSession,
-    team_id: UUID | None = None,
-    project_id: UUID | None = None,
-    virtual_key_id: UUID | None = None,
-    global_permissions: set[str] | None = None,
-) -> None:
-    if _is_global_assignment_admin(actor, global_permissions=global_permissions):
-        return
-    if scope_type == "org":
-        raise WorkspaceAccessDeniedError
-    if await can_manage_assignment_scope(
-        actor=actor,
-        scope=scope,
-        scope_type=scope_type,
-        team_id=team_id,
-        project_id=project_id,
-        virtual_key_id=virtual_key_id,
-        db=db,
-    ):
-        return
-    raise WorkspaceAccessDeniedError
-
-
-async def can_manage_assignment_scope(
-    *,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    scope_type: str,
-    db: AsyncSession,
-    team_id: UUID | None = None,
-    project_id: UUID | None = None,
-    virtual_key_id: UUID | None = None,
-) -> bool:
-    team_admin_ids, project_admin_ids = managed_scope_ids(actor)
-    if scope_type == "team":
-        if team_id is None:
-            return False
-        team = await get_team_identity(team_id=team_id, scope=scope, db=db)
-        return team is not None and team_id in team_admin_ids
-    if scope_type == "project":
-        if project_id is None:
-            return False
-        project = await get_project_identity(project_id=project_id, scope=scope, db=db)
-        return project is not None and (
-            project.team_id in team_admin_ids or project.id in project_admin_ids
-        )
-    if scope_type == "virtual_key":
-        if virtual_key_id is None:
-            return False
-        virtual_key = await get_virtual_key_identity(
-            virtual_key_id=virtual_key_id,
-            scope=scope,
-            db=db,
-        )
-        if virtual_key is None:
-            return False
-        project = await get_project_identity(project_id=virtual_key.project_id, scope=scope, db=db)
-        return project is not None and (
-            project.team_id in team_admin_ids or project.id in project_admin_ids
-        )
-    return False
 
 
 async def validate_assignment_scope(
@@ -315,20 +247,6 @@ async def get_virtual_key_target(
     )
 
 
-def managed_scope_ids(actor: AuthenticatedUser) -> tuple[set[UUID], set[UUID]]:
-    team_admin_ids = {
-        membership.team_id
-        for membership in actor.team_memberships
-        if membership.role == "team_admin"
-    }
-    project_admin_ids = {
-        membership.project_id
-        for membership in actor.project_memberships
-        if membership.role == "project_admin"
-    }
-    return team_admin_ids, project_admin_ids
-
-
 async def get_team_identity(
     *, team_id: UUID, scope: Scope, db: AsyncSession
 ) -> WorkspaceTeamIdentity | None:
@@ -411,11 +329,3 @@ async def is_project_admin(
     )
 
 
-def _is_global_assignment_admin(
-    actor: AuthenticatedUser,
-    *,
-    global_permissions: set[str] | None,
-) -> bool:
-    if "*" in actor.permissions or actor.role in {"org_owner", "org_admin"}:
-        return True
-    return bool(global_permissions and global_permissions.intersection(actor.permissions))

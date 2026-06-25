@@ -12,6 +12,10 @@ from app.api.v1.deps import (
 )
 from app.core.database import Scope, get_db
 from app.modules.auth.schemas import AuthenticatedUser
+from app.modules.authorization import facade as authorization_facade
+from app.modules.authorization.errors import AuthorizationDeniedError
+from app.modules.authorization.permissions import Permissions
+from app.modules.authorization.schemas import AuthorizationTarget
 from app.modules.guardrails import facade
 from app.modules.guardrails.errors import (
     GuardrailAssignmentConflictError,
@@ -32,8 +36,6 @@ from app.modules.guardrails.schemas import (
     UpdateGuardrailAssignmentRequest,
     UpdateGuardrailPolicyRequest,
 )
-from app.modules.workspace import facade as workspace_facade
-from app.modules.workspace.errors import WorkspaceAccessDeniedError
 
 router = APIRouter(prefix="/guardrails", tags=["guardrails"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
@@ -364,15 +366,17 @@ async def _require_assignment_admin(
     db: AsyncSession,
 ) -> None:
     try:
-        await workspace_facade.require_assignment_admin(
+        await authorization_facade.require(
             actor=user,
+            permission=Permissions.GUARDRAILS_ASSIGN,
+            target=AuthorizationTarget.assignment_scope(
+                scope_type=scope_type,
+                team_id=team_id,
+                project_id=project_id,
+                virtual_key_id=virtual_key_id,
+            ),
             scope=scope,
-            scope_type=scope_type,
-            team_id=team_id,
-            project_id=project_id,
-            virtual_key_id=virtual_key_id,
-            global_permissions={"guardrails.manage"},
             db=db,
         )
-    except WorkspaceAccessDeniedError as exc:
+    except AuthorizationDeniedError as exc:
         raise HTTPException(status_code=403, detail="insufficient permissions") from exc

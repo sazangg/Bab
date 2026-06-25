@@ -5,8 +5,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import (
-    accessible_project_ids,
-    accessible_team_ids,
     get_current_user,
     get_scope,
     require_project_team_admin_or_permission,
@@ -26,6 +24,8 @@ from app.modules.auth.schemas import (
     UpdateProjectMemberRequest,
     UpsertProjectMemberRequest,
 )
+from app.modules.authorization import facade as authorization_facade
+from app.modules.authorization.permissions import Permissions
 from app.modules.keys import facade
 from app.modules.keys.errors import (
     AccessDeniedError,
@@ -64,11 +64,11 @@ RequestScope = Annotated[Scope, Depends(get_scope)]
 CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]
 VirtualKeyAdmin = Annotated[
     AuthenticatedUser,
-    Depends(require_project_team_admin_or_permission("keys.manage")),
+    Depends(require_project_team_admin_or_permission(Permissions.KEYS_MANAGE)),
 ]
 ProjectAdmin = Annotated[
     AuthenticatedUser,
-    Depends(require_project_team_admin_or_permission("projects.manage")),
+    Depends(require_project_team_admin_or_permission(Permissions.PROJECTS_MANAGE)),
 ]
 
 
@@ -79,14 +79,13 @@ async def list_projects(
     user: CurrentUser,
 ) -> list[ProjectResponse]:
     projects = await facade.list_projects(scope=scope, db=db)
-    if user.role in {"org_owner", "org_admin", "org_viewer"} or "*" in user.permissions:
+    if authorization_facade.has_permission(user, Permissions.PROJECTS_VIEW):
         return projects
-    allowed_ids = accessible_team_ids(user)
-    allowed_project_ids = accessible_project_ids(user)
+    allowed_scopes = authorization_facade.authorized_workspace_ids(user, relationship="member")
     return [
         project
         for project in projects
-        if project.team_id in allowed_ids or project.id in allowed_project_ids
+        if project.team_id in allowed_scopes.team_ids or project.id in allowed_scopes.project_ids
     ]
 
 
@@ -125,7 +124,7 @@ async def get_project_usage(
         raise HTTPException(status_code=404, detail="project not found") from exc
     await require_project_view_or_permission(
         project_id=str(project_id),
-        permission="projects.view",
+        permission=Permissions.PROJECTS_VIEW,
         user=user,
         db=db,
     )
@@ -165,7 +164,7 @@ async def get_project(
         project = await facade.get_project(project_id=project_id, scope=scope, db=db)
     except ProjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail="project not found") from exc
-    if not (user.role in {"org_owner", "org_admin", "org_viewer"} or "*" in user.permissions):
+    if not authorization_facade.has_permission(user, Permissions.PROJECTS_VIEW):
         await require_project_view_or_permission(
             project_id=str(project_id),
             permission="",
@@ -185,7 +184,7 @@ async def list_virtual_keys(
     try:
         await require_project_view_or_permission(
             project_id=str(project_id),
-            permission="projects.view",
+            permission=Permissions.PROJECTS_VIEW,
             user=user,
             db=db,
         )
@@ -268,7 +267,7 @@ async def list_project_members(
     try:
         await require_project_view_or_permission(
             project_id=str(project_id),
-            permission="projects.view",
+            permission=Permissions.PROJECTS_VIEW,
             user=user,
             db=db,
         )
@@ -371,7 +370,7 @@ async def list_project_accessible_models(
     try:
         await require_project_view_or_permission(
             project_id=str(project_id),
-            permission="projects.view",
+            permission=Permissions.PROJECTS_VIEW,
             user=user,
             db=db,
         )
@@ -397,7 +396,7 @@ async def get_project_effective_access(
     user: CurrentUser,
 ) -> EffectiveAccessSummary:
     await require_project_view_or_permission(
-        project_id=str(project_id), permission="projects.view", user=user, db=db
+        project_id=str(project_id), permission=Permissions.PROJECTS_VIEW, user=user, db=db
     )
     try:
         return await facade.get_project_effective_access(project_id=project_id, scope=scope, db=db)
@@ -416,7 +415,7 @@ async def get_virtual_key(
     try:
         await require_project_view_or_permission(
             project_id=str(project_id),
-            permission="projects.view",
+            permission=Permissions.PROJECTS_VIEW,
             user=user,
             db=db,
         )
@@ -443,7 +442,7 @@ async def get_virtual_key_usage(
     try:
         await require_project_view_or_permission(
             project_id=str(project_id),
-            permission="projects.view",
+            permission=Permissions.PROJECTS_VIEW,
             user=user,
             db=db,
         )
@@ -594,7 +593,7 @@ async def get_virtual_key_effective_access(
     user: CurrentUser,
 ) -> EffectiveAccessSummary:
     await require_project_view_or_permission(
-        project_id=str(project_id), permission="projects.view", user=user, db=db
+        project_id=str(project_id), permission=Permissions.PROJECTS_VIEW, user=user, db=db
     )
     try:
         return await facade.get_virtual_key_effective_access(

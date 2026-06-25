@@ -3,7 +3,6 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import Scope
 from app.modules.auth.internal.models import Organization
 from app.modules.auth.schemas import (
     AuthenticatedProjectMembership,
@@ -12,7 +11,7 @@ from app.modules.auth.schemas import (
 )
 from app.modules.keys.internal.models import VirtualKey
 from app.modules.workspace import facade as workspace_facade
-from app.modules.workspace.errors import WorkspaceAccessDeniedError, WorkspaceScopeNotFoundError
+from app.modules.workspace.errors import WorkspaceScopeNotFoundError
 from app.modules.workspace.internal.models import Project, Team
 
 
@@ -151,99 +150,3 @@ async def test_validate_assignment_scope_rejects_invalid_relationships(
         )
 
 
-@pytest.mark.asyncio
-async def test_require_assignment_admin_allows_matching_scoped_admins(
-    db_session: AsyncSession,
-) -> None:
-    org, team, _other_team, project, _other_project, key, _other_org_key = await _workspace(
-        db_session
-    )
-    scope = Scope(org_id=org.id)
-
-    await workspace_facade.require_assignment_admin(
-        actor=_actor(
-            org.id,
-            team_memberships=[AuthenticatedTeamMembership(team_id=team.id, role="team_admin")],
-        ),
-        scope=scope,
-        scope_type="team",
-        team_id=team.id,
-        db=db_session,
-    )
-    await workspace_facade.require_assignment_admin(
-        actor=_actor(
-            org.id,
-            project_memberships=[
-                AuthenticatedProjectMembership(project_id=project.id, role="project_admin")
-            ],
-        ),
-        scope=scope,
-        scope_type="project",
-        project_id=project.id,
-        db=db_session,
-    )
-    await workspace_facade.require_assignment_admin(
-        actor=_actor(
-            org.id,
-            team_memberships=[AuthenticatedTeamMembership(team_id=team.id, role="team_admin")],
-        ),
-        scope=scope,
-        scope_type="virtual_key",
-        virtual_key_id=key.id,
-        db=db_session,
-    )
-
-
-@pytest.mark.asyncio
-async def test_require_assignment_admin_preserves_global_permission_boundary(
-    db_session: AsyncSession,
-) -> None:
-    org, _team, _other_team, _project, _other_project, _key, _other_org_key = await _workspace(
-        db_session
-    )
-    scope = Scope(org_id=org.id)
-
-    with pytest.raises(WorkspaceAccessDeniedError):
-        await workspace_facade.require_assignment_admin(
-            actor=_actor(org.id, permissions=["guardrails.manage"]),
-            scope=scope,
-            scope_type="org",
-            db=db_session,
-        )
-    await workspace_facade.require_assignment_admin(
-        actor=_actor(org.id, permissions=["guardrails.manage"]),
-        scope=scope,
-        scope_type="org",
-        global_permissions={"guardrails.manage"},
-        db=db_session,
-    )
-
-
-@pytest.mark.asyncio
-async def test_require_assignment_admin_denies_unmanaged_scope(
-    db_session: AsyncSession,
-) -> None:
-    org, _team, other_team, project, _other_project, key, _other_org_key = await _workspace(
-        db_session
-    )
-    actor = _actor(
-        org.id,
-        team_memberships=[AuthenticatedTeamMembership(team_id=other_team.id, role="team_admin")],
-    )
-
-    with pytest.raises(WorkspaceAccessDeniedError):
-        await workspace_facade.require_assignment_admin(
-            actor=actor,
-            scope=Scope(org_id=org.id),
-            scope_type="project",
-            project_id=project.id,
-            db=db_session,
-        )
-    with pytest.raises(WorkspaceAccessDeniedError):
-        await workspace_facade.require_assignment_admin(
-            actor=actor,
-            scope=Scope(org_id=org.id),
-            scope_type="virtual_key",
-            virtual_key_id=key.id,
-            db=db_session,
-        )

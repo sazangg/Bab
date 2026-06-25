@@ -6,8 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, get_scope
 from app.core.database import Scope, get_db
-from app.modules.auth import facade as auth_facade
 from app.modules.auth.schemas import AuthenticatedUser
+from app.modules.authorization import facade as authorization_facade
+from app.modules.authorization.permissions import Permissions
 from app.modules.keys import facade
 from app.modules.keys.schemas import VirtualKeyInventoryPage
 
@@ -40,24 +41,16 @@ async def list_virtual_key_inventory(
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> VirtualKeyInventoryPage:
-    can_view_all = auth_facade.has_permission(user, "projects.view")
-    visible_team_ids = None if can_view_all else {item.team_id for item in user.team_memberships}
-    visible_project_ids = (
-        None if can_view_all else {item.project_id for item in user.project_memberships}
-    )
-    manageable_team_ids = {
-        item.team_id for item in user.team_memberships if item.role == "team_admin"
-    }
-    manageable_project_ids = {
-        item.project_id for item in user.project_memberships if item.role == "project_admin"
-    }
+    can_view_all = authorization_facade.has_permission(user, Permissions.PROJECTS_VIEW)
+    visible_scopes = authorization_facade.authorized_workspace_ids(user, relationship="member")
+    manageable_scopes = authorization_facade.authorized_workspace_ids(user, relationship="admin")
     return await facade.list_virtual_key_inventory(
         scope=scope,
-        visible_team_ids=visible_team_ids,
-        visible_project_ids=visible_project_ids,
-        manageable_team_ids=manageable_team_ids,
-        manageable_project_ids=manageable_project_ids,
-        can_manage_all=auth_facade.has_permission(user, "keys.manage"),
+        visible_team_ids=None if can_view_all else visible_scopes.team_ids,
+        visible_project_ids=None if can_view_all else visible_scopes.project_ids,
+        manageable_team_ids=manageable_scopes.team_ids,
+        manageable_project_ids=manageable_scopes.project_ids,
+        can_manage_all=authorization_facade.has_permission(user, Permissions.KEYS_MANAGE),
         team_id=team_id,
         project_id=project_id,
         status=status,

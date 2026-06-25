@@ -14,8 +14,9 @@ from app.core.csv_safe import sanitize_csv_cell
 from app.core.database import Scope, get_db
 from app.modules.activity import facade
 from app.modules.activity.schemas import ActivityEventResponse
-from app.modules.auth import facade as auth_facade
 from app.modules.auth.schemas import AuthenticatedUser
+from app.modules.authorization import facade as authorization_facade
+from app.modules.authorization.permissions import Permissions
 from app.modules.workspace import facade as workspace_facade
 from app.modules.workspace.errors import WorkspaceScopeNotFoundError
 from app.modules.workspace.schemas import WorkspaceProjectIdentity
@@ -202,7 +203,7 @@ async def _resolve_activity_scope(
     project_id: UUID | None,
     virtual_key_id: UUID | None,
 ) -> _ActivityScope:
-    if auth_facade.has_permission(user, "activity.view"):
+    if authorization_facade.has_permission(user, Permissions.ACTIVITY_VIEW):
         await _validate_filter_relationships(
             org_id=org_id,
             db=db,
@@ -212,8 +213,9 @@ async def _resolve_activity_scope(
         )
         return _ActivityScope(allowed_team_ids=None, allowed_project_ids=None)
 
-    allowed_team_ids = {membership.team_id for membership in user.team_memberships}
-    allowed_project_ids = {membership.project_id for membership in user.project_memberships}
+    allowed_scopes = authorization_facade.authorized_workspace_ids(user, relationship="member")
+    allowed_team_ids = allowed_scopes.team_ids
+    allowed_project_ids = allowed_scopes.project_ids
     if not allowed_team_ids and not allowed_project_ids:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

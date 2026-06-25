@@ -79,47 +79,21 @@ from app.modules.auth.schemas import (
     UpsertTeamMemberRequest,
     UserLabel,
 )
+from app.modules.authorization import facade as authorization_facade
+from app.modules.authorization.permissions import Permissions
+from app.modules.authorization.schemas import (
+    AuthorizationDecision,
+    MemberInviteTarget,
+    MemberRoleChangeTarget,
+    MemberStatusChangeTarget,
+    ScopedMembershipTarget,
+)
 from app.modules.keys import read_models as key_read_models
 from app.modules.keys.schemas import ProjectMembershipTarget
 from app.modules.workspace.internal.models import Team
 
 MOCK_ADMIN_ID = UUID("00000000-0000-4000-8000-000000000001")
 INVITE_TOKEN_TTL = timedelta(days=7)
-
-ROLE_PERMISSIONS = {
-    "org_owner": {"*"},
-    "org_admin": {
-        "providers.manage",
-        "providers.view",
-        "policies.manage",
-        "policies.view",
-        "teams.manage",
-        "teams.view",
-        "projects.manage",
-        "projects.view",
-        "keys.manage",
-        "usage.view",
-        "activity.view",
-        "settings.manage",
-        "settings.view",
-        "guardrails.manage",
-        "guardrails.view",
-        "members.manage",
-        "audit.view",
-    },
-    "org_viewer": {
-        "providers.view",
-        "policies.view",
-        "teams.view",
-        "projects.view",
-        "usage.view",
-        "activity.view",
-        "settings.view",
-        "guardrails.view",
-    },
-    "org_member": set(),
-}
-
 
 async def login(payload: LoginRequest, db: AsyncSession) -> tuple[TokenResponse, str]:
     async with transaction(db):
@@ -302,10 +276,10 @@ async def list_members(*, scope: Scope, db: AsyncSession) -> list[MemberResponse
                     MemberProjectMembershipResponse(project_id=item.project_id, role=item.role)
                     for item in project_memberships
                 ],
-                effective_permissions=_effective_permissions_for_memberships(
+                effective_permissions=authorization_facade.effective_permissions_for_member(
                     org_role=membership.role,
-                    team_memberships=team_memberships,
-                    project_memberships=project_memberships,
+                    team_roles=[item.role for item in team_memberships],
+                    project_roles=[item.role for item in project_memberships],
                 ),
             )
         )
@@ -338,7 +312,12 @@ async def create_member(
     email = str(payload.email).lower()
     async with transaction(db):
         team, project = await _validate_scoped_target(payload=payload, scope=scope, db=db)
-        _ensure_actor_can_manage_org_role(actor=actor, current_role=None, new_role=payload.role)
+        _raise_permission_denied(
+            authorization_facade.can_manage_org_role(
+                actor=actor,
+                target=MemberRoleChangeTarget(current_role=None, new_role=payload.role),
+            )
+        )
         user = await db.scalar(select(User).where(User.email == email))
         if user is not None:
             raise MemberAlreadyExistsError
@@ -375,10 +354,14 @@ async def create_member(
             )
             db.add(membership)
         else:
-            _ensure_actor_can_manage_org_role(
-                actor=actor,
-                current_role=membership.role,
-                new_role=payload.role,
+            _raise_permission_denied(
+                authorization_facade.can_manage_org_role(
+                    actor=actor,
+                    target=MemberRoleChangeTarget(
+                        current_role=membership.role,
+                        new_role=payload.role,
+                    ),
+                )
             )
             membership.role = payload.role
             membership.status = "active"
@@ -460,19 +443,27 @@ async def update_member(
         )
         if membership is None:
             raise MemberNotFoundError
-        _ensure_actor_can_manage_org_role(
-            actor=actor,
-            current_role=membership.role,
-            new_role=payload.role,
+        _raise_permission_denied(
+            authorization_facade.can_manage_org_role(
+                actor=actor,
+                target=MemberRoleChangeTarget(
+                    current_role=membership.role,
+                    new_role=payload.role,
+                ),
+            )
         )
         previous_role = membership.role
         if previous_role == "org_owner" and payload.role != "org_owner":
             await _ensure_not_last_owner(scope=scope, excluding_user_id=user_id, db=db)
-        _ensure_not_self_demoting_member_admin(
-            actor=actor,
-            user_id=user_id,
-            current_role=previous_role,
-            new_role=payload.role,
+        _raise_permission_denied(
+            authorization_facade.can_change_member_role_without_self_demotion(
+                actor=actor,
+                target=MemberRoleChangeTarget(
+                    target_user_id=user_id,
+                    current_role=previous_role,
+                    new_role=payload.role,
+                ),
+            )
         )
         membership.role = payload.role
         await db.flush()
@@ -510,10 +501,14 @@ async def update_member_status(
         if row is None:
             raise MemberNotFoundError
         user, membership = row
-        _ensure_actor_can_manage_org_role(
-            actor=actor,
-            current_role=membership.role,
-            new_role=membership.role,
+        _raise_permission_denied(
+            authorization_facade.can_manage_org_role(
+                actor=actor,
+                target=MemberRoleChangeTarget(
+                    current_role=membership.role,
+                    new_role=membership.role,
+                ),
+            )
         )
         # Activation is gated per organization via membership.status, NOT the global
         # User.is_active flag. Toggling the shared user row here would let one org's
@@ -522,7 +517,17 @@ async def update_member_status(
         if payload.status == "inactive":
             if membership.role == "org_owner":
                 await _ensure_not_last_owner(scope=scope, excluding_user_id=user_id, db=db)
-            _ensure_not_self_deactivating(actor=actor, user_id=user_id)
+            if actor.id == user_id:
+                _raise_permission_denied(
+                    authorization_facade.can_change_member_status(
+                        actor=actor,
+                        target=MemberStatusChangeTarget(
+                            target_user_id=user_id,
+                            current_role=membership.role,
+                            new_status="inactive",
+                        ),
+                    )
+                )
             previous_status = membership.status
             membership.status = "inactive"
         else:
@@ -556,35 +561,8 @@ async def _ensure_not_last_owner(
         raise LastOwnerError
 
 
-def _ensure_actor_can_manage_org_role(
-    *,
-    actor: AuthenticatedUser,
-    current_role: str | None,
-    new_role: str,
-) -> None:
-    if actor.role == "org_owner" or "*" in actor.permissions:
-        return
-    if actor.role != "org_admin":
-        raise PermissionDeniedError
-    if current_role in {"org_owner", "org_admin"} or new_role in {"org_owner", "org_admin"}:
-        raise PermissionDeniedError
-
-
-def _ensure_not_self_demoting_member_admin(
-    *,
-    actor: AuthenticatedUser,
-    user_id: UUID,
-    current_role: str,
-    new_role: str,
-) -> None:
-    if actor.id != user_id or current_role == new_role:
-        return
-    if has_permission(actor, "members.manage") and new_role not in {"org_owner", "org_admin"}:
-        raise PermissionDeniedError
-
-
-def _ensure_not_self_deactivating(*, actor: AuthenticatedUser, user_id: UUID) -> None:
-    if actor.id == user_id and has_permission(actor, "members.manage"):
+def _raise_permission_denied(decision: AuthorizationDecision) -> None:
+    if not decision.allowed:
         raise PermissionDeniedError
 
 
@@ -607,28 +585,6 @@ async def _scoped_memberships_by_user(
         teams, projects = memberships.setdefault(item.user_id, ([], []))
         projects.append(item)
     return memberships
-
-
-def _effective_permissions_for_memberships(
-    *,
-    org_role: str,
-    team_memberships: list[TeamMembership],
-    project_memberships: list[ProjectMembership],
-) -> list[str]:
-    permissions = set(ROLE_PERMISSIONS.get(org_role, set()))
-    if any(item.role == "team_admin" for item in team_memberships):
-        permissions.update(
-            {
-                "keys.manage",
-                "policies.view",
-                "guardrails.view",
-                "projects.view",
-                "teams.view",
-            }
-        )
-    if any(item.role == "project_admin" for item in project_memberships):
-        permissions.update({"keys.manage", "policies.view", "guardrails.view", "projects.view"})
-    return sorted(permissions)
 
 
 async def list_team_members(
@@ -670,7 +626,13 @@ async def upsert_team_member(
 ) -> TeamMemberResponse:
     async with transaction(db):
         await _require_team(team_id=team_id, scope=scope, db=db)
-        _ensure_actor_can_manage_team_members(actor=actor, team_id=team_id)
+        _raise_permission_denied(
+            authorization_facade.can_manage_scoped_membership(
+                actor=actor,
+                permission=Permissions.TEAMS_MANAGE,
+                target=ScopedMembershipTarget(scope_type="team", team_id=team_id),
+            )
+        )
         org_membership = await db.scalar(
             select(OrganizationMembership).where(
                 OrganizationMembership.org_id == scope.org_id,
@@ -747,7 +709,13 @@ async def remove_team_member(
 ) -> None:
     async with transaction(db):
         await _require_team(team_id=team_id, scope=scope, db=db)
-        _ensure_actor_can_manage_team_members(actor=actor, team_id=team_id)
+        _raise_permission_denied(
+            authorization_facade.can_manage_scoped_membership(
+                actor=actor,
+                permission=Permissions.TEAMS_MANAGE,
+                target=ScopedMembershipTarget(scope_type="team", team_id=team_id),
+            )
+        )
         team_membership = await db.scalar(
             select(TeamMembership).where(
                 TeamMembership.org_id == scope.org_id,
@@ -811,7 +779,17 @@ async def upsert_project_member(
 ) -> ProjectMemberResponse:
     async with transaction(db):
         project = await _require_project(project_id=project_id, scope=scope, db=db)
-        _ensure_actor_can_manage_project_members(actor=actor, project=project)
+        _raise_permission_denied(
+            authorization_facade.can_manage_scoped_membership(
+                actor=actor,
+                permission=Permissions.PROJECTS_MANAGE,
+                target=ScopedMembershipTarget(
+                    scope_type="project",
+                    project_id=project.id,
+                    project_team_id=project.team_id,
+                ),
+            )
+        )
         org_membership = await db.scalar(
             select(OrganizationMembership).where(
                 OrganizationMembership.org_id == scope.org_id,
@@ -888,7 +866,17 @@ async def remove_project_member(
 ) -> None:
     async with transaction(db):
         project = await _require_project(project_id=project_id, scope=scope, db=db)
-        _ensure_actor_can_manage_project_members(actor=actor, project=project)
+        _raise_permission_denied(
+            authorization_facade.can_manage_scoped_membership(
+                actor=actor,
+                permission=Permissions.PROJECTS_MANAGE,
+                target=ScopedMembershipTarget(
+                    scope_type="project",
+                    project_id=project.id,
+                    project_team_id=project.team_id,
+                ),
+            )
+        )
         project_membership = await db.scalar(
             select(ProjectMembership).where(
                 ProjectMembership.org_id == scope.org_id,
@@ -924,13 +912,18 @@ async def create_invite(
     raw_token = generate_secret_token()
     async with transaction(db):
         team, project = await _validate_invite_target(payload=payload, scope=scope, db=db)
-        _ensure_actor_can_create_invite(
-            actor=actor,
-            role=payload.role,
-            team_id=payload.team_id,
-            team_role=payload.team_role,
-            project=project,
-            project_role=payload.project_role,
+        _raise_permission_denied(
+            authorization_facade.can_create_member_invite(
+                actor=actor,
+                target=MemberInviteTarget(
+                    org_role=payload.role,
+                    team_id=payload.team_id,
+                    team_role=payload.team_role,
+                    project_id=project.id if project else None,
+                    project_team_id=project.team_id if project else None,
+                    project_role=payload.project_role,
+                ),
+            )
         )
         await _ensure_no_duplicate_pending_invite(
             org_id=scope.org_id,
@@ -984,11 +977,13 @@ async def list_invites(
     return [
         _invite_response(invite, raw_token=None, public_base_url=None)
         for invite in invites
-        if _actor_can_manage_invite(
+        if authorization_facade.can_manage_member_invite(
             actor=actor,
-            invite=invite,
-            project_team_id=project_team_by_id.get(invite.project_id),
-        )
+            target=_member_invite_target(
+                invite=invite,
+                project_team_id=project_team_by_id.get(invite.project_id),
+            ),
+        ).allowed
     ]
 
 
@@ -1088,53 +1083,6 @@ async def _ensure_no_duplicate_pending_invite(
             raise DuplicateInviteError
 
 
-def _ensure_actor_can_create_invite(
-    *,
-    actor: AuthenticatedUser,
-    role: str,
-    team_id: UUID | None,
-    team_role: str | None,
-    project: ProjectMembershipTarget | None,
-    project_role: str | None,
-) -> None:
-    if has_permission(actor, "members.manage"):
-        _ensure_actor_can_manage_org_role(actor=actor, current_role=None, new_role=role)
-        return
-
-    if role != "org_member":
-        raise PermissionDeniedError
-
-    if team_id and _is_team_admin_actor(actor=actor, team_id=team_id):
-        if project and project.team_id != team_id:
-            raise PermissionDeniedError
-        return
-
-    if project and _is_team_admin_actor(actor=actor, team_id=project.team_id):
-        return
-
-    if project and _is_project_admin_actor(actor=actor, project_id=project.id):
-        if team_id or team_role:
-            raise PermissionDeniedError
-        if project_role not in {"project_admin", "project_member"}:
-            raise PermissionDeniedError
-        return
-
-    raise PermissionDeniedError
-
-
-def _is_team_admin_actor(*, actor: AuthenticatedUser, team_id: UUID) -> bool:
-    return any(
-        item.team_id == team_id and item.role == "team_admin" for item in actor.team_memberships
-    )
-
-
-def _is_project_admin_actor(*, actor: AuthenticatedUser, project_id: UUID) -> bool:
-    return any(
-        item.project_id == project_id and item.role == "project_admin"
-        for item in actor.project_memberships
-    )
-
-
 async def _project_team_by_id(*, scope: Scope, db: AsyncSession) -> dict[UUID, UUID]:
     return await key_read_models.get_project_team_ids(scope=scope, db=db)
 
@@ -1149,25 +1097,15 @@ async def _project_target(
     )
 
 
-def _actor_can_manage_invite(
-    *,
-    actor: AuthenticatedUser,
-    invite: Invite,
-    project_team_id: UUID | None,
-) -> bool:
-    if has_permission(actor, "members.manage"):
-        return True
-    if invite.team_id and _is_team_admin_actor(actor=actor, team_id=invite.team_id):
-        return True
-    if project_team_id and _is_team_admin_actor(actor=actor, team_id=project_team_id):
-        return True
-    if (
-        invite.project_id
-        and invite.team_id is None
-        and _is_project_admin_actor(actor=actor, project_id=invite.project_id)
-    ):
-        return True
-    return False
+def _member_invite_target(*, invite: Invite, project_team_id: UUID | None) -> MemberInviteTarget:
+    return MemberInviteTarget(
+        org_role=invite.role,
+        team_id=invite.team_id,
+        team_role=invite.team_role,
+        project_id=invite.project_id,
+        project_team_id=project_team_id,
+        project_role=invite.project_role,
+    )
 
 
 async def revoke_invite(
@@ -1187,12 +1125,12 @@ async def revoke_invite(
         if invite.project_id:
             project = await _project_target(project_id=invite.project_id, scope=scope, db=db)
             project_team_id = project.team_id if project else None
-        if not _actor_can_manage_invite(
-            actor=actor,
-            invite=invite,
-            project_team_id=project_team_id,
-        ):
-            raise PermissionDeniedError
+        _raise_permission_denied(
+            authorization_facade.can_manage_member_invite(
+                actor=actor,
+                target=_member_invite_target(invite=invite, project_team_id=project_team_id),
+            )
+        )
         if invite.status != "pending" or _is_past(invite.expires_at):
             raise InviteLifecycleError
         invite.status = "revoked"
@@ -1337,40 +1275,6 @@ async def _require_project(
     if project is None:
         raise InvalidAccessTokenError
     return project
-
-
-def _ensure_actor_can_manage_team_members(
-    *,
-    actor: AuthenticatedUser,
-    team_id: UUID,
-) -> None:
-    if has_permission(actor, "teams.manage"):
-        return
-    if any(
-        item.team_id == team_id and item.role == "team_admin" for item in actor.team_memberships
-    ):
-        return
-    raise PermissionDeniedError
-
-
-def _ensure_actor_can_manage_project_members(
-    *,
-    actor: AuthenticatedUser,
-    project: ProjectMembershipTarget,
-) -> None:
-    if has_permission(actor, "projects.manage"):
-        return
-    if any(
-        item.team_id == project.team_id and item.role == "team_admin"
-        for item in actor.team_memberships
-    ):
-        return
-    if any(
-        item.project_id == project.id and item.role == "project_admin"
-        for item in actor.project_memberships
-    ):
-        return
-    raise PermissionDeniedError
 
 
 async def record_audit_event(
@@ -1666,10 +1570,6 @@ def _audit_timestamp(value: datetime) -> str:
     return value.isoformat()
 
 
-def has_permission(user: AuthenticatedUser, permission: str) -> bool:
-    return "*" in user.permissions or permission in user.permissions
-
-
 def _is_past(value: datetime) -> bool:
     if value.tzinfo is None:
         value = value.replace(tzinfo=UTC)
@@ -1715,7 +1615,11 @@ async def _principal_for_user(
     )
     team_membership_rows = list(team_memberships)
     project_membership_rows = list(project_memberships)
-    permissions = sorted(ROLE_PERMISSIONS.get(membership.role, set()))
+    permissions = authorization_facade.effective_permissions_for_member(
+        org_role=membership.role,
+        team_roles=[],
+        project_roles=[],
+    )
     return AuthenticatedUser(
         id=user.id,
         org_id=membership.org_id,

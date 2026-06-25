@@ -1,0 +1,38 @@
+from app.modules.authorization.permissions import Permissions
+
+ROLE_PERMISSIONS = {
+    "super_admin": {Permissions.WILDCARD},
+    "org_owner": {Permissions.WILDCARD},
+    "org_admin": {
+        Permissions.PROVIDERS_MANAGE,
+        Permissions.PROVIDERS_VIEW,
+        Permissions.POLICIES_MANAGE,
+        Permissions.POLICIES_VIEW,
+        Permissions.POLICIES_ASSIGN,
+        Permissions.TEAMS_MANAGE,
+        Permissions.TEAMS_VIEW,
+        Permissions.PROJECTS_MANAGE,
+        Permissions.PROJECTS_VIEW,
+        Permissions.KEYS_MANAGE,
+        Permissions.USAGE_VIEW,
+        Permissions.ACTIVITY_VIEW,
+        Permissions.SETTINGS_MANAGE,
+        Permissions.SETTINGS_VIEW,
+        Permissions.GUARDRAILS_MANAGE,
+        Permissions.GUARDRAILS_VIEW,
+        Permissions.GUARDRAILS_ASSIGN,
+        Permissions.MEMBERS_MANAGE,
+        Permissions.AUDIT_VIEW,
+    },
+    "org_viewer": {
+        Permissions.PROVIDERS_VIEW,
+        Permissions.POLICIES_VIEW,
+        Permissions.TEAMS_VIEW,
+        Permissions.PROJECTS_VIEW,
+        Permissions.USAGE_VIEW,
+        Permissions.ACTIVITY_VIEW,
+        Permissions.SETTINGS_VIEW,
+        Permissions.GUARDRAILS_VIEW,
+    },
+    "org_member": set(),
+}

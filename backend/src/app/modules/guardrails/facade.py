@@ -7,6 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import Scope, transaction
 from app.modules.activity import facade as activity_facade
 from app.modules.auth.schemas import AuthenticatedUser
+from app.modules.authorization import facade as authorization_facade
+from app.modules.authorization.permissions import Permissions
+from app.modules.authorization.schemas import AuthorizationTarget
 from app.modules.guardrails.errors import (
     GuardrailAssignmentConflictError,
     GuardrailAssignmentNotFoundError,
@@ -96,7 +99,7 @@ async def list_policies(
     actor: AuthenticatedUser | None = None,
 ) -> list[GuardrailPolicyResponse]:
     policies = await repository.list_policies(org_id=scope.org_id, db=db)
-    if actor is not None and not _is_org_guardrail_viewer(actor):
+    if actor is not None and not _has_global_guardrail_visibility(actor):
         assignments = await _visible_assignments(actor=actor, scope=scope, db=db)
         visible_policy_ids = {assignment.policy_id for assignment in assignments}
         policies = [policy for policy in policies if policy.id in visible_policy_ids]
@@ -427,7 +430,7 @@ async def get_policy_impact(
         active_only=True,
         db=db,
     )
-    if actor is not None and not _is_org_guardrail_viewer(actor):
+    if actor is not None and not _has_global_guardrail_visibility(actor):
         visible_ids = {
             assignment.id
             for assignment in await _visible_assignments(actor=actor, scope=scope, db=db)
@@ -670,7 +673,7 @@ async def get_assignment_impact(
     )
     if assignment is None:
         raise GuardrailAssignmentNotFoundError
-    if actor is not None and not _is_org_guardrail_viewer(actor):
+    if actor is not None and not _has_global_guardrail_visibility(actor):
         visible_ids = {
             item.id for item in await _visible_assignments(actor=actor, scope=scope, db=db)
         }
@@ -935,8 +938,10 @@ async def list_events(
 ) -> list[GuardrailEventResponse]:
     allowed_team_ids: set[UUID] | None = None
     allowed_project_ids: set[UUID] | None = None
-    if actor is not None and not _is_org_guardrail_viewer(actor):
-        allowed_team_ids, allowed_project_ids = _managed_scope_ids(actor)
+    if actor is not None and not _has_global_guardrail_visibility(actor):
+        allowed_scopes = authorization_facade.scoped_admin_workspace_ids(actor)
+        allowed_team_ids = allowed_scopes.team_ids
+        allowed_project_ids = allowed_scopes.project_ids
         if not allowed_team_ids and not allowed_project_ids:
             return []
     events = await repository.list_events(
@@ -974,7 +979,7 @@ async def simulate(
         )
         if policy is None:
             raise GuardrailPolicyNotFoundError
-        if actor is not None and not _is_org_guardrail_viewer(actor):
+        if actor is not None and not _has_global_guardrail_visibility(actor):
             visible_policy_ids = {
                 item.id for item in await list_policies(scope=scope, db=db, actor=actor)
             }
@@ -1371,27 +1376,11 @@ async def _validate_assignment_target(
     return validated.team_id, validated.project_id, validated.virtual_key_id
 
 
-def _is_org_guardrail_viewer(actor: AuthenticatedUser) -> bool:
-    return (
-        "*" in actor.permissions
-        or "guardrails.view" in actor.permissions
-        or "guardrails.manage" in actor.permissions
-        or actor.role in {"org_owner", "org_admin", "org_viewer"}
+def _has_global_guardrail_visibility(actor: AuthenticatedUser) -> bool:
+    return authorization_facade.has_any_permission(
+        actor,
+        {Permissions.GUARDRAILS_VIEW, Permissions.GUARDRAILS_MANAGE},
     )
-
-
-def _managed_scope_ids(actor: AuthenticatedUser) -> tuple[set[UUID], set[UUID]]:
-    team_ids = {
-        membership.team_id
-        for membership in actor.team_memberships
-        if membership.role == "team_admin"
-    }
-    project_ids = {
-        membership.project_id
-        for membership in actor.project_memberships
-        if membership.role == "project_admin"
-    }
-    return team_ids, project_ids
 
 
 async def _visible_assignments(
@@ -1401,41 +1390,25 @@ async def _visible_assignments(
     db: AsyncSession,
 ) -> list[GuardrailAssignmentView]:
     assignments = await repository.list_assignments(org_id=scope.org_id, db=db)
-    if actor is None or _is_org_guardrail_viewer(actor):
+    if actor is None or _has_global_guardrail_visibility(actor):
         return assignments
 
-    team_ids, project_ids = _managed_scope_ids(actor)
     visible: list[GuardrailAssignmentView] = []
     for assignment in assignments:
-        if assignment.scope_type == "org":
-            continue
-        if assignment.team_id in team_ids:
-            visible.append(assignment)
-            continue
-        if assignment.project_id is not None:
-            project = await workspace_facade.get_project_identity(
-                scope=scope,
+        decision = await authorization_facade.can(
+            actor=actor,
+            permission=Permissions.GUARDRAILS_VIEW,
+            target=AuthorizationTarget.workspace_scope(
+                scope_type=assignment.scope_type,
+                team_id=assignment.team_id,
                 project_id=assignment.project_id,
-                db=db,
-            )
-            if project is not None and (project.id in project_ids or project.team_id in team_ids):
-                visible.append(assignment)
-            continue
-        if assignment.virtual_key_id is not None:
-            virtual_key = await workspace_facade.get_virtual_key_identity(
-                scope=scope,
                 virtual_key_id=assignment.virtual_key_id,
-                db=db,
-            )
-            if virtual_key is None:
-                continue
-            project = await workspace_facade.get_project_identity(
-                scope=scope,
-                project_id=virtual_key.project_id,
-                db=db,
-            )
-            if project is not None and (project.id in project_ids or project.team_id in team_ids):
-                visible.append(assignment)
+            ),
+            scope=scope,
+            db=db,
+        )
+        if decision.allowed:
+            visible.append(assignment)
     return visible
 
 

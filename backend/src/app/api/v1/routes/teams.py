@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import (
-    accessible_team_ids,
     get_current_user,
     get_scope,
     require_permission,
@@ -26,6 +25,8 @@ from app.modules.auth.schemas import (
     UpdateTeamMemberRequest,
     UpsertTeamMemberRequest,
 )
+from app.modules.authorization import facade as authorization_facade
+from app.modules.authorization.permissions import Permissions
 from app.modules.keys import facade as projects_facade
 from app.modules.keys.errors import ProjectSlugAlreadyExistsError
 from app.modules.keys.schemas import (
@@ -46,16 +47,16 @@ from app.modules.usage.schemas import OrganizationUsageSummary
 router = APIRouter(prefix="/teams", tags=["teams"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RequestScope = Annotated[Scope, Depends(get_scope)]
-TeamViewer = Annotated[AuthenticatedUser, Depends(require_permission("teams.view"))]
+TeamViewer = Annotated[AuthenticatedUser, Depends(require_permission(Permissions.TEAMS_VIEW))]
 CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]
-OrgTeamAdmin = Annotated[AuthenticatedUser, Depends(require_permission("teams.manage"))]
+OrgTeamAdmin = Annotated[AuthenticatedUser, Depends(require_permission(Permissions.TEAMS_MANAGE))]
 ScopedTeamAdmin = Annotated[
     AuthenticatedUser,
-    Depends(require_team_admin_or_permission("teams.manage")),
+    Depends(require_team_admin_or_permission(Permissions.TEAMS_MANAGE)),
 ]
 ScopedProjectAdmin = Annotated[
     AuthenticatedUser,
-    Depends(require_team_admin_or_permission("projects.manage")),
+    Depends(require_team_admin_or_permission(Permissions.PROJECTS_MANAGE)),
 ]
 
 
@@ -66,10 +67,10 @@ async def list_teams(
     user: CurrentUser,
 ) -> list[TeamResponse]:
     teams = await facade.list_teams(scope=scope, db=db)
-    if user.role in {"org_owner", "org_admin", "org_viewer"} or "*" in user.permissions:
+    if authorization_facade.has_permission(user, Permissions.TEAMS_VIEW):
         return teams
-    allowed_ids = accessible_team_ids(user)
-    return [team for team in teams if team.id in allowed_ids]
+    allowed_scopes = authorization_facade.authorized_workspace_ids(user, relationship="member")
+    return [team for team in teams if team.id in allowed_scopes.team_ids]
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -96,7 +97,7 @@ async def get_team(
         team = await facade.get_team(team_id=team_id, scope=scope, db=db)
     except TeamNotFoundError as exc:
         raise HTTPException(status_code=404, detail="team not found") from exc
-    if not (user.role in {"org_owner", "org_admin", "org_viewer"} or "*" in user.permissions):
+    if not authorization_facade.has_permission(user, Permissions.TEAMS_VIEW):
         await require_team_view_or_permission(
             team_id=str(team_id),
             permission="",
@@ -168,7 +169,7 @@ async def list_team_projects(
     try:
         await require_team_view_or_permission(
             team_id=str(team_id),
-            permission="teams.view",
+            permission=Permissions.TEAMS_VIEW,
             user=user,
             db=db,
         )
@@ -187,7 +188,7 @@ async def list_team_members(
     try:
         await require_team_view_or_permission(
             team_id=str(team_id),
-            permission="teams.view",
+            permission=Permissions.TEAMS_VIEW,
             user=user,
             db=db,
         )
@@ -291,7 +292,7 @@ async def get_team_usage(
         raise HTTPException(status_code=404, detail="team not found") from exc
     await require_team_view_or_permission(
         team_id=str(team_id),
-        permission="teams.view",
+        permission=Permissions.TEAMS_VIEW,
         user=user,
         db=db,
     )

@@ -19,50 +19,6 @@ from app.modules.workspace.schemas import (
 )
 
 
-async def require_assignment_admin(
-    *,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    scope_type: str,
-    db: AsyncSession,
-    team_id: UUID | None = None,
-    project_id: UUID | None = None,
-    virtual_key_id: UUID | None = None,
-    global_permissions: set[str] | None = None,
-) -> None:
-    await service.require_assignment_admin(
-        actor=actor,
-        scope=scope,
-        scope_type=scope_type,
-        team_id=team_id,
-        project_id=project_id,
-        virtual_key_id=virtual_key_id,
-        global_permissions=global_permissions,
-        db=db,
-    )
-
-
-async def can_manage_assignment_scope(
-    *,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    scope_type: str,
-    db: AsyncSession,
-    team_id: UUID | None = None,
-    project_id: UUID | None = None,
-    virtual_key_id: UUID | None = None,
-) -> bool:
-    return await service.can_manage_assignment_scope(
-        actor=actor,
-        scope=scope,
-        scope_type=scope_type,
-        team_id=team_id,
-        project_id=project_id,
-        virtual_key_id=virtual_key_id,
-        db=db,
-    )
-
-
 async def validate_assignment_scope(
     *,
     organization_id: UUID,
@@ -173,10 +129,6 @@ async def get_virtual_key_target(
         virtual_key_id=virtual_key_id,
         db=db,
     )
-
-
-def managed_scope_ids(actor: AuthenticatedUser) -> tuple[set[UUID], set[UUID]]:
-    return service.managed_scope_ids(actor)
 
 
 async def get_team_identity(

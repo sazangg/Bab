@@ -12,6 +12,10 @@ from app.api.v1.deps import (
 )
 from app.core.database import Scope, get_db
 from app.modules.auth.schemas import AuthenticatedUser
+from app.modules.authorization import facade as authorization_facade
+from app.modules.authorization.errors import AuthorizationDeniedError
+from app.modules.authorization.permissions import Permissions
+from app.modules.authorization.schemas import AuthorizationTarget
 from app.modules.keys.errors import (
     InvalidVirtualKeyError,
     OrganizationInactiveError,
@@ -48,8 +52,6 @@ from app.modules.policy_simulation.schemas import (
     PolicySimulationRequest,
     PolicySimulationResponse,
 )
-from app.modules.workspace import facade as workspace_facade
-from app.modules.workspace.errors import WorkspaceAccessDeniedError
 
 router = APIRouter(prefix="/policies", tags=["policies"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
@@ -514,14 +516,17 @@ async def _require_assignment_admin(
     db: AsyncSession,
 ) -> None:
     try:
-        await workspace_facade.require_assignment_admin(
+        await authorization_facade.require(
             actor=user,
+            permission=Permissions.POLICIES_ASSIGN,
+            target=AuthorizationTarget.assignment_scope(
+                scope_type=scope_type,
+                team_id=team_id,
+                project_id=project_id,
+                virtual_key_id=virtual_key_id,
+            ),
             scope=scope,
-            scope_type=scope_type,
-            team_id=team_id,
-            project_id=project_id,
-            virtual_key_id=virtual_key_id,
             db=db,
         )
-    except WorkspaceAccessDeniedError as exc:
+    except AuthorizationDeniedError as exc:
         raise HTTPException(status_code=403, detail="insufficient permissions") from exc

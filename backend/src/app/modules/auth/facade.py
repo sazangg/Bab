@@ -46,10 +46,6 @@ async def verify_access_token(token: str, db: AsyncSession) -> AuthenticatedUser
     return await service.verify_access_token(token, db)
 
 
-def has_permission(user: AuthenticatedUser, permission: str) -> bool:
-    return service.has_permission(user, permission)
-
-
 async def has_team_membership(
     *, org_id: UUID, team_id: UUID, user_id: UUID, db: AsyncSession
 ) -> bool:

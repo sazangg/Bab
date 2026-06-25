@@ -10,6 +10,9 @@ from app.core.database import Scope, get_db
 from app.modules.auth import facade as auth_facade
 from app.modules.auth.errors import InvalidAccessTokenError
 from app.modules.auth.schemas import AuthenticatedUser
+from app.modules.authorization import facade as authorization_facade
+from app.modules.authorization.errors import AuthorizationDeniedError
+from app.modules.authorization.schemas import AuthorizationTarget
 from app.modules.workspace import facade as workspace_facade
 from app.modules.workspace.schemas import WorkspaceProjectIdentity
 
@@ -34,7 +37,7 @@ def require_role(*roles: str) -> Callable:
     async def check(
         user: Annotated[AuthenticatedUser, Depends(get_current_user)],
     ) -> AuthenticatedUser:
-        if user.role not in roles and "*" not in user.permissions:
+        if not authorization_facade.has_any_role(user, set(roles)):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="insufficient permissions",
@@ -48,7 +51,7 @@ def require_permission(permission: str) -> Callable:
     async def check(
         user: Annotated[AuthenticatedUser, Depends(get_current_user)],
     ) -> AuthenticatedUser:
-        if not auth_facade.has_permission(user, permission):
+        if not authorization_facade.has_permission(user, permission):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="insufficient permissions",
@@ -62,10 +65,12 @@ def require_permission_or_scoped_admin(permission: str) -> Callable:
     async def check(
         user: Annotated[AuthenticatedUser, Depends(get_current_user)],
     ) -> AuthenticatedUser:
-        if (
-            auth_facade.has_permission(user, permission)
-            or any(item.role == "team_admin" for item in user.team_memberships)
-            or any(item.role == "project_admin" for item in user.project_memberships)
+        admin_scopes = authorization_facade.authorized_workspace_ids(
+            user,
+            relationship="admin",
+        )
+        if authorization_facade.has_permission(user, permission) or (
+            admin_scopes.team_ids or admin_scopes.project_ids
         ):
             return user
         raise HTTPException(
@@ -82,9 +87,17 @@ def require_team_admin_or_permission(permission: str) -> Callable:
         user: Annotated[AuthenticatedUser, Depends(get_current_user)],
         db: DatabaseSession,
     ) -> AuthenticatedUser:
-        if auth_facade.has_permission(user, permission) or await _is_team_admin(
-            team_id=team_id,
-            actor=user,
+        if authorization_facade.has_permission(user, permission):
+            return user
+        parsed_team_id = _parse_uuid(team_id)
+        if parsed_team_id is not None and await _can_access_workspace(
+            user=user,
+            permission=permission,
+            target=AuthorizationTarget.workspace_scope(
+                scope_type="team",
+                relationship="admin",
+                team_id=parsed_team_id,
+            ),
             db=db,
         ):
             return user
@@ -102,12 +115,18 @@ def require_project_team_admin_or_permission(permission: str) -> Callable:
         user: Annotated[AuthenticatedUser, Depends(get_current_user)],
         db: DatabaseSession,
     ) -> AuthenticatedUser:
-        if auth_facade.has_permission(user, permission):
+        if authorization_facade.has_permission(user, permission):
             return user
         project = await _get_project(project_id=project_id, user=user, db=db)
-        if project and (
-            await _is_team_admin(team_id=str(project.team_id), actor=user, db=db)
-            or await _is_project_admin(project_id=str(project.id), actor=user, db=db)
+        if project and await _can_access_workspace(
+            user=user,
+            permission=permission,
+            target=AuthorizationTarget.workspace_scope(
+                scope_type="project",
+                relationship="admin",
+                project_id=project.id,
+            ),
+            db=db,
         ):
             return user
         raise HTTPException(
@@ -125,9 +144,17 @@ async def require_team_view_or_permission(
     user: AuthenticatedUser,
     db: AsyncSession,
 ) -> None:
-    if auth_facade.has_permission(user, permission) or await _has_team_membership(
-        team_id=team_id,
-        actor=user,
+    if authorization_facade.has_permission(user, permission):
+        return
+    parsed_team_id = _parse_uuid(team_id)
+    if parsed_team_id is not None and await _can_access_workspace(
+        user=user,
+        permission=permission,
+        target=AuthorizationTarget.workspace_scope(
+            scope_type="team",
+            relationship="member",
+            team_id=parsed_team_id,
+        ),
         db=db,
     ):
         return
@@ -144,12 +171,18 @@ async def require_project_view_or_permission(
     user: AuthenticatedUser,
     db: AsyncSession,
 ) -> None:
-    if auth_facade.has_permission(user, permission):
+    if authorization_facade.has_permission(user, permission):
         return
     project = await _get_project(project_id=project_id, user=user, db=db)
-    if project and (
-        await _has_team_membership(team_id=str(project.team_id), actor=user, db=db)
-        or await _has_project_membership(project_id=str(project.id), actor=user, db=db)
+    if project and await _can_access_workspace(
+        user=user,
+        permission=permission,
+        target=AuthorizationTarget.workspace_scope(
+            scope_type="project",
+            relationship="member",
+            project_id=project.id,
+        ),
+        db=db,
     ):
         return
     raise HTTPException(
@@ -158,70 +191,35 @@ async def require_project_view_or_permission(
     )
 
 
-def accessible_team_ids(user: AuthenticatedUser) -> set[UUID]:
-    return {membership.team_id for membership in user.team_memberships}
-
-
-def accessible_project_ids(user: AuthenticatedUser) -> set[UUID]:
-    return {membership.project_id for membership in user.project_memberships}
-
-
 def get_scope(user: Annotated[AuthenticatedUser, Depends(get_current_user)]) -> Scope:
     return Scope(org_id=user.org_id)
 
 
-async def _has_team_membership(
-    *, team_id: str, actor: AuthenticatedUser, db: AsyncSession
+def _parse_uuid(value: str) -> UUID | None:
+    try:
+        return UUID(str(value))
+    except ValueError:
+        return None
+
+
+async def _can_access_workspace(
+    *,
+    user: AuthenticatedUser,
+    permission: str,
+    target: AuthorizationTarget,
+    db: AsyncSession,
 ) -> bool:
     try:
-        parsed_team_id = UUID(str(team_id))
-    except ValueError:
+        await authorization_facade.require(
+            actor=user,
+            permission=permission,
+            target=target,
+            scope=Scope(org_id=user.org_id),
+            db=db,
+        )
+        return True
+    except AuthorizationDeniedError:
         return False
-    return await workspace_facade.has_team_membership(
-        team_id=parsed_team_id,
-        actor=actor,
-        db=db,
-    )
-
-
-async def _is_team_admin(*, team_id: str, actor: AuthenticatedUser, db: AsyncSession) -> bool:
-    try:
-        parsed_team_id = UUID(str(team_id))
-    except ValueError:
-        return False
-    return await workspace_facade.is_team_admin(
-        team_id=parsed_team_id,
-        actor=actor,
-        db=db,
-    )
-
-
-async def _has_project_membership(
-    *, project_id: str, actor: AuthenticatedUser, db: AsyncSession
-) -> bool:
-    try:
-        parsed_project_id = UUID(str(project_id))
-    except ValueError:
-        return False
-    return await workspace_facade.has_project_membership(
-        project_id=parsed_project_id,
-        actor=actor,
-        db=db,
-    )
-
-
-async def _is_project_admin(
-    *, project_id: str, actor: AuthenticatedUser, db: AsyncSession
-) -> bool:
-    try:
-        parsed_project_id = UUID(str(project_id))
-    except ValueError:
-        return False
-    return await workspace_facade.is_project_admin(
-        project_id=parsed_project_id,
-        actor=actor,
-        db=db,
-    )
 
 
 async def _get_project(

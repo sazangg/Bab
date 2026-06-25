@@ -6,6 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import Scope, transaction
 from app.modules.activity import facade as activity_facade
 from app.modules.auth.schemas import AuthenticatedUser
+from app.modules.authorization import facade as authorization_facade
+from app.modules.authorization.permissions import Permissions
+from app.modules.authorization.schemas import AuthorizationTarget
 from app.modules.keys import facade as keys_facade
 from app.modules.policies.errors import (
     PolicyAssignmentConflictError,
@@ -2068,12 +2071,14 @@ async def _can_view_policy(
     scope: Scope,
     db: AsyncSession,
 ) -> bool:
-    if actor is None or _is_org_policy_viewer(actor):
+    if actor is None or authorization_facade.has_permission(actor, Permissions.POLICIES_VIEW):
         return True
     if policy.owning_scope_type is None:
-        return _has_scoped_admin_membership(actor)
-    return await _is_admin_for_scope(
+        scopes = authorization_facade.scoped_admin_workspace_ids(actor)
+        return bool(scopes.team_ids or scopes.project_ids)
+    return await _can_access_workspace_scope(
         actor=actor,
+        permission=Permissions.POLICIES_VIEW,
         scope_type=policy.owning_scope_type,
         team_id=policy.owning_team_id,
         project_id=policy.owning_project_id,
@@ -2090,43 +2095,26 @@ async def _can_manage_policy_definition(
     scope: Scope,
     db: AsyncSession,
 ) -> bool:
-    if actor is None or _is_org_policy_admin(actor):
+    if actor is None or authorization_facade.has_permission(actor, Permissions.POLICIES_MANAGE):
         return True
     if policy.owning_scope_type is None:
         return False
-    return await _is_admin_for_scope(
+    return await _can_access_workspace_scope(
         actor=actor,
+        permission=Permissions.POLICIES_ASSIGN,
         scope_type=policy.owning_scope_type,
         team_id=policy.owning_team_id,
         project_id=policy.owning_project_id,
         virtual_key_id=policy.owning_virtual_key_id,
         scope=scope,
         db=db,
-    )
+)
 
 
-def _is_org_policy_admin(actor: AuthenticatedUser) -> bool:
-    return "*" in actor.permissions or actor.role in {"super_admin", "org_owner", "org_admin"}
-
-
-def _is_org_policy_viewer(actor: AuthenticatedUser) -> bool:
-    return "*" in actor.permissions or actor.role in {
-        "super_admin",
-        "org_owner",
-        "org_admin",
-        "org_viewer",
-    }
-
-
-def _has_scoped_admin_membership(actor: AuthenticatedUser) -> bool:
-    return any(membership.role == "team_admin" for membership in actor.team_memberships) or any(
-        membership.role == "project_admin" for membership in actor.project_memberships
-    )
-
-
-async def _is_admin_for_scope(
+async def _can_access_workspace_scope(
     *,
     actor: AuthenticatedUser,
+    permission: str,
     scope_type: str | None,
     team_id: UUID | None,
     project_id: UUID | None,
@@ -2134,15 +2122,21 @@ async def _is_admin_for_scope(
     scope: Scope,
     db: AsyncSession,
 ) -> bool:
-    return await workspace_facade.can_manage_assignment_scope(
+    if scope_type is None:
+        return False
+    decision = await authorization_facade.can(
         actor=actor,
+        permission=permission,
+        target=AuthorizationTarget.workspace_scope(
+            scope_type=scope_type,
+            team_id=team_id,
+            project_id=project_id,
+            virtual_key_id=virtual_key_id,
+        ),
         scope=scope,
-        scope_type=scope_type,
-        team_id=team_id,
-        project_id=project_id,
-        virtual_key_id=virtual_key_id,
         db=db,
     )
+    return decision.allowed
 
 
 async def _can_view_assignment(
@@ -2152,10 +2146,11 @@ async def _can_view_assignment(
     scope: Scope,
     db: AsyncSession,
 ) -> bool:
-    if actor is None or _is_org_policy_viewer(actor):
+    if actor is None or authorization_facade.has_permission(actor, Permissions.POLICIES_VIEW):
         return True
-    return await _is_admin_for_scope(
+    return await _can_access_workspace_scope(
         actor=actor,
+        permission=Permissions.POLICIES_VIEW,
         scope_type=assignment.scope_type,
         team_id=assignment.team_id,
         project_id=assignment.project_id,

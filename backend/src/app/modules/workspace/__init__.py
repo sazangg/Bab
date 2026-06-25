@@ -3,7 +3,6 @@ from app.modules.workspace.errors import (
     WorkspaceScopeNotFoundError,
 )
 from app.modules.workspace.facade import (
-    can_manage_assignment_scope,
     expand_allowed_scope_ids,
     get_project_identity,
     get_team_identity,
@@ -16,8 +15,6 @@ from app.modules.workspace.facade import (
     is_team_admin,
     list_workspace_projects,
     list_workspace_virtual_keys,
-    managed_scope_ids,
-    require_assignment_admin,
     validate_assignment_scope,
     validate_filter_relationships,
 )
@@ -49,7 +46,6 @@ __all__ = [
     "WorkspaceVirtualKeyIdentity",
     "WorkspaceVirtualKeyOption",
     "WorkspaceVirtualKeyTarget",
-    "can_manage_assignment_scope",
     "expand_allowed_scope_ids",
     "get_project_identity",
     "get_team_identity",
@@ -62,8 +58,6 @@ __all__ = [
     "is_team_admin",
     "list_workspace_projects",
     "list_workspace_virtual_keys",
-    "managed_scope_ids",
-    "require_assignment_admin",
     "validate_assignment_scope",
     "validate_filter_relationships",
 ]

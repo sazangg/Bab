@@ -7,6 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope
 from app.modules.auth.schemas import AuthenticatedUser
+from app.modules.authorization import facade as authorization_facade
+from app.modules.authorization.permissions import Permissions
+from app.modules.authorization.schemas import AuthorizationTarget
 from app.modules.keys.errors import VirtualKeyNotFoundError
 from app.modules.keys.schemas import ResolvedLimitPolicy
 from app.modules.policies.errors import PolicyPermissionError, PolicyValidationError
@@ -469,8 +472,7 @@ async def _validate_replacement_drafts(
                 actor_is_scoped=_is_scoped_actor(actor),
                 actor_can_manage_all=(
                     actor is None
-                    or actor.role in {"org_owner", "org_admin"}
-                    or _has_org_permission(actor, "policies.view")
+                    or authorization_facade.has_permission(actor, Permissions.POLICIES_VIEW)
                 ),
                 assignment_visible=lambda assignment: _assignment_visible_to_actor(
                     actor=actor,
@@ -502,15 +504,24 @@ async def _authorize_simulation(
         return
     if actor.org_id != target.org_id:
         raise PolicyPermissionError
-    scoped_admin = _is_target_scoped_admin(actor=actor, target=target)
-    if not (_has_org_permission(actor, "policies.view") or scoped_admin):
+    policy_view = await _can_access_simulation_target(
+        actor=actor,
+        target=target,
+        permission=Permissions.POLICIES_VIEW,
+        db=db,
+    )
+    if not policy_view:
         raise PolicyPermissionError
     guardrail_requested = payload.include_guardrails or any(
         draft.kind == "guardrail" for draft in payload.drafts
     )
-    if guardrail_requested and not (
-        _has_org_permission(actor, "guardrails.view") or scoped_admin
-    ):
+    guardrail_view = await _can_access_simulation_target(
+        actor=actor,
+        target=target,
+        permission=Permissions.GUARDRAILS_VIEW,
+        db=db,
+    )
+    if guardrail_requested and not guardrail_view:
         raise PolicyPermissionError
     for draft in payload.drafts:
         if draft.assignment is None:
@@ -523,17 +534,10 @@ async def _authorize_simulation(
         ):
             raise PolicyPermissionError
 
-
-def _has_org_permission(actor: AuthenticatedUser, permission: str) -> bool:
-    return "*" in actor.permissions or permission in actor.permissions
-
-
 def _is_scoped_actor(actor: AuthenticatedUser | None) -> bool:
     if actor is None:
         return False
-    if actor.role in {"org_owner", "org_admin"} or _has_org_permission(actor, "policies.view"):
-        return False
-    return True
+    return not authorization_facade.has_permission(actor, Permissions.POLICIES_VIEW)
 
 
 async def _can_replace_policy(
@@ -546,9 +550,9 @@ async def _can_replace_policy(
 ) -> bool:
     if actor is None:
         return True
-    if actor.role in {"org_owner", "org_admin"} or _has_org_permission(actor, "policies.view"):
+    if authorization_facade.has_permission(actor, Permissions.POLICIES_VIEW):
         return True
-    if _policy_owned_in_actor_scope(actor=actor, policy=policy, target=target):
+    if await _policy_owned_in_actor_scope(actor=actor, policy=policy, target=target, db=db):
         return True
     assignments = (
         await policy_kernel_repository.list_policy_assignments_for_policy(
@@ -576,61 +580,42 @@ async def _can_replace_policy(
     return False
 
 
-def _policy_owned_in_actor_scope(
-    *, actor: AuthenticatedUser, policy, target: _SimulationTarget
+async def _policy_owned_in_actor_scope(
+    *, actor: AuthenticatedUser, policy, target: _SimulationTarget, db: AsyncSession
 ) -> bool:
-    if policy.owning_scope_type == "team":
-        return any(
-            membership.team_id == policy.owning_team_id and membership.role == "team_admin"
-            for membership in actor.team_memberships
-        )
-    if policy.owning_scope_type == "project":
-        return any(
-            membership.project_id == policy.owning_project_id
-            and membership.role == "project_admin"
-            for membership in actor.project_memberships
-        ) or (
-            policy.owning_team_id is not None
-            and any(
-                membership.team_id == policy.owning_team_id and membership.role == "team_admin"
-                for membership in actor.team_memberships
-            )
-        )
-    if policy.owning_scope_type == "virtual_key":
-        return policy.owning_virtual_key_id == target.virtual_key_id and _is_target_scoped_admin(
+    if policy.owning_scope_type in {"team", "project", "virtual_key"}:
+        decision = await authorization_facade.can(
             actor=actor,
-            target=target,
+            permission=Permissions.POLICIES_VIEW,
+            target=AuthorizationTarget.workspace_scope(
+                scope_type=policy.owning_scope_type,
+                team_id=policy.owning_team_id,
+                project_id=policy.owning_project_id,
+                virtual_key_id=policy.owning_virtual_key_id,
+            ),
+            scope=Scope(org_id=target.org_id),
+            db=db,
         )
+        return decision.allowed
     return False
 
 
 async def _assignment_visible_to_actor(
     *, actor: AuthenticatedUser, target: _SimulationTarget, assignment, db: AsyncSession
 ) -> bool:
-    if assignment.scope_type == "org":
-        return False
-    if assignment.scope_type == "team":
-        return any(
-            membership.team_id == assignment.team_id and membership.role == "team_admin"
-            for membership in actor.team_memberships
-        )
-    if assignment.scope_type == "project":
-        return await workspace_facade.can_manage_assignment_scope(
-            actor=actor,
-            scope=Scope(org_id=target.org_id),
-            scope_type="project",
+    decision = await authorization_facade.can(
+        actor=actor,
+        permission=Permissions.POLICIES_VIEW,
+        target=AuthorizationTarget.workspace_scope(
+            scope_type=assignment.scope_type,
+            team_id=assignment.team_id,
             project_id=assignment.project_id,
-            db=db,
-        )
-    if assignment.scope_type == "virtual_key":
-        return await workspace_facade.can_manage_assignment_scope(
-            actor=actor,
-            scope=Scope(org_id=target.org_id),
-            scope_type="virtual_key",
             virtual_key_id=assignment.virtual_key_id,
-            db=db,
-        )
-    return False
+        ),
+        scope=Scope(org_id=target.org_id),
+        db=db,
+    )
+    return decision.allowed
 
 
 async def _can_simulate_draft_assignment(
@@ -640,48 +625,41 @@ async def _can_simulate_draft_assignment(
     assignment,
     db: AsyncSession,
 ) -> bool:
-    if actor.role in {"org_owner", "org_admin"} or _has_org_permission(actor, "policies.view"):
+    if authorization_facade.has_permission(actor, Permissions.POLICIES_VIEW):
         return True
-    team_admin_team_ids = {
-        membership.team_id
-        for membership in actor.team_memberships
-        if membership.role == "team_admin"
-    }
-    if assignment.scope_type == "org":
-        return False
-    if assignment.scope_type == "team":
-        return assignment.team_id in team_admin_team_ids
-    if assignment.scope_type == "project":
-        return await workspace_facade.can_manage_assignment_scope(
-            actor=actor,
-            scope=Scope(org_id=target.org_id),
-            scope_type="project",
+    decision = await authorization_facade.can(
+        actor=actor,
+        permission=Permissions.POLICIES_ASSIGN,
+        target=AuthorizationTarget.assignment_scope(
+            scope_type=assignment.scope_type,
+            team_id=assignment.team_id,
             project_id=assignment.project_id,
-            db=db,
-        )
-    if assignment.scope_type == "virtual_key":
-        return await workspace_facade.can_manage_assignment_scope(
-            actor=actor,
-            scope=Scope(org_id=target.org_id),
-            scope_type="virtual_key",
             virtual_key_id=assignment.virtual_key_id,
-            db=db,
-        )
-    return False
-
-
-def _is_target_scoped_admin(*, actor: AuthenticatedUser, target: _SimulationTarget) -> bool:
-    if actor.role in {"org_owner", "org_admin"}:
-        return True
-    if any(
-        membership.team_id == target.team_id and membership.role == "team_admin"
-        for membership in actor.team_memberships
-    ):
-        return True
-    return any(
-        membership.project_id == target.project_id and membership.role == "project_admin"
-        for membership in actor.project_memberships
+        ),
+        scope=Scope(org_id=target.org_id),
+        db=db,
     )
+    return decision.allowed
+
+
+async def _can_access_simulation_target(
+    *,
+    actor: AuthenticatedUser,
+    target: _SimulationTarget,
+    permission: str,
+    db: AsyncSession,
+) -> bool:
+    decision = await authorization_facade.can(
+        actor=actor,
+        permission=permission,
+        target=AuthorizationTarget.workspace_scope(
+            scope_type="virtual_key",
+            virtual_key_id=target.virtual_key_id,
+        ),
+        scope=Scope(org_id=target.org_id),
+        db=db,
+    )
+    return decision.allowed
 
 
 async def _simulate_access_resolution(

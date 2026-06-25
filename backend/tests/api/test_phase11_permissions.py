@@ -26,6 +26,7 @@ from app.modules.auth.schemas import (
     AuthenticatedTeamMembership,
     AuthenticatedUser,
 )
+from app.modules.authorization.permissions import Permissions
 from app.modules.guardrails import facade as guardrails_facade
 from app.modules.guardrails.internal import repository as guardrails_repository
 from app.modules.guardrails.schemas import (
@@ -711,7 +712,7 @@ async def test_global_guardrail_manager_can_update_any_assignment(
         scope_type="project",
         project_id=project.id,
     )
-    actor = _user(org_id=org.id, permissions=["guardrails.manage"])
+    actor = _user(org_id=org.id, permissions=[Permissions.GUARDRAILS_ASSIGN])
 
     updated = await update_guardrail_assignment(
         assignment_id=assignment.id,
