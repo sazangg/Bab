@@ -79,14 +79,10 @@ from app.modules.policies.internal.models import (
 )
 from app.modules.policy_kernel import repository as policy_kernel_repository
 from app.modules.policy_kernel.models import PolicyAssignment
-from app.modules.providers import facade as providers_facade
-from app.modules.providers.errors import ProviderNotFoundError
-from app.modules.providers.internal.models import (
-    CredentialPool,
-    CredentialPoolCredential,
-    ModelOffering,
-    Provider,
-    ProviderCredential,
+from app.modules.providers import read_models as provider_read_models
+from app.modules.providers.schemas import (
+    ProviderRouteResource,
+    ProviderRouteResourceKey,
 )
 from app.modules.settings import facade as settings_facade
 from app.modules.teams import facade as teams_facade
@@ -109,12 +105,7 @@ type ResolvedPolicyRoute = tuple[
     AccessPolicyPublicModel,
     AccessPolicyRouteCandidate,
     PolicyAssignment,
-    ModelOffering,
-    CredentialPool,
-    UUID,
-    str,
-    int | None,
-    int | None,
+    ProviderRouteResource,
 ]
 
 
@@ -694,41 +685,20 @@ async def _batch_inventory_routing_readiness(
     )
     pool_ids = {candidate.credential_pool_id for candidate in candidates}
     model_ids = {candidate.model_offering_id for candidate in candidates}
-    pools = {
-        pool.id: pool
-        for pool in await db.scalars(
-            select(CredentialPool).where(
-                CredentialPool.org_id == org_id,
-                CredentialPool.id.in_(pool_ids),
-                CredentialPool.is_active.is_(True),
+    route_resources = await provider_read_models.get_route_resources(
+        org_id=org_id,
+        resources={
+            ProviderRouteResourceKey(
+                provider_id=candidate.provider_id,
+                credential_pool_id=candidate.credential_pool_id,
+                model_offering_id=candidate.model_offering_id,
             )
-        )
-    }
-    models = {
-        model.id: model
-        for model in await db.scalars(
-            select(ModelOffering).where(
-                ModelOffering.org_id == org_id,
-                ModelOffering.id.in_(model_ids),
-                ModelOffering.is_active.is_(True),
-            )
-        )
-    }
-    ready_pool_ids = set(
-        await db.scalars(
-            select(CredentialPoolCredential.pool_id)
-            .join(
-                ProviderCredential,
-                ProviderCredential.id == CredentialPoolCredential.provider_credential_id,
-            )
-            .where(
-                CredentialPoolCredential.org_id == org_id,
-                CredentialPoolCredential.pool_id.in_(pool_ids),
-                CredentialPoolCredential.is_active.is_(True),
-                ProviderCredential.is_active.is_(True),
-            )
-            .distinct()
-        )
+            for candidate in candidates
+            if candidate.credential_pool_id in pool_ids and candidate.model_offering_id in model_ids
+        },
+        include_provider=False,
+        include_pricing=False,
+        db=db,
     )
     shared_policy_id_by_public_model_id = {
         public_model.id: shared_policy_id_by_concrete_policy_id[public_model.access_policy_id]
@@ -741,15 +711,14 @@ async def _batch_inventory_routing_readiness(
         if policy_id is None:
             continue
         signatures = candidates_by_policy.setdefault(policy_id, set())
-        pool = pools.get(candidate.credential_pool_id)
-        if pool is None or candidate.credential_pool_id not in ready_pool_ids:
-            continue
-        model = models.get(candidate.model_offering_id)
-        if (
-            model is not None
-            and model.provider_id == candidate.provider_id
-            and pool.provider_id == candidate.provider_id
-        ):
+        resource = route_resources.get(
+            ProviderRouteResourceKey(
+                provider_id=candidate.provider_id,
+                credential_pool_id=candidate.credential_pool_id,
+                model_offering_id=candidate.model_offering_id,
+            )
+        )
+        if resource is not None and _route_resource_is_inventory_ready(resource):
             signatures.add(
                 (candidate.provider_id, candidate.credential_pool_id, candidate.model_offering_id)
             )
@@ -1412,12 +1381,7 @@ async def _build_resolved_access_plan(
         attempt_public_model,
         attempt_candidate,
         attempt_assignment,
-        attempt_model,
-        attempt_pool,
-        _provider_id,
-        _provider_model,
-        _input_price,
-        _output_price,
+        attempt_resource,
     ) in enumerate(matched):
         limit_rules = await _matching_limit_policies(
             org_id=virtual_key.org_id,
@@ -1437,8 +1401,7 @@ async def _build_resolved_access_plan(
                 public_model=attempt_public_model,
                 candidate=attempt_candidate,
                 assignment=attempt_assignment,
-                model=attempt_model,
-                pool=attempt_pool,
+                resource=attempt_resource,
                 attempt_index=index,
                 primary_route_candidate_id=primary_candidate.id,
                 limit_rules=limit_rules,
@@ -1493,8 +1456,7 @@ async def list_accessible_models(*, raw_key: str, db: AsyncSession) -> list[Acce
         )
         if routable is None:
             continue
-        pool, model = routable
-        provider = await db.get(Provider, model.provider_id)
+        resource = routable
         policy_id = assignment.policy_id
         policy_name = (
             (
@@ -1507,22 +1469,20 @@ async def list_accessible_models(*, raw_key: str, db: AsyncSession) -> list[Acce
             if policy_id is not None
             else None
         )
-        model_id = _accessible_model_id(public_model=public_model, candidate=candidate, model=model)
+        model_id = _accessible_model_id(public_model=public_model, candidate=candidate)
         candidate_metadata = _accessible_model_candidate(
             candidate=candidate,
-            model=model,
-            pool=pool,
-            provider=provider,
+            resource=resource,
         )
         if model_id in by_id:
             by_id[model_id].candidates.append(candidate_metadata)
             continue
         accessible = AccessibleModel(
             id=model_id,
-            owned_by=model.provider_id.hex,
-            provider_id=model.provider_id,
-            provider_name=provider.name if provider else "Unknown provider",
-            model_offering_id=model.id,
+            owned_by=resource.provider_id.hex,
+            provider_id=resource.provider_id,
+            provider_name=resource.provider_name or "Unknown provider",
+            model_offering_id=resource.model_offering_id,
             access_policy_id=policy_id,
             access_policy_name=policy_name,
             access_policy_route_id=None,
@@ -1530,8 +1490,8 @@ async def list_accessible_models(*, raw_key: str, db: AsyncSession) -> list[Acce
             route_candidate_id=candidate.id,
             public_model_name=public_model.public_model_name,
             routing_mode=public_model.routing_mode,
-            pool_id=pool.id,
-            pool_name=pool.name,
+            pool_id=resource.credential_pool_id,
+            pool_name=resource.credential_pool_name or "",
             source_scope=assignment.scope_type,
             candidates=[candidate_metadata],
         )
@@ -1562,8 +1522,7 @@ async def list_project_accessible_models(
         )
         if routable is None:
             continue
-        pool, model = routable
-        provider = await db.get(Provider, model.provider_id)
+        resource = routable
         policy_id = assignment.policy_id
         policy_name = (
             (
@@ -1585,12 +1544,11 @@ async def list_project_accessible_models(
                 id=_accessible_model_id(
                     public_model=public_model,
                     candidate=candidate,
-                    model=model,
                 ),
-                owned_by=model.provider_id.hex,
-                provider_id=model.provider_id,
-                provider_name=provider.name if provider else "Unknown provider",
-                model_offering_id=model.id,
+                owned_by=resource.provider_id.hex,
+                provider_id=resource.provider_id,
+                provider_name=resource.provider_name or "Unknown provider",
+                model_offering_id=resource.model_offering_id,
                 access_policy_id=policy_id,
                 access_policy_name=policy_name,
                 access_policy_route_id=None,
@@ -1598,8 +1556,8 @@ async def list_project_accessible_models(
                 route_candidate_id=candidate.id,
                 public_model_name=public_model.public_model_name,
                 routing_mode=public_model.routing_mode,
-                pool_id=pool.id,
-                pool_name=pool.name,
+                pool_id=resource.credential_pool_id,
+                pool_name=resource.credential_pool_name or "",
                 source_scope=assignment.scope_type,
             )
         )
@@ -1679,17 +1637,17 @@ async def _build_effective_access_summary(
         )
         if routable is None:
             continue
-        pool, model = routable
+        resource = routable
         routable_routes.append(
             EffectiveRouteSummary(
                 provider_id=candidate.provider_id,
                 credential_pool_id=candidate.credential_pool_id,
-                model_offering_id=model.id,
+                model_offering_id=resource.model_offering_id,
                 public_model_id=public_model.id,
                 route_candidate_id=candidate.id,
                 public_model_name=public_model.public_model_name,
                 routing_mode=public_model.routing_mode,
-                provider_model=model.provider_model_name,
+                provider_model=resource.provider_model_name or "",
                 access_policy_id=assignment.policy_id,
                 access_policy_revision_id=public_model.policy_revision_id,
                 access_policy_name=policy_names.get(
@@ -1831,41 +1789,19 @@ async def _routable_route_candidate(
     candidate: AccessPolicyRouteCandidate,
     gateway_endpoint: str | None = None,
     db: AsyncSession,
-):
-    try:
-        provider = await providers_facade.get_provider(
-            provider_id=candidate.provider_id,
-            scope=Scope(org_id=org_id),
-            db=db,
-        )
-        pool = await providers_facade.get_credential_pool(
-            pool_id=candidate.credential_pool_id,
-            scope=Scope(org_id=org_id),
-            db=db,
-        )
-        model = await providers_facade.get_model_offering(
-            model_offering_id=candidate.provider_model_offering_id or candidate.model_offering_id,
-            scope=Scope(org_id=org_id),
-            db=db,
-        )
-        credentials = await providers_facade.list_credential_pool_credentials(
-            provider_id=candidate.provider_id,
-            pool_id=candidate.credential_pool_id,
-            scope=Scope(org_id=org_id),
-            db=db,
-        )
-    except ProviderNotFoundError:
+) -> ProviderRouteResource | None:
+    resource = await provider_read_models.get_route_resource(
+        org_id=org_id,
+        provider_id=candidate.provider_id,
+        credential_pool_id=candidate.credential_pool_id,
+        model_offering_id=candidate.provider_model_offering_id or candidate.model_offering_id,
+        db=db,
+    )
+    if not _route_resource_is_routable(resource):
         return None
-    if (
-        not _provider_supports_gateway_endpoint(provider, gateway_endpoint)
-        or not pool.is_active
-        or not model.is_active
-        or pool.provider_id != candidate.provider_id
-        or model.provider_id != candidate.provider_id
-        or not any(item.is_active and item.credential.is_active for item in credentials)
-    ):
+    if not _provider_supports_gateway_endpoint(resource, gateway_endpoint):
         return None
-    return pool, model
+    return resource
 
 
 async def _match_policy_route(
@@ -1902,7 +1838,7 @@ async def _match_policy_route(
         )
         if routable is None:
             continue
-        pool, model = routable
+        resource = routable
         if requested_model != public_model.public_model_name:
             continue
         matched_public_model_id = public_model.id
@@ -1911,12 +1847,7 @@ async def _match_policy_route(
                 public_model,
                 candidate,
                 assignment,
-                model,
-                pool,
-                model.provider_id,
-                model.provider_model_name,
-                model.effective_input_price_per_million_tokens,
-                model.effective_output_price_per_million_tokens,
+                resource,
             )
         )
         if public_model.routing_mode == "single_route":
@@ -1953,17 +1884,19 @@ async def _explain_route_candidates(
     selected_candidate_id = plan.attempts[0].route_candidate_id if plan and plan.attempts else None
     explanations: list[RouteCandidateExplanation] = []
     for candidate_index, (public_model, candidate, assignment) in enumerate(candidates):
-        provider = await db.get(Provider, candidate.provider_id)
-        pool = await db.get(CredentialPool, candidate.credential_pool_id)
         model_id = candidate.provider_model_offering_id or candidate.model_offering_id
-        model = await db.get(ModelOffering, model_id)
+        resource = await provider_read_models.get_route_resource(
+            org_id=virtual_key.org_id,
+            provider_id=candidate.provider_id,
+            credential_pool_id=candidate.credential_pool_id,
+            model_offering_id=model_id,
+            db=db,
+        )
         attempt_index = attempt_index_by_candidate.get(candidate.id)
         skipped_reason, skipped_message = _route_candidate_skip_reason(
             public_model=public_model,
             candidate=candidate,
-            provider=provider,
-            pool=pool,
-            model=model,
+            resource=resource,
             requested_model=requested_model,
             provider_id=provider_id,
             gateway_endpoint=gateway_endpoint,
@@ -1980,11 +1913,11 @@ async def _explain_route_candidates(
                 access_policy_revision_id=public_model.policy_revision_id,
                 assignment_id=assignment.id,
                 provider_id=candidate.provider_id,
-                provider_name=provider.name if provider else None,
+                provider_name=resource.provider_name,
                 credential_pool_id=candidate.credential_pool_id,
-                credential_pool_name=pool.name if pool else None,
+                credential_pool_name=resource.credential_pool_name,
                 provider_model_offering_id=model_id,
-                provider_model=model.provider_model_name if model else None,
+                provider_model=resource.provider_model_name,
                 attempt_index=attempt_index,
                 selected=candidate.id == selected_candidate_id,
                 would_attempt=attempt_index is not None,
@@ -1999,9 +1932,7 @@ def _route_candidate_skip_reason(
     *,
     public_model: AccessPolicyPublicModel,
     candidate: AccessPolicyRouteCandidate,
-    provider: Provider | None,
-    pool: CredentialPool | None,
-    model: ModelOffering | None,
+    resource: ProviderRouteResource,
     requested_model: str,
     provider_id: UUID | None,
     gateway_endpoint: str | None,
@@ -2014,15 +1945,15 @@ def _route_candidate_skip_reason(
         return "requested_model_mismatch", "The public model name did not match the request."
     if provider_id is not None and candidate.provider_id != provider_id:
         return "provider_pinned_mismatch", "The request pinned a different provider."
-    if provider is None or not provider.is_active:
+    if not resource.provider_is_active:
         return "provider_inactive", "The provider is inactive or missing."
-    if pool is None or not pool.is_active:
+    if not resource.credential_pool_is_active:
         return "credential_pool_inactive", "The credential pool is inactive or missing."
-    if model is None or not model.is_active or model.provider_id != candidate.provider_id:
+    if not resource.model_is_active or resource.model_provider_id != candidate.provider_id:
         return "provider_model_offering_inactive", "The model offering is inactive or missing."
-    if pool.provider_id != candidate.provider_id:
+    if resource.credential_pool_provider_id != candidate.provider_id:
         return "credential_pool_inactive", "The credential pool belongs to a different provider."
-    if not _provider_supports_gateway_endpoint(provider, gateway_endpoint):
+    if not _provider_supports_gateway_endpoint(resource, gateway_endpoint):
         return "endpoint_incompatible", "The provider does not support this gateway endpoint."
     if plan is not None and public_model.public_model_name == plan.public_model_name:
         return (
@@ -2032,13 +1963,39 @@ def _route_candidate_skip_reason(
     return "child_scope_narrowing_removed_candidate", "A narrower access scope removed this route."
 
 
-def _provider_supports_gateway_endpoint(provider, gateway_endpoint: str | None) -> bool:
+def _route_resource_is_routable(resource: ProviderRouteResource) -> bool:
+    return (
+        resource.provider_is_active
+        and resource.credential_pool_is_active
+        and resource.model_is_active
+        and resource.credential_pool_provider_id == resource.provider_id
+        and resource.model_provider_id == resource.provider_id
+        and resource.credential_pool_has_active_credential
+    )
+
+
+def _route_resource_is_inventory_ready(resource: ProviderRouteResource) -> bool:
+    return (
+        resource.credential_pool_is_active
+        and resource.model_is_active
+        and resource.credential_pool_provider_id == resource.provider_id
+        and resource.model_provider_id == resource.provider_id
+        and resource.credential_pool_has_active_credential
+    )
+
+
+def _provider_supports_gateway_endpoint(
+    resource: ProviderRouteResource,
+    gateway_endpoint: str | None,
+) -> bool:
     if gateway_endpoint is None:
         return True
     if gateway_endpoint == "anthropic_messages":
-        return bool(provider.integration_capabilities.get("native_anthropic_messages"))
+        return bool(
+            resource.provider_integration_capabilities.get("native_anthropic_messages")
+        )
     if gateway_endpoint in {"chat_completions", "responses", "completions"}:
-        return bool(provider.integration_capabilities.get("openai_compatible_chat"))
+        return bool(resource.provider_integration_capabilities.get("openai_compatible_chat"))
     return True
 
 
@@ -2142,7 +2099,6 @@ def _accessible_model_id(
     *,
     public_model: AccessPolicyPublicModel,
     candidate: AccessPolicyRouteCandidate,
-    model: ModelOffering,
 ) -> str:
     return public_model.public_model_name
 
@@ -2150,17 +2106,15 @@ def _accessible_model_id(
 def _accessible_model_candidate(
     *,
     candidate: AccessPolicyRouteCandidate,
-    model: ModelOffering,
-    pool: CredentialPool,
-    provider: Provider | None,
+    resource: ProviderRouteResource,
 ) -> AccessibleModelCandidate:
     return AccessibleModelCandidate(
-        provider_id=model.provider_id,
-        provider_name=provider.name if provider else "Unknown provider",
-        pool_id=pool.id,
-        pool_name=pool.name,
-        model_offering_id=model.id,
-        provider_model=model.provider_model_name,
+        provider_id=resource.provider_id,
+        provider_name=resource.provider_name or "Unknown provider",
+        pool_id=resource.credential_pool_id,
+        pool_name=resource.credential_pool_name or "",
+        model_offering_id=resource.model_offering_id,
+        provider_model=resource.provider_model_name or "",
         route_candidate_id=candidate.id,
         access_policy_route_id=None,
         priority=candidate.priority,
@@ -2176,8 +2130,7 @@ def _to_resolved_route_attempt(
     public_model: AccessPolicyPublicModel,
     candidate: AccessPolicyRouteCandidate,
     assignment: PolicyAssignment,
-    model: ModelOffering,
-    pool: CredentialPool,
+    resource: ProviderRouteResource,
     attempt_index: int,
     primary_route_candidate_id: UUID,
     limit_rules: list[tuple[LimitPolicyRule, LimitPolicy, UUID]],
@@ -2194,17 +2147,17 @@ def _to_resolved_route_attempt(
         route_candidate_id=candidate.id,
         public_model_name=public_model.public_model_name,
         routing_mode=public_model.routing_mode,
-        model_offering_id=model.id,
+        model_offering_id=resource.model_offering_id,
         virtual_key_id=virtual_key.id,
         provider_id=candidate.provider_id,
-        pool_id=pool.id,
+        pool_id=resource.credential_pool_id,
         provider_key_id=None,
         requested_model=requested_model,
-        provider_model=model.provider_model_name,
+        provider_model=resource.provider_model_name or "",
         routing_attempt_index=attempt_index,
         primary_route_candidate_id=primary_route_candidate_id,
-        input_price_per_million_tokens=model.effective_input_price_per_million_tokens,
-        output_price_per_million_tokens=model.effective_output_price_per_million_tokens,
+        input_price_per_million_tokens=resource.effective_input_price_per_million_tokens,
+        output_price_per_million_tokens=resource.effective_output_price_per_million_tokens,
         limit_policy_ids=list({policy.id for _rule, policy, _assignment_id in limit_rules}),
         limit_policies=[
             _to_resolved_limit_policy(rule, policy, assignment_id)

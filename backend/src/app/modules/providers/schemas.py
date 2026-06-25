@@ -41,6 +41,61 @@ class ProviderCapabilities(BaseModel):
     streaming: StrictBool = True
 
 
+class ProviderLabel(BaseModel):
+    id: UUID
+    name: str
+    slug: str | None = None
+
+
+class CredentialPoolLabel(BaseModel):
+    id: UUID
+    name: str
+
+
+class ProviderCredentialLabel(BaseModel):
+    id: UUID
+    name: str
+    key_prefix: str | None = None
+
+
+class ProviderRouteAttemptSnapshot(BaseModel):
+    provider_name: str | None
+    provider_slug: str | None
+    credential_pool_name: str | None
+    provider_credential_name: str | None
+    provider_credential_prefix: str | None
+    provider_model_offering_name: str | None
+    capability_snapshot: dict
+
+
+class ProviderRouteResourceKey(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    provider_id: UUID
+    credential_pool_id: UUID
+    model_offering_id: UUID
+
+
+class ProviderRouteResource(BaseModel):
+    provider_id: UUID
+    provider_name: str | None = None
+    provider_is_active: bool = False
+    provider_integration_capabilities: dict[str, bool] = Field(default_factory=dict)
+
+    credential_pool_id: UUID
+    credential_pool_name: str | None = None
+    credential_pool_is_active: bool = False
+    credential_pool_provider_id: UUID | None = None
+    credential_pool_has_active_credential: bool = False
+
+    model_offering_id: UUID
+    model_provider_id: UUID | None = None
+    provider_model_name: str | None = None
+    model_is_active: bool = False
+    effective_input_price_per_million_tokens: int | None = None
+    effective_output_price_per_million_tokens: int | None = None
+
+
 class ProviderRetryPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

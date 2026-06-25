@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope
 from app.modules.auth.schemas import AuthenticatedUser
-from app.modules.providers.internal import service
+from app.modules.providers.internal import credentials, execution, impact, model_offerings, service
 from app.modules.providers.internal.secret_backends import ProviderSecretBackendRegistry
 from app.modules.providers.schemas import (
     AddCredentialPoolCredentialRequest,
@@ -63,13 +63,13 @@ async def get_provider_impact(
     scope: Scope,
     db: AsyncSession,
 ) -> ProviderImpactResponse:
-    return await service.get_provider_impact(provider_id=provider_id, scope=scope, db=db)
+    return await impact.get_provider_impact(provider_id=provider_id, scope=scope, db=db)
 
 
 async def get_provider_credential_impact(
     *, provider_id: UUID, provider_credential_id: UUID, scope: Scope, db: AsyncSession
 ) -> ProviderResourceImpactResponse:
-    return await service.get_provider_credential_impact(
+    return await impact.get_provider_credential_impact(
         provider_id=provider_id, provider_credential_id=provider_credential_id, scope=scope, db=db
     )
 
@@ -77,7 +77,7 @@ async def get_provider_credential_impact(
 async def get_credential_pool_impact(
     *, provider_id: UUID, pool_id: UUID, scope: Scope, db: AsyncSession
 ) -> ProviderResourceImpactResponse:
-    return await service.get_credential_pool_impact(
+    return await impact.get_credential_pool_impact(
         provider_id=provider_id, pool_id=pool_id, scope=scope, db=db
     )
 
@@ -85,7 +85,7 @@ async def get_credential_pool_impact(
 async def get_model_offering_impact(
     *, provider_id: UUID, model_offering_id: UUID, scope: Scope, db: AsyncSession
 ) -> ProviderResourceImpactResponse:
-    return await service.get_model_offering_impact(
+    return await impact.get_model_offering_impact(
         provider_id=provider_id, model_offering_id=model_offering_id, scope=scope, db=db
     )
 
@@ -98,7 +98,7 @@ async def create_credential_pool(
     scope: Scope,
     db: AsyncSession,
 ) -> CredentialPoolResponse:
-    return await service.create_credential_pool(
+    return await credentials.create_credential_pool(
         provider_id=provider_id,
         payload=payload,
         actor=actor,
@@ -113,7 +113,7 @@ async def list_credential_pools(
     scope: Scope,
     db: AsyncSession,
 ) -> list[CredentialPoolResponse]:
-    return await service.list_credential_pools(provider_id=provider_id, scope=scope, db=db)
+    return await credentials.list_credential_pools(provider_id=provider_id, scope=scope, db=db)
 
 
 async def get_credential_pool(
@@ -122,7 +122,7 @@ async def get_credential_pool(
     scope: Scope,
     db: AsyncSession,
 ) -> CredentialPoolResponse:
-    return await service.get_credential_pool(pool_id=pool_id, scope=scope, db=db)
+    return await credentials.get_credential_pool(pool_id=pool_id, scope=scope, db=db)
 
 
 async def update_credential_pool(
@@ -134,7 +134,7 @@ async def update_credential_pool(
     scope: Scope,
     db: AsyncSession,
 ) -> CredentialPoolResponse:
-    return await service.update_credential_pool(
+    return await credentials.update_credential_pool(
         provider_id=provider_id,
         pool_id=pool_id,
         payload=payload,
@@ -151,7 +151,7 @@ async def list_credential_pool_credentials(
     scope: Scope,
     db: AsyncSession,
 ) -> list[CredentialPoolCredentialResponse]:
-    return await service.list_credential_pool_credentials(
+    return await credentials.list_credential_pool_credentials(
         provider_id=provider_id,
         pool_id=pool_id,
         scope=scope,
@@ -168,7 +168,7 @@ async def add_credential_pool_credential(
     scope: Scope,
     db: AsyncSession,
 ) -> CredentialPoolCredentialResponse:
-    return await service.add_credential_pool_credential(
+    return await credentials.add_credential_pool_credential(
         provider_id=provider_id,
         pool_id=pool_id,
         payload=payload,
@@ -188,7 +188,7 @@ async def update_credential_pool_credential(
     scope: Scope,
     db: AsyncSession,
 ) -> CredentialPoolCredentialResponse:
-    return await service.update_credential_pool_credential(
+    return await credentials.update_credential_pool_credential(
         provider_id=provider_id,
         pool_id=pool_id,
         pool_credential_id=pool_credential_id,
@@ -208,7 +208,7 @@ async def delete_credential_pool_credential(
     scope: Scope,
     db: AsyncSession,
 ) -> None:
-    await service.delete_credential_pool_credential(
+    await credentials.delete_credential_pool_credential(
         provider_id=provider_id,
         pool_id=pool_id,
         pool_credential_id=pool_credential_id,
@@ -227,7 +227,7 @@ async def create_provider_credential(
     db: AsyncSession,
     secret_registry: ProviderSecretBackendRegistry | None = None,
 ) -> ProviderCredentialResponse:
-    return await service.create_provider_credential(
+    return await credentials.create_provider_credential(
         provider_id=provider_id,
         payload=payload,
         actor=actor,
@@ -243,7 +243,7 @@ async def list_provider_credentials(
     scope: Scope,
     db: AsyncSession,
 ) -> list[ProviderCredentialResponse]:
-    return await service.list_provider_credentials(provider_id=provider_id, scope=scope, db=db)
+    return await credentials.list_provider_credentials(provider_id=provider_id, scope=scope, db=db)
 
 
 async def get_provider_credential(
@@ -252,7 +252,7 @@ async def get_provider_credential(
     scope: Scope,
     db: AsyncSession,
 ) -> ProviderCredentialResponse:
-    return await service.get_provider_credential(
+    return await credentials.get_provider_credential(
         provider_credential_id=provider_credential_id,
         scope=scope,
         db=db,
@@ -269,7 +269,7 @@ async def update_provider_credential(
     db: AsyncSession,
     secret_registry: ProviderSecretBackendRegistry | None = None,
 ) -> ProviderCredentialResponse:
-    return await service.update_provider_credential(
+    return await credentials.update_provider_credential(
         provider_id=provider_id,
         provider_credential_id=provider_credential_id,
         payload=payload,
@@ -290,7 +290,7 @@ async def test_provider_credential(
     http_client: httpx.AsyncClient,
     secret_registry: ProviderSecretBackendRegistry | None = None,
 ) -> TestProviderCredentialResponse:
-    return await service.test_provider_credential(
+    return await credentials.test_provider_credential(
         provider_id=provider_id,
         provider_credential_id=provider_credential_id,
         actor=actor,
@@ -309,7 +309,7 @@ async def deactivate_provider_credential(
     scope: Scope,
     db: AsyncSession,
 ) -> None:
-    await service.deactivate_provider_credential(
+    await credentials.deactivate_provider_credential(
         provider_id=provider_id,
         provider_credential_id=provider_credential_id,
         actor=actor,
@@ -326,7 +326,7 @@ async def create_model_offering(
     scope: Scope,
     db: AsyncSession,
 ) -> ProviderModelOfferingResponse:
-    return await service.create_model_offering(
+    return await model_offerings.create_model_offering(
         provider_id=provider_id,
         payload=payload,
         actor=actor,
@@ -346,7 +346,7 @@ async def sync_model_offerings(
     sync_mode: str = "merge",
     secret_registry: ProviderSecretBackendRegistry | None = None,
 ) -> SyncProviderModelOfferingsResponse:
-    return await service.sync_model_offerings(
+    return await model_offerings.sync_model_offerings(
         provider_id=provider_id,
         actor=actor,
         scope=scope,
@@ -369,7 +369,7 @@ async def list_model_offerings(
     scope: Scope,
     db: AsyncSession,
 ) -> ProviderModelOfferingPageResponse:
-    return await service.list_model_offerings(
+    return await model_offerings.list_model_offerings(
         provider_id=provider_id,
         search=search,
         modalities=modalities,
@@ -387,7 +387,7 @@ async def get_model_offering(
     scope: Scope,
     db: AsyncSession,
 ) -> ProviderModelOfferingResponse:
-    return await service.get_model_offering(
+    return await model_offerings.get_model_offering(
         model_offering_id=model_offering_id,
         scope=scope,
         db=db,
@@ -405,7 +405,7 @@ async def test_model_offering(
     http_client: httpx.AsyncClient,
     secret_registry: ProviderSecretBackendRegistry | None = None,
 ) -> TestProviderModelOfferingResponse:
-    return await service.test_model_offering(
+    return await model_offerings.test_model_offering(
         provider_id=provider_id,
         model_offering_id=model_offering_id,
         payload=payload,
@@ -426,7 +426,7 @@ async def update_model_offering(
     scope: Scope,
     db: AsyncSession,
 ) -> ProviderModelOfferingResponse:
-    return await service.update_model_offering(
+    return await model_offerings.update_model_offering(
         provider_id=provider_id,
         model_offering_id=model_offering_id,
         payload=payload,
@@ -444,7 +444,7 @@ async def deactivate_model_offering(
     scope: Scope,
     db: AsyncSession,
 ) -> None:
-    await service.deactivate_model_offering(
+    await model_offerings.deactivate_model_offering(
         provider_id=provider_id,
         model_offering_id=model_offering_id,
         actor=actor,
@@ -491,7 +491,7 @@ async def create_chat_completion(
     http_client: httpx.AsyncClient,
     secret_registry: ProviderSecretBackendRegistry | None = None,
 ) -> ProviderChatCompletionResponse:
-    return await service.create_chat_completion(
+    return await execution.create_chat_completion(
         provider_id=provider_id,
         pool_id=pool_id,
         provider_credential_id=provider_credential_id,
@@ -515,7 +515,7 @@ async def create_anthropic_message(
     http_client: httpx.AsyncClient,
     secret_registry: ProviderSecretBackendRegistry | None = None,
 ) -> ProviderAnthropicMessagesResponse:
-    return await service.create_anthropic_message(
+    return await execution.create_anthropic_message(
         provider_id=provider_id,
         pool_id=pool_id,
         provider_credential_id=provider_credential_id,
@@ -539,7 +539,7 @@ async def stream_chat_completion(
     http_client: httpx.AsyncClient,
     secret_registry: ProviderSecretBackendRegistry | None = None,
 ) -> ProviderChatCompletionStream:
-    return await service.stream_chat_completion(
+    return await execution.stream_chat_completion(
         provider_id=provider_id,
         pool_id=pool_id,
         provider_credential_id=provider_credential_id,

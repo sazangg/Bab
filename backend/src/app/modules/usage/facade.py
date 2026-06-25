@@ -7,7 +7,7 @@ from app.core.database import Scope
 from app.modules.guardrails.internal import repository as guardrails_repository
 from app.modules.keys.schemas import ResolvedAccess
 from app.modules.policy_kernel.models import Policy
-from app.modules.providers.internal.models import CredentialPool, Provider
+from app.modules.providers import read_models as provider_read_models
 from app.modules.usage.accounting import UsageAccounting
 from app.modules.usage.internal import repository
 from app.modules.usage.redaction import redact_trace_value
@@ -287,6 +287,11 @@ async def get_gateway_request_trace(
         org_id=org_id,
         db=db,
     )
+    usage_records = await _apply_provider_credential_labels(
+        org_id=org_id,
+        records=usage_records,
+        db=db,
+    )
     request_trace = GatewayRequestTraceSummary.model_validate(gateway_request)
     route_attempt_traces = [
         GatewayRouteAttemptTrace.model_validate(attempt).model_copy(
@@ -369,15 +374,38 @@ async def _to_gateway_request_trace_list_item(
         (attempt for attempt in attempts if attempt.id == request.final_route_attempt_id),
         None,
     )
-    final_provider = (
-        await db.get(Provider, request.final_provider_id)
-        if request.final_provider_id and final_attempt is None
-        else None
-    )
-    final_pool = (
-        await db.get(CredentialPool, request.final_credential_pool_id)
+    provider_ids = {
+        provider_id
+        for provider_id in (
+            [request.final_provider_id]
+            if request.final_provider_id and final_attempt is None
+            else []
+        )
+        + [attempt.provider_id for attempt in attempts if attempt.provider_id is not None]
+        if provider_id is not None
+    }
+    pool_ids = (
+        {request.final_credential_pool_id}
         if request.final_credential_pool_id and final_attempt is None
-        else None
+        else set()
+    )
+    provider_labels = (
+        await provider_read_models.get_provider_labels(
+            org_id=request.org_id,
+            provider_ids=provider_ids,
+            db=db,
+        )
+        if request.org_id is not None
+        else {}
+    )
+    pool_labels = (
+        await provider_read_models.get_credential_pool_labels(
+            org_id=request.org_id,
+            pool_ids=pool_ids,
+            db=db,
+        )
+        if request.org_id is not None
+        else {}
     )
     final_policy = (
         await db.get(Policy, request.final_access_policy_id)
@@ -395,9 +423,9 @@ async def _to_gateway_request_trace_list_item(
         if attempt.provider_name:
             involved_provider_names.append(attempt.provider_name)
         else:
-            provider = await db.get(Provider, attempt.provider_id)
-            if provider is not None:
-                involved_provider_names.append(provider.name)
+            provider_label = provider_labels.get(attempt.provider_id)
+            if provider_label is not None:
+                involved_provider_names.append(provider_label.name)
 
     return GatewayRequestTraceListItem(
         id=request.id,
@@ -415,16 +443,16 @@ async def _to_gateway_request_trace_list_item(
         final_provider_name=(
             final_attempt.provider_name
             if final_attempt is not None
-            else final_provider.name
-            if final_provider is not None
+            else provider_labels[request.final_provider_id].name
+            if request.final_provider_id in provider_labels
             else None
         ),
         final_credential_pool_id=request.final_credential_pool_id,
         final_credential_pool_name=(
             final_attempt.credential_pool_name
             if final_attempt is not None
-            else final_pool.name
-            if final_pool is not None
+            else pool_labels[request.final_credential_pool_id].name
+            if request.final_credential_pool_id in pool_labels
             else None
         ),
         final_provider_model=request.final_provider_model,
@@ -797,6 +825,15 @@ async def list_usage_records(
         model=model,
         request_id=request_id,
         search=search,
+        matching_provider_credential_ids=(
+            await provider_read_models.find_provider_credential_ids(
+                org_id=org_id,
+                search=search,
+                db=db,
+            )
+            if search
+            else None
+        ),
         allowed_team_ids=allowed_scope.team_ids if allowed_scope is not None else None,
         allowed_project_ids=allowed_scope.project_ids if allowed_scope is not None else None,
         allowed_virtual_key_ids=(
@@ -806,7 +843,7 @@ async def list_usage_records(
         offset=offset,
         db=db,
     )
-    return records
+    return await _apply_provider_credential_labels(org_id=org_id, records=records, db=db)
 
 
 async def summarize_limit_policy_usage(
@@ -883,7 +920,8 @@ async def get_organization_usage_summary(
         ),
         db=db,
     )
-    return await _enrich_usage_workspace_breakdowns(org_id=org_id, summary=summary, db=db)
+    summary = await _enrich_usage_workspace_breakdowns(org_id=org_id, summary=summary, db=db)
+    return await _enrich_usage_provider_breakdowns(org_id=org_id, summary=summary, db=db)
 
 
 async def get_organization_usage_timeseries(
@@ -965,12 +1003,20 @@ async def get_usage_filter_options(
         virtual_key_rows=options.by_virtual_key,
         db=db,
     )
-    return options.model_copy(
+    options = options.model_copy(
         update={
             "by_team": _apply_labels(options.by_team, labels.teams),
             "by_project": _apply_labels(options.by_project, labels.projects),
             "by_virtual_key": _apply_labels(options.by_virtual_key, labels.virtual_keys),
         }
+    )
+    provider_labels = await provider_read_models.get_provider_labels(
+        org_id=org_id,
+        provider_ids=_breakdown_ids(options.by_provider),
+        db=db,
+    )
+    return options.model_copy(
+        update={"by_provider": _apply_provider_labels(options.by_provider, provider_labels)}
     )
 
 
@@ -1020,9 +1066,14 @@ async def get_virtual_key_usage_summary(
     org_id: UUID,
     db: AsyncSession,
 ) -> VirtualKeyUsageSummary:
-    return await repository.get_virtual_key_usage_summary(
+    summary = await repository.get_virtual_key_usage_summary(
         virtual_key_id=virtual_key_id,
         org_id=org_id,
+        db=db,
+    )
+    return await _enrich_virtual_key_usage_provider_breakdowns(
+        org_id=org_id,
+        summary=summary,
         db=db,
     )
 
@@ -1085,6 +1136,84 @@ async def _enrich_usage_workspace_breakdowns(
     )
 
 
+async def _enrich_usage_provider_breakdowns(
+    *,
+    org_id: UUID,
+    summary: OrganizationUsageSummary,
+    db: AsyncSession,
+) -> OrganizationUsageSummary:
+    provider_labels = await provider_read_models.get_provider_labels(
+        org_id=org_id,
+        provider_ids=_breakdown_ids(summary.by_provider),
+        db=db,
+    )
+    pool_labels = await provider_read_models.get_credential_pool_labels(
+        org_id=org_id,
+        pool_ids=_breakdown_ids(summary.by_pool),
+        db=db,
+    )
+    return summary.model_copy(
+        update={
+            "by_provider": _apply_provider_labels(summary.by_provider, provider_labels),
+            "by_pool": _apply_pool_labels(summary.by_pool, pool_labels),
+        }
+    )
+
+
+async def _enrich_virtual_key_usage_provider_breakdowns(
+    *,
+    org_id: UUID,
+    summary: VirtualKeyUsageSummary,
+    db: AsyncSession,
+) -> VirtualKeyUsageSummary:
+    provider_labels = await provider_read_models.get_provider_labels(
+        org_id=org_id,
+        provider_ids=_breakdown_ids(summary.by_provider),
+        db=db,
+    )
+    pool_labels = await provider_read_models.get_credential_pool_labels(
+        org_id=org_id,
+        pool_ids=_breakdown_ids(summary.by_pool),
+        db=db,
+    )
+    return summary.model_copy(
+        update={
+            "by_provider": _apply_provider_labels(summary.by_provider, provider_labels),
+            "by_pool": _apply_pool_labels(summary.by_pool, pool_labels),
+        }
+    )
+
+
+async def _apply_provider_credential_labels(
+    *,
+    org_id: UUID,
+    records: list[UsageRecordResponse],
+    db: AsyncSession,
+) -> list[UsageRecordResponse]:
+    labels = await provider_read_models.get_provider_credential_labels(
+        org_id=org_id,
+        credential_ids={
+            record.provider_credential_id
+            for record in records
+            if record.provider_credential_id is not None
+        },
+        db=db,
+    )
+    if not labels:
+        return records
+    return [
+        record.model_copy(
+            update={
+                "provider_credential_name": labels[record.provider_credential_id].name,
+                "provider_credential_prefix": labels[record.provider_credential_id].key_prefix,
+            }
+        )
+        if record.provider_credential_id in labels
+        else record
+        for record in records
+    ]
+
+
 async def _workspace_labels_for_breakdowns(
     *,
     org_id: UUID,
@@ -1124,6 +1253,38 @@ def _apply_labels(
             enriched.append(row)
             continue
         enriched.append(row.model_copy(update={"label": labels.get(row_id, row.label)}))
+    return enriched
+
+
+def _apply_provider_labels(
+    rows: list[UsageBreakdownRow],
+    labels: dict,
+) -> list[UsageBreakdownRow]:
+    enriched: list[UsageBreakdownRow] = []
+    for row in rows:
+        try:
+            row_id = UUID(row.id)
+        except ValueError:
+            enriched.append(row)
+            continue
+        label = labels.get(row_id)
+        enriched.append(row.model_copy(update={"label": label.name if label else row.label}))
+    return enriched
+
+
+def _apply_pool_labels(
+    rows: list[UsageBreakdownRow],
+    labels: dict,
+) -> list[UsageBreakdownRow]:
+    enriched: list[UsageBreakdownRow] = []
+    for row in rows:
+        try:
+            row_id = UUID(row.id)
+        except ValueError:
+            enriched.append(row)
+            continue
+        label = labels.get(row_id)
+        enriched.append(row.model_copy(update={"label": label.name if label else row.label}))
     return enriched
 
 

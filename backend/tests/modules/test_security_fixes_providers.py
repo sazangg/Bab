@@ -4,7 +4,7 @@ import pytest
 
 from app.core.ssrf import SsrfValidationError, assert_public_url
 from app.modules.providers.errors import ProviderUpstreamError
-from app.modules.providers.internal.service import _call_with_retries
+from app.modules.providers.internal.execution import _call_with_retries
 
 # --- #1 SSRF: provider base_url must resolve to a public address -------------
 

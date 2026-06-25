@@ -7,12 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.request_ids import current_request_id
 from app.modules.policy_kernel import repository as policy_kernel_repository
-from app.modules.providers.internal.models import (
-    CredentialPool,
-    ModelOffering,
-    Provider,
-    ProviderCredential,
-)
+from app.modules.providers.read_models import get_route_attempt_snapshot
 from app.modules.usage import facade as usage_facade
 from app.modules.usage.accounting import UsageAccounting
 from app.modules.usage.schemas import (
@@ -421,14 +416,14 @@ async def _gateway_route_attempt_snapshot(
     resolved: GatewayResolvedAccess,
     db: AsyncSession,
 ) -> dict[str, Any]:
-    provider = await db.get(Provider, resolved.provider_id)
-    pool = await db.get(CredentialPool, resolved.pool_id)
-    credential = (
-        await db.get(ProviderCredential, resolved.provider_key_id)
-        if resolved.provider_key_id is not None
-        else None
+    provider_snapshot = await get_route_attempt_snapshot(
+        org_id=resolved.org_id,
+        provider_id=resolved.provider_id,
+        credential_pool_id=resolved.pool_id,
+        provider_credential_id=resolved.provider_key_id,
+        model_offering_id=resolved.model_offering_id,
+        db=db,
     )
-    offering = await db.get(ModelOffering, resolved.model_offering_id)
     policy = (
         await policy_kernel_repository.get_policy(
             policy_id=resolved.access_policy_id,
@@ -448,21 +443,14 @@ async def _gateway_route_attempt_snapshot(
         else None
     )
     return {
-        "provider_name": provider.name if provider else None,
-        "provider_slug": provider.slug if provider else None,
-        "credential_pool_name": pool.name if pool else None,
-        "provider_credential_name": credential.name if credential else None,
-        "provider_credential_prefix": credential.key_prefix if credential else None,
-        "provider_model_offering_name": offering.provider_model_name if offering else None,
+        "provider_name": provider_snapshot.provider_name,
+        "provider_slug": provider_snapshot.provider_slug,
+        "credential_pool_name": provider_snapshot.credential_pool_name,
+        "provider_credential_name": provider_snapshot.provider_credential_name,
+        "provider_credential_prefix": provider_snapshot.provider_credential_prefix,
+        "provider_model_offering_name": provider_snapshot.provider_model_offering_name,
         "access_policy_name": policy.name if policy else None,
         "access_policy_assignment_scope_type": assignment.scope_type if assignment else None,
-        "capability_snapshot": {
-            "provider_capabilities": provider.capabilities if provider else {},
-            "integration": provider.supported_integration if provider else None,
-            "model_capabilities": offering.capabilities if offering else {},
-            "input_modalities": offering.input_modalities if offering else [],
-            "output_modalities": offering.output_modalities if offering else [],
-            "context_window": offering.context_window if offering else None,
-        },
+        "capability_snapshot": provider_snapshot.capability_snapshot,
     }
 

@@ -4,12 +4,10 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.policies.internal.models import (
-    AccessPolicy,
-    AccessPolicyPublicModel,
-    AccessPolicyRouteCandidate,
-    LimitPolicyRule,
-)
+from app.core.database import Scope
+from app.modules.policies import read_models as policy_read_models
+from app.modules.providers.errors import ProviderNotFoundError
+from app.modules.providers.internal import repository
 from app.modules.providers.internal.models import (
     CredentialPool,
     CredentialPoolCredential,
@@ -22,47 +20,90 @@ from app.modules.providers.schemas import (
     ProviderImpactResponse,
     ProviderResourceImpactResponse,
 )
-from app.modules.usage.internal.models import UsageRecord
+from app.modules.usage import read_models as usage_read_models
 
 
 async def get_provider_impact(
+    *,
+    provider_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProviderImpactResponse:
+    await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
+    return await _compose_provider_impact(org_id=scope.org_id, provider_id=provider_id, db=db)
+
+
+async def get_provider_credential_impact(
+    *,
+    provider_id: UUID,
+    provider_credential_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProviderResourceImpactResponse:
+    credential = await _get_provider_credential_or_raise(
+        provider_id=provider_id,
+        provider_credential_id=provider_credential_id,
+        scope=scope,
+        db=db,
+    )
+    return await _compose_credential_impact(org_id=scope.org_id, credential=credential, db=db)
+
+
+async def get_credential_pool_impact(
+    *,
+    provider_id: UUID,
+    pool_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProviderResourceImpactResponse:
+    pool = await _get_credential_pool_or_raise(
+        provider_id=provider_id,
+        pool_id=pool_id,
+        scope=scope,
+        db=db,
+    )
+    return await _compose_pool_impact(org_id=scope.org_id, pool=pool, db=db)
+
+
+async def get_model_offering_impact(
+    *,
+    provider_id: UUID,
+    model_offering_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProviderResourceImpactResponse:
+    model = await _get_model_offering_or_raise(
+        provider_id=provider_id,
+        model_offering_id=model_offering_id,
+        scope=scope,
+        db=db,
+    )
+    return await _compose_model_impact(org_id=scope.org_id, model=model, db=db)
+
+
+async def _compose_provider_impact(
     *,
     org_id: UUID,
     provider_id: UUID,
     db: AsyncSession,
 ) -> ProviderImpactResponse:
-    policy_rows = await db.execute(
-        select(AccessPolicy.id, AccessPolicy.name, AccessPolicyRouteCandidate.id)
-        .join(
-            AccessPolicyPublicModel,
-            AccessPolicyPublicModel.access_policy_id == AccessPolicy.id,
-        )
-        .join(
-            AccessPolicyRouteCandidate,
-            AccessPolicyRouteCandidate.public_model_id == AccessPolicyPublicModel.id,
-        )
-        .where(
-            AccessPolicy.org_id == org_id,
-            AccessPolicyRouteCandidate.provider_id == provider_id,
-            AccessPolicy.is_active.is_(True),
-            AccessPolicyPublicModel.is_active.is_(True),
-            AccessPolicyRouteCandidate.is_active.is_(True),
-        )
-        .order_by(AccessPolicy.name)
+    policy_impacts = await policy_read_models.list_provider_route_impacts(
+        org_id=org_id,
+        provider_id=provider_id,
+        db=db,
     )
     policies = [
-        ProviderImpactPolicy(id=policy_id, name=name, route_id=route_id)
-        for policy_id, name, route_id in policy_rows
-    ]
-    limit_rule_count = int(
-        await db.scalar(
-            select(func.count(LimitPolicyRule.id)).where(
-                LimitPolicyRule.org_id == org_id,
-                LimitPolicyRule.provider_id == provider_id,
-                LimitPolicyRule.is_active.is_(True),
-            )
+        ProviderImpactPolicy(
+            id=policy.policy_id,
+            name=policy.policy_name,
+            route_id=policy.route_id,
         )
-        or 0
+        for policy in policy_impacts
+    ]
+    limit_rule_count = await policy_read_models.count_provider_limit_rules(
+        org_id=org_id,
+        provider_id=provider_id,
+        db=db,
     )
     pool_count = int(
         await db.scalar(
@@ -85,30 +126,29 @@ async def get_provider_impact(
         or 0
     )
     since = datetime.now(UTC) - timedelta(days=30)
-    usage = (
-        await db.execute(
-            select(
-                func.count(UsageRecord.id),
-                func.coalesce(func.sum(UsageRecord.cost_cents), 0),
-            ).where(
-                UsageRecord.org_id == org_id,
-                UsageRecord.provider_id == provider_id,
-                UsageRecord.created_at >= since,
-            )
-        )
-    ).one()
+    usage = await usage_read_models.get_recent_provider_usage_summary(
+        org_id=org_id,
+        provider_id=provider_id,
+        since=since,
+        db=db,
+    )
     return ProviderImpactResponse(
         access_policies=policies,
         active_limit_rule_count=limit_rule_count,
         active_pool_count=pool_count,
         active_model_count=model_count,
         recent_usage_window_days=30,
-        recent_request_count=int(usage[0]),
-        recent_cost_cents=int(usage[1]),
+        recent_request_count=usage.request_count,
+        recent_cost_cents=usage.cost_cents,
     )
 
 
-async def get_credential_impact(*, org_id: UUID, credential: ProviderCredential, db: AsyncSession):
+async def _compose_credential_impact(
+    *,
+    org_id: UUID,
+    credential: ProviderCredential,
+    db: AsyncSession,
+):
     memberships = int(
         await db.scalar(
             select(func.count(CredentialPoolCredential.id))
@@ -131,36 +171,32 @@ async def get_credential_impact(*, org_id: UUID, credential: ProviderCredential,
         excluded_credential_id=credential.id,
         db=db,
     )
-    usage = await _usage_summary(
+    usage = await usage_read_models.get_recent_provider_credential_usage_summary(
         org_id=org_id,
+        provider_credential_id=credential.id,
+        since=_recent_usage_since(),
         db=db,
-        filters=[UsageRecord.provider_credential_id == credential.id],
     )
     return ProviderResourceImpactResponse(
         active_pool_membership_count=memberships,
-        recent_request_count=usage[0],
-        recent_cost_cents=usage[1],
+        recent_request_count=usage.request_count,
+        recent_cost_cents=usage.cost_cents,
         leaves_provider_unroutable=(
             credential.is_active and currently_routable and not routable_without_target
         ),
     )
 
 
-async def get_pool_impact(*, org_id: UUID, pool: CredentialPool, db: AsyncSession):
-    policies = await _policy_routes(
+async def _compose_pool_impact(*, org_id: UUID, pool: CredentialPool, db: AsyncSession):
+    policies = await _policy_routes_to_response(
         org_id=org_id,
-        filter_clause=AccessPolicyRouteCandidate.credential_pool_id == pool.id,
+        credential_pool_id=pool.id,
         db=db,
     )
-    rules = int(
-        await db.scalar(
-            select(func.count(LimitPolicyRule.id)).where(
-                LimitPolicyRule.org_id == org_id,
-                LimitPolicyRule.credential_pool_id == pool.id,
-                LimitPolicyRule.is_active.is_(True),
-            )
-        )
-        or 0
+    rules = await policy_read_models.count_provider_limit_rules(
+        org_id=org_id,
+        credential_pool_id=pool.id,
+        db=db,
     )
     currently_routable = await _provider_is_routable(
         org_id=org_id, provider_id=pool.provider_id, db=db
@@ -180,38 +216,16 @@ async def get_pool_impact(*, org_id: UUID, pool: CredentialPool, db: AsyncSessio
     )
 
 
-async def get_model_impact(*, org_id: UUID, model: ModelOffering, db: AsyncSession):
-    rows = await db.execute(
-        select(AccessPolicy, AccessPolicyRouteCandidate)
-        .join(
-            AccessPolicyPublicModel,
-            AccessPolicyPublicModel.access_policy_id == AccessPolicy.id,
-        )
-        .join(
-            AccessPolicyRouteCandidate,
-            AccessPolicyRouteCandidate.public_model_id == AccessPolicyPublicModel.id,
-        )
-        .where(
-            AccessPolicy.org_id == org_id,
-            AccessPolicy.is_active.is_(True),
-            AccessPolicyPublicModel.is_active.is_(True),
-            AccessPolicyRouteCandidate.is_active.is_(True),
-            AccessPolicyRouteCandidate.model_offering_id == model.id,
-        )
+async def _compose_model_impact(*, org_id: UUID, model: ModelOffering, db: AsyncSession):
+    policies = await _policy_routes_to_response(
+        org_id=org_id,
+        model_offering_id=model.id,
+        db=db,
     )
-    policies = [
-        ProviderImpactPolicy(id=policy.id, name=policy.name, route_id=candidate.id)
-        for policy, candidate in rows
-    ]
-    rules = int(
-        await db.scalar(
-            select(func.count(LimitPolicyRule.id)).where(
-                LimitPolicyRule.org_id == org_id,
-                LimitPolicyRule.model_offering_id == model.id,
-                LimitPolicyRule.is_active.is_(True),
-            )
-        )
-        or 0
+    rules = await policy_read_models.count_provider_limit_rules(
+        org_id=org_id,
+        model_offering_id=model.id,
+        db=db,
     )
     currently_routable = await _provider_is_routable(
         org_id=org_id, provider_id=model.provider_id, db=db
@@ -222,19 +236,18 @@ async def get_model_impact(*, org_id: UUID, model: ModelOffering, db: AsyncSessi
         excluded_model_id=model.id,
         db=db,
     )
-    usage = await _usage_summary(
+    usage = await usage_read_models.get_recent_provider_model_usage_summary(
         org_id=org_id,
+        provider_id=model.provider_id,
+        provider_model=model.provider_model_name,
+        since=_recent_usage_since(),
         db=db,
-        filters=[
-            UsageRecord.provider_id == model.provider_id,
-            UsageRecord.provider_model == model.provider_model_name,
-        ],
     )
     return ProviderResourceImpactResponse(
         access_policies=policies,
         active_limit_rule_count=rules,
-        recent_request_count=usage[0],
-        recent_cost_cents=usage[1],
+        recent_request_count=usage.request_count,
+        recent_cost_cents=usage.cost_cents,
         leaves_provider_unroutable=(
             model.is_active and currently_routable and not routable_without_target
         ),
@@ -302,38 +315,86 @@ async def _provider_is_routable(
     )
 
 
-async def _policy_routes(*, org_id: UUID, filter_clause, db: AsyncSession):
-    rows = await db.execute(
-        select(AccessPolicy.id, AccessPolicy.name, AccessPolicyRouteCandidate.id)
-        .join(
-            AccessPolicyPublicModel,
-            AccessPolicyPublicModel.access_policy_id == AccessPolicy.id,
-        )
-        .join(
-            AccessPolicyRouteCandidate,
-            AccessPolicyRouteCandidate.public_model_id == AccessPolicyPublicModel.id,
-        )
-        .where(
-            AccessPolicy.org_id == org_id,
-            AccessPolicy.is_active.is_(True),
-            AccessPolicyPublicModel.is_active.is_(True),
-            AccessPolicyRouteCandidate.is_active.is_(True),
-            filter_clause,
-        )
+async def _policy_routes_to_response(
+    *,
+    org_id: UUID,
+    db: AsyncSession,
+    credential_pool_id: UUID | None = None,
+    model_offering_id: UUID | None = None,
+):
+    route_impacts = await policy_read_models.list_provider_route_impacts(
+        org_id=org_id,
+        credential_pool_id=credential_pool_id,
+        model_offering_id=model_offering_id,
+        db=db,
     )
-    return [ProviderImpactPolicy(id=item[0], name=item[1], route_id=item[2]) for item in rows]
-
-
-async def _usage_summary(*, org_id: UUID, filters: list, db: AsyncSession) -> tuple[int, int]:
-    row = (
-        await db.execute(
-            select(
-                func.count(UsageRecord.id), func.coalesce(func.sum(UsageRecord.cost_cents), 0)
-            ).where(
-                UsageRecord.org_id == org_id,
-                UsageRecord.created_at >= datetime.now(UTC) - timedelta(days=30),
-                *filters,
-            )
+    return [
+        ProviderImpactPolicy(
+            id=impact.policy_id,
+            name=impact.policy_name,
+            route_id=impact.route_id,
         )
-    ).one()
-    return int(row[0]), int(row[1])
+        for impact in route_impacts
+    ]
+
+
+def _recent_usage_since() -> datetime:
+    return datetime.now(UTC) - timedelta(days=30)
+
+
+async def _get_provider_or_raise(*, provider_id: UUID, scope: Scope, db: AsyncSession) -> Provider:
+    provider = await repository.get_provider(provider_id=provider_id, org_id=scope.org_id, db=db)
+    if provider is None:
+        raise ProviderNotFoundError
+    return provider
+
+
+async def _get_provider_credential_or_raise(
+    *,
+    provider_id: UUID,
+    provider_credential_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProviderCredential:
+    provider_credential = await repository.get_provider_credential(
+        org_id=scope.org_id,
+        provider_credential_id=provider_credential_id,
+        db=db,
+    )
+    if provider_credential is None or provider_credential.provider_id != provider_id:
+        raise ProviderNotFoundError
+    return provider_credential
+
+
+async def _get_credential_pool_or_raise(
+    *,
+    provider_id: UUID,
+    pool_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> CredentialPool:
+    pool = await repository.get_credential_pool(
+        org_id=scope.org_id,
+        pool_id=pool_id,
+        db=db,
+    )
+    if pool is None or pool.provider_id != provider_id:
+        raise ProviderNotFoundError
+    return pool
+
+
+async def _get_model_offering_or_raise(
+    *,
+    provider_id: UUID,
+    model_offering_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+) -> ModelOffering:
+    model_offering = await repository.get_model_offering(
+        org_id=scope.org_id,
+        model_offering_id=model_offering_id,
+        db=db,
+    )
+    if model_offering is None or model_offering.provider_id != provider_id:
+        raise ProviderNotFoundError
+    return model_offering

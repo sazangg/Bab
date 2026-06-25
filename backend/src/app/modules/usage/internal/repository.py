@@ -10,7 +10,6 @@ from app.core.config import settings
 from app.core.request_ids import current_request_id
 from app.modules.policies.internal.models import LimitPolicy, LimitPolicyRule
 from app.modules.policy_kernel.models import Policy
-from app.modules.providers.internal.models import CredentialPool, Provider, ProviderCredential
 from app.modules.usage.accounting import UsageAccounting, subtract_months
 from app.modules.usage.internal.models import (
     GatewayPolicyDecision,
@@ -303,25 +302,15 @@ async def list_usage_records_for_gateway_request(
     org_id: UUID,
     db: AsyncSession,
 ) -> list[UsageRecordResponse]:
-    result = await db.execute(
-        select(UsageRecord, ProviderCredential.name, ProviderCredential.key_prefix)
-        .outerjoin(ProviderCredential, ProviderCredential.id == UsageRecord.provider_credential_id)
+    result = await db.scalars(
+        select(UsageRecord)
         .where(
             UsageRecord.gateway_request_id == gateway_request_id,
             UsageRecord.org_id == org_id,
         )
         .order_by(UsageRecord.routing_attempt_index, UsageRecord.created_at)
     )
-    return [
-        UsageRecordResponse.model_validate(
-            {
-                **record.__dict__,
-                "provider_credential_name": credential_name,
-                "provider_credential_prefix": credential_prefix,
-            }
-        )
-        for record, credential_name, credential_prefix in result
-    ]
+    return [UsageRecordResponse.model_validate(record) for record in result]
 
 
 async def acquire_limit_scope_lock(*, assignment_id: UUID, db: AsyncSession) -> None:
@@ -508,6 +497,7 @@ async def list_usage_records(
     model: str | None,
     request_id: str | None,
     search: str | None,
+    matching_provider_credential_ids: set[UUID] | None,
     allowed_team_ids: set[UUID] | None,
     allowed_project_ids: set[UUID] | None,
     allowed_virtual_key_ids: set[UUID] | None,
@@ -532,37 +522,26 @@ async def list_usage_records(
     if search:
         # autoescape escapes %/_ so a literal wildcard in the term matches verbatim.
         term = search.strip()
-        filters.append(
-            or_(
-                UsageRecord.request_id.icontains(term, autoescape=True),
-                UsageRecord.requested_model.icontains(term, autoescape=True),
-                UsageRecord.provider_model.icontains(term, autoescape=True),
-                UsageRecord.error_code.icontains(term, autoescape=True),
-                ProviderCredential.name.icontains(term, autoescape=True),
-                ProviderCredential.key_prefix.icontains(term, autoescape=True),
+        search_filters = [
+            UsageRecord.request_id.icontains(term, autoescape=True),
+            UsageRecord.requested_model.icontains(term, autoescape=True),
+            UsageRecord.provider_model.icontains(term, autoescape=True),
+            UsageRecord.error_code.icontains(term, autoescape=True),
+        ]
+        if matching_provider_credential_ids:
+            search_filters.append(
+                UsageRecord.provider_credential_id.in_(matching_provider_credential_ids)
             )
+        filters.append(
+            or_(*search_filters)
         )
-    query = (
-        select(UsageRecord, ProviderCredential.name, ProviderCredential.key_prefix)
-        .outerjoin(ProviderCredential, ProviderCredential.id == UsageRecord.provider_credential_id)
-        .where(*filters)
-        .order_by(UsageRecord.created_at.desc())
-    )
+    query = select(UsageRecord).where(*filters).order_by(UsageRecord.created_at.desc())
     if limit is not None:
         query = query.limit(limit)
     if offset:
         query = query.offset(offset)
-    result = await db.execute(query)
-    return [
-        UsageRecordResponse.model_validate(
-            {
-                **record.__dict__,
-                "provider_credential_name": credential_name,
-                "provider_credential_prefix": credential_prefix,
-            }
-        )
-        for record, credential_name, credential_prefix in result
-    ]
+    result = await db.scalars(query)
+    return [UsageRecordResponse.model_validate(record) for record in result]
 
 
 async def summarize_limit_policy_usage(
@@ -667,10 +646,7 @@ async def get_organization_usage_summary(
         totals=await _totals(*filters, db=db),
         by_provider=await _breakdown(
             UsageRecord.provider_id,
-            Provider.name,
             *filters,
-            join_model=Provider,
-            join_on=Provider.id == UsageRecord.provider_id,
             db=db,
         ),
         by_model=await _breakdown(
@@ -681,10 +657,7 @@ async def get_organization_usage_summary(
         ),
         by_pool=await _breakdown(
             UsageRecord.pool_id,
-            CredentialPool.name,
             *filters,
-            join_model=CredentialPool,
-            join_on=CredentialPool.id == UsageRecord.pool_id,
             db=db,
         ),
         by_team=await _breakdown(
@@ -832,10 +805,7 @@ async def get_usage_filter_options(
     return UsageFilterOptions(
         by_provider=await _breakdown(
             UsageRecord.provider_id,
-            Provider.name,
             *filters,
-            join_model=Provider,
-            join_on=Provider.id == UsageRecord.provider_id,
             db=db,
         ),
         by_model=await _breakdown(
@@ -937,10 +907,7 @@ async def get_virtual_key_usage_summary(
         totals=await _totals(*base_filters, db=db),
         by_provider=await _breakdown(
             UsageRecord.provider_id,
-            Provider.name,
             *base_filters,
-            join_model=Provider,
-            join_on=Provider.id == UsageRecord.provider_id,
             db=db,
         ),
         by_model=await _breakdown(
@@ -951,10 +918,7 @@ async def get_virtual_key_usage_summary(
         ),
         by_pool=await _breakdown(
             UsageRecord.pool_id,
-            CredentialPool.name,
             *base_filters,
-            join_model=CredentialPool,
-            join_on=CredentialPool.id == UsageRecord.pool_id,
             db=db,
         ),
         by_access_policy=await _breakdown(

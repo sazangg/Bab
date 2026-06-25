@@ -19,7 +19,7 @@ from app.modules.providers.errors import (
     ProviderResourceConflictError,
     ProviderUpstreamError,
 )
-from app.modules.providers.internal import service
+from app.modules.providers.internal import credential_routing, execution, repository
 from app.modules.providers.internal.models import (
     CredentialPoolCredential,
     ModelOffering,
@@ -56,6 +56,23 @@ async def _create_actor_scope(db_session: AsyncSession) -> tuple[AuthenticatedUs
         role="super_admin",
     )
     return actor, Scope(org_id=org.id)
+
+
+async def _get_provider_credential_row(
+    *,
+    provider_id,
+    provider_credential_id,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProviderCredential:
+    credential = await repository.get_provider_credential(
+        org_id=scope.org_id,
+        provider_credential_id=provider_credential_id,
+        db=db,
+    )
+    assert credential is not None
+    assert credential.provider_id == provider_id
+    return credential
 
 
 async def _create_provider_with_credentials(
@@ -326,7 +343,7 @@ async def test_provider_readiness_requires_clean_active_credential_health(
         scope=scope,
         db=db_session,
     )
-    credential_model = await service._get_provider_credential_or_raise(
+    credential_model = await _get_provider_credential_row(
         provider_id=provider.id,
         provider_credential_id=credential.id,
         scope=scope,
@@ -870,13 +887,13 @@ async def test_least_recently_used_routing_uses_oldest_used_credential(
         db_session,
         routing_policy=ProviderCredentialRoutingPolicy.least_recently_used,
     )
-    first_model = await service._get_provider_credential_or_raise(
+    first_model = await _get_provider_credential_row(
         provider_id=provider.id,
         provider_credential_id=first.id,
         scope=scope,
         db=db_session,
     )
-    second_model = await service._get_provider_credential_or_raise(
+    second_model = await _get_provider_credential_row(
         provider_id=provider.id,
         provider_credential_id=second.id,
         scope=scope,
@@ -911,13 +928,13 @@ async def test_health_based_routing_prefers_valid_credential(db_session: AsyncSe
         db_session,
         routing_policy=ProviderCredentialRoutingPolicy.health_based,
     )
-    first_model = await service._get_provider_credential_or_raise(
+    first_model = await _get_provider_credential_row(
         provider_id=provider.id,
         provider_credential_id=first.id,
         scope=scope,
         db=db_session,
     )
-    second_model = await service._get_provider_credential_or_raise(
+    second_model = await _get_provider_credential_row(
         provider_id=provider.id,
         provider_credential_id=second.id,
         scope=scope,
@@ -1020,10 +1037,10 @@ def test_weighted_routing_uses_membership_weight(monkeypatch: pytest.MonkeyPatch
     def choose_last(pool):
         return pool[-1]
 
-    monkeypatch.setattr(service.secrets, "choice", choose_last)
+    monkeypatch.setattr(credential_routing.secrets, "choice", choose_last)
 
     assert (
-        service._weighted_pool_credential_route(
+        credential_routing._weighted_pool_credential_route(
             [(first_membership, first), (second_membership, second)]
         )[0]
         == second
@@ -1214,9 +1231,9 @@ def test_provider_concurrency_slot_tracks_limit_changes() -> None:
         {"id": uuid4(), "max_concurrent_requests": 1},
     )()
 
-    first_slot = service._provider_concurrency_slot(provider)
+    first_slot = execution._provider_concurrency_slot(provider)
     provider.max_concurrent_requests = 2
-    second_slot = service._provider_concurrency_slot(provider)
+    second_slot = execution._provider_concurrency_slot(provider)
 
     assert first_slot is not second_slot
 
