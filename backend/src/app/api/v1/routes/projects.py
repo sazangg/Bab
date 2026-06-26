@@ -29,12 +29,8 @@ from app.modules.authorization.permissions import Permissions
 from app.modules.keys import facade
 from app.modules.keys.errors import (
     AccessDeniedError,
-    OrganizationInactiveError,
     PolicyNotConfiguredError,
     ProjectAccessUnavailableError,
-    ProjectInactiveError,
-    ProjectNotFoundError,
-    ProjectSlugAlreadyExistsError,
     SecretDeliveryDisabledError,
     VirtualKeyAlreadyRevokedError,
     VirtualKeyNotFoundError,
@@ -45,11 +41,8 @@ from app.modules.keys.schemas import (
     CreatedVirtualKeyResponse,
     CreateVirtualKeyRequest,
     EffectiveAccessSummary,
-    ProjectArchiveImpactResponse,
-    ProjectResponse,
     RevokeVirtualKeyRequest,
     RotateVirtualKeyRequest,
-    UpdateProjectRequest,
     UpdateVirtualKeyRequest,
     VirtualKeyResponse,
     VirtualKeyRevokeImpactResponse,
@@ -57,6 +50,18 @@ from app.modules.keys.schemas import (
 from app.modules.teams.errors import TeamInactiveError
 from app.modules.usage import facade as usage_facade
 from app.modules.usage.schemas import OrganizationUsageSummary, VirtualKeyUsageSummary
+from app.modules.workspace import facade as workspace_facade
+from app.modules.workspace.errors import (
+    OrganizationInactiveError,
+    ProjectInactiveError,
+    ProjectNotFoundError,
+    ProjectSlugAlreadyExistsError,
+)
+from app.modules.workspace.schemas import (
+    ProjectArchiveImpactResponse,
+    ProjectResponse,
+    UpdateProjectRequest,
+)
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
@@ -78,7 +83,7 @@ async def list_projects(
     db: DatabaseSession,
     user: CurrentUser,
 ) -> list[ProjectResponse]:
-    projects = await facade.list_projects(scope=scope, db=db)
+    projects = await workspace_facade.list_projects(scope=scope, db=db)
     if authorization_facade.has_permission(user, Permissions.PROJECTS_VIEW):
         return projects
     allowed_scopes = authorization_facade.authorized_workspace_ids(user, relationship="member")
@@ -98,7 +103,7 @@ async def update_project(
     db: DatabaseSession,
 ) -> ProjectResponse:
     try:
-        return await facade.update_project(
+        return await workspace_facade.update_project(
             project_id=project_id,
             payload=payload,
             actor=actor,
@@ -119,7 +124,7 @@ async def get_project_usage(
     user: CurrentUser,
 ) -> OrganizationUsageSummary:
     try:
-        await facade.get_project(project_id=project_id, scope=scope, db=db)
+        await workspace_facade.get_project(project_id=project_id, scope=scope, db=db)
     except ProjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail="project not found") from exc
     await require_project_view_or_permission(
@@ -144,7 +149,7 @@ async def get_project_archive_impact(
     db: DatabaseSession,
 ) -> ProjectArchiveImpactResponse:
     try:
-        return await facade.get_project_archive_impact(
+        return await workspace_facade.get_project_archive_impact(
             project_id=project_id,
             scope=scope,
             db=db,
@@ -161,7 +166,7 @@ async def get_project(
     user: CurrentUser,
 ) -> ProjectResponse:
     try:
-        project = await facade.get_project(project_id=project_id, scope=scope, db=db)
+        project = await workspace_facade.get_project(project_id=project_id, scope=scope, db=db)
     except ProjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail="project not found") from exc
     if not authorization_facade.has_permission(user, Permissions.PROJECTS_VIEW):
@@ -613,6 +618,11 @@ async def deactivate_project(
     db: DatabaseSession,
 ) -> None:
     try:
-        await facade.deactivate_project(project_id=project_id, actor=actor, scope=scope, db=db)
+        await workspace_facade.deactivate_project(
+            project_id=project_id,
+            actor=actor,
+            scope=scope,
+            db=db,
+        )
     except ProjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail="project not found") from exc

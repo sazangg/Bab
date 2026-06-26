@@ -88,9 +88,9 @@ from app.modules.authorization.schemas import (
     MemberStatusChangeTarget,
     ScopedMembershipTarget,
 )
-from app.modules.keys import read_models as key_read_models
-from app.modules.keys.schemas import ProjectMembershipTarget
+from app.modules.workspace import facade as workspace_facade
 from app.modules.workspace.internal.models import Team
+from app.modules.workspace.schemas import ProjectMembershipTarget
 
 MOCK_ADMIN_ID = UUID("00000000-0000-4000-8000-000000000001")
 INVITE_TOKEN_TTL = timedelta(days=7)
@@ -1084,13 +1084,13 @@ async def _ensure_no_duplicate_pending_invite(
 
 
 async def _project_team_by_id(*, scope: Scope, db: AsyncSession) -> dict[UUID, UUID]:
-    return await key_read_models.get_project_team_ids(scope=scope, db=db)
+    return await workspace_facade.get_project_team_ids(scope=scope, db=db)
 
 
 async def _project_target(
     *, project_id: UUID, scope: Scope, db: AsyncSession
 ) -> ProjectMembershipTarget | None:
-    return await key_read_models.get_project_membership_target(
+    return await workspace_facade.get_project_membership_target(
         project_id=project_id,
         scope=scope,
         db=db,

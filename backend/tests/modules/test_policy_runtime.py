@@ -36,8 +36,6 @@ from app.modules.keys.errors import (
     InvalidVirtualKeyError,
     PolicyNotConfiguredError,
     ProjectAccessUnavailableError,
-    ProjectInactiveError,
-    ProjectNotFoundError,
     SecretDeliveryDisabledError,
     VirtualKeyAlreadyRevokedError,
     VirtualKeyNotFoundError,
@@ -45,12 +43,10 @@ from app.modules.keys.errors import (
 )
 from app.modules.keys.internal.models import VirtualKey
 from app.modules.keys.schemas import (
-    CreateProjectRequest,
     CreateVirtualKeyRequest,
     ResolveAccessPlanForVirtualKeyRequest,
     ResolveAccessRequest,
     RotateVirtualKeyRequest,
-    UpdateProjectRequest,
     UpdateVirtualKeyRequest,
 )
 from app.modules.policies import facade as policies_facade
@@ -120,7 +116,10 @@ from app.modules.usage.internal.models import (
     UsageRecord,
 )
 from app.modules.usage.schemas import CreateGatewayRequest, RecordUsage
+from app.modules.workspace import facade as workspace_facade
+from app.modules.workspace.errors import ProjectInactiveError, ProjectNotFoundError
 from app.modules.workspace.internal.models import Team
+from app.modules.workspace.schemas import CreateProjectRequest, UpdateProjectRequest
 
 
 def _public_model_route(
@@ -181,7 +180,7 @@ async def _create_project_pool_and_models(db_session: AsyncSession):
         role="super_admin",
     )
     scope = Scope(org_id=org.id)
-    project = await keys_facade.create_project(
+    project = await workspace_facade.create_project(
         team_id=team.id,
         payload=CreateProjectRequest(name="Console", description=None),
         actor=actor,
@@ -1023,14 +1022,14 @@ async def test_project_archive_and_reactivation_events_include_resource_ids(
 ) -> None:
     actor, scope, team, project, *_ = await _create_project_pool_and_models(db_session)
 
-    await keys_facade.update_project(
+    await workspace_facade.update_project(
         project_id=project.id,
         payload=UpdateProjectRequest(is_active=False),
         actor=actor,
         scope=scope,
         db=db_session,
     )
-    await keys_facade.update_project(
+    await workspace_facade.update_project(
         project_id=project.id,
         payload=UpdateProjectRequest(is_active=True),
         actor=actor,
@@ -1111,7 +1110,7 @@ async def test_archive_and_revoke_impact_previews_are_scoped_and_diagnostic(
         error_code="rate_limited",
     )
 
-    archived_project = await keys_facade.create_project(
+    archived_project = await workspace_facade.create_project(
         team_id=team.id,
         payload=CreateProjectRequest(name="Archived impact project"),
         actor=actor,
@@ -1134,7 +1133,7 @@ async def test_archive_and_revoke_impact_previews_are_scoped_and_diagnostic(
         scope=scope,
         db=db_session,
     )
-    await keys_facade.update_project(
+    await workspace_facade.update_project(
         project_id=archived_project.id,
         payload=UpdateProjectRequest(is_active=False),
         actor=actor,
@@ -1178,17 +1177,17 @@ async def test_archive_and_revoke_impact_previews_are_scoped_and_diagnostic(
         cost_cents=999,
     )
 
-    team_impact = await keys_facade.get_team_archive_impact(
+    team_impact = await workspace_facade.get_team_archive_impact(
         team_id=team.id,
         scope=scope,
         db=db_session,
     )
-    project_impact = await keys_facade.get_project_archive_impact(
+    project_impact = await workspace_facade.get_project_archive_impact(
         project_id=project.id,
         scope=scope,
         db=db_session,
     )
-    archived_project_impact = await keys_facade.get_project_archive_impact(
+    archived_project_impact = await workspace_facade.get_project_archive_impact(
         project_id=archived_project.id,
         scope=scope,
         db=db_session,
@@ -1224,7 +1223,7 @@ async def test_archive_and_revoke_impact_previews_are_scoped_and_diagnostic(
     assert archived_key_impact.already_unusable_reason == "The project is archived."
 
     with pytest.raises(ProjectNotFoundError):
-        await keys_facade.get_project_archive_impact(
+        await workspace_facade.get_project_archive_impact(
             project_id=project.id,
             scope=other_scope,
             db=db_session,
@@ -1490,7 +1489,7 @@ async def test_effective_access_explains_routability_and_key_blockers(
     team.is_active = True
     await db_session.commit()
 
-    await keys_facade.update_project(
+    await workspace_facade.update_project(
         project_id=project.id,
         payload=UpdateProjectRequest(is_active=False),
         actor=actor,
@@ -1501,7 +1500,7 @@ async def test_effective_access_explains_routability_and_key_blockers(
         project_id=project.id, scope=scope, db=db_session
     )
     assert project_blocked.blocking_code == "project_archived"
-    await keys_facade.update_project(
+    await workspace_facade.update_project(
         project_id=project.id,
         payload=UpdateProjectRequest(is_active=True),
         actor=actor,
@@ -1856,7 +1855,7 @@ async def test_virtual_key_status_precedence_is_backend_derived(
     )
     assert expiring.status == "expiring_soon"
 
-    await keys_facade.update_project(
+    await workspace_facade.update_project(
         project_id=project.id,
         payload=UpdateProjectRequest(is_active=False),
         actor=actor,
@@ -1871,7 +1870,7 @@ async def test_virtual_key_status_precedence_is_backend_derived(
     )
     assert archived.status == "project_archived"
     assert archived.is_usable is False
-    await keys_facade.update_project(
+    await workspace_facade.update_project(
         project_id=project.id,
         payload=UpdateProjectRequest(is_active=True),
         actor=actor,
@@ -1927,7 +1926,7 @@ async def test_archived_ownership_blocks_key_creation_and_runtime(
         db=db_session,
     )
 
-    await keys_facade.update_project(
+    await workspace_facade.update_project(
         project_id=project.id,
         payload=UpdateProjectRequest(is_active=False),
         actor=actor,
@@ -1949,7 +1948,7 @@ async def test_archived_ownership_blocks_key_creation_and_runtime(
             db=db_session,
         )
 
-    await keys_facade.update_project(
+    await workspace_facade.update_project(
         project_id=project.id,
         payload=UpdateProjectRequest(is_active=True),
         actor=actor,
@@ -2426,7 +2425,7 @@ async def test_policy_simulation_project_admin_is_target_scoped(
         fast_model,
         _,
     ) = await _create_project_pool_and_models(db_session)
-    other_project = await keys_facade.create_project(
+    other_project = await workspace_facade.create_project(
         team_id=team.id,
         payload=CreateProjectRequest(name="Other Console", description=None),
         actor=actor,
@@ -2514,7 +2513,7 @@ async def test_policy_simulation_team_admin_is_target_scoped(
     other_team = Team(org_id=scope.org_id, name="Other Team", slug=f"other-{uuid4()}")
     db_session.add(other_team)
     await db_session.commit()
-    other_project = await keys_facade.create_project(
+    other_project = await workspace_facade.create_project(
         team_id=other_team.id,
         payload=CreateProjectRequest(name="Other Team Console", description=None),
         actor=actor,
@@ -3376,7 +3375,7 @@ async def test_policy_simulation_scoped_replacement_ids_do_not_oracle_or_add(
         model_ids=[fast_model.id],
         db_session=db_session,
     )
-    other_project = await keys_facade.create_project(
+    other_project = await workspace_facade.create_project(
         team_id=team.id,
         payload=CreateProjectRequest(name="Replacement oracle other project", description=None),
         actor=actor,
@@ -4350,7 +4349,7 @@ async def test_policy_simulation_access_replace_without_assignment_requires_acti
         model_ids=[fast_model.id],
         db_session=db_session,
     )
-    other_project = await keys_facade.create_project(
+    other_project = await workspace_facade.create_project(
         team_id=team.id,
         payload=CreateProjectRequest(name="Other replace project", description=None),
         actor=actor,
@@ -5162,7 +5161,7 @@ async def test_policy_simulation_limit_replace_without_assignment_requires_activ
         max_tokens_per_request=100,
         db_session=db_session,
     )
-    other_project = await keys_facade.create_project(
+    other_project = await workspace_facade.create_project(
         team_id=team.id,
         payload=CreateProjectRequest(name="Other limit replace project", description=None),
         actor=actor,
@@ -5632,7 +5631,7 @@ async def test_policy_simulation_guardrail_replace_without_assignment_requires_a
         model_ids=[fast_model.id],
         db_session=db_session,
     )
-    other_project = await keys_facade.create_project(
+    other_project = await workspace_facade.create_project(
         team_id=team.id,
         payload=CreateProjectRequest(name="Other guardrail replace project", description=None),
         actor=actor,
@@ -7591,7 +7590,7 @@ async def test_reused_limit_policy_counts_per_assignment(db_session: AsyncSessio
         fast_model,
         _,
     ) = await _create_project_pool_and_models(db_session)
-    second_project = await keys_facade.create_project(
+    second_project = await workspace_facade.create_project(
         team_id=team.id,
         payload=CreateProjectRequest(name="Second Console", description=None),
         actor=actor,

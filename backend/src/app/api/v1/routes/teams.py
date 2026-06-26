@@ -27,13 +27,6 @@ from app.modules.auth.schemas import (
 )
 from app.modules.authorization import facade as authorization_facade
 from app.modules.authorization.permissions import Permissions
-from app.modules.keys import facade as projects_facade
-from app.modules.keys.errors import ProjectSlugAlreadyExistsError
-from app.modules.keys.schemas import (
-    CreateProjectRequest,
-    ProjectResponse,
-    TeamArchiveImpactResponse,
-)
 from app.modules.teams import facade
 from app.modules.teams.errors import (
     TeamInactiveError,
@@ -43,6 +36,13 @@ from app.modules.teams.errors import (
 from app.modules.teams.schemas import CreateTeamRequest, TeamResponse, UpdateTeamRequest
 from app.modules.usage import facade as usage_facade
 from app.modules.usage.schemas import OrganizationUsageSummary
+from app.modules.workspace import facade as workspace_facade
+from app.modules.workspace.errors import ProjectSlugAlreadyExistsError
+from app.modules.workspace.schemas import (
+    CreateProjectRequest,
+    ProjectResponse,
+    TeamArchiveImpactResponse,
+)
 
 router = APIRouter(prefix="/teams", tags=["teams"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
@@ -137,7 +137,7 @@ async def get_team_archive_impact(
     db: DatabaseSession,
 ) -> TeamArchiveImpactResponse:
     try:
-        return await projects_facade.get_team_archive_impact(
+        return await workspace_facade.get_team_archive_impact(
             team_id=team_id,
             scope=scope,
             db=db,
@@ -173,7 +173,7 @@ async def list_team_projects(
             user=user,
             db=db,
         )
-        return await projects_facade.list_team_projects(team_id=team_id, scope=scope, db=db)
+        return await workspace_facade.list_team_projects(team_id=team_id, scope=scope, db=db)
     except TeamNotFoundError as exc:
         raise HTTPException(status_code=404, detail="team not found") from exc
 
@@ -313,7 +313,7 @@ async def create_team_project(
     db: DatabaseSession,
 ) -> ProjectResponse:
     try:
-        return await projects_facade.create_project(
+        return await workspace_facade.create_project(
             team_id=team_id,
             payload=payload,
             actor=actor,

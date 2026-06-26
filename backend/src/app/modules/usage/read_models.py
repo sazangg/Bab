@@ -62,6 +62,25 @@ async def get_recent_provider_model_usage_summary(
     )
 
 
+async def get_recent_workspace_usage_summary(
+    *,
+    org_id: UUID,
+    since: datetime,
+    db: AsyncSession,
+    team_id: UUID | None = None,
+    project_id: UUID | None = None,
+    virtual_key_id: UUID | None = None,
+) -> UsageCostSummary:
+    filters = []
+    if team_id is not None:
+        filters.append(UsageRecord.team_id == team_id)
+    if project_id is not None:
+        filters.append(UsageRecord.project_id == project_id)
+    if virtual_key_id is not None:
+        filters.append(UsageRecord.virtual_key_id == virtual_key_id)
+    return await _usage_summary(org_id=org_id, since=since, db=db, filters=filters)
+
+
 async def _usage_summary(
     *,
     org_id: UUID,

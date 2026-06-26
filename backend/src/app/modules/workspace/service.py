@@ -5,9 +5,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import Scope
 from app.modules.auth import facade as auth_facade
 from app.modules.auth.schemas import AuthenticatedUser
-from app.modules.keys import facade as keys_facade
+from app.modules.keys import facade as keys_runtime_facade
 from app.modules.teams import facade as teams_facade
 from app.modules.workspace.errors import WorkspaceScopeNotFoundError
+from app.modules.workspace.internal import projects
 from app.modules.workspace.schemas import (
     ValidatedScope,
     WorkspaceAllowedScopeIds,
@@ -126,13 +127,13 @@ async def expand_allowed_scope_ids(
     team_ids = set(allowed_team_ids or set())
     project_ids = set(allowed_project_ids or set())
     project_ids.update(
-        await keys_facade.list_project_ids_for_team_ids(
+        await projects.list_project_ids_for_team_ids(
             team_ids=team_ids,
             scope=scope,
             db=db,
         )
     )
-    virtual_key_ids = await keys_facade.list_virtual_key_ids_for_project_ids(
+    virtual_key_ids = await keys_runtime_facade.list_virtual_key_ids_for_project_ids(
         project_ids=project_ids,
         scope=scope,
         db=db,
@@ -154,12 +155,12 @@ async def get_workspace_label_maps(
 ) -> WorkspaceLabelMaps:
     return WorkspaceLabelMaps(
         teams=await teams_facade.get_team_labels(team_ids=team_ids, scope=scope, db=db),
-        projects=await keys_facade.get_project_labels(
+        projects=await projects.get_project_labels(
             project_ids=project_ids,
             scope=scope,
             db=db,
         ),
-        virtual_keys=await keys_facade.get_virtual_key_labels(
+        virtual_keys=await keys_runtime_facade.get_virtual_key_labels(
             virtual_key_ids=virtual_key_ids,
             scope=scope,
             db=db,
@@ -175,7 +176,7 @@ async def list_workspace_projects(
     include_all: bool = False,
     db: AsyncSession,
 ) -> list[WorkspaceProjectOption]:
-    projects = await keys_facade.list_project_options(
+    project_options = await projects.list_project_options(
         scope=scope,
         team_ids=None if include_all else team_ids,
         project_ids=None if include_all else project_ids,
@@ -183,7 +184,7 @@ async def list_workspace_projects(
     )
     return [
         WorkspaceProjectOption(id=project.id, name=project.name, team_id=project.team_id)
-        for project in projects
+        for project in project_options
     ]
 
 
@@ -198,7 +199,7 @@ async def list_workspace_virtual_keys(
     keys: list = []
     if project_ids is not None:
         keys.extend(
-            await keys_facade.list_virtual_key_options_for_project_ids(
+            await keys_runtime_facade.list_virtual_key_options_for_project_ids(
                 project_ids=project_ids,
                 usable_only=usable_only,
                 scope=scope,
@@ -207,7 +208,7 @@ async def list_workspace_virtual_keys(
         )
     if virtual_key_ids is not None:
         keys.extend(
-            await keys_facade.list_virtual_key_options_by_ids(
+            await keys_runtime_facade.list_virtual_key_options_by_ids(
                 virtual_key_ids=virtual_key_ids,
                 usable_only=usable_only,
                 scope=scope,
@@ -228,7 +229,7 @@ async def list_workspace_virtual_keys(
 async def get_virtual_key_target(
     *, scope: Scope, virtual_key_id: UUID, db: AsyncSession
 ) -> WorkspaceVirtualKeyTarget | None:
-    target = await keys_facade.get_usable_virtual_key_target(
+    target = await keys_runtime_facade.get_usable_virtual_key_target(
         virtual_key_id=virtual_key_id,
         scope=scope,
         db=db,
@@ -259,7 +260,7 @@ async def get_team_identity(
 async def get_project_identity(
     *, project_id: UUID, scope: Scope, db: AsyncSession
 ) -> WorkspaceProjectIdentity | None:
-    project = await keys_facade.get_project_identity(project_id=project_id, scope=scope, db=db)
+    project = await projects.get_project_identity(project_id=project_id, scope=scope, db=db)
     if project is None:
         return None
     return WorkspaceProjectIdentity(
@@ -273,7 +274,7 @@ async def get_project_identity(
 async def get_virtual_key_identity(
     *, virtual_key_id: UUID, scope: Scope, db: AsyncSession
 ) -> WorkspaceVirtualKeyIdentity | None:
-    virtual_key = await keys_facade.get_virtual_key_identity(
+    virtual_key = await keys_runtime_facade.get_virtual_key_identity(
         key_id=virtual_key_id,
         scope=scope,
         db=db,

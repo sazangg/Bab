@@ -8,12 +8,15 @@ from app.core.database import Scope
 from app.modules.activity.internal.models import ActivityEvent
 from app.modules.auth.internal.models import AuditEvent, Organization
 from app.modules.auth.schemas import AuthenticatedUser
-from app.modules.keys import facade as projects_facade
-from app.modules.keys.errors import ProjectSlugAlreadyExistsError
-from app.modules.keys.schemas import CreateProjectRequest, UpdateProjectRequest
 from app.modules.teams import facade as teams_facade
 from app.modules.teams.errors import TeamInactiveError, TeamSlugAlreadyExistsError
 from app.modules.teams.schemas import CreateTeamRequest, UpdateTeamRequest
+from app.modules.workspace import facade as projects_facade
+from app.modules.workspace.errors import ProjectSlugAlreadyExistsError
+from app.modules.workspace.schemas import (
+    CreateProjectRequest,
+    UpdateProjectRequest,
+)
 
 
 async def _create_actor_scope(db_session: AsyncSession):

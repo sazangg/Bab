@@ -4,75 +4,8 @@ from uuid import UUID
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.auth.internal.models import (
-    Organization,
-    ProjectMembership,
-    TeamMembership,
-)
 from app.modules.keys.internal.models import VirtualKey
-from app.modules.usage.internal.models import UsageRecord
 from app.modules.workspace.internal.models import Project
-
-
-async def get_organization(*, org_id: UUID, db: AsyncSession) -> Organization | None:
-    return await db.scalar(select(Organization).where(Organization.id == org_id))
-
-
-async def create_project(
-    *,
-    org_id: UUID,
-    team_id: UUID,
-    created_by: UUID,
-    name: str,
-    slug: str,
-    description: str | None,
-    db: AsyncSession,
-) -> Project:
-    project = Project(
-        org_id=org_id,
-        team_id=team_id,
-        created_by=created_by,
-        name=name,
-        slug=slug,
-        description=description,
-    )
-    db.add(project)
-    await db.flush()
-    return project
-
-
-async def list_projects(*, org_id: UUID, db: AsyncSession) -> list[Project]:
-    result = await db.scalars(
-        select(Project).where(Project.org_id == org_id).order_by(Project.name)
-    )
-    return list(result)
-
-
-async def list_team_projects(*, org_id: UUID, team_id: UUID, db: AsyncSession) -> list[Project]:
-    result = await db.scalars(
-        select(Project)
-        .where(Project.org_id == org_id, Project.team_id == team_id)
-        .order_by(Project.name)
-    )
-    return list(result)
-
-
-async def get_project(*, project_id: UUID, org_id: UUID, db: AsyncSession) -> Project | None:
-    return await db.scalar(
-        select(Project).where(Project.id == project_id, Project.org_id == org_id)
-    )
-
-
-async def get_project_by_slug(
-    *, org_id: UUID, team_id: UUID, slug: str, db: AsyncSession
-) -> Project | None:
-    return await db.scalar(
-        select(Project).where(
-            Project.org_id == org_id,
-            Project.team_id == team_id,
-            Project.slug == slug,
-        )
-    )
 
 
 async def create_virtual_key(
@@ -146,46 +79,6 @@ async def get_virtual_key_by_id(
 async def get_virtual_key_by_hash(*, key_hash: str, db: AsyncSession) -> VirtualKey | None:
     return await db.scalar(select(VirtualKey).where(VirtualKey.key_hash == key_hash))
 
-
-async def get_project_labels(
-    *, org_id: UUID, project_ids: set[UUID], db: AsyncSession
-) -> dict[UUID, str]:
-    if not project_ids:
-        return {}
-    rows = (
-        await db.execute(
-            select(Project.id, Project.name).where(
-                Project.org_id == org_id,
-                Project.id.in_(project_ids),
-            )
-        )
-    ).all()
-    return {project_id: name for project_id, name in rows}
-
-
-async def get_project_membership_target(
-    *, org_id: UUID, project_id: UUID, db: AsyncSession
-) -> tuple[UUID, UUID, UUID, str, bool] | None:
-    return (
-        await db.execute(
-            select(Project.id, Project.org_id, Project.team_id, Project.name, Project.is_active)
-            .where(Project.org_id == org_id, Project.id == project_id)
-        )
-    ).one_or_none()
-
-
-async def get_project_team_ids(
-    *, org_id: UUID, project_ids: set[UUID] | None, db: AsyncSession
-) -> dict[UUID, UUID]:
-    if project_ids is not None and not project_ids:
-        return {}
-    query = select(Project.id, Project.team_id).where(Project.org_id == org_id)
-    if project_ids is not None:
-        query = query.where(Project.id.in_(project_ids))
-    rows = (await db.execute(query)).all()
-    return {project_id: team_id for project_id, team_id in rows}
-
-
 async def get_virtual_key_labels(
     *, org_id: UUID, virtual_key_ids: set[UUID], db: AsyncSession
 ) -> dict[UUID, str]:
@@ -201,18 +94,6 @@ async def get_virtual_key_labels(
     ).all()
     return {virtual_key_id: name for virtual_key_id, name in rows}
 
-
-async def list_project_ids_for_team_ids(
-    *, org_id: UUID, team_ids: set[UUID], db: AsyncSession
-) -> set[UUID]:
-    if not team_ids:
-        return set()
-    result = await db.scalars(
-        select(Project.id).where(Project.org_id == org_id, Project.team_id.in_(team_ids))
-    )
-    return set(result)
-
-
 async def list_virtual_key_ids_for_project_ids(
     *, org_id: UUID, project_ids: set[UUID], db: AsyncSession
 ) -> set[UUID]:
@@ -225,33 +106,6 @@ async def list_virtual_key_ids_for_project_ids(
         )
     )
     return set(result)
-
-
-async def list_project_options(
-    *,
-    org_id: UUID,
-    team_ids: set[UUID] | None,
-    project_ids: set[UUID] | None,
-    db: AsyncSession,
-) -> list[tuple[UUID, str, UUID]]:
-    filters = [Project.org_id == org_id]
-    if team_ids is not None:
-        if not team_ids:
-            return []
-        filters.append(Project.team_id.in_(team_ids))
-    if project_ids is not None:
-        if not project_ids:
-            return []
-        filters.append(Project.id.in_(project_ids))
-    rows = (
-        await db.execute(
-            select(Project.id, Project.name, Project.team_id)
-            .where(*filters)
-            .order_by(Project.name)
-        )
-    ).all()
-    return list(rows)
-
 
 async def list_virtual_key_options_for_project_ids(
     *, org_id: UUID, project_ids: set[UUID], usable_only: bool, db: AsyncSession
@@ -334,18 +188,6 @@ async def get_usable_virtual_key_target(
     ).first()
     return row
 
-
-async def count_active_team_projects(*, org_id: UUID, team_id: UUID, db: AsyncSession) -> int:
-    count = await db.scalar(
-        select(func.count(Project.id)).where(
-            Project.org_id == org_id,
-            Project.team_id == team_id,
-            Project.is_active.is_(True),
-        )
-    )
-    return int(count or 0)
-
-
 async def count_active_team_virtual_keys(*, org_id: UUID, team_id: UUID, db: AsyncSession) -> int:
     count = await db.scalar(
         select(func.count(VirtualKey.id))
@@ -378,62 +220,6 @@ async def count_active_project_virtual_keys(
         )
     )
     return int(count or 0)
-
-
-async def count_team_members_by_role(
-    *,
-    org_id: UUID,
-    team_id: UUID,
-    db: AsyncSession,
-) -> tuple[int, int]:
-    rows = (
-        await db.execute(
-            select(TeamMembership.role, func.count(TeamMembership.id))
-            .where(TeamMembership.org_id == org_id, TeamMembership.team_id == team_id)
-            .group_by(TeamMembership.role)
-        )
-    ).all()
-    counts = {role: int(count) for role, count in rows}
-    return counts.get("team_admin", 0), counts.get("team_member", 0)
-
-
-async def count_project_admins(*, org_id: UUID, project_id: UUID, db: AsyncSession) -> int:
-    count = await db.scalar(
-        select(func.count(ProjectMembership.id)).where(
-            ProjectMembership.org_id == org_id,
-            ProjectMembership.project_id == project_id,
-            ProjectMembership.role == "project_admin",
-        )
-    )
-    return int(count or 0)
-
-
-async def summarize_recent_usage(
-    *,
-    org_id: UUID,
-    since,
-    team_id: UUID | None,
-    project_id: UUID | None,
-    virtual_key_id: UUID | None,
-    db: AsyncSession,
-) -> tuple[int, int]:
-    filters = [UsageRecord.org_id == org_id, UsageRecord.created_at >= since]
-    if team_id is not None:
-        filters.append(UsageRecord.team_id == team_id)
-    if project_id is not None:
-        filters.append(UsageRecord.project_id == project_id)
-    if virtual_key_id is not None:
-        filters.append(UsageRecord.virtual_key_id == virtual_key_id)
-    row = (
-        await db.execute(
-            select(
-                func.count(UsageRecord.id),
-                func.coalesce(func.sum(UsageRecord.cost_cents), 0),
-            ).where(*filters)
-        )
-    ).one()
-    return int(row[0]), int(row[1])
-
 
 async def list_virtual_key_inventory(
     *,

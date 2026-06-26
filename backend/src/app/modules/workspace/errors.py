@@ -1,3 +1,19 @@
+class ProjectNotFoundError(Exception):
+    pass
+
+
+class ProjectSlugAlreadyExistsError(Exception):
+    pass
+
+
+class OrganizationInactiveError(Exception):
+    pass
+
+
+class ProjectInactiveError(Exception):
+    pass
+
+
 class WorkspaceAccessDeniedError(Exception):
     pass
 

@@ -22,7 +22,7 @@ from app.modules.gateway import provider_execution as gateway_provider_execution
 from app.modules.gateway import response_finalization as gateway_response_finalization
 from app.modules.gateway import streaming as gateway_streaming
 from app.modules.gateway import tracing as gateway_tracing
-from app.modules.keys import facade as keys_facade
+from app.modules.keys import facade as keys_runtime_facade
 from app.modules.keys.errors import (
     AccessDeniedError,
     InvalidVirtualKeyError,
@@ -67,7 +67,7 @@ async def list_models(
 ) -> dict[str, Any]:
     raw_key = _extract_bearer_token(authorization)
     try:
-        models = await keys_facade.list_accessible_models(raw_key=raw_key, db=db)
+        models = await keys_runtime_facade.list_accessible_models(raw_key=raw_key, db=db)
     except InvalidVirtualKeyError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -184,7 +184,7 @@ async def create_chat_completion(
             gateway_endpoint="chat_completions",
             db=db,
         )
-        key_subject = await keys_facade.resolve_key_subject(
+        key_subject = await keys_runtime_facade.resolve_key_subject(
             payload=ResolveKeySubjectRequest(raw_key=raw_key),
             db=db,
         )
@@ -193,7 +193,7 @@ async def create_chat_completion(
             key_subject=key_subject,
             db=db,
         )
-        plan = await keys_facade.resolve_access_plan_for_subject(
+        plan = await keys_runtime_facade.resolve_access_plan_for_subject(
             payload=ResolveAccessPlanForSubjectRequest(
                 subject=key_subject,
                 requested_model=provider_payload.model,
@@ -440,7 +440,7 @@ async def create_anthropic_message(
             gateway_endpoint="anthropic_messages",
             db=db,
         )
-        key_subject = await keys_facade.resolve_key_subject(
+        key_subject = await keys_runtime_facade.resolve_key_subject(
             payload=ResolveKeySubjectRequest(raw_key=raw_key),
             db=db,
         )
@@ -449,7 +449,7 @@ async def create_anthropic_message(
             key_subject=key_subject,
             db=db,
         )
-        plan = await keys_facade.resolve_access_plan_for_subject(
+        plan = await keys_runtime_facade.resolve_access_plan_for_subject(
             payload=ResolveAccessPlanForSubjectRequest(
                 subject=key_subject,
                 requested_model=provider_payload.model,
@@ -740,7 +740,7 @@ async def _handle_openai_compatible_proxy(
             gateway_endpoint=gateway_endpoint,
             db=db,
         )
-        key_subject = await keys_facade.resolve_key_subject(
+        key_subject = await keys_runtime_facade.resolve_key_subject(
             payload=ResolveKeySubjectRequest(raw_key=raw_key),
             db=db,
         )
@@ -749,7 +749,7 @@ async def _handle_openai_compatible_proxy(
             key_subject=key_subject,
             db=db,
         )
-        plan = await keys_facade.resolve_access_plan_for_subject(
+        plan = await keys_runtime_facade.resolve_access_plan_for_subject(
             payload=ResolveAccessPlanForSubjectRequest(
                 subject=key_subject,
                 requested_model=provider_payload.model,

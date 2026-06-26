@@ -5,7 +5,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import Scope
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.workspace import service
+from app.modules.workspace.internal import projects
 from app.modules.workspace.schemas import (
+    CreateProjectRequest,
+    ProjectArchiveImpactResponse,
+    ProjectMembershipTarget,
+    ProjectOption,
+    ProjectResponse,
+    TeamArchiveImpactResponse,
+    UpdateProjectRequest,
     ValidatedScope,
     WorkspaceAllowedScopeIds,
     WorkspaceFilterValidation,
@@ -36,6 +44,104 @@ async def validate_assignment_scope(
         virtual_key_id=virtual_key_id,
         db=db,
     )
+
+
+async def create_project(
+    *,
+    team_id: UUID,
+    payload: CreateProjectRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProjectResponse:
+    return await projects.create_project(
+        team_id=team_id, payload=payload, actor=actor, scope=scope, db=db
+    )
+
+
+async def list_projects(*, scope: Scope, db: AsyncSession) -> list[ProjectResponse]:
+    return await projects.list_projects(scope=scope, db=db)
+
+
+async def get_project(*, project_id: UUID, scope: Scope, db: AsyncSession) -> ProjectResponse:
+    return await projects.get_project(project_id=project_id, scope=scope, db=db)
+
+
+async def get_project_membership_target(
+    *, project_id: UUID, scope: Scope, db: AsyncSession
+) -> ProjectMembershipTarget | None:
+    return await projects.get_project_membership_target(
+        project_id=project_id, scope=scope, db=db
+    )
+
+
+async def get_project_team_ids(
+    *, scope: Scope, project_ids: set[UUID] | None = None, db: AsyncSession
+) -> dict[UUID, UUID]:
+    return await projects.get_project_team_ids(scope=scope, project_ids=project_ids, db=db)
+
+
+async def list_team_projects(
+    *, team_id: UUID, scope: Scope, db: AsyncSession
+) -> list[ProjectResponse]:
+    return await projects.list_team_projects(team_id=team_id, scope=scope, db=db)
+
+
+async def get_team_archive_impact(
+    *, team_id: UUID, scope: Scope, db: AsyncSession
+) -> TeamArchiveImpactResponse:
+    return await projects.get_team_archive_impact(team_id=team_id, scope=scope, db=db)
+
+
+async def update_project(
+    *,
+    project_id: UUID,
+    payload: UpdateProjectRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> ProjectResponse:
+    return await projects.update_project(
+        project_id=project_id, payload=payload, actor=actor, scope=scope, db=db
+    )
+
+
+async def deactivate_project(
+    *, project_id: UUID, actor: AuthenticatedUser, scope: Scope, db: AsyncSession
+) -> None:
+    await projects.deactivate_project(project_id=project_id, actor=actor, scope=scope, db=db)
+
+
+async def get_project_labels(
+    *, project_ids: set[UUID], scope: Scope, db: AsyncSession
+) -> dict[UUID, str]:
+    return await projects.get_project_labels(project_ids=project_ids, scope=scope, db=db)
+
+
+async def list_project_ids_for_team_ids(
+    *, team_ids: set[UUID], scope: Scope, db: AsyncSession
+) -> set[UUID]:
+    return await projects.list_project_ids_for_team_ids(
+        team_ids=team_ids, scope=scope, db=db
+    )
+
+
+async def list_project_options(
+    *,
+    scope: Scope,
+    team_ids: set[UUID] | None,
+    project_ids: set[UUID] | None,
+    db: AsyncSession,
+) -> list[ProjectOption]:
+    return await projects.list_project_options(
+        scope=scope, team_ids=team_ids, project_ids=project_ids, db=db
+    )
+
+
+async def get_project_archive_impact(
+    *, project_id: UUID, scope: Scope, db: AsyncSession
+) -> ProjectArchiveImpactResponse:
+    return await projects.get_project_archive_impact(project_id=project_id, scope=scope, db=db)
 
 
 async def validate_filter_relationships(

@@ -18,9 +18,7 @@ from app.modules.authorization.permissions import Permissions
 from app.modules.authorization.schemas import AuthorizationTarget
 from app.modules.keys.errors import (
     InvalidVirtualKeyError,
-    OrganizationInactiveError,
     ProjectAccessUnavailableError,
-    ProjectInactiveError,
     VirtualKeyNotFoundError,
 )
 from app.modules.policies import facade
@@ -51,6 +49,10 @@ from app.modules.policies.schemas import (
 from app.modules.policy_simulation.schemas import (
     PolicySimulationRequest,
     PolicySimulationResponse,
+)
+from app.modules.workspace.errors import (
+    OrganizationInactiveError,
+    ProjectInactiveError,
 )
 
 router = APIRouter(prefix="/policies", tags=["policies"])

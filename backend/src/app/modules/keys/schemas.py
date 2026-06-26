@@ -5,55 +5,6 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-class CreateProjectRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=255)
-    slug: str | None = Field(default=None, min_length=1, max_length=100)
-    description: str | None = Field(default=None, max_length=1000)
-
-
-class UpdateProjectRequest(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=255)
-    slug: str | None = Field(default=None, min_length=1, max_length=100)
-    description: str | None = Field(default=None, max_length=1000)
-    is_active: bool | None = None
-
-
-class ProjectResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    org_id: UUID
-    team_id: UUID
-    team_name: str | None = None
-    name: str
-    slug: str
-    description: str | None
-    is_active: bool
-    created_at: datetime
-    updated_at: datetime
-
-
-class ProjectIdentity(BaseModel):
-    id: UUID
-    org_id: UUID
-    team_id: UUID
-    is_active: bool
-
-
-class ProjectMembershipTarget(BaseModel):
-    id: UUID
-    org_id: UUID
-    team_id: UUID
-    name: str
-    is_active: bool
-
-
-class ProjectOption(BaseModel):
-    id: UUID
-    name: str
-    team_id: UUID
-
-
 class CreateVirtualKeyRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     expires_at: datetime | None = None
@@ -211,24 +162,6 @@ class EffectiveAccessSummary(BaseModel):
     access_policies: list[EffectivePolicyReference] = Field(default_factory=list)
     routes: list[EffectiveRouteSummary]
     limit_policies: list[EffectiveLimitReference]
-
-
-class TeamArchiveImpactResponse(BaseModel):
-    active_project_count: int = 0
-    active_virtual_key_count: int = 0
-    team_admin_count: int = 0
-    team_member_count: int = 0
-    recent_usage_window_days: int = 30
-    recent_request_count: int = 0
-    recent_cost_cents: int = 0
-
-
-class ProjectArchiveImpactResponse(BaseModel):
-    active_virtual_key_count: int = 0
-    recent_usage_window_days: int = 30
-    recent_request_count: int = 0
-    recent_cost_cents: int = 0
-    effective_access: EffectiveAccessSummary
 
 
 class VirtualKeyRevokeImpactResponse(BaseModel):

@@ -1,19 +1,3 @@
-class ProjectNotFoundError(Exception):
-    pass
-
-
-class ProjectSlugAlreadyExistsError(Exception):
-    pass
-
-
-class OrganizationInactiveError(Exception):
-    pass
-
-
-class ProjectInactiveError(Exception):
-    pass
-
-
 class ProjectAccessUnavailableError(Exception):
     def __init__(self, summary):
         self.summary = summary

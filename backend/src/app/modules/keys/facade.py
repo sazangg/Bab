@@ -4,20 +4,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope
 from app.modules.auth.schemas import AuthenticatedUser
-from app.modules.keys import read_models
-from app.modules.keys.internal import service
+from app.modules.keys.internal import access_planning, virtual_keys
 from app.modules.keys.runtime_routes import ResolvedAccessPlanExplanation
 from app.modules.keys.schemas import (
     AccessibleModel,
     CreatedVirtualKeyResponse,
-    CreateProjectRequest,
     CreateVirtualKeyRequest,
     EffectiveAccessSummary,
-    ProjectArchiveImpactResponse,
-    ProjectIdentity,
-    ProjectMembershipTarget,
-    ProjectOption,
-    ProjectResponse,
     ResolveAccessPlanForSubjectRequest,
     ResolveAccessPlanForVirtualKeyRequest,
     ResolveAccessRequest,
@@ -26,8 +19,6 @@ from app.modules.keys.schemas import (
     ResolvedKeySubject,
     ResolveKeySubjectRequest,
     RotateVirtualKeyRequest,
-    TeamArchiveImpactResponse,
-    UpdateProjectRequest,
     UpdateVirtualKeyRequest,
     VirtualKeyIdentity,
     VirtualKeyInventoryPage,
@@ -38,98 +29,6 @@ from app.modules.keys.schemas import (
 )
 
 
-async def create_project(
-    *,
-    team_id: UUID,
-    payload: CreateProjectRequest,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    db: AsyncSession,
-) -> ProjectResponse:
-    return await service.create_project(
-        team_id=team_id,
-        payload=payload,
-        actor=actor,
-        scope=scope,
-        db=db,
-    )
-
-
-async def list_projects(*, scope: Scope, db: AsyncSession) -> list[ProjectResponse]:
-    return await service.list_projects(scope=scope, db=db)
-
-
-async def get_project(*, project_id: UUID, scope: Scope, db: AsyncSession) -> ProjectResponse:
-    return await service.get_project(project_id=project_id, scope=scope, db=db)
-
-
-async def get_project_identity(
-    *, project_id: UUID, scope: Scope, db: AsyncSession
-) -> ProjectIdentity | None:
-    return await service.get_project_identity(project_id=project_id, scope=scope, db=db)
-
-
-async def get_project_membership_target(
-    *, project_id: UUID, scope: Scope, db: AsyncSession
-) -> ProjectMembershipTarget | None:
-    return await read_models.get_project_membership_target(
-        project_id=project_id,
-        scope=scope,
-        db=db,
-    )
-
-
-async def get_project_team_ids(
-    *, scope: Scope, project_ids: set[UUID] | None = None, db: AsyncSession
-) -> dict[UUID, UUID]:
-    return await read_models.get_project_team_ids(scope=scope, project_ids=project_ids, db=db)
-
-
-async def list_team_projects(
-    *,
-    team_id: UUID,
-    scope: Scope,
-    db: AsyncSession,
-) -> list[ProjectResponse]:
-    return await service.list_team_projects(team_id=team_id, scope=scope, db=db)
-
-
-async def get_team_archive_impact(
-    *,
-    team_id: UUID,
-    scope: Scope,
-    db: AsyncSession,
-) -> TeamArchiveImpactResponse:
-    return await service.get_team_archive_impact(team_id=team_id, scope=scope, db=db)
-
-
-async def update_project(
-    *,
-    project_id: UUID,
-    payload: UpdateProjectRequest,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    db: AsyncSession,
-) -> ProjectResponse:
-    return await service.update_project(
-        project_id=project_id,
-        payload=payload,
-        actor=actor,
-        scope=scope,
-        db=db,
-    )
-
-
-async def deactivate_project(
-    *,
-    project_id: UUID,
-    actor: AuthenticatedUser,
-    scope: Scope,
-    db: AsyncSession,
-) -> None:
-    await service.deactivate_project(project_id=project_id, actor=actor, scope=scope, db=db)
-
-
 async def create_virtual_key(
     *,
     project_id: UUID,
@@ -138,7 +37,7 @@ async def create_virtual_key(
     scope: Scope,
     db: AsyncSession,
 ) -> CreatedVirtualKeyResponse:
-    return await service.create_virtual_key(
+    return await virtual_keys.create_virtual_key(
         project_id=project_id,
         payload=payload,
         actor=actor,
@@ -153,7 +52,7 @@ async def list_virtual_keys(
     scope: Scope,
     db: AsyncSession,
 ) -> list[VirtualKeyResponse]:
-    return await service.list_virtual_keys(project_id=project_id, scope=scope, db=db)
+    return await virtual_keys.list_virtual_keys(project_id=project_id, scope=scope, db=db)
 
 
 async def list_virtual_key_inventory(
@@ -173,7 +72,7 @@ async def list_virtual_key_inventory(
     offset: int,
     db: AsyncSession,
 ) -> VirtualKeyInventoryPage:
-    return await service.list_virtual_key_inventory(
+    return await virtual_keys.list_virtual_key_inventory(
         scope=scope,
         visible_team_ids=visible_team_ids,
         visible_project_ids=visible_project_ids,
@@ -198,58 +97,36 @@ async def get_virtual_key(
     scope: Scope,
     db: AsyncSession,
 ) -> VirtualKeyResponse:
-    return await service.get_virtual_key(project_id=project_id, key_id=key_id, scope=scope, db=db)
+    return await virtual_keys.get_virtual_key(
+        project_id=project_id,
+        key_id=key_id,
+        scope=scope,
+        db=db,
+    )
 
 
 async def get_virtual_key_identity(
     *, key_id: UUID, scope: Scope, db: AsyncSession
 ) -> VirtualKeyIdentity | None:
-    return await service.get_virtual_key_identity(key_id=key_id, scope=scope, db=db)
-
-
-async def get_project_labels(
-    *, project_ids: set[UUID], scope: Scope, db: AsyncSession
-) -> dict[UUID, str]:
-    return await service.get_project_labels(project_ids=project_ids, scope=scope, db=db)
+    return await virtual_keys.get_virtual_key_identity(key_id=key_id, scope=scope, db=db)
 
 
 async def get_virtual_key_labels(
     *, virtual_key_ids: set[UUID], scope: Scope, db: AsyncSession
 ) -> dict[UUID, str]:
-    return await service.get_virtual_key_labels(
+    return await virtual_keys.get_virtual_key_labels(
         virtual_key_ids=virtual_key_ids,
         scope=scope,
         db=db,
     )
 
 
-async def list_project_ids_for_team_ids(
-    *, team_ids: set[UUID], scope: Scope, db: AsyncSession
-) -> set[UUID]:
-    return await service.list_project_ids_for_team_ids(team_ids=team_ids, scope=scope, db=db)
-
-
 async def list_virtual_key_ids_for_project_ids(
     *, project_ids: set[UUID], scope: Scope, db: AsyncSession
 ) -> set[UUID]:
-    return await service.list_virtual_key_ids_for_project_ids(
+    return await virtual_keys.list_virtual_key_ids_for_project_ids(
         project_ids=project_ids,
         scope=scope,
-        db=db,
-    )
-
-
-async def list_project_options(
-    *,
-    scope: Scope,
-    team_ids: set[UUID] | None,
-    project_ids: set[UUID] | None,
-    db: AsyncSession,
-) -> list[ProjectOption]:
-    return await service.list_project_options(
-        scope=scope,
-        team_ids=team_ids,
-        project_ids=project_ids,
         db=db,
     )
 
@@ -257,7 +134,7 @@ async def list_project_options(
 async def list_virtual_key_options_for_project_ids(
     *, project_ids: set[UUID], usable_only: bool, scope: Scope, db: AsyncSession
 ) -> list[VirtualKeyOption]:
-    return await service.list_virtual_key_options_for_project_ids(
+    return await virtual_keys.list_virtual_key_options_for_project_ids(
         project_ids=project_ids,
         usable_only=usable_only,
         scope=scope,
@@ -268,7 +145,7 @@ async def list_virtual_key_options_for_project_ids(
 async def list_virtual_key_options_by_ids(
     *, virtual_key_ids: set[UUID], usable_only: bool, scope: Scope, db: AsyncSession
 ) -> list[VirtualKeyOption]:
-    return await service.list_virtual_key_options_by_ids(
+    return await virtual_keys.list_virtual_key_options_by_ids(
         virtual_key_ids=virtual_key_ids,
         usable_only=usable_only,
         scope=scope,
@@ -279,7 +156,7 @@ async def list_virtual_key_options_by_ids(
 async def get_usable_virtual_key_target(
     *, virtual_key_id: UUID, scope: Scope, db: AsyncSession
 ) -> VirtualKeyTarget | None:
-    return await service.get_usable_virtual_key_target(
+    return await virtual_keys.get_usable_virtual_key_target(
         virtual_key_id=virtual_key_id,
         scope=scope,
         db=db,
@@ -295,7 +172,7 @@ async def rotate_virtual_key(
     scope: Scope,
     db: AsyncSession,
 ) -> CreatedVirtualKeyResponse:
-    return await service.rotate_virtual_key(
+    return await virtual_keys.rotate_virtual_key(
         project_id=project_id,
         key_id=key_id,
         payload=payload,
@@ -305,15 +182,6 @@ async def rotate_virtual_key(
     )
 
 
-async def get_project_archive_impact(
-    *,
-    project_id: UUID,
-    scope: Scope,
-    db: AsyncSession,
-) -> ProjectArchiveImpactResponse:
-    return await service.get_project_archive_impact(project_id=project_id, scope=scope, db=db)
-
-
 async def get_virtual_key_revoke_impact(
     *,
     project_id: UUID,
@@ -321,7 +189,7 @@ async def get_virtual_key_revoke_impact(
     scope: Scope,
     db: AsyncSession,
 ) -> VirtualKeyRevokeImpactResponse:
-    return await service.get_virtual_key_revoke_impact(
+    return await virtual_keys.get_virtual_key_revoke_impact(
         project_id=project_id,
         key_id=key_id,
         scope=scope,
@@ -338,7 +206,7 @@ async def update_virtual_key(
     scope: Scope,
     db: AsyncSession,
 ) -> VirtualKeyResponse:
-    return await service.update_virtual_key(
+    return await virtual_keys.update_virtual_key(
         project_id=project_id,
         key_id=key_id,
         payload=payload,
@@ -358,7 +226,7 @@ async def revoke_virtual_key(
     db: AsyncSession,
     force: bool = False,
 ) -> None:
-    await service.revoke_virtual_key(
+    await virtual_keys.revoke_virtual_key(
         project_id=project_id,
         key_id=key_id,
         reason=reason,
@@ -370,25 +238,25 @@ async def revoke_virtual_key(
 
 
 async def resolve_access(*, payload: ResolveAccessRequest, db: AsyncSession) -> ResolvedAccess:
-    return await service.resolve_access(payload=payload, db=db)
+    return await access_planning.resolve_access(payload=payload, db=db)
 
 
 async def resolve_access_plan(
     *, payload: ResolveAccessRequest, db: AsyncSession
 ) -> ResolvedAccessPlan:
-    return await service.resolve_access_plan(payload=payload, db=db)
+    return await access_planning.resolve_access_plan(payload=payload, db=db)
 
 
 async def resolve_key_subject(
     *, payload: ResolveKeySubjectRequest, db: AsyncSession
 ) -> ResolvedKeySubject:
-    return await service.resolve_key_subject(payload=payload, db=db)
+    return await access_planning.resolve_key_subject(payload=payload, db=db)
 
 
 async def resolve_access_plan_for_subject(
     *, payload: ResolveAccessPlanForSubjectRequest, db: AsyncSession
 ) -> ResolvedAccessPlan:
-    return await service.resolve_access_plan_for_subject(payload=payload, db=db)
+    return await access_planning.resolve_access_plan_for_subject(payload=payload, db=db)
 
 
 async def resolve_access_plan_for_virtual_key(
@@ -397,7 +265,9 @@ async def resolve_access_plan_for_virtual_key(
     payload: ResolveAccessPlanForVirtualKeyRequest,
     db: AsyncSession,
 ) -> ResolvedAccessPlan:
-    return await service.resolve_access_plan_for_virtual_key(org_id=org_id, payload=payload, db=db)
+    return await access_planning.resolve_access_plan_for_virtual_key(
+        org_id=org_id, payload=payload, db=db
+    )
 
 
 async def explain_access_plan_for_virtual_key(
@@ -406,28 +276,34 @@ async def explain_access_plan_for_virtual_key(
     payload: ResolveAccessPlanForVirtualKeyRequest,
     db: AsyncSession,
 ) -> ResolvedAccessPlanExplanation:
-    return await service.explain_access_plan_for_virtual_key(org_id=org_id, payload=payload, db=db)
+    return await access_planning.explain_access_plan_for_virtual_key(
+        org_id=org_id, payload=payload, db=db
+    )
 
 
 async def list_accessible_models(*, raw_key: str, db: AsyncSession) -> list[AccessibleModel]:
-    return await service.list_accessible_models(raw_key=raw_key, db=db)
+    return await access_planning.list_accessible_models(raw_key=raw_key, db=db)
 
 
 async def list_project_accessible_models(
     *, project_id: UUID, scope: Scope, db: AsyncSession
 ) -> list[AccessibleModel]:
-    return await service.list_project_accessible_models(project_id=project_id, scope=scope, db=db)
+    return await access_planning.list_project_accessible_models(
+        project_id=project_id, scope=scope, db=db
+    )
 
 
 async def get_project_effective_access(
     *, project_id: UUID, scope: Scope, db: AsyncSession
 ) -> EffectiveAccessSummary:
-    return await service.get_project_effective_access(project_id=project_id, scope=scope, db=db)
+    return await access_planning.get_project_effective_access(
+        project_id=project_id, scope=scope, db=db
+    )
 
 
 async def get_virtual_key_effective_access(
     *, project_id: UUID, key_id: UUID, scope: Scope, db: AsyncSession
 ) -> EffectiveAccessSummary:
-    return await service.get_virtual_key_effective_access(
+    return await access_planning.get_virtual_key_effective_access(
         project_id=project_id, key_id=key_id, scope=scope, db=db
     )

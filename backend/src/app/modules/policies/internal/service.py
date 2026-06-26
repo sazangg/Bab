@@ -9,7 +9,6 @@ from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.authorization import facade as authorization_facade
 from app.modules.authorization.permissions import Permissions
 from app.modules.authorization.schemas import AuthorizationTarget
-from app.modules.keys import facade as keys_facade
 from app.modules.policies.errors import (
     PolicyAssignmentConflictError,
     PolicyNotFoundError,
@@ -1707,7 +1706,7 @@ async def _parent_access_public_model_options(
         parent_scopes.append("project")
     resolved_team_id = team_id
     if project_id is not None:
-        project = await keys_facade.get_project(project_id=project_id, scope=scope, db=db)
+        project = await workspace_facade.get_project(project_id=project_id, scope=scope, db=db)
         resolved_team_id = project.team_id
     if virtual_key_id is not None:
         if project_id is None:
@@ -1717,7 +1716,7 @@ async def _parent_access_public_model_options(
             if virtual_key is None:
                 raise PolicyNotFoundError
             project_id = virtual_key.project_id
-        project = await keys_facade.get_project(project_id=project_id, scope=scope, db=db)
+        project = await workspace_facade.get_project(project_id=project_id, scope=scope, db=db)
         resolved_team_id = project.team_id
 
     effective: dict[str, _EffectivePublicModel] | None = None
