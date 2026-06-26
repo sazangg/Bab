@@ -5,7 +5,7 @@ from pydantic import ValidationError
 
 from app.api.v1.routes.settings import _detect_image_extension
 from app.core.csv_safe import sanitize_csv_cell
-from app.modules.activity.metadata import sanitize_metadata
+from app.core.metadata_sanitization import sanitize_metadata
 from app.modules.settings.schemas import UpdateOrganizationSettingsRequest
 
 _PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16

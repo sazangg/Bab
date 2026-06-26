@@ -10,8 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import bootstrap
 from app.core.security import decode_access_token, hash_token
+from app.modules.audit.internal.models import AuditEvent
 from app.modules.auth.internal.models import (
-    AuditEvent,
     Invite,
     OrganizationMembership,
     ProjectMembership,
@@ -438,13 +438,13 @@ async def test_invite_acceptance_and_team_membership_flow(
             f"/api/v1/teams/{team_response.json()['id']}/members/{member['user_id']}",
             headers=admin_headers,
         )
-        audit_response = await client.get("/api/v1/auth/audit", headers=admin_headers)
+        audit_response = await client.get("/api/v1/audit", headers=admin_headers)
         audit_export_response = await client.get(
-            "/api/v1/auth/audit/export",
+            "/api/v1/audit/export",
             params={"action": "team_member.added"},
             headers=admin_headers,
         )
-        audit_verify_response = await client.get("/api/v1/auth/audit/verify", headers=admin_headers)
+        audit_verify_response = await client.get("/api/v1/audit/verify", headers=admin_headers)
 
     assert team_response.status_code == 201
     assert invite_response.status_code == 201
@@ -1110,7 +1110,7 @@ async def test_org_viewer_cannot_access_audit(
         )
         viewer_headers = {"Authorization": f"Bearer {viewer_login.json()['access_token']}"}
         viewer_me_response = await client.get("/api/v1/auth/me", headers=viewer_headers)
-        audit_response = await client.get("/api/v1/auth/audit", headers=viewer_headers)
+        audit_response = await client.get("/api/v1/audit", headers=viewer_headers)
 
     assert viewer_login.status_code == 200
     assert "audit.view" not in viewer_me_response.json()["permissions"]

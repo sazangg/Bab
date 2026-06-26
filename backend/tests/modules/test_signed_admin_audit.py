@@ -6,12 +6,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.database import Base, Scope
-from app.modules.auth.internal.models import AuditEvent, AuditLedgerState, Organization
-from app.modules.auth.internal.service import (
+from app.modules.audit.internal.models import AuditEvent, AuditLedgerState
+from app.modules.audit.internal.service import (
     list_audit_events,
     record_audit_event,
     verify_audit_chain,
 )
+from app.modules.auth.internal.models import Organization
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.guardrails import facade as guardrails_facade
 from app.modules.guardrails.schemas import (

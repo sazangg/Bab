@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.routes.activity import router as activity_router
+from app.api.v1.routes.audit import router as audit_router
 from app.api.v1.routes.auth import router as auth_router
 from app.api.v1.routes.gateway_history import router as gateway_history_router
 from app.api.v1.routes.guardrails import router as guardrails_router
@@ -45,6 +46,7 @@ def create_app() -> FastAPI:
     app.middleware("http")(request_context_middleware)
     install_problem_handlers(app)
     app.include_router(activity_router, prefix="/api/v1")
+    app.include_router(audit_router, prefix="/api/v1")
     app.include_router(auth_router, prefix="/api/v1")
     app.include_router(gateway_history_router, prefix="/api/v1")
     app.include_router(guardrails_router, prefix="/api/v1")

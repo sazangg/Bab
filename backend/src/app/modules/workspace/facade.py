@@ -46,6 +46,10 @@ async def validate_assignment_scope(
     )
 
 
+async def lock_organization_scope_for_update(*, org_id: UUID, db: AsyncSession) -> None:
+    await service.lock_organization_scope_for_update(org_id=org_id, db=db)
+
+
 async def create_project(
     *,
     team_id: UUID,

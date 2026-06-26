@@ -7,8 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.activity.facade import record_event
 from app.modules.activity.internal.models import ActivityEvent
 from app.modules.activity.schemas import RecordActivityEvent
-from app.modules.auth.internal.models import AuditEvent, Organization
-from app.modules.auth.internal.service import record_audit_event
+from app.modules.audit.internal.models import AuditEvent
+from app.modules.audit.internal.service import record_audit_event
+from app.modules.auth.internal.models import Organization
 from app.modules.auth.schemas import AuthenticatedUser
 
 

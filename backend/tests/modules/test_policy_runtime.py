@@ -9,8 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.routes.projects import create_virtual_key as create_virtual_key_route
 from app.core.database import Scope
 from app.modules.activity.internal.models import ActivityEvent
+from app.modules.audit.internal.models import AuditEvent
 from app.modules.auth.internal.models import (
-    AuditEvent,
     Organization,
     OrganizationMembership,
     User,

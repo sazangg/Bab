@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.auth.internal.models import Organization
@@ -10,6 +10,13 @@ from app.modules.workspace.internal.models import Project
 
 async def get_organization(*, org_id: UUID, db: AsyncSession) -> Organization | None:
     return await db.scalar(select(Organization).where(Organization.id == org_id))
+
+
+async def lock_organization_scope_for_update(*, org_id: UUID, db: AsyncSession) -> None:
+    await db.execute(
+        update(Organization).where(Organization.id == org_id).values(name=Organization.name)
+    )
+    await db.scalar(select(Organization).where(Organization.id == org_id).with_for_update())
 
 
 async def ensure_organization_active(*, org_id: UUID, db: AsyncSession) -> None:

@@ -4,9 +4,9 @@ from uuid import UUID
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.metadata_sanitization import sanitize_metadata
 from app.core.request_ids import current_request_id
 from app.modules.activity.internal.models import ActivityEvent
-from app.modules.activity.metadata import sanitize_metadata
 from app.modules.activity.schemas import RecordActivityEvent
 
 

@@ -7,7 +7,6 @@ from app.modules.auth import read_models
 from app.modules.auth.internal import service
 from app.modules.auth.schemas import (
     AcceptInviteRequest,
-    AuditEventResponse,
     AuthenticatedUser,
     CreateInviteRequest,
     CreateMemberRequest,
@@ -320,57 +319,3 @@ async def accept_invite(
     payload: AcceptInviteRequest, db: AsyncSession
 ) -> tuple[TokenResponse, str]:
     return await service.accept_invite(payload, db)
-
-
-async def list_audit_events(
-    *,
-    scope: Scope,
-    db: AsyncSession,
-    limit: int | None = 100,
-    start_at=None,
-    end_at=None,
-    actor_user_id=None,
-    action: str | None = None,
-    entity_type: str | None = None,
-    entity_id=None,
-    search: str | None = None,
-    before_at=None,
-    before_id=None,
-) -> list[AuditEventResponse]:
-    return await service.list_audit_events(
-        scope=scope,
-        db=db,
-        limit=limit,
-        start_at=start_at,
-        end_at=end_at,
-        actor_user_id=actor_user_id,
-        action=action,
-        entity_type=entity_type,
-        entity_id=entity_id,
-        search=search,
-        before_at=before_at,
-        before_id=before_id,
-    )
-
-
-async def verify_audit_chain(*, scope: Scope, db: AsyncSession):
-    return await service.verify_audit_chain(scope=scope, db=db)
-
-
-async def record_audit_event(
-    *,
-    actor: AuthenticatedUser,
-    action: str,
-    entity_type: str,
-    entity_id: UUID | None,
-    metadata: dict,
-    db: AsyncSession,
-) -> None:
-    await service.record_audit_event(
-        actor=actor,
-        action=action,
-        entity_type=entity_type,
-        entity_id=entity_id,
-        metadata=metadata,
-        db=db,
-    )

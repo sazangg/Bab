@@ -73,7 +73,7 @@ export function AuditPage() {
     enabled: !dateRange.error,
     initialPageParam: undefined as AuditCursor | undefined,
     queryFn: async ({ pageParam }) => {
-      const response = await httpClient.get<AuditEventResponse[]>("/api/v1/auth/audit", {
+      const response = await httpClient.get<AuditEventResponse[]>("/api/v1/audit", {
         params: {
           ...params,
           limit: PAGE_SIZE,
@@ -104,7 +104,7 @@ export function AuditPage() {
   const downloadExport = async () => {
     setIsExporting(true);
     try {
-      const response = await httpClient.get<Blob>("/api/v1/auth/audit/export", {
+      const response = await httpClient.get<Blob>("/api/v1/audit/export", {
         params,
         responseType: "blob",
       });
@@ -120,7 +120,7 @@ export function AuditPage() {
   const verifyChain = async () => {
     setIsVerifying(true);
     try {
-      const response = await httpClient.get<AuditVerificationResponse>("/api/v1/auth/audit/verify");
+      const response = await httpClient.get<AuditVerificationResponse>("/api/v1/audit/verify");
       setVerification(response.data);
       if (response.data.valid) {
         toast.success(`Audit chain verified (${response.data.checked_events} events).`);

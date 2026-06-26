@@ -8,7 +8,7 @@ from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys import facade as keys_runtime_facade
 from app.modules.teams import facade as teams_facade
 from app.modules.workspace.errors import WorkspaceScopeNotFoundError
-from app.modules.workspace.internal import projects
+from app.modules.workspace.internal import projects, repository
 from app.modules.workspace.schemas import (
     ValidatedScope,
     WorkspaceAllowedScopeIds,
@@ -72,6 +72,10 @@ async def validate_assignment_scope(
             raise WorkspaceScopeNotFoundError("invalid")
         return ValidatedScope(scope_type="virtual_key", virtual_key_id=virtual_key_id)
     raise WorkspaceScopeNotFoundError("invalid")
+
+
+async def lock_organization_scope_for_update(*, org_id: UUID, db: AsyncSession) -> None:
+    await repository.lock_organization_scope_for_update(org_id=org_id, db=db)
 
 
 async def validate_filter_relationships(

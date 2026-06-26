@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import Scope
 from app.modules.activity.internal.models import ActivityEvent
-from app.modules.auth.internal.models import AuditEvent, Organization
+from app.modules.audit.internal.models import AuditEvent
+from app.modules.auth.internal.models import Organization
 from app.modules.auth.internal.service import MOCK_ADMIN_ID
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.settings import facade

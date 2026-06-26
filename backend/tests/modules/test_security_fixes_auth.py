@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope
 from app.core.security import create_access_token
+from app.modules.audit.internal.models import AuditEvent
+from app.modules.audit.internal.service import record_audit_event, verify_audit_chain
 from app.modules.auth import facade as auth_facade
 from app.modules.auth.errors import (
     InvalidAccessTokenError,
@@ -16,7 +18,6 @@ from app.modules.auth.errors import (
     MemberOrganizationConflictError,
 )
 from app.modules.auth.internal.models import (
-    AuditEvent,
     Invite,
     Organization,
     OrganizationMembership,
@@ -26,12 +27,7 @@ from app.modules.auth.internal.refresh_sessions import (
     create_refresh_session,
     rotate_refresh_session,
 )
-from app.modules.auth.internal.service import (
-    record_audit_event,
-    refresh,
-    verify_access_token,
-    verify_audit_chain,
-)
+from app.modules.auth.internal.service import refresh, verify_access_token
 from app.modules.auth.schemas import AcceptInviteRequest, AuthenticatedUser
 
 
@@ -217,11 +213,15 @@ async def test_audit_chain_verifies_via_key_id_after_secret_rotation(
     db_session: AsyncSession, monkeypatch
 ) -> None:
     from app.core import config as config_module
-    from app.modules.auth.internal import service as service_module
+    from app.modules.audit.internal import service as audit_service_module
 
     # Operator sets a dedicated, stable audit key independent of the JWT secret.
     monkeypatch.setattr(config_module.settings, "audit_signing_key", "dedicated-audit-key-value")
-    monkeypatch.setattr(service_module.settings, "audit_signing_key", "dedicated-audit-key-value")
+    monkeypatch.setattr(
+        audit_service_module.settings,
+        "audit_signing_key",
+        "dedicated-audit-key-value",
+    )
 
     org = await _org(db_session, "rotate-audit")
     await db_session.commit()
@@ -243,6 +243,10 @@ async def test_audit_chain_verifies_via_key_id_after_secret_rotation(
     # Rotate the JWT secret_key — audit verification must still pass because events
     # are signed with the dedicated audit key, resolved by key id.
     monkeypatch.setattr(config_module.settings, "secret_key", "rotated-secret-key-32-characters!!")
-    monkeypatch.setattr(service_module.settings, "secret_key", "rotated-secret-key-32-characters!!")
+    monkeypatch.setattr(
+        audit_service_module.settings,
+        "secret_key",
+        "rotated-secret-key-32-characters!!",
+    )
     result = await verify_audit_chain(scope=Scope(org_id=org.id), db=db_session)
     assert result.valid is True

@@ -14,9 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.core.database import Base, get_db
 from app.main import create_app
 from app.modules.activity.internal.models import ActivityEvent  # noqa: F401
+from app.modules.audit.internal.models import AuditEvent, AuditLedgerState  # noqa: F401
 from app.modules.auth.internal.models import (  # noqa: F401
-    AuditEvent,
-    AuditLedgerState,
     IdentityAccount,
     Invite,
     Organization,

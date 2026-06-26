@@ -1,18 +1,12 @@
-import csv
-import json
-from datetime import datetime
-from io import StringIO
 from typing import Annotated
 from urllib.parse import urlparse
 from uuid import UUID
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response, status
-from fastapi.responses import Response as FastApiResponse
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, get_scope, require_permission
 from app.core.config import settings
-from app.core.csv_safe import sanitize_csv_cell
 from app.core.database import Scope, get_db
 from app.modules.auth import facade
 from app.modules.auth.errors import (
@@ -30,8 +24,6 @@ from app.modules.auth.errors import (
 )
 from app.modules.auth.schemas import (
     AcceptInviteRequest,
-    AuditEventResponse,
-    AuditVerificationResponse,
     AuthenticatedUser,
     CreateInviteRequest,
     CreateMemberRequest,
@@ -52,7 +44,6 @@ DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RefreshCookie = Annotated[str | None, Cookie(alias=REFRESH_COOKIE_NAME)]
 RequestScope = Annotated[Scope, Depends(get_scope)]
 MemberAdmin = Annotated[AuthenticatedUser, Depends(require_permission("members.manage"))]
-AuditViewer = Annotated[AuthenticatedUser, Depends(require_permission("audit.view"))]
 CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]
 
 
@@ -260,122 +251,6 @@ async def revoke_invite(
         raise HTTPException(status_code=400, detail="invite is not pending") from exc
     except PermissionDeniedError as exc:
         raise HTTPException(status_code=403, detail="insufficient permissions") from exc
-
-
-@router.get("/audit")
-async def list_audit_events(
-    scope: RequestScope,
-    db: DatabaseSession,
-    _: AuditViewer,
-    start_at: datetime | None = None,
-    end_at: datetime | None = None,
-    actor_user_id: UUID | None = None,
-    action: str | None = None,
-    entity_type: str | None = None,
-    entity_id: UUID | None = None,
-    q: str | None = Query(default=None, max_length=200),
-    before_at: datetime | None = None,
-    before_id: UUID | None = None,
-    limit: int = Query(default=100, ge=1, le=500),
-) -> list[AuditEventResponse]:
-    return await facade.list_audit_events(
-        scope=scope,
-        db=db,
-        limit=limit,
-        start_at=start_at,
-        end_at=end_at,
-        actor_user_id=actor_user_id,
-        action=action,
-        entity_type=entity_type,
-        entity_id=entity_id,
-        search=q.strip() if q and q.strip() else None,
-        before_at=before_at,
-        before_id=before_id,
-    )
-
-
-@router.get("/audit/export")
-async def export_audit_events(
-    scope: RequestScope,
-    db: DatabaseSession,
-    _: AuditViewer,
-    start_at: datetime | None = None,
-    end_at: datetime | None = None,
-    actor_user_id: UUID | None = None,
-    action: str | None = None,
-    entity_type: str | None = None,
-    entity_id: UUID | None = None,
-    q: str | None = Query(default=None, max_length=200),
-) -> FastApiResponse:
-    events = await facade.list_audit_events(
-        scope=scope,
-        db=db,
-        limit=None,
-        start_at=start_at,
-        end_at=end_at,
-        actor_user_id=actor_user_id,
-        action=action,
-        entity_type=entity_type,
-        entity_id=entity_id,
-        search=q.strip() if q and q.strip() else None,
-    )
-    return _csv_response(
-        filename="bab-audit-events.csv",
-        header=[
-            "id",
-            "created_at",
-            "org_id",
-            "actor_user_id",
-            "actor_email",
-            "actor_role",
-            "action",
-            "entity_type",
-            "entity_id",
-            "metadata",
-            "previous_hash",
-            "event_hash",
-            "signature_algorithm",
-        ],
-        rows=[
-            [
-                event.id,
-                event.created_at,
-                event.org_id,
-                event.actor_user_id,
-                event.actor_email,
-                event.actor_role,
-                event.action,
-                event.entity_type,
-                event.entity_id,
-                json.dumps(event.metadata, sort_keys=True),
-                event.previous_hash,
-                event.event_hash,
-                event.signature_algorithm,
-            ]
-            for event in events
-        ],
-    )
-
-
-@router.get("/audit/verify")
-async def verify_audit_chain(
-    scope: RequestScope,
-    db: DatabaseSession,
-    _: AuditViewer,
-) -> AuditVerificationResponse:
-    return await facade.verify_audit_chain(scope=scope, db=db)
-
-
-def _csv_response(*, filename: str, header: list[str], rows: list[list[object]]) -> FastApiResponse:
-    output = StringIO()
-    writer = csv.writer(output)
-    writer.writerow(header)
-    writer.writerows([sanitize_csv_cell(cell) for cell in row] for row in rows)
-    return FastApiResponse(
-        content=output.getvalue(),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
 
 
 def _request_origin(request: Request) -> str | None:

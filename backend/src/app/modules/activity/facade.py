@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import Scope
 from app.modules.activity.internal import repository
 from app.modules.activity.schemas import ActivityEventResponse, RecordActivityEvent
-from app.modules.auth import facade as auth_facade
+from app.modules.audit import facade as audit_facade
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.workspace import facade as workspace_facade
 
@@ -38,7 +38,7 @@ async def record_admin_event(
     audit_entity_id: UUID | None = None,
     metadata: dict | None = None,
 ) -> None:
-    await auth_facade.record_audit_event(
+    await audit_facade.record_audit_event(
         actor=actor,
         action=action,
         entity_type=(
