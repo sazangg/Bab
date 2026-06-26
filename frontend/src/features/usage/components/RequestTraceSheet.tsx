@@ -13,7 +13,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { useGetGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGet } from "@/shared/api/generated/usage/usage";
+import { useGetGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet } from "@/shared/api/generated/gateway-history/gateway-history";
 import type {
   GatewayPolicyDecisionTrace,
   GatewayRequestTraceResponse,
@@ -35,7 +35,7 @@ export function RequestTraceSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const traceQuery = useGetGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGet(
+  const traceQuery = useGetGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet(
     gatewayRequestId ?? "",
     {
       query: {

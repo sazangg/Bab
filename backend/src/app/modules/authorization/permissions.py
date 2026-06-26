@@ -13,6 +13,7 @@ class Permissions:
     PROJECTS_VIEW = "projects.view"
     KEYS_MANAGE = "keys.manage"
     USAGE_VIEW = "usage.view"
+    GATEWAY_HISTORY_VIEW = "gateway_history.view"
     ACTIVITY_VIEW = "activity.view"
     SETTINGS_MANAGE = "settings.manage"
     SETTINGS_VIEW = "settings.view"

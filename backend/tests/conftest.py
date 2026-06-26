@@ -25,6 +25,11 @@ from app.modules.auth.internal.models import (  # noqa: F401
     TeamMembership,
     User,
 )
+from app.modules.gateway_history.internal.models import (  # noqa: F401
+    GatewayPolicyDecision,
+    GatewayRequest,
+    GatewayRouteAttempt,
+)
 from app.modules.guardrails.internal.models import (  # noqa: F401
     GuardrailEvent,
     GuardrailPolicy,
@@ -48,9 +53,6 @@ from app.modules.providers.internal.models import (  # noqa: F401
 )
 from app.modules.settings.internal.models import OrganizationSettings  # noqa: F401
 from app.modules.usage.internal.models import (  # noqa: F401
-    GatewayPolicyDecision,
-    GatewayRequest,
-    GatewayRouteAttempt,
     LimitPolicyCommittedUsage,
     UsageRecord,
 )

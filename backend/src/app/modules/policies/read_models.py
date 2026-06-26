@@ -21,6 +21,12 @@ class ProviderPolicyRouteImpact(BaseModel):
     route_id: UUID
 
 
+class PolicyLabel(BaseModel):
+    id: UUID
+    name: str
+    kind: str
+
+
 class AccessRuntimeRouteCandidate(BaseModel):
     assignment_id: UUID
     shared_policy_id: UUID
@@ -290,6 +296,30 @@ async def list_provider_route_impacts(
         ProviderPolicyRouteImpact(policy_id=policy_id, policy_name=name, route_id=route_id)
         for policy_id, name, route_id in rows
     ]
+
+
+async def get_policy_labels(
+    *,
+    org_id: UUID,
+    policy_ids: set[UUID],
+    db: AsyncSession,
+) -> dict[UUID, PolicyLabel]:
+    if not policy_ids:
+        return {}
+    result = await db.scalars(
+        select(Policy).where(
+            Policy.org_id == org_id,
+            Policy.id.in_(policy_ids),
+        )
+    )
+    return {
+        policy.id: PolicyLabel(
+            id=policy.id,
+            name=policy.name,
+            kind=policy.kind,
+        )
+        for policy in result
+    }
 
 
 async def count_provider_limit_rules(

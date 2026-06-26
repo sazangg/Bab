@@ -1,4 +1,4 @@
-from app.modules.usage.redaction import REDACTED_VALUE, redact_trace_value
+from app.modules.gateway_history.redaction import REDACTED_VALUE, redact_trace_value
 
 
 def test_trace_redaction_removes_matched_content_and_preserves_metrics() -> None:

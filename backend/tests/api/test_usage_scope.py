@@ -12,11 +12,11 @@ from app.modules.auth.schemas import (
     AuthenticatedTeamMembership,
     AuthenticatedUser,
 )
+from app.modules.gateway_history.internal import repository as gateway_history_repository
+from app.modules.gateway_history.schemas import CreateGatewayRequest, FinalizeGatewayRequest
 from app.modules.keys.internal.models import VirtualKey
 from app.modules.providers.internal.models import CredentialPool, Provider
-from app.modules.usage.internal import repository as usage_repository
 from app.modules.usage.internal.models import UsageRecord
-from app.modules.usage.schemas import CreateGatewayRequest, FinalizeGatewayRequest
 from app.modules.workspace.internal.models import Project, Team
 
 
@@ -308,7 +308,7 @@ async def test_trace_request_list_is_scoped_to_team_membership(
         team_memberships=[AuthenticatedTeamMembership(team_id=team.id, role="team_member")],
     )
 
-    response = await _get(app_client, user, "/api/v1/usage/requests")
+    response = await _get(app_client, user, "/api/v1/gateway-history/requests")
 
     assert response.status_code == 200
     assert [item["request_id"] for item in response.json()["items"]] == ["req-visible"]
@@ -339,7 +339,7 @@ async def test_trace_request_list_filters_provider_involved_attempts(
         provider_id=provider_id,
         request_id="req-fallback",
     )
-    await usage_repository.create_gateway_route_attempt(
+    await gateway_history_repository.create_gateway_route_attempt(
         values={
             "org_id": org.id,
             "gateway_request_id": gateway_request.id,
@@ -359,8 +359,8 @@ async def test_trace_request_list_filters_provider_involved_attempts(
 
     response = await _get(
         app_client,
-        _principal(org_id=org.id, permissions=["usage.view"]),
-        f"/api/v1/usage/requests?provider_id={other_provider.id}",
+        _principal(org_id=org.id, permissions=["gateway_history.view"]),
+        f"/api/v1/gateway-history/requests?provider_id={other_provider.id}",
     )
 
     assert response.status_code == 200
@@ -463,7 +463,7 @@ async def _gateway_request(
     provider_id: UUID,
     request_id: str,
 ):
-    gateway_request = await usage_repository.create_gateway_request(
+    gateway_request = await gateway_history_repository.create_gateway_request(
         payload=CreateGatewayRequest(
             org_id=org_id,
             team_id=team_id,
@@ -477,7 +477,7 @@ async def _gateway_request(
         ),
         db=db_session,
     )
-    await usage_repository.finalize_gateway_request(
+    await gateway_history_repository.finalize_gateway_request(
         gateway_request_id=gateway_request.id,
         payload=FinalizeGatewayRequest(
             final_http_status=200,

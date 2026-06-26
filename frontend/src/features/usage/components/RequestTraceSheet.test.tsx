@@ -5,8 +5,8 @@ import { RequestTraceSheet } from "./RequestTraceSheet";
 
 const traceHook = vi.hoisted(() => vi.fn());
 
-vi.mock("@/shared/api/generated/usage/usage", () => ({
-  useGetGatewayRequestTraceApiV1UsageRequestsGatewayRequestIdGet: traceHook,
+vi.mock("@/shared/api/generated/gateway-history/gateway-history", () => ({
+  useGetGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet: traceHook,
 }));
 
 const trace = {

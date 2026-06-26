@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.request_ids import current_request_id
 from app.modules.gateway import costing as gateway_costing
+from app.modules.gateway_history import facade as gateway_history_facade
 from app.modules.policies.dimensions import PolicyDimensionStage, to_dimension_snapshot
 from app.modules.policies.runtime_limits import (
     RuntimeLimitEvaluationInput,
@@ -382,7 +383,7 @@ async def record_gateway_limit_decision(
         org_id=resolved.org_id,
         db=db,
     )
-    await usage_facade.create_gateway_policy_decision(
+    await gateway_history_facade.create_gateway_policy_decision(
         values={
             "org_id": resolved.org_id,
             "gateway_request_id": gateway_request_id,

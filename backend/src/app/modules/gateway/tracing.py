@@ -6,15 +6,15 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.request_ids import current_request_id
-from app.modules.policy_kernel import repository as policy_kernel_repository
-from app.modules.providers.read_models import get_route_attempt_snapshot
-from app.modules.usage import facade as usage_facade
-from app.modules.usage.accounting import UsageAccounting
-from app.modules.usage.schemas import (
+from app.modules.gateway_history import facade as gateway_history_facade
+from app.modules.gateway_history.schemas import (
     CreateGatewayRequest,
     FinalizeGatewayRequest,
     GatewayRequestResolvedSubject,
 )
+from app.modules.policy_kernel import repository as policy_kernel_repository
+from app.modules.providers.read_models import get_route_attempt_snapshot
+from app.modules.usage.accounting import UsageAccounting
 
 logger = structlog.get_logger(__name__)
 
@@ -59,7 +59,7 @@ async def create_gateway_request(
     db: AsyncSession,
 ) -> UUID | None:
     try:
-        return await usage_facade.create_gateway_request(
+        return await gateway_history_facade.create_gateway_request(
             payload=CreateGatewayRequest(
                 org_id=resolved.org_id if resolved else None,
                 team_id=resolved.team_id if resolved else None,
@@ -86,7 +86,7 @@ async def attach_gateway_request_subject(
     db: AsyncSession,
 ) -> None:
     try:
-        await usage_facade.attach_gateway_request_subject(
+        await gateway_history_facade.attach_gateway_request_subject(
             gateway_request_id=gateway_request_id,
             subject=GatewayRequestResolvedSubject(
                 org_id=key_subject.org_id,
@@ -114,7 +114,7 @@ async def attach_gateway_request_resolution(
     db: AsyncSession,
 ) -> None:
     try:
-        await usage_facade.attach_gateway_request_resolution(
+        await gateway_history_facade.attach_gateway_request_resolution(
             gateway_request_id=gateway_request_id,
             resolved=resolved,
             db=db,
@@ -144,7 +144,7 @@ async def finalize_gateway_request(
 ) -> None:
     if gateway_request_id is None:
         return
-    await usage_facade.finalize_gateway_request(
+    await gateway_history_facade.finalize_gateway_request(
         gateway_request_id=gateway_request_id,
         payload=FinalizeGatewayRequest(
             final_http_status=http_status,
@@ -174,7 +174,7 @@ async def record_gateway_route_attempt_started(
     if gateway_request_id is None:
         return None
     snapshot = await _gateway_route_attempt_snapshot(resolved=resolved, db=db)
-    route_attempt_id = await usage_facade.create_gateway_route_attempt(
+    route_attempt_id = await gateway_history_facade.create_gateway_route_attempt(
         values={
             "org_id": resolved.org_id,
             "gateway_request_id": gateway_request_id,
@@ -230,7 +230,7 @@ async def record_gateway_route_attempt_started(
         if resolved.access_policy_assignment_id is not None
         else None
     )
-    await usage_facade.create_gateway_policy_decision(
+    await gateway_history_facade.create_gateway_policy_decision(
         values={
             "org_id": resolved.org_id,
             "gateway_request_id": gateway_request_id,
@@ -284,7 +284,7 @@ async def finalize_gateway_route_attempt(
 ) -> None:
     if route_attempt_id is None:
         return
-    await usage_facade.update_gateway_route_attempt(
+    await gateway_history_facade.update_gateway_route_attempt(
         route_attempt_id=route_attempt_id,
         values={
             "status": status_,
@@ -321,7 +321,7 @@ async def record_gateway_access_decision(
         if resolved.access_policy_assignment_id is not None
         else None
     )
-    await usage_facade.create_gateway_policy_decision(
+    await gateway_history_facade.create_gateway_policy_decision(
         values={
             "org_id": resolved.org_id,
             "gateway_request_id": gateway_request_id,
@@ -369,7 +369,7 @@ async def record_gateway_request_validation_decision(
 ) -> None:
     if gateway_request_id is None:
         return
-    await usage_facade.create_gateway_policy_decision(
+    await gateway_history_facade.create_gateway_policy_decision(
         values={
             "org_id": resolved.org_id,
             "gateway_request_id": gateway_request_id,

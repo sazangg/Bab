@@ -5,12 +5,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.request_ids import current_request_id
 from app.modules.gateway.types import GuardrailResolvedAccess
+from app.modules.gateway_history import facade as gateway_history_facade
 from app.modules.guardrails import facade as guardrails_facade
 from app.modules.guardrails.errors import GuardrailDeniedError
 from app.modules.guardrails.internal import repository as guardrails_repository
 from app.modules.guardrails.schemas import GuardrailEvaluationContext
 from app.modules.providers.schemas import ProviderChatCompletionRequest
-from app.modules.usage import facade as usage_facade
 
 GatewayGuardrailDenied = GuardrailDeniedError
 
@@ -234,7 +234,7 @@ async def record_gateway_guardrail_decision(
         )
         if policy is not None and policy.policy_id is not None:
             shared_policy_id = policy.policy_id
-    await usage_facade.create_gateway_policy_decision(
+    await gateway_history_facade.create_gateway_policy_decision(
         values={
             "org_id": resolved.org_id,
             "gateway_request_id": context.gateway_request_id,

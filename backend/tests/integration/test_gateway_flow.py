@@ -14,15 +14,15 @@ from app.api.v1.routes.proxy import get_proxy_http_client
 from app.core.bootstrap import sync_default_workspace
 from app.core.config import settings
 from app.core.migrations import run_database_migrations
-from app.modules.guardrails.internal.models import GuardrailEvent
-from app.modules.keys import facade as keys_facade
-from app.modules.keys.schemas import ResolveAccessRequest
-from app.modules.usage.internal.models import (
+from app.modules.gateway_history.internal.models import (
     GatewayPolicyDecision,
     GatewayRequest,
     GatewayRouteAttempt,
-    UsageRecord,
 )
+from app.modules.guardrails.internal.models import GuardrailEvent
+from app.modules.keys import facade as keys_facade
+from app.modules.keys.schemas import ResolveAccessRequest
+from app.modules.usage.internal.models import UsageRecord
 
 
 async def _login(client: AsyncClient) -> dict[str, str]:
@@ -2303,7 +2303,7 @@ async def test_chat_completion_falls_back_to_second_public_model_candidate(
             json={"model": "chat-large", "messages": [{"role": "user", "content": "hello"}]},
         )
         usage = await client.get("/api/v1/usage/records", headers=admin_headers)
-        trace_list = await client.get("/api/v1/usage/requests", headers=admin_headers)
+        trace_list = await client.get("/api/v1/gateway-history/requests", headers=admin_headers)
         summary = await client.get("/api/v1/usage/summary", headers=admin_headers)
 
     assert response.status_code == 200

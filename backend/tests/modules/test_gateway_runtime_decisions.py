@@ -5,17 +5,19 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.auth.internal.models import Organization
-from app.modules.guardrails.internal import repository as guardrails_repository
-from app.modules.keys.internal.models import VirtualKey
-from app.modules.providers.internal.models import CredentialPool, Provider
-from app.modules.usage import facade as usage_facade
-from app.modules.usage.internal import repository
-from app.modules.usage.internal.models import (
+from app.modules.gateway_history import facade as gateway_history_facade
+from app.modules.gateway_history.internal import repository as gateway_history_repository
+from app.modules.gateway_history.internal.models import (
     GatewayPolicyDecision,
     GatewayRequest,
     GatewayRouteAttempt,
 )
-from app.modules.usage.schemas import CreateGatewayRequest, FinalizeGatewayRequest, RecordUsage
+from app.modules.gateway_history.schemas import CreateGatewayRequest, FinalizeGatewayRequest
+from app.modules.guardrails.internal import repository as guardrails_repository
+from app.modules.keys.internal.models import VirtualKey
+from app.modules.providers.internal.models import CredentialPool, Provider
+from app.modules.usage.internal import repository as usage_repository
+from app.modules.usage.schemas import RecordUsage
 from app.modules.workspace.internal.models import Project, Team
 
 
@@ -62,7 +64,7 @@ async def test_gateway_runtime_decision_substrate_records_attempt_and_decision(
     db_session.add(pool)
     await db_session.flush()
 
-    gateway_request = await repository.create_gateway_request(
+    gateway_request = await gateway_history_repository.create_gateway_request(
         payload=CreateGatewayRequest(
             org_id=org.id,
             team_id=team.id,
@@ -73,7 +75,7 @@ async def test_gateway_runtime_decision_substrate_records_attempt_and_decision(
         ),
         db=db_session,
     )
-    attempt = await repository.create_gateway_route_attempt(
+    attempt = await gateway_history_repository.create_gateway_route_attempt(
         values={
             "org_id": org.id,
             "gateway_request_id": gateway_request.id,
@@ -89,7 +91,7 @@ async def test_gateway_runtime_decision_substrate_records_attempt_and_decision(
         },
         db=db_session,
     )
-    decision = await repository.create_gateway_policy_decision(
+    decision = await gateway_history_repository.create_gateway_policy_decision(
         values={
             "org_id": org.id,
             "gateway_request_id": gateway_request.id,
@@ -103,12 +105,12 @@ async def test_gateway_runtime_decision_substrate_records_attempt_and_decision(
         },
         db=db_session,
     )
-    await repository.update_gateway_route_attempt(
+    await gateway_history_repository.update_gateway_route_attempt(
         route_attempt_id=attempt.id,
         values={"status": "succeeded", "completed_at": datetime.now(UTC), "http_status": 200},
         db=db_session,
     )
-    await repository.finalize_gateway_request(
+    await gateway_history_repository.finalize_gateway_request(
         gateway_request_id=gateway_request.id,
         payload=FinalizeGatewayRequest(
             final_http_status=200,
@@ -134,7 +136,7 @@ async def test_gateway_runtime_decision_substrate_records_attempt_and_decision(
 async def test_gateway_request_can_be_created_before_identity_resolution(
     db_session: AsyncSession,
 ) -> None:
-    gateway_request = await repository.create_gateway_request(
+    gateway_request = await gateway_history_repository.create_gateway_request(
         payload=CreateGatewayRequest(
             gateway_endpoint="chat_completions",
             requested_model="fast",
@@ -152,7 +154,7 @@ async def test_gateway_request_can_be_created_before_identity_resolution(
 async def test_unresolved_gateway_request_can_be_finalized(
     db_session: AsyncSession,
 ) -> None:
-    gateway_request = await repository.create_gateway_request(
+    gateway_request = await gateway_history_repository.create_gateway_request(
         payload=CreateGatewayRequest(
             gateway_endpoint="chat_completions",
             requested_model="fast",
@@ -160,7 +162,7 @@ async def test_unresolved_gateway_request_can_be_finalized(
         db=db_session,
     )
 
-    await repository.finalize_gateway_request(
+    await gateway_history_repository.finalize_gateway_request(
         gateway_request_id=gateway_request.id,
         payload=FinalizeGatewayRequest(
             final_http_status=401,
@@ -222,7 +224,7 @@ async def test_gateway_request_trace_returns_runtime_rows(db_session: AsyncSessi
     db_session.add(pool)
     await db_session.flush()
 
-    gateway_request = await repository.create_gateway_request(
+    gateway_request = await gateway_history_repository.create_gateway_request(
         payload=CreateGatewayRequest(
             org_id=org.id,
             team_id=team.id,
@@ -235,7 +237,7 @@ async def test_gateway_request_trace_returns_runtime_rows(db_session: AsyncSessi
         ),
         db=db_session,
     )
-    attempt = await repository.create_gateway_route_attempt(
+    attempt = await gateway_history_repository.create_gateway_route_attempt(
         values={
             "org_id": org.id,
             "gateway_request_id": gateway_request.id,
@@ -253,7 +255,7 @@ async def test_gateway_request_trace_returns_runtime_rows(db_session: AsyncSessi
         },
         db=db_session,
     )
-    await repository.create_gateway_policy_decision(
+    await gateway_history_repository.create_gateway_policy_decision(
         values={
             "org_id": org.id,
             "gateway_request_id": gateway_request.id,
@@ -288,7 +290,7 @@ async def test_gateway_request_trace_returns_runtime_rows(db_session: AsyncSessi
         route_attempt_id=attempt.id,
         db=db_session,
     )
-    await repository.create_usage_record(
+    await usage_repository.create_usage_record(
         payload=RecordUsage(
             org_id=org.id,
             team_id=team.id,
@@ -314,7 +316,7 @@ async def test_gateway_request_trace_returns_runtime_rows(db_session: AsyncSessi
         db=db_session,
     )
 
-    trace = await usage_facade.get_gateway_request_trace(
+    trace = await gateway_history_facade.get_gateway_request_trace(
         org_id=org.id,
         gateway_request_id=gateway_request.id,
         db=db_session,
@@ -369,7 +371,7 @@ async def test_gateway_request_trace_hides_expired_trace(db_session: AsyncSessio
     db_session.add(virtual_key)
     await db_session.flush()
 
-    gateway_request = await repository.create_gateway_request(
+    gateway_request = await gateway_history_repository.create_gateway_request(
         payload=CreateGatewayRequest(
             org_id=org.id,
             team_id=team.id,
@@ -383,7 +385,7 @@ async def test_gateway_request_trace_hides_expired_trace(db_session: AsyncSessio
     gateway_request.trace_expires_at = datetime.now(UTC)
     await db_session.flush()
 
-    trace = await usage_facade.get_gateway_request_trace(
+    trace = await gateway_history_facade.get_gateway_request_trace(
         org_id=org.id,
         gateway_request_id=gateway_request.id,
         db=db_session,

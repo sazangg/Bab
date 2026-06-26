@@ -23,6 +23,12 @@ from app.modules.auth.schemas import (
 from app.modules.gateway import accounting as gateway_accounting
 from app.modules.gateway import limits as gateway_limits
 from app.modules.gateway import tracing as gateway_tracing
+from app.modules.gateway_history import facade as gateway_history_facade
+from app.modules.gateway_history.internal.models import (
+    GatewayPolicyDecision,
+    GatewayRouteAttempt,
+)
+from app.modules.gateway_history.schemas import CreateGatewayRequest
 from app.modules.guardrails import facade as guardrails_facade
 from app.modules.guardrails.internal.models import GuardrailEvent, GuardrailPolicy, GuardrailRule
 from app.modules.guardrails.schemas import (
@@ -110,12 +116,10 @@ from app.modules.teams.errors import TeamInactiveError
 from app.modules.usage import facade as usage_facade
 from app.modules.usage.accounting import unknown_usage
 from app.modules.usage.internal.models import (
-    GatewayPolicyDecision,
-    GatewayRouteAttempt,
     LimitPolicyReservation,
     UsageRecord,
 )
-from app.modules.usage.schemas import CreateGatewayRequest, RecordUsage
+from app.modules.usage.schemas import RecordUsage
 from app.modules.workspace import facade as workspace_facade
 from app.modules.workspace.errors import ProjectInactiveError, ProjectNotFoundError
 from app.modules.workspace.internal.models import Team
@@ -6472,7 +6476,7 @@ async def test_delete_access_policy_closes_assignments_and_preserves_trace_fk(
         db=db_session,
         actor=actor,
     )
-    gateway_request_id = await usage_facade.create_gateway_request(
+    gateway_request_id = await gateway_history_facade.create_gateway_request(
         payload=CreateGatewayRequest(
             org_id=scope.org_id,
             team_id=project.team_id,
@@ -6482,7 +6486,7 @@ async def test_delete_access_policy_closes_assignments_and_preserves_trace_fk(
         ),
         db=db_session,
     )
-    decision_id = await usage_facade.create_gateway_policy_decision(
+    decision_id = await gateway_history_facade.create_gateway_policy_decision(
         values={
             "org_id": scope.org_id,
             "gateway_request_id": gateway_request_id,

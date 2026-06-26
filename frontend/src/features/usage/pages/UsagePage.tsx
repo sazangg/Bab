@@ -40,8 +40,8 @@ import {
   useGetOrganizationUsageSummaryApiV1UsageSummaryGet,
   useGetOrganizationUsageTimeseriesApiV1UsageTimeseriesGet,
   useGetSpendInsightsApiV1UsageSpendInsightsGet,
-  useListGatewayRequestsApiV1UsageRequestsGet,
 } from "@/shared/api/generated/usage/usage";
+import { useListGatewayRequestsApiV1GatewayHistoryRequestsGet } from "@/shared/api/generated/gateway-history/gateway-history";
 import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
 import { useListProjectsApiV1ProjectsGet } from "@/shared/api/generated/projects/projects";
 import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
@@ -176,7 +176,7 @@ export function UsagePage() {
       offset: requestPage * REQUESTS_PAGE_SIZE,
     };
   }, [requestPage, trimmedRequestSearch, usageParams]);
-  const requestsQuery = useListGatewayRequestsApiV1UsageRequestsGet(requestParams);
+  const requestsQuery = useListGatewayRequestsApiV1GatewayHistoryRequestsGet(requestParams);
   const recordsQuery = useQuery({
     queryKey: ["usage-records", usageParams, trimmedRecordSearch, recordPage],
     queryFn: async () => {
