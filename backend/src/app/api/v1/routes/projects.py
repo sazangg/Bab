@@ -47,7 +47,6 @@ from app.modules.keys.schemas import (
     VirtualKeyResponse,
     VirtualKeyRevokeImpactResponse,
 )
-from app.modules.teams.errors import TeamInactiveError
 from app.modules.usage import facade as usage_facade
 from app.modules.usage.schemas import OrganizationUsageSummary, VirtualKeyUsageSummary
 from app.modules.workspace import facade as workspace_facade
@@ -56,6 +55,7 @@ from app.modules.workspace.errors import (
     ProjectInactiveError,
     ProjectNotFoundError,
     ProjectSlugAlreadyExistsError,
+    TeamInactiveError,
 )
 from app.modules.workspace.schemas import (
     ProjectArchiveImpactResponse,

@@ -9,14 +9,18 @@ from app.modules.activity.internal.models import ActivityEvent
 from app.modules.audit.internal.models import AuditEvent
 from app.modules.auth.internal.models import Organization
 from app.modules.auth.schemas import AuthenticatedUser
-from app.modules.teams import facade as teams_facade
-from app.modules.teams.errors import TeamInactiveError, TeamSlugAlreadyExistsError
-from app.modules.teams.schemas import CreateTeamRequest, UpdateTeamRequest
 from app.modules.workspace import facade as projects_facade
-from app.modules.workspace.errors import ProjectSlugAlreadyExistsError
+from app.modules.workspace import facade as workspace_facade
+from app.modules.workspace.errors import (
+    ProjectSlugAlreadyExistsError,
+    TeamInactiveError,
+    TeamSlugAlreadyExistsError,
+)
 from app.modules.workspace.schemas import (
     CreateProjectRequest,
+    CreateTeamRequest,
     UpdateProjectRequest,
+    UpdateTeamRequest,
 )
 
 
@@ -36,27 +40,27 @@ async def _create_actor_scope(db_session: AsyncSession):
 async def test_team_crud_flow(db_session: AsyncSession) -> None:
     actor, scope = await _create_actor_scope(db_session)
 
-    team = await teams_facade.create_team(
+    team = await workspace_facade.create_team(
         payload=CreateTeamRequest(name="Mobile Division", description="Native apps"),
         actor=actor,
         scope=scope,
         db=db_session,
     )
-    updated = await teams_facade.update_team(
+    updated = await workspace_facade.update_team(
         team_id=team.id,
         payload=UpdateTeamRequest(name="Mobile Platform", description=None),
         actor=actor,
         scope=scope,
         db=db_session,
     )
-    teams = await teams_facade.list_teams(scope=scope, db=db_session)
-    await teams_facade.deactivate_team(
+    teams = await workspace_facade.list_teams(scope=scope, db=db_session)
+    await workspace_facade.deactivate_team(
         team_id=team.id,
         actor=actor,
         scope=scope,
         db=db_session,
     )
-    deactivated = await teams_facade.get_team(team_id=team.id, scope=scope, db=db_session)
+    deactivated = await workspace_facade.get_team(team_id=team.id, scope=scope, db=db_session)
 
     assert team.slug == "mobile-division"
     assert updated.name == "Mobile Platform"
@@ -67,7 +71,7 @@ async def test_team_crud_flow(db_session: AsyncSession) -> None:
 
 async def test_team_slug_is_unique_per_org(db_session: AsyncSession) -> None:
     actor, scope = await _create_actor_scope(db_session)
-    await teams_facade.create_team(
+    await workspace_facade.create_team(
         payload=CreateTeamRequest(name="Platform", slug="platform"),
         actor=actor,
         scope=scope,
@@ -75,7 +79,7 @@ async def test_team_slug_is_unique_per_org(db_session: AsyncSession) -> None:
     )
 
     with pytest.raises(TeamSlugAlreadyExistsError):
-        await teams_facade.create_team(
+        await workspace_facade.create_team(
             payload=CreateTeamRequest(name="Other", slug="platform"),
             actor=actor,
             scope=scope,
@@ -87,7 +91,7 @@ async def test_team_slug_is_normalized_before_uniqueness_check(
     db_session: AsyncSession,
 ) -> None:
     actor, scope = await _create_actor_scope(db_session)
-    first = await teams_facade.create_team(
+    first = await workspace_facade.create_team(
         payload=CreateTeamRequest(name="Platform", slug="Data Platform!!"),
         actor=actor,
         scope=scope,
@@ -95,7 +99,7 @@ async def test_team_slug_is_normalized_before_uniqueness_check(
     )
 
     with pytest.raises(TeamSlugAlreadyExistsError):
-        await teams_facade.create_team(
+        await workspace_facade.create_team(
             payload=CreateTeamRequest(name="Other", slug="data-platform"),
             actor=actor,
             scope=scope,
@@ -107,7 +111,7 @@ async def test_team_slug_is_normalized_before_uniqueness_check(
 
 async def test_projects_are_created_under_a_team(db_session: AsyncSession) -> None:
     actor, scope = await _create_actor_scope(db_session)
-    team = await teams_facade.create_team(
+    team = await workspace_facade.create_team(
         payload=CreateTeamRequest(name="Data Platform"),
         actor=actor,
         scope=scope,
@@ -136,13 +140,13 @@ async def test_project_slug_is_normalized_and_unique_within_team(
     db_session: AsyncSession,
 ) -> None:
     actor, scope = await _create_actor_scope(db_session)
-    team = await teams_facade.create_team(
+    team = await workspace_facade.create_team(
         payload=CreateTeamRequest(name="Applications"),
         actor=actor,
         scope=scope,
         db=db_session,
     )
-    other_team = await teams_facade.create_team(
+    other_team = await workspace_facade.create_team(
         payload=CreateTeamRequest(name="Other Applications"),
         actor=actor,
         scope=scope,
@@ -180,7 +184,7 @@ async def test_project_slug_can_be_updated_when_unique(
     db_session: AsyncSession,
 ) -> None:
     actor, scope = await _create_actor_scope(db_session)
-    team = await teams_facade.create_team(
+    team = await workspace_facade.create_team(
         payload=CreateTeamRequest(name="Applications"),
         actor=actor,
         scope=scope,
@@ -222,13 +226,13 @@ async def test_project_slug_can_be_updated_when_unique(
 
 async def test_project_cannot_be_created_under_archived_team(db_session: AsyncSession) -> None:
     actor, scope = await _create_actor_scope(db_session)
-    team = await teams_facade.create_team(
+    team = await workspace_facade.create_team(
         payload=CreateTeamRequest(name="Archived Team"),
         actor=actor,
         scope=scope,
         db=db_session,
     )
-    await teams_facade.deactivate_team(
+    await workspace_facade.deactivate_team(
         team_id=team.id,
         actor=actor,
         scope=scope,
@@ -249,21 +253,21 @@ async def test_team_archive_and_reactivation_events_include_resource_ids(
     db_session: AsyncSession,
 ) -> None:
     actor, scope = await _create_actor_scope(db_session)
-    team = await teams_facade.create_team(
+    team = await workspace_facade.create_team(
         payload=CreateTeamRequest(name="Lifecycle Team"),
         actor=actor,
         scope=scope,
         db=db_session,
     )
 
-    await teams_facade.update_team(
+    await workspace_facade.update_team(
         team_id=team.id,
         payload=UpdateTeamRequest(is_active=False),
         actor=actor,
         scope=scope,
         db=db_session,
     )
-    await teams_facade.update_team(
+    await workspace_facade.update_team(
         team_id=team.id,
         payload=UpdateTeamRequest(is_active=True),
         actor=actor,

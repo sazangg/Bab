@@ -112,7 +112,6 @@ from app.modules.providers.schemas import (
 )
 from app.modules.settings import facade as settings_facade
 from app.modules.settings.schemas import UpdateOrganizationSettingsRequest
-from app.modules.teams.errors import TeamInactiveError
 from app.modules.usage import facade as usage_facade
 from app.modules.usage.accounting import UsageAccounting, unknown_usage
 from app.modules.usage.internal.models import (
@@ -121,7 +120,11 @@ from app.modules.usage.internal.models import (
 )
 from app.modules.usage.schemas import RecordLimitPolicyCommittedUsage, RecordUsage
 from app.modules.workspace import facade as workspace_facade
-from app.modules.workspace.errors import ProjectInactiveError, ProjectNotFoundError
+from app.modules.workspace.errors import (
+    ProjectInactiveError,
+    ProjectNotFoundError,
+    TeamInactiveError,
+)
 from app.modules.workspace.internal.models import Team
 from app.modules.workspace.schemas import CreateProjectRequest, UpdateProjectRequest
 

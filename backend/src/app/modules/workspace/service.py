@@ -6,7 +6,6 @@ from app.core.database import Scope
 from app.modules.auth import facade as auth_facade
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys import facade as keys_runtime_facade
-from app.modules.teams import facade as teams_facade
 from app.modules.workspace.errors import WorkspaceScopeNotFoundError
 from app.modules.workspace.internal import projects, repository
 from app.modules.workspace.schemas import (
@@ -158,7 +157,7 @@ async def get_workspace_label_maps(
     db: AsyncSession,
 ) -> WorkspaceLabelMaps:
     return WorkspaceLabelMaps(
-        teams=await teams_facade.get_team_labels(team_ids=team_ids, scope=scope, db=db),
+        teams=await repository.get_team_labels(org_id=scope.org_id, team_ids=team_ids, db=db),
         projects=await projects.get_project_labels(
             project_ids=project_ids,
             scope=scope,
@@ -255,7 +254,7 @@ async def get_virtual_key_target(
 async def get_team_identity(
     *, team_id: UUID, scope: Scope, db: AsyncSession
 ) -> WorkspaceTeamIdentity | None:
-    team = await teams_facade.get_team_identity(team_id=team_id, scope=scope, db=db)
+    team = await repository.get_team(org_id=scope.org_id, team_id=team_id, db=db)
     if team is None:
         return None
     return WorkspaceTeamIdentity(id=team.id, org_id=team.org_id, is_active=team.is_active)

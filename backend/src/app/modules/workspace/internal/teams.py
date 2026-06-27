@@ -8,13 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import Scope, transaction
 from app.modules.activity import facade as activity_facade
 from app.modules.auth.schemas import AuthenticatedUser
-from app.modules.teams.errors import (
+from app.modules.workspace.errors import (
     TeamInactiveError,
     TeamNotFoundError,
     TeamSlugAlreadyExistsError,
 )
-from app.modules.teams.internal import repository
-from app.modules.teams.schemas import (
+from app.modules.workspace.internal import repository
+from app.modules.workspace.internal.models import Team
+from app.modules.workspace.schemas import (
     CreateTeamRequest,
     TeamIdentity,
     TeamReadState,
@@ -205,7 +206,7 @@ async def deactivate_team(
     )
 
 
-async def _get_team_or_raise(*, team_id: UUID, scope: Scope, db: AsyncSession):
+async def _get_team_or_raise(*, team_id: UUID, scope: Scope, db: AsyncSession) -> Team:
     team = await repository.get_team(org_id=scope.org_id, team_id=team_id, db=db)
     if team is None:
         raise TeamNotFoundError

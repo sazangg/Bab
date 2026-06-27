@@ -27,21 +27,23 @@ from app.modules.auth.schemas import (
 )
 from app.modules.authorization import facade as authorization_facade
 from app.modules.authorization.permissions import Permissions
-from app.modules.teams import facade
-from app.modules.teams.errors import (
+from app.modules.usage import facade as usage_facade
+from app.modules.usage.schemas import OrganizationUsageSummary
+from app.modules.workspace import facade
+from app.modules.workspace import facade as workspace_facade
+from app.modules.workspace.errors import (
+    ProjectSlugAlreadyExistsError,
     TeamInactiveError,
     TeamNotFoundError,
     TeamSlugAlreadyExistsError,
 )
-from app.modules.teams.schemas import CreateTeamRequest, TeamResponse, UpdateTeamRequest
-from app.modules.usage import facade as usage_facade
-from app.modules.usage.schemas import OrganizationUsageSummary
-from app.modules.workspace import facade as workspace_facade
-from app.modules.workspace.errors import ProjectSlugAlreadyExistsError
 from app.modules.workspace.schemas import (
     CreateProjectRequest,
+    CreateTeamRequest,
     ProjectResponse,
     TeamArchiveImpactResponse,
+    TeamResponse,
+    UpdateTeamRequest,
 )
 
 router = APIRouter(prefix="/teams", tags=["teams"])

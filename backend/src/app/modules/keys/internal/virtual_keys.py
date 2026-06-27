@@ -33,12 +33,12 @@ from app.modules.keys.schemas import (
     VirtualKeyTarget,
 )
 from app.modules.settings import facade as settings_facade
-from app.modules.teams import facade as teams_facade
-from app.modules.teams.schemas import TeamReadState
 from app.modules.usage import read_models as usage_read_models
+from app.modules.workspace import facade as workspace_facade
 from app.modules.workspace.errors import ProjectInactiveError, ProjectNotFoundError
 from app.modules.workspace.internal import repository as workspace_repository
 from app.modules.workspace.internal.models import Project
+from app.modules.workspace.schemas import TeamReadState
 
 logger = structlog.get_logger(__name__)
 EXPIRING_SOON_DAYS = 7
@@ -58,7 +58,7 @@ async def create_virtual_key(
         raise SecretDeliveryDisabledError
     async with transaction(db):
         project = await _get_active_project(project_id=project_id, scope=scope, db=db)
-        await teams_facade.ensure_team_active(team_id=project.team_id, scope=scope, db=db)
+        await workspace_facade.ensure_team_active(team_id=project.team_id, scope=scope, db=db)
         access_summary = await access_planning.build_effective_access_summary(
             project=project, virtual_key=None, db=db
         )
@@ -265,7 +265,7 @@ async def _list_virtual_key_inventory_with_derived_status(
 
 
 async def _active_team_ids(*, scope: Scope, db: AsyncSession) -> set[UUID]:
-    return await teams_facade.list_active_team_ids(scope=scope, db=db)
+    return await workspace_facade.list_active_team_ids(scope=scope, db=db)
 
 
 async def _inventory_items_from_rows(
@@ -281,7 +281,7 @@ async def _inventory_items_from_rows(
         return []
     org_id = rows[0][0].org_id
     scope = Scope(org_id=org_id)
-    team_states = await teams_facade.get_team_read_states(
+    team_states = await workspace_facade.get_team_read_states(
         team_ids={project.team_id for _key, project in rows},
         scope=scope,
         db=db,
@@ -442,7 +442,7 @@ async def rotate_virtual_key(
         raise SecretDeliveryDisabledError
     async with transaction(db):
         project = await _get_active_project(project_id=project_id, scope=scope, db=db)
-        await teams_facade.ensure_team_active(team_id=project.team_id, scope=scope, db=db)
+        await workspace_facade.ensure_team_active(team_id=project.team_id, scope=scope, db=db)
         old_key = await _get_virtual_key_or_raise(
             project_id=project_id, key_id=key_id, scope=scope, db=db
         )
@@ -840,7 +840,7 @@ async def _derive_virtual_key_state(
     if not project.is_active:
         return "project_archived", False
     if team_is_active is None:
-        team_identity = await teams_facade.get_team_identity(
+        team_identity = await workspace_facade.get_team_identity(
             team_id=project.team_id,
             scope=scope,
             db=db,

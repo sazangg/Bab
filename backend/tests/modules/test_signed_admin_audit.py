@@ -28,10 +28,8 @@ from app.modules.providers import facade as providers_facade
 from app.modules.providers.schemas import CreateProviderRequest
 from app.modules.settings import facade as settings_facade
 from app.modules.settings.schemas import UpdateOrganizationSettingsRequest
-from app.modules.teams import facade as teams_facade
-from app.modules.teams.schemas import CreateTeamRequest
 from app.modules.workspace import facade as workspace_facade
-from app.modules.workspace.schemas import CreateProjectRequest
+from app.modules.workspace.schemas import CreateProjectRequest, CreateTeamRequest
 
 
 async def _actor_scope(db_session: AsyncSession) -> tuple[AuthenticatedUser, Scope]:
@@ -63,7 +61,7 @@ async def test_admin_mutations_write_signed_audit_events(db_session: AsyncSessio
         scope=scope,
         db=db_session,
     )
-    team = await teams_facade.create_team(
+    team = await workspace_facade.create_team(
         payload=CreateTeamRequest(name="Platform"),
         actor=actor,
         scope=scope,

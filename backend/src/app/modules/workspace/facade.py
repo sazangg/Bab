@@ -5,15 +5,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import Scope
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.workspace import service
-from app.modules.workspace.internal import projects
+from app.modules.workspace.internal import projects, teams
 from app.modules.workspace.schemas import (
     CreateProjectRequest,
+    CreateTeamRequest,
     ProjectArchiveImpactResponse,
     ProjectMembershipTarget,
     ProjectOption,
     ProjectResponse,
     TeamArchiveImpactResponse,
+    TeamReadState,
+    TeamResponse,
     UpdateProjectRequest,
+    UpdateTeamRequest,
     ValidatedScope,
     WorkspaceAllowedScopeIds,
     WorkspaceFilterValidation,
@@ -48,6 +52,71 @@ async def validate_assignment_scope(
 
 async def lock_organization_scope_for_update(*, org_id: UUID, db: AsyncSession) -> None:
     await service.lock_organization_scope_for_update(org_id=org_id, db=db)
+
+
+async def create_team(
+    *,
+    payload: CreateTeamRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> TeamResponse:
+    return await teams.create_team(payload=payload, actor=actor, scope=scope, db=db)
+
+
+async def list_teams(*, scope: Scope, db: AsyncSession) -> list[TeamResponse]:
+    return await teams.list_teams(scope=scope, db=db)
+
+
+async def get_team(*, team_id: UUID, scope: Scope, db: AsyncSession) -> TeamResponse:
+    return await teams.get_team(team_id=team_id, scope=scope, db=db)
+
+
+async def get_team_labels(
+    *, team_ids: set[UUID], scope: Scope, db: AsyncSession
+) -> dict[UUID, str]:
+    return await teams.get_team_labels(team_ids=team_ids, scope=scope, db=db)
+
+
+async def get_team_read_states(
+    *, team_ids: set[UUID], scope: Scope, db: AsyncSession
+) -> dict[UUID, TeamReadState]:
+    return await teams.get_team_read_states(team_ids=team_ids, scope=scope, db=db)
+
+
+async def list_active_team_ids(*, scope: Scope, db: AsyncSession) -> set[UUID]:
+    return await teams.list_active_team_ids(scope=scope, db=db)
+
+
+async def ensure_team_active(*, team_id: UUID, scope: Scope, db: AsyncSession) -> TeamResponse:
+    return await teams.ensure_team_active(team_id=team_id, scope=scope, db=db)
+
+
+async def update_team(
+    *,
+    team_id: UUID,
+    payload: UpdateTeamRequest,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> TeamResponse:
+    return await teams.update_team(
+        team_id=team_id,
+        payload=payload,
+        actor=actor,
+        scope=scope,
+        db=db,
+    )
+
+
+async def deactivate_team(
+    *,
+    team_id: UUID,
+    actor: AuthenticatedUser,
+    scope: Scope,
+    db: AsyncSession,
+) -> None:
+    await teams.deactivate_team(team_id=team_id, actor=actor, scope=scope, db=db)
 
 
 async def create_project(

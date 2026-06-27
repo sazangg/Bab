@@ -11,14 +11,15 @@ from app.modules.activity import facade as activity_facade
 from app.modules.auth import read_models as auth_read_models
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys.internal import access_planning, virtual_keys
-from app.modules.teams import facade as teams_facade
 from app.modules.usage import read_models as usage_read_models
 from app.modules.workspace.errors import (
     ProjectNotFoundError,
     ProjectSlugAlreadyExistsError,
+    TeamInactiveError,
+    TeamNotFoundError,
 )
 from app.modules.workspace.internal import repository
-from app.modules.workspace.internal.models import Project
+from app.modules.workspace.internal.models import Project, Team
 from app.modules.workspace.schemas import (
     CreateProjectRequest,
     ProjectArchiveImpactResponse,
@@ -45,7 +46,7 @@ async def create_project(
     slug = _slugify(payload.slug or payload.name)
     async with transaction(db):
         await repository.ensure_organization_active(org_id=scope.org_id, db=db)
-        await teams_facade.ensure_team_active(team_id=team_id, scope=scope, db=db)
+        await _ensure_team_active(team_id=team_id, scope=scope, db=db)
         await _ensure_project_slug_available(
             org_id=scope.org_id,
             team_id=team_id,
@@ -138,7 +139,7 @@ async def list_team_projects(
     scope: Scope,
     db: AsyncSession,
 ) -> list[ProjectResponse]:
-    await teams_facade.get_team(team_id=team_id, scope=scope, db=db)
+    await _get_team_or_raise(team_id=team_id, scope=scope, db=db)
     projects = await repository.list_team_projects(org_id=scope.org_id, team_id=team_id, db=db)
     return [await _to_project_response(project, db=db) for project in projects]
 
@@ -149,7 +150,7 @@ async def get_team_archive_impact(
     scope: Scope,
     db: AsyncSession,
 ) -> TeamArchiveImpactResponse:
-    await teams_facade.get_team(team_id=team_id, scope=scope, db=db)
+    await _get_team_or_raise(team_id=team_id, scope=scope, db=db)
     since = datetime.now(UTC) - timedelta(days=IMPACT_USAGE_WINDOW_DAYS)
     usage_summary = await usage_read_models.get_recent_workspace_usage_summary(
         org_id=scope.org_id, since=since, team_id=team_id, db=db
@@ -368,6 +369,20 @@ async def _get_project_or_raise(*, project_id: UUID, scope: Scope, db: AsyncSess
     return project
 
 
+async def _get_team_or_raise(*, team_id: UUID, scope: Scope, db: AsyncSession) -> Team:
+    team = await repository.get_team(org_id=scope.org_id, team_id=team_id, db=db)
+    if team is None:
+        raise TeamNotFoundError
+    return team
+
+
+async def _ensure_team_active(*, team_id: UUID, scope: Scope, db: AsyncSession) -> Team:
+    team = await _get_team_or_raise(team_id=team_id, scope=scope, db=db)
+    if not team.is_active:
+        raise TeamInactiveError
+    return team
+
+
 async def _ensure_project_slug_available(
     *, org_id: UUID, team_id: UUID, slug: str, db: AsyncSession
 ) -> None:
@@ -387,9 +402,9 @@ def _slugify(value: str) -> str:
 
 
 async def _to_project_response(project: Project, *, db: AsyncSession) -> ProjectResponse:
-    team_labels = await teams_facade.get_team_labels(
+    team_labels = await repository.get_team_labels(
+        org_id=project.org_id,
         team_ids={project.team_id},
-        scope=Scope(org_id=project.org_id),
         db=db,
     )
     return ProjectResponse.model_validate(project).model_copy(

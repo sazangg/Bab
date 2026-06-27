@@ -40,9 +40,13 @@ from app.modules.providers.schemas import (
     ProviderRouteResource,
     ProviderRouteResourceKey,
 )
-from app.modules.teams import facade as teams_facade
-from app.modules.teams.errors import TeamInactiveError, TeamNotFoundError
-from app.modules.workspace.errors import OrganizationInactiveError, ProjectNotFoundError
+from app.modules.workspace import facade as workspace_facade
+from app.modules.workspace.errors import (
+    OrganizationInactiveError,
+    ProjectNotFoundError,
+    TeamInactiveError,
+    TeamNotFoundError,
+)
 from app.modules.workspace.internal import repository as workspace_repository
 from app.modules.workspace.internal.models import Project
 
@@ -175,7 +179,7 @@ async def resolve_key_subject(
         raw_key=payload.raw_key,
         db=db,
     )
-    team_labels = await teams_facade.get_team_labels(
+    team_labels = await workspace_facade.get_team_labels(
         team_ids={project.team_id},
         scope=Scope(org_id=virtual_key.org_id),
         db=db,
@@ -518,7 +522,7 @@ async def build_effective_access_summary(
 ) -> EffectiveAccessSummary:
     organization = await workspace_repository.get_organization(org_id=project.org_id, db=db)
     try:
-        team = await teams_facade.get_team(
+        team = await workspace_facade.get_team(
             team_id=project.team_id, scope=Scope(org_id=project.org_id), db=db
         )
         team_active = team.is_active
@@ -634,7 +638,7 @@ async def _resolve_key_project(*, raw_key: str, db: AsyncSession) -> ResolvedKey
     if project is None or not project.is_active:
         raise InvalidVirtualKeyError
     try:
-        await teams_facade.ensure_team_active(
+        await workspace_facade.ensure_team_active(
             team_id=project.team_id,
             scope=Scope(org_id=virtual_key.org_id),
             db=db,
@@ -676,7 +680,7 @@ async def _resolve_key_project_readonly(
     if project is None or not project.is_active:
         raise InvalidVirtualKeyError
     try:
-        await teams_facade.ensure_team_active(
+        await workspace_facade.ensure_team_active(
             team_id=project.team_id,
             scope=Scope(org_id=virtual_key.org_id),
             db=db,
