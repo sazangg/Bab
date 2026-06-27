@@ -216,11 +216,16 @@ async def stream_openai_compatible_response(
             gateway_endpoint="chat_completions",
             db=db,
         )
+        usage_cost_micro_cents = gateway_costing.calculate_cost_micro_cents(
+            resolved=result.resolved,
+            usage=usage,
+        )
         if error_code is None:
             await gateway_limits.commit_reservations(
                 reservation_ids=result.reservation_ids,
                 usage=usage,
                 cost_cents=usage_cost_cents,
+                cost_micro_cents=usage_cost_micro_cents,
                 db=db,
             )
             await gateway_tracing.finalize_gateway_route_attempt(
@@ -232,10 +237,7 @@ async def stream_openai_compatible_response(
                 latency_ms=_elapsed_ms(started_at),
                 usage=usage,
                 cost_cents=usage_cost_cents,
-                cost_micro_cents=gateway_costing.calculate_cost_micro_cents(
-                    resolved=result.resolved,
-                    usage=usage,
-                ),
+                cost_micro_cents=usage_cost_micro_cents,
                 usage_source=usage.usage_source,
                 db=db,
             )
@@ -263,10 +265,7 @@ async def stream_openai_compatible_response(
                 latency_ms=_elapsed_ms(started_at),
                 usage=usage,
                 cost_cents=usage_cost_cents,
-                cost_micro_cents=gateway_costing.calculate_cost_micro_cents(
-                    resolved=result.resolved,
-                    usage=usage,
-                ),
+                cost_micro_cents=usage_cost_micro_cents,
                 usage_source=usage.usage_source,
                 db=db,
             )

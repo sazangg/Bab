@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,10 +16,10 @@ from app.modules.policy_kernel.models import PolicyAssignment
 from app.modules.providers.internal.models import CredentialPool, Provider
 from app.modules.usage import facade as usage_facade
 from app.modules.usage.internal.models import LimitPolicyCommittedUsage, UsageRecord
-from app.modules.usage.internal.repository import (
-    _bucket_datetime,
-    _json_array_contains_postgresql,
-    _records_to_totals,
+from app.modules.usage.internal.query_utils import _json_array_contains_postgresql
+from app.modules.usage.schemas import (
+    RecordLimitPolicyCommittedUsage,
+    RecordLimitPolicyReservation,
 )
 from app.modules.workspace.internal.models import Project, Team
 
@@ -121,44 +122,6 @@ async def _create_limit_policy_fixture(
     )
 
 
-def test_usage_bucket_datetime_supports_hour_day_and_week() -> None:
-    value = datetime(2026, 5, 24, 14, 32, 9, tzinfo=UTC)
-
-    assert _bucket_datetime(value, "hour") == datetime(2026, 5, 24, 14, tzinfo=UTC)
-    assert _bucket_datetime(value, "day") == datetime(2026, 5, 24, tzinfo=UTC)
-    assert _bucket_datetime(value, "week") == datetime(2026, 5, 18, tzinfo=UTC)
-
-
-def test_records_to_totals_keeps_known_spend_and_errors() -> None:
-    totals = _records_to_totals(
-        [
-            SimpleNamespace(
-                http_status=200,
-                latency_ms=100,
-                prompt_tokens=10,
-                completion_tokens=5,
-                total_tokens=15,
-                cost_cents=2,
-            ),
-            SimpleNamespace(
-                http_status=429,
-                latency_ms=300,
-                prompt_tokens=None,
-                completion_tokens=None,
-                total_tokens=None,
-                cost_cents=None,
-            ),
-        ]
-    )
-
-    assert totals.requests == 2
-    assert totals.successful_requests == 1
-    assert totals.failed_requests == 1
-    assert totals.total_tokens == 15
-    assert totals.cost_cents == 2
-    assert totals.average_latency_ms == 200
-
-
 def test_postgresql_json_array_contains_uses_jsonb_containment_not_like() -> None:
     policy_id = uuid4()
     statement = select(UsageRecord.id).where(
@@ -174,6 +137,21 @@ def test_postgresql_json_array_contains_uses_jsonb_containment_not_like() -> Non
     assert "@>" in compiled
     assert "::JSONB" in compiled.upper() or "CAST(" in compiled.upper()
     assert "LIKE" not in compiled.upper()
+
+
+def test_persisted_limit_accounting_payloads_require_policy_references() -> None:
+    with pytest.raises(ValidationError):
+        RecordLimitPolicyCommittedUsage(
+            org_id=uuid4(),
+            usage_record_id=uuid4(),
+        )
+
+    with pytest.raises(ValidationError):
+        RecordLimitPolicyReservation(
+            org_id=uuid4(),
+            virtual_key_id=uuid4(),
+            expires_at=datetime.now(UTC),
+        )
 
 
 @pytest.mark.asyncio
@@ -593,6 +571,7 @@ async def test_limit_policy_usage_matches_exact_json_uuid_values(
             org_id=org_id,
             usage_record_id=target_usage.id,
             limit_policy_id=target_policy_id,
+            limit_policy_revision_id=revision.id,
             limit_policy_rule_id=target_rule_id,
             limit_policy_assignment_id=target_assignment_id,
             counting_unit="logical_request",

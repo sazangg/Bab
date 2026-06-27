@@ -86,6 +86,16 @@ class LimitRuntimePolicyReference(BaseModel):
     policy_name: str
 
 
+class LimitBudgetRuleReference(BaseModel):
+    limit_policy_id: UUID
+    limit_policy_name: str
+    limit_policy_rule_id: UUID
+    rule_name: str
+    interval_unit: str
+    interval_count: int
+    budget_cents: int
+
+
 async def list_access_runtime_route_candidates_for_targets(
     *,
     org_id: UUID,
@@ -320,6 +330,52 @@ async def get_policy_labels(
         )
         for policy in result
     }
+
+
+async def list_limit_budget_rule_references(
+    *,
+    org_id: UUID,
+    db: AsyncSession,
+) -> list[LimitBudgetRuleReference]:
+    rows = await db.execute(
+        select(
+            LimitPolicy.id,
+            LimitPolicy.name,
+            LimitPolicyRule.id,
+            LimitPolicyRule.name,
+            LimitPolicyRule.interval_unit,
+            LimitPolicyRule.interval_count,
+            LimitPolicyRule.limit_value,
+        )
+        .join(LimitPolicy, LimitPolicy.id == LimitPolicyRule.limit_policy_id)
+        .where(
+            LimitPolicyRule.org_id == org_id,
+            LimitPolicyRule.limit_type == "budget_cents",
+            LimitPolicyRule.is_active.is_(True),
+            LimitPolicy.is_active.is_(True),
+        )
+        .order_by(LimitPolicyRule.name.asc())
+    )
+    return [
+        LimitBudgetRuleReference(
+            limit_policy_id=limit_policy_id,
+            limit_policy_name=limit_policy_name,
+            limit_policy_rule_id=limit_policy_rule_id,
+            rule_name=rule_name,
+            interval_unit=interval_unit,
+            interval_count=interval_count,
+            budget_cents=int(budget_cents),
+        )
+        for (
+            limit_policy_id,
+            limit_policy_name,
+            limit_policy_rule_id,
+            rule_name,
+            interval_unit,
+            interval_count,
+            budget_cents,
+        ) in rows
+    ]
 
 
 async def count_provider_limit_rules(

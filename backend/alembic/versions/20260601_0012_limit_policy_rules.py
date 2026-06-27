@@ -74,7 +74,7 @@ def upgrade() -> None:
     )
     _add_column_if_missing(
         "limit_policy_reservations",
-        sa.Column("limit_policy_rule_id", sa.Uuid(), nullable=True),
+        sa.Column("limit_policy_rule_id", sa.Uuid(), nullable=False),
     )
     if _has_table("limit_policy_reservations"):
         indexes = {

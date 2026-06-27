@@ -114,12 +114,12 @@ from app.modules.settings import facade as settings_facade
 from app.modules.settings.schemas import UpdateOrganizationSettingsRequest
 from app.modules.teams.errors import TeamInactiveError
 from app.modules.usage import facade as usage_facade
-from app.modules.usage.accounting import unknown_usage
+from app.modules.usage.accounting import UsageAccounting, unknown_usage
 from app.modules.usage.internal.models import (
     LimitPolicyReservation,
     UsageRecord,
 )
-from app.modules.usage.schemas import RecordUsage
+from app.modules.usage.schemas import RecordLimitPolicyCommittedUsage, RecordUsage
 from app.modules.workspace import facade as workspace_facade
 from app.modules.workspace.errors import ProjectInactiveError, ProjectNotFoundError
 from app.modules.workspace.internal.models import Team
@@ -331,7 +331,7 @@ async def _record_usage_for_resolved(
     error_code: str | None = None,
 ) -> None:
     limit = resolved.limit_policies[0] if resolved.limit_policies else None
-    await usage_facade.record_usage(
+    usage_record_id = await usage_facade.create_usage_record(
         payload=RecordUsage(
             org_id=resolved.org_id,
             team_id=resolved.team_id,
@@ -358,6 +358,27 @@ async def _record_usage_for_resolved(
         ),
         db=db_session,
     )
+    if limit is None or http_status >= 400:
+        return
+    limit_reference = gateway_limits.persisted_limit_reference(limit)
+    await usage_facade.create_limit_policy_committed_usage(
+        payload=RecordLimitPolicyCommittedUsage(
+            org_id=resolved.org_id,
+            usage_record_id=usage_record_id,
+            limit_policy_id=limit_reference.limit_policy_id,
+            limit_policy_revision_id=limit_reference.limit_policy_revision_id,
+            limit_policy_rule_id=limit_reference.limit_policy_rule_id,
+            limit_policy_assignment_id=limit_reference.limit_policy_assignment_id,
+            counting_unit="logical_request",
+            prompt_tokens=1,
+            completion_tokens=0,
+            total_tokens=1,
+            cost_cents=cost_cents,
+            cost_micro_cents=cost_cents * 1_000_000,
+        ),
+        db=db_session,
+    )
+    await db_session.commit()
 
 
 async def _draft_side_effect_counts(db_session: AsyncSession) -> dict[str, int]:
@@ -7033,6 +7054,22 @@ async def test_limit_policy_runtime_attempt_scoped_dimensions_use_route_attempt_
     assert reservation.window_descriptor.startswith("day:1:")
     assert usage_record.limit_window_descriptor == reservation.window_descriptor
 
+    await gateway_limits.commit_reservations(
+        reservation_ids=[reservation.id],
+        usage=UsageAccounting(
+            prompt_tokens=2,
+            completion_tokens=3,
+            total_tokens=5,
+            usage_source="provider_reported",
+        ),
+        cost_cents=1,
+        cost_micro_cents=1_234_567,
+        db=db_session,
+    )
+    await db_session.refresh(reservation)
+    assert reservation.actual_cost_cents == 1
+    assert reservation.actual_cost_micro_cents == 1_234_567
+
 
 async def test_limit_policy_runtime_committed_usage_is_partitioned(
     db_session: AsyncSession,
@@ -7675,32 +7712,18 @@ async def test_reused_limit_policy_counts_per_assignment(db_session: AsyncSessio
         payload=ResolveAccessRequest(raw_key=second_key.key, requested_model="fast"),
         db=db_session,
     )
-    first_limit = first_resolved.limit_policies[0]
-
-    await usage_facade.record_usage(
-        payload=RecordUsage(
-            org_id=first_resolved.org_id,
-            team_id=first_resolved.team_id,
-            project_id=first_resolved.project_id,
-            access_policy_id=first_resolved.access_policy_id,
-            access_policy_route_id=first_resolved.access_policy_route_id,
-            limit_policy_ids=[str(first_limit.limit_policy_id)],
-            limit_policy_rule_ids=[str(first_limit.limit_policy_rule_id)],
-            limit_policy_assignment_ids=[str(first_limit.limit_policy_assignment_id)],
-            virtual_key_id=first_resolved.virtual_key_id,
-            pool_id=first_resolved.pool_id,
-            provider_id=first_resolved.provider_id,
-            provider_credential_id=None,
-            requested_model=first_resolved.requested_model,
-            provider_model=first_resolved.provider_model,
-            http_status=200,
-            latency_ms=10,
+    await gateway_accounting.record_proxy_request(
+        resolved=first_resolved,
+        http_status=200,
+        latency_ms=10,
+        usage=UsageAccounting(
             prompt_tokens=1,
             completion_tokens=0,
             total_tokens=1,
-            cost_cents=0,
-            usage_source="test",
+            usage_source="estimated",
         ),
+        error_code=None,
+        gateway_endpoint="chat_completions",
         db=db_session,
     )
 

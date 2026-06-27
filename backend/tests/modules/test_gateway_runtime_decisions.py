@@ -16,7 +16,7 @@ from app.modules.gateway_history.schemas import CreateGatewayRequest, FinalizeGa
 from app.modules.guardrails.internal import repository as guardrails_repository
 from app.modules.keys.internal.models import VirtualKey
 from app.modules.providers.internal.models import CredentialPool, Provider
-from app.modules.usage.internal import repository as usage_repository
+from app.modules.usage.internal import records as usage_records
 from app.modules.usage.schemas import RecordUsage
 from app.modules.workspace.internal.models import Project, Team
 
@@ -290,7 +290,7 @@ async def test_gateway_request_trace_returns_runtime_rows(db_session: AsyncSessi
         route_attempt_id=attempt.id,
         db=db_session,
     )
-    await usage_repository.create_usage_record(
+    await usage_records.create_usage_record(
         payload=RecordUsage(
             org_id=org.id,
             team_id=team.id,

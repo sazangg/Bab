@@ -78,6 +78,10 @@ async def finalize_openai_compatible_non_streaming_response(
             gateway_endpoint=gateway_endpoint,
             db=db,
         )
+        actual_cost_micro_cents = gateway_costing.calculate_cost_micro_cents(
+            resolved=resolved,
+            usage=usage,
+        )
         await gateway_tracing.finalize_gateway_route_attempt(
             route_attempt_id=final_route_attempt_id,
             status_="blocked",
@@ -87,10 +91,7 @@ async def finalize_openai_compatible_non_streaming_response(
             latency_ms=_elapsed_ms(started_at),
             usage=usage,
             cost_cents=actual_cost_cents,
-            cost_micro_cents=gateway_costing.calculate_cost_micro_cents(
-                resolved=resolved,
-                usage=usage,
-            ),
+            cost_micro_cents=actual_cost_micro_cents,
             usage_source=usage.usage_source,
             db=db,
         )
@@ -108,6 +109,7 @@ async def finalize_openai_compatible_non_streaming_response(
             reservation_ids=reservation_ids,
             usage=usage,
             cost_cents=actual_cost_cents,
+            cost_micro_cents=actual_cost_micro_cents,
             db=db,
         )
         await gateway_accounting.record_proxy_activity(
@@ -138,6 +140,10 @@ async def finalize_openai_compatible_non_streaming_response(
         gateway_endpoint=gateway_endpoint,
         db=db,
     )
+    actual_cost_micro_cents = gateway_costing.calculate_cost_micro_cents(
+        resolved=resolved,
+        usage=usage,
+    )
     await gateway_tracing.finalize_gateway_route_attempt(
         route_attempt_id=final_route_attempt_id,
         status_="succeeded",
@@ -147,10 +153,7 @@ async def finalize_openai_compatible_non_streaming_response(
         latency_ms=_elapsed_ms(started_at),
         usage=usage,
         cost_cents=actual_cost_cents,
-        cost_micro_cents=gateway_costing.calculate_cost_micro_cents(
-            resolved=resolved,
-            usage=usage,
-        ),
+        cost_micro_cents=actual_cost_micro_cents,
         usage_source=usage.usage_source,
         db=db,
     )
@@ -183,6 +186,7 @@ async def finalize_openai_compatible_non_streaming_response(
         reservation_ids=reservation_ids,
         usage=usage,
         cost_cents=actual_cost_cents,
+        cost_micro_cents=actual_cost_micro_cents,
         db=db,
     )
     return FinalizedNonStreamingResponse(status_code=upstream.status_code, body=upstream.body)
@@ -239,6 +243,10 @@ async def finalize_native_anthropic_non_streaming_response(
             gateway_endpoint="anthropic_messages",
             db=db,
         )
+        actual_cost_micro_cents = gateway_costing.calculate_cost_micro_cents(
+            resolved=resolved,
+            usage=usage,
+        )
         await gateway_tracing.finalize_gateway_route_attempt(
             route_attempt_id=final_route_attempt_id,
             status_="blocked",
@@ -248,10 +256,7 @@ async def finalize_native_anthropic_non_streaming_response(
             latency_ms=_elapsed_ms(started_at),
             usage=usage,
             cost_cents=actual_cost_cents,
-            cost_micro_cents=gateway_costing.calculate_cost_micro_cents(
-                resolved=resolved,
-                usage=usage,
-            ),
+            cost_micro_cents=actual_cost_micro_cents,
             usage_source=usage.usage_source,
             db=db,
         )
@@ -269,6 +274,7 @@ async def finalize_native_anthropic_non_streaming_response(
             reservation_ids=reservation_ids,
             usage=usage,
             cost_cents=actual_cost_cents,
+            cost_micro_cents=actual_cost_micro_cents,
             db=db,
         )
         await gateway_accounting.record_proxy_activity(
@@ -299,6 +305,10 @@ async def finalize_native_anthropic_non_streaming_response(
         gateway_endpoint="anthropic_messages",
         db=db,
     )
+    actual_cost_micro_cents = gateway_costing.calculate_cost_micro_cents(
+        resolved=resolved,
+        usage=usage,
+    )
     await gateway_tracing.finalize_gateway_route_attempt(
         route_attempt_id=final_route_attempt_id,
         status_="succeeded",
@@ -308,10 +318,7 @@ async def finalize_native_anthropic_non_streaming_response(
         latency_ms=_elapsed_ms(started_at),
         usage=usage,
         cost_cents=actual_cost_cents,
-        cost_micro_cents=gateway_costing.calculate_cost_micro_cents(
-            resolved=resolved,
-            usage=usage,
-        ),
+        cost_micro_cents=actual_cost_micro_cents,
         usage_source=usage.usage_source,
         db=db,
     )
@@ -344,6 +351,7 @@ async def finalize_native_anthropic_non_streaming_response(
         reservation_ids=reservation_ids,
         usage=usage,
         cost_cents=actual_cost_cents,
+        cost_micro_cents=actual_cost_micro_cents,
         db=db,
     )
     return FinalizedNonStreamingResponse(status_code=upstream.status_code, body=upstream.body)

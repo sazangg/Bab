@@ -5,8 +5,6 @@ Revises: 20260618_0047
 Create Date: 2026-06-18
 """
 
-import json
-import uuid
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -27,10 +25,10 @@ def upgrade() -> None:
             sa.Column("id", sa.Uuid(), primary_key=True),
             sa.Column("org_id", sa.Uuid(), nullable=False),
             sa.Column("usage_record_id", sa.Uuid(), nullable=False),
-            sa.Column("limit_policy_id", sa.Uuid(), nullable=True),
-            sa.Column("limit_policy_revision_id", sa.Uuid(), nullable=True),
-            sa.Column("limit_policy_rule_id", sa.Uuid(), nullable=True),
-            sa.Column("limit_policy_assignment_id", sa.Uuid(), nullable=True),
+            sa.Column("limit_policy_id", sa.Uuid(), nullable=False),
+            sa.Column("limit_policy_revision_id", sa.Uuid(), nullable=False),
+            sa.Column("limit_policy_rule_id", sa.Uuid(), nullable=False),
+            sa.Column("limit_policy_assignment_id", sa.Uuid(), nullable=False),
             sa.Column("counter_key", sa.String(length=500), nullable=True),
             sa.Column("counting_unit", sa.String(length=50), nullable=False),
             sa.Column("window_descriptor", sa.String(length=150), nullable=True),
@@ -116,7 +114,7 @@ def upgrade() -> None:
     ):
         op.add_column(
             "limit_policy_reservations",
-            sa.Column("limit_policy_revision_id", sa.Uuid(), nullable=True),
+            sa.Column("limit_policy_revision_id", sa.Uuid(), nullable=False),
         )
         op.create_index(
             "ix_limit_policy_reservations_limit_policy_revision_id",
@@ -131,11 +129,17 @@ def upgrade() -> None:
             ["id"],
             ondelete="RESTRICT",
         )
+    elif _has_table("limit_policy_reservations"):
+        with op.batch_alter_table("limit_policy_reservations") as batch_op:
+            batch_op.alter_column(
+                "limit_policy_revision_id",
+                existing_type=sa.Uuid(),
+                nullable=False,
+            )
 
     _backfill_limit_shared_identity()
     _backfill_access_runtime_shared_identity()
     _backfill_policy_assignments()
-    _backfill_limit_policy_committed_usage()
 
 
 def downgrade() -> None:
@@ -311,94 +315,6 @@ def _backfill_access_runtime_shared_identity() -> None:
             )
 
 
-def _backfill_limit_policy_committed_usage() -> None:
-    if not all(
-        _has_table(table_name)
-        for table_name in (
-            "limit_policy_committed_usage",
-            "usage_records",
-            "limit_policies",
-            "limit_policy_rules",
-            "policy_assignments",
-        )
-    ):
-        return
-    required_columns = (
-        "limit_policy_ids",
-        "limit_policy_rule_ids",
-        "limit_policy_assignment_ids",
-    )
-    if not all(_has_column("usage_records", column_name) for column_name in required_columns):
-        return
-    connection = op.get_bind()
-    rows = connection.execute(
-        text(
-            "select id, org_id, limit_policy_ids, limit_policy_rule_ids, "
-            "limit_policy_assignment_ids, limit_counter_key, limit_counting_unit, "
-            "limit_window_descriptor, dimension_snapshot, prompt_tokens, completion_tokens, "
-            "total_tokens, cost_cents, cost_micro_cents, created_at "
-            "from usage_records "
-            "where limit_policy_ids is not null"
-        )
-    ).mappings()
-    for row in rows:
-        policy_ids = _json_array(row["limit_policy_ids"])
-        rule_ids = _json_array(row["limit_policy_rule_ids"])
-        assignment_ids = _json_array(row["limit_policy_assignment_ids"])
-        for index, policy_id in enumerate(policy_ids):
-            policy_id = _uuid_or_none(policy_id)
-            if policy_id is None or not _row_exists("limit_policies", policy_id):
-                continue
-            rule_id = _uuid_or_none(rule_ids[index] if index < len(rule_ids) else None)
-            if rule_id is not None and not _row_exists("limit_policy_rules", rule_id):
-                rule_id = None
-            assignment_id = _uuid_or_none(
-                assignment_ids[index] if index < len(assignment_ids) else None
-            )
-            if assignment_id is not None and not _row_exists("policy_assignments", assignment_id):
-                assignment_id = None
-            policy_revision_id = None
-            if rule_id is not None and _has_column("limit_policy_rules", "policy_revision_id"):
-                policy_revision_id = connection.execute(
-                    text("select policy_revision_id from limit_policy_rules where id = :id"),
-                    {"id": rule_id},
-                ).scalar()
-            connection.execute(
-                text(
-                    "insert into limit_policy_committed_usage "
-                    "(id, org_id, usage_record_id, limit_policy_id, limit_policy_revision_id, "
-                    "limit_policy_rule_id, limit_policy_assignment_id, counter_key, "
-                    "counting_unit, window_descriptor, dimension_snapshot, prompt_tokens, "
-                    "completion_tokens, total_tokens, cost_cents, cost_micro_cents, created_at) "
-                    "values (:id, :org_id, :usage_record_id, :limit_policy_id, "
-                    ":limit_policy_revision_id, :limit_policy_rule_id, "
-                    ":limit_policy_assignment_id, :counter_key, :counting_unit, "
-                    ":window_descriptor, :dimension_snapshot, :prompt_tokens, "
-                    ":completion_tokens, :total_tokens, :cost_cents, :cost_micro_cents, "
-                    ":created_at)"
-                ),
-                {
-                    "id": _uuid_sql(),
-                    "org_id": row["org_id"],
-                    "usage_record_id": row["id"],
-                    "limit_policy_id": policy_id,
-                    "limit_policy_revision_id": policy_revision_id,
-                    "limit_policy_rule_id": rule_id,
-                    "limit_policy_assignment_id": assignment_id,
-                    "counter_key": row["limit_counter_key"],
-                    "counting_unit": row["limit_counting_unit"] or "logical_request",
-                    "window_descriptor": row["limit_window_descriptor"],
-                    "dimension_snapshot": row["dimension_snapshot"] or {},
-                    "prompt_tokens": row["prompt_tokens"],
-                    "completion_tokens": row["completion_tokens"],
-                    "total_tokens": row["total_tokens"],
-                    "cost_cents": row["cost_cents"],
-                    "cost_micro_cents": row["cost_micro_cents"],
-                    "created_at": row["created_at"],
-                },
-            )
-
-
 def _uuid_sql() -> str:
     bind = op.get_bind()
     if bind.dialect.name == "postgresql":
@@ -463,35 +379,3 @@ def _has_foreign_key_to(table_name: str, column_name: str, referred_table: str) 
     )
 
 
-def _json_array(value) -> list:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return value
-    if isinstance(value, str):
-        try:
-            loaded = json.loads(value)
-        except json.JSONDecodeError:
-            return []
-        return loaded if isinstance(loaded, list) else []
-    return []
-
-
-def _uuid_or_none(value) -> str | None:
-    if value is None:
-        return None
-    try:
-        parsed = uuid.UUID(str(value))
-    except ValueError:
-        return None
-    if op.get_bind().dialect.name == "sqlite":
-        return parsed.hex
-    return str(parsed)
-
-
-def _row_exists(table_name: str, row_id: str) -> bool:
-    return bool(
-        op.get_bind()
-        .execute(text(f"select 1 from {table_name} where id = :id"), {"id": row_id})
-        .first()
-    )

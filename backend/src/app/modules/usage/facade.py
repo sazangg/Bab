@@ -4,9 +4,16 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope
+from app.modules.policies import read_models as policy_read_models
 from app.modules.providers import read_models as provider_read_models
 from app.modules.usage.accounting import UsageAccounting
-from app.modules.usage.internal import repository
+from app.modules.usage.internal import (
+    filter_reports,
+    limit_accounting,
+    records,
+    spend_reports,
+    summary_reports,
+)
 from app.modules.usage.schemas import (
     LimitPolicyReservationSummary,
     OrganizationUsageSummary,
@@ -24,38 +31,8 @@ from app.modules.workspace import facade as workspace_facade
 from app.modules.workspace.schemas import WorkspaceAllowedScopeIds, WorkspaceLabelMaps
 
 
-async def record_usage(*, payload: RecordUsage, db: AsyncSession) -> None:
-    usage_record = await repository.create_usage_record(payload=payload, db=db)
-    policy_ids = payload.limit_policy_ids or []
-    rule_ids = payload.limit_policy_rule_ids or []
-    assignment_ids = payload.limit_policy_assignment_ids or []
-    for index, policy_id in enumerate(policy_ids):
-        await repository.create_limit_policy_committed_usage(
-            payload=RecordLimitPolicyCommittedUsage(
-                org_id=payload.org_id,
-                usage_record_id=usage_record.id,
-                limit_policy_id=UUID(policy_id),
-                limit_policy_rule_id=UUID(rule_ids[index]) if index < len(rule_ids) else None,
-                limit_policy_assignment_id=(
-                    UUID(assignment_ids[index]) if index < len(assignment_ids) else None
-                ),
-                counter_key=payload.limit_counter_key,
-                counting_unit=payload.limit_counting_unit,
-                window_descriptor=payload.limit_window_descriptor,
-                dimension_snapshot=payload.dimension_snapshot,
-                prompt_tokens=payload.prompt_tokens,
-                completion_tokens=payload.completion_tokens,
-                total_tokens=payload.total_tokens,
-                cost_cents=payload.cost_cents,
-                cost_micro_cents=payload.cost_micro_cents,
-            ),
-            db=db,
-        )
-    await db.commit()
-
-
 async def create_usage_record(*, payload: RecordUsage, db: AsyncSession) -> UUID:
-    usage_record = await repository.create_usage_record(payload=payload, db=db)
+    usage_record = await records.create_usage_record(payload=payload, db=db)
     await db.commit()
     return usage_record.id
 
@@ -63,7 +40,7 @@ async def create_usage_record(*, payload: RecordUsage, db: AsyncSession) -> UUID
 async def create_limit_policy_committed_usage(
     *, payload: RecordLimitPolicyCommittedUsage, db: AsyncSession
 ) -> UUID:
-    committed_usage = await repository.create_limit_policy_committed_usage(
+    committed_usage = await limit_accounting.create_limit_policy_committed_usage(
         payload=payload,
         db=db,
     )
@@ -73,12 +50,12 @@ async def create_limit_policy_committed_usage(
 async def acquire_limit_scope_lock(*, assignment_id: UUID, db: AsyncSession) -> None:
     """Serialize concurrent limit enforcement for one policy assignment (Postgres
     advisory xact lock; a no-op on SQLite, which serializes writers anyway)."""
-    await repository.acquire_limit_scope_lock(assignment_id=assignment_id, db=db)
+    await limit_accounting.acquire_limit_scope_lock(assignment_id=assignment_id, db=db)
 
 
 async def acquire_limit_counter_lock(*, identity: str, db: AsyncSession) -> None:
     """Serialize concurrent limit enforcement for one resolved counter identity."""
-    await repository.acquire_limit_counter_lock(identity=identity, db=db)
+    await limit_accounting.acquire_limit_counter_lock(identity=identity, db=db)
 
 
 async def create_limit_policy_reservation(
@@ -86,7 +63,7 @@ async def create_limit_policy_reservation(
     payload: RecordLimitPolicyReservation,
     db: AsyncSession,
 ) -> UUID:
-    reservation = await repository.create_limit_policy_reservation(payload=payload, db=db)
+    reservation = await limit_accounting.create_limit_policy_reservation(payload=payload, db=db)
     return reservation.id
 
 
@@ -102,7 +79,7 @@ async def summarize_active_limit_policy_reservations(
     now: datetime,
     db: AsyncSession,
 ) -> LimitPolicyReservationSummary:
-    return await repository.summarize_active_limit_policy_reservations(
+    return await limit_accounting.summarize_active_limit_policy_reservations(
         limit_policy_id=limit_policy_id,
         limit_policy_rule_id=limit_policy_rule_id,
         limit_policy_assignment_id=limit_policy_assignment_id,
@@ -122,7 +99,7 @@ async def summarize_active_virtual_key_reservations(
     now: datetime,
     db: AsyncSession,
 ) -> LimitPolicyReservationSummary:
-    return await repository.summarize_active_virtual_key_reservations(
+    return await limit_accounting.summarize_active_virtual_key_reservations(
         virtual_key_id=virtual_key_id,
         since=since,
         now=now,
@@ -135,12 +112,14 @@ async def commit_limit_policy_reservations(
     reservation_ids: list[UUID],
     usage: UsageAccounting,
     cost_cents: int | None,
+    cost_micro_cents: int | None,
     db: AsyncSession,
 ) -> None:
-    await repository.commit_limit_policy_reservations(
+    await limit_accounting.commit_limit_policy_reservations(
         reservation_ids=reservation_ids,
         usage=usage,
         cost_cents=cost_cents,
+        cost_micro_cents=cost_micro_cents,
         db=db,
     )
     await db.commit()
@@ -151,7 +130,10 @@ async def release_limit_policy_reservations(
     reservation_ids: list[UUID],
     db: AsyncSession,
 ) -> None:
-    await repository.release_limit_policy_reservations(reservation_ids=reservation_ids, db=db)
+    await limit_accounting.release_limit_policy_reservations(
+        reservation_ids=reservation_ids,
+        db=db,
+    )
     await db.commit()
 
 
@@ -180,7 +162,7 @@ async def list_usage_records(
         allowed_project_ids=allowed_project_ids,
         db=db,
     )
-    records = await repository.list_usage_records(
+    usage_records = await records.list_usage_records(
         org_id=org_id,
         since=start_at or window_start(window),
         until=end_at,
@@ -209,7 +191,7 @@ async def list_usage_records(
         offset=offset,
         db=db,
     )
-    return await _apply_provider_credential_labels(org_id=org_id, records=records, db=db)
+    return await _apply_provider_credential_labels(org_id=org_id, records=usage_records, db=db)
 
 
 async def list_usage_records_for_gateway_request(
@@ -218,12 +200,12 @@ async def list_usage_records_for_gateway_request(
     org_id: UUID,
     db: AsyncSession,
 ) -> list[UsageRecordResponse]:
-    records = await repository.list_usage_records_for_gateway_request(
+    usage_records = await records.list_usage_records_for_gateway_request(
         gateway_request_id=gateway_request_id,
         org_id=org_id,
         db=db,
     )
-    return await _apply_provider_credential_labels(org_id=org_id, records=records, db=db)
+    return await _apply_provider_credential_labels(org_id=org_id, records=usage_records, db=db)
 
 
 async def summarize_limit_policy_usage(
@@ -237,7 +219,7 @@ async def summarize_limit_policy_usage(
     since: datetime | None,
     db: AsyncSession,
 ) -> tuple[int, int, int, int, int]:
-    return await repository.summarize_limit_policy_usage(
+    return await limit_accounting.summarize_limit_policy_usage(
         limit_policy_id=limit_policy_id,
         limit_policy_rule_id=limit_policy_rule_id,
         limit_policy_assignment_id=limit_policy_assignment_id,
@@ -255,7 +237,7 @@ async def summarize_virtual_key_usage(
     since: datetime | None,
     db: AsyncSession,
 ) -> tuple[int, int, int, int]:
-    return await repository.summarize_virtual_key_usage(
+    return await limit_accounting.summarize_virtual_key_usage(
         virtual_key_id=virtual_key_id,
         since=since,
         db=db,
@@ -283,7 +265,7 @@ async def get_organization_usage_summary(
         allowed_project_ids=allowed_project_ids,
         db=db,
     )
-    summary = await repository.get_organization_usage_summary(
+    summary = await summary_reports.get_organization_usage_summary(
         org_id=org_id,
         window=window,
         since=start_at or window_start(window),
@@ -301,6 +283,7 @@ async def get_organization_usage_summary(
         db=db,
     )
     summary = await _enrich_usage_workspace_breakdowns(org_id=org_id, summary=summary, db=db)
+    summary = await _enrich_usage_policy_breakdowns(org_id=org_id, summary=summary, db=db)
     return await _enrich_usage_provider_breakdowns(org_id=org_id, summary=summary, db=db)
 
 
@@ -326,7 +309,7 @@ async def get_organization_usage_timeseries(
         allowed_project_ids=allowed_project_ids,
         db=db,
     )
-    return await repository.get_organization_usage_timeseries(
+    return await summary_reports.get_organization_usage_timeseries(
         org_id=org_id,
         since=start_at or window_start(window),
         until=end_at,
@@ -363,7 +346,7 @@ async def get_usage_filter_options(
         allowed_project_ids=allowed_project_ids,
         db=db,
     )
-    options = await repository.get_usage_filter_options(
+    options = await filter_reports.get_usage_filter_options(
         org_id=org_id,
         since=start_at or window_start(window),
         until=end_at,
@@ -421,7 +404,11 @@ async def get_spend_insights(
         allowed_project_ids=allowed_project_ids,
         db=db,
     )
-    return await repository.get_spend_insights(
+    rule_references = await policy_read_models.list_limit_budget_rule_references(
+        org_id=org_id,
+        db=db,
+    )
+    return await spend_reports.get_spend_insights(
         org_id=org_id,
         window=window,
         since=start_at or window_start(window),
@@ -436,6 +423,7 @@ async def get_spend_insights(
         allowed_virtual_key_ids=(
             allowed_scope.virtual_key_ids if allowed_scope is not None else None
         ),
+        limit_budget_rule_references=rule_references,
         db=db,
     )
 
@@ -446,9 +434,14 @@ async def get_virtual_key_usage_summary(
     org_id: UUID,
     db: AsyncSession,
 ) -> VirtualKeyUsageSummary:
-    summary = await repository.get_virtual_key_usage_summary(
+    summary = await summary_reports.get_virtual_key_usage_summary(
         virtual_key_id=virtual_key_id,
         org_id=org_id,
+        db=db,
+    )
+    summary = await _enrich_virtual_key_usage_policy_breakdowns(
+        org_id=org_id,
+        summary=summary,
         db=db,
     )
     return await _enrich_virtual_key_usage_provider_breakdowns(
@@ -519,6 +512,27 @@ async def _enrich_usage_provider_breakdowns(
     )
 
 
+async def _enrich_usage_policy_breakdowns(
+    *,
+    org_id: UUID,
+    summary: OrganizationUsageSummary,
+    db: AsyncSession,
+) -> OrganizationUsageSummary:
+    policy_labels = await policy_read_models.get_policy_labels(
+        org_id=org_id,
+        policy_ids=_breakdown_ids(summary.by_access_policy),
+        db=db,
+    )
+    return summary.model_copy(
+        update={
+            "by_access_policy": _apply_policy_labels(
+                summary.by_access_policy,
+                policy_labels,
+            ),
+        }
+    )
+
+
 async def _enrich_virtual_key_usage_provider_breakdowns(
     *,
     org_id: UUID,
@@ -539,6 +553,27 @@ async def _enrich_virtual_key_usage_provider_breakdowns(
         update={
             "by_provider": _apply_provider_labels(summary.by_provider, provider_labels),
             "by_pool": _apply_pool_labels(summary.by_pool, pool_labels),
+        }
+    )
+
+
+async def _enrich_virtual_key_usage_policy_breakdowns(
+    *,
+    org_id: UUID,
+    summary: VirtualKeyUsageSummary,
+    db: AsyncSession,
+) -> VirtualKeyUsageSummary:
+    policy_labels = await policy_read_models.get_policy_labels(
+        org_id=org_id,
+        policy_ids=_breakdown_ids(summary.by_access_policy),
+        db=db,
+    )
+    return summary.model_copy(
+        update={
+            "by_access_policy": _apply_policy_labels(
+                summary.by_access_policy,
+                policy_labels,
+            ),
         }
     )
 
@@ -632,6 +667,22 @@ def _apply_provider_labels(
 
 
 def _apply_pool_labels(
+    rows: list[UsageBreakdownRow],
+    labels: dict,
+) -> list[UsageBreakdownRow]:
+    enriched: list[UsageBreakdownRow] = []
+    for row in rows:
+        try:
+            row_id = UUID(row.id)
+        except ValueError:
+            enriched.append(row)
+            continue
+        label = labels.get(row_id)
+        enriched.append(row.model_copy(update={"label": label.name if label else row.label}))
+    return enriched
+
+
+def _apply_policy_labels(
     rows: list[UsageBreakdownRow],
     labels: dict,
 ) -> list[UsageBreakdownRow]:

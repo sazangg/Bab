@@ -53,7 +53,7 @@ def _create_limit_policy_reservations_if_missing() -> None:
         "limit_policy_reservations",
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("org_id", sa.Uuid(), nullable=False),
-        sa.Column("limit_policy_id", sa.Uuid(), nullable=True),
+        sa.Column("limit_policy_id", sa.Uuid(), nullable=False),
         sa.Column("virtual_key_id", sa.Uuid(), nullable=False),
         sa.Column("request_id", sa.String(length=100), nullable=True),
         sa.Column("status", sa.String(length=50), nullable=False),

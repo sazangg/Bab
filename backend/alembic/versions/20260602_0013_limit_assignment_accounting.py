@@ -8,8 +8,9 @@ Create Date: 2026-06-02 00:00:00.000000
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy import inspect
+
+from alembic import op
 
 revision: str = "20260602_0013"
 down_revision: str | Sequence[str] | None = "20260601_0012"
@@ -24,7 +25,7 @@ def upgrade() -> None:
     )
     _add_column_if_missing(
         "limit_policy_reservations",
-        sa.Column("limit_policy_assignment_id", sa.Uuid(), nullable=True),
+        sa.Column("limit_policy_assignment_id", sa.Uuid(), nullable=False),
     )
     if _has_table("limit_policy_reservations"):
         indexes = {

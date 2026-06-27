@@ -75,6 +75,30 @@ class CommittedUsageContext:
     limit_window_descriptor: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class PersistedLimitReference:
+    limit_policy_id: UUID
+    limit_policy_revision_id: UUID
+    limit_policy_rule_id: UUID
+    limit_policy_assignment_id: UUID
+
+
+def persisted_limit_reference(limit: Any) -> PersistedLimitReference:
+    if (
+        limit.limit_policy_id is None
+        or limit.limit_policy_revision_id is None
+        or limit.limit_policy_rule_id is None
+        or limit.limit_policy_assignment_id is None
+    ):
+        raise RuntimeError("persisted limit accounting requires resolved policy references")
+    return PersistedLimitReference(
+        limit_policy_id=limit.limit_policy_id,
+        limit_policy_revision_id=limit.limit_policy_revision_id,
+        limit_policy_rule_id=limit.limit_policy_rule_id,
+        limit_policy_assignment_id=limit.limit_policy_assignment_id,
+    )
+
+
 async def enforce_limit_policies(
     *,
     resolved: LimitResolvedAccess,
@@ -162,13 +186,14 @@ async def enforce_limit_policies(
         limit = result.limit
         if limit.limit_type == "tokens_per_request":
             continue
+        limit_reference = persisted_limit_reference(limit)
         reservation_id = await usage_facade.create_limit_policy_reservation(
             payload=RecordLimitPolicyReservation(
                 org_id=resolved.org_id,
-                limit_policy_id=limit.limit_policy_id,
-                limit_policy_revision_id=limit.limit_policy_revision_id,
-                limit_policy_rule_id=limit.limit_policy_rule_id,
-                limit_policy_assignment_id=limit.limit_policy_assignment_id,
+                limit_policy_id=limit_reference.limit_policy_id,
+                limit_policy_revision_id=limit_reference.limit_policy_revision_id,
+                limit_policy_rule_id=limit_reference.limit_policy_rule_id,
+                limit_policy_assignment_id=limit_reference.limit_policy_assignment_id,
                 virtual_key_id=resolved.virtual_key_id,
                 request_id=current_request_id(),
                 counter_key=result.counter_key,
@@ -217,12 +242,14 @@ async def commit_reservations(
     reservation_ids: list[UUID],
     usage: UsageAccounting,
     cost_cents: int | None,
+    cost_micro_cents: int | None,
     db: AsyncSession,
 ) -> None:
     await usage_facade.commit_limit_policy_reservations(
         reservation_ids=reservation_ids,
         usage=usage,
         cost_cents=cost_cents,
+        cost_micro_cents=cost_micro_cents,
         db=db,
     )
     await db.commit()
@@ -271,6 +298,7 @@ async def record_committed_usage(
     db: AsyncSession,
 ) -> None:
     for limit in resolved.limit_policies:
+        limit_reference = persisted_limit_reference(limit)
         counter_key = await limit_rule_counter_key(
             limit=limit,
             subject=dimension_subject,
@@ -285,10 +313,10 @@ async def record_committed_usage(
             payload=RecordLimitPolicyCommittedUsage(
                 org_id=resolved.org_id,
                 usage_record_id=usage_record_id,
-                limit_policy_id=limit.limit_policy_id,
-                limit_policy_revision_id=limit.limit_policy_revision_id,
-                limit_policy_rule_id=limit.limit_policy_rule_id,
-                limit_policy_assignment_id=limit.limit_policy_assignment_id,
+                limit_policy_id=limit_reference.limit_policy_id,
+                limit_policy_revision_id=limit_reference.limit_policy_revision_id,
+                limit_policy_rule_id=limit_reference.limit_policy_rule_id,
+                limit_policy_assignment_id=limit_reference.limit_policy_assignment_id,
                 counter_key=counter_key,
                 counting_unit=counting_unit,
                 window_descriptor=limit_policy_window_descriptor(limit),

@@ -51,10 +51,10 @@ class RecordUsage(BaseModel):
 class RecordLimitPolicyCommittedUsage(BaseModel):
     org_id: UUID
     usage_record_id: UUID
-    limit_policy_id: UUID | None = None
-    limit_policy_revision_id: UUID | None = None
-    limit_policy_rule_id: UUID | None = None
-    limit_policy_assignment_id: UUID | None = None
+    limit_policy_id: UUID
+    limit_policy_revision_id: UUID
+    limit_policy_rule_id: UUID
+    limit_policy_assignment_id: UUID
     counter_key: str | None = None
     counting_unit: str = "logical_request"
     window_descriptor: str | None = None
@@ -98,10 +98,10 @@ class UsageRecordResponse(RecordUsage):
 
 class RecordLimitPolicyReservation(BaseModel):
     org_id: UUID
-    limit_policy_id: UUID | None = None
-    limit_policy_revision_id: UUID | None = None
-    limit_policy_rule_id: UUID | None = None
-    limit_policy_assignment_id: UUID | None = None
+    limit_policy_id: UUID
+    limit_policy_revision_id: UUID
+    limit_policy_rule_id: UUID
+    limit_policy_assignment_id: UUID
     virtual_key_id: UUID
     request_id: str | None = None
     counter_key: str | None = None

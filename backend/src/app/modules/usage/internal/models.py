@@ -124,24 +124,24 @@ class LimitPolicyCommittedUsage(Base):
         ForeignKey("usage_records.id", ondelete="CASCADE"),
         index=True,
     )
-    limit_policy_id: Mapped[UUID | None] = mapped_column(
+    limit_policy_id: Mapped[UUID] = mapped_column(
         ForeignKey("limit_policies.id", ondelete="RESTRICT"),
-        nullable=True,
+        nullable=False,
         index=True,
     )
-    limit_policy_revision_id: Mapped[UUID | None] = mapped_column(
+    limit_policy_revision_id: Mapped[UUID] = mapped_column(
         ForeignKey("policy_revisions.id", ondelete="RESTRICT"),
-        nullable=True,
+        nullable=False,
         index=True,
     )
-    limit_policy_rule_id: Mapped[UUID | None] = mapped_column(
+    limit_policy_rule_id: Mapped[UUID] = mapped_column(
         ForeignKey("limit_policy_rules.id", ondelete="RESTRICT"),
-        nullable=True,
+        nullable=False,
         index=True,
     )
-    limit_policy_assignment_id: Mapped[UUID | None] = mapped_column(
+    limit_policy_assignment_id: Mapped[UUID] = mapped_column(
         ForeignKey("policy_assignments.id", ondelete="RESTRICT"),
-        nullable=True,
+        nullable=False,
         index=True,
     )
     counter_key: Mapped[str | None] = mapped_column(String(500), nullable=True, index=True)
@@ -168,24 +168,24 @@ class LimitPolicyReservation(Base):
         ForeignKey("organizations.id", ondelete="RESTRICT"),
         index=True,
     )
-    limit_policy_id: Mapped[UUID | None] = mapped_column(
+    limit_policy_id: Mapped[UUID] = mapped_column(
         ForeignKey("limit_policies.id", ondelete="RESTRICT"),
-        nullable=True,
+        nullable=False,
         index=True,
     )
-    limit_policy_revision_id: Mapped[UUID | None] = mapped_column(
+    limit_policy_revision_id: Mapped[UUID] = mapped_column(
         ForeignKey("policy_revisions.id", ondelete="RESTRICT"),
-        nullable=True,
+        nullable=False,
         index=True,
     )
-    limit_policy_rule_id: Mapped[UUID | None] = mapped_column(
+    limit_policy_rule_id: Mapped[UUID] = mapped_column(
         ForeignKey("limit_policy_rules.id", ondelete="RESTRICT"),
-        nullable=True,
+        nullable=False,
         index=True,
     )
-    limit_policy_assignment_id: Mapped[UUID | None] = mapped_column(
+    limit_policy_assignment_id: Mapped[UUID] = mapped_column(
         ForeignKey("policy_assignments.id", ondelete="RESTRICT"),
-        nullable=True,
+        nullable=False,
         index=True,
     )
     virtual_key_id: Mapped[UUID] = mapped_column(
