@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.modules.keys.schemas import EffectiveAccessSummary
+from app.modules.policy_kernel.effective_access_schemas import EffectiveAccessSummary
 
 
 class CreateProjectRequest(BaseModel):

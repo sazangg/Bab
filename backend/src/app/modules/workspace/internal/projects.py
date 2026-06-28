@@ -1,5 +1,4 @@
 import re
-from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import structlog
@@ -8,10 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope, transaction
 from app.modules.activity import facade as activity_facade
-from app.modules.auth import read_models as auth_read_models
 from app.modules.auth.schemas import AuthenticatedUser
-from app.modules.keys.internal import access_planning, virtual_keys
-from app.modules.usage import read_models as usage_read_models
 from app.modules.workspace.errors import (
     ProjectNotFoundError,
     ProjectSlugAlreadyExistsError,
@@ -22,17 +18,14 @@ from app.modules.workspace.internal import repository
 from app.modules.workspace.internal.models import Project, Team
 from app.modules.workspace.schemas import (
     CreateProjectRequest,
-    ProjectArchiveImpactResponse,
     ProjectIdentity,
     ProjectMembershipTarget,
     ProjectOption,
     ProjectResponse,
-    TeamArchiveImpactResponse,
     UpdateProjectRequest,
 )
 
 logger = structlog.get_logger(__name__)
-IMPACT_USAGE_WINDOW_DAYS = 30
 
 
 async def create_project(
@@ -142,43 +135,6 @@ async def list_team_projects(
     await _get_team_or_raise(team_id=team_id, scope=scope, db=db)
     projects = await repository.list_team_projects(org_id=scope.org_id, team_id=team_id, db=db)
     return [await _to_project_response(project, db=db) for project in projects]
-
-
-async def get_team_archive_impact(
-    *,
-    team_id: UUID,
-    scope: Scope,
-    db: AsyncSession,
-) -> TeamArchiveImpactResponse:
-    await _get_team_or_raise(team_id=team_id, scope=scope, db=db)
-    since = datetime.now(UTC) - timedelta(days=IMPACT_USAGE_WINDOW_DAYS)
-    usage_summary = await usage_read_models.get_recent_workspace_usage_summary(
-        org_id=scope.org_id, since=since, team_id=team_id, db=db
-    )
-    request_count = usage_summary.request_count
-    cost_cents = usage_summary.cost_cents
-    team_admin_count, team_member_count = await auth_read_models.count_team_members_by_role(
-        org_id=scope.org_id,
-        team_id=team_id,
-        db=db,
-    )
-    return TeamArchiveImpactResponse(
-        active_project_count=await repository.count_active_team_projects(
-            org_id=scope.org_id,
-            team_id=team_id,
-            db=db,
-        ),
-        active_virtual_key_count=await virtual_keys.count_active_team_virtual_keys(
-            org_id=scope.org_id,
-            team_id=team_id,
-            db=db,
-        ),
-        team_admin_count=team_admin_count,
-        team_member_count=team_member_count,
-        recent_usage_window_days=IMPACT_USAGE_WINDOW_DAYS,
-        recent_request_count=request_count,
-        recent_cost_cents=cost_cents,
-    )
 
 
 async def update_project(
@@ -324,40 +280,6 @@ async def list_project_options(
         ProjectOption(id=project_id, name=name, team_id=team_id)
         for project_id, name, team_id in rows
     ]
-
-
-
-
-async def get_project_archive_impact(
-    *,
-    project_id: UUID,
-    scope: Scope,
-    db: AsyncSession,
-) -> ProjectArchiveImpactResponse:
-    project = await _get_project_or_raise(project_id=project_id, scope=scope, db=db)
-    since = datetime.now(UTC) - timedelta(days=IMPACT_USAGE_WINDOW_DAYS)
-    usage_summary = await usage_read_models.get_recent_workspace_usage_summary(
-        org_id=scope.org_id, since=since, project_id=project_id, db=db
-    )
-    request_count = usage_summary.request_count
-    cost_cents = usage_summary.cost_cents
-    return ProjectArchiveImpactResponse(
-        active_virtual_key_count=await virtual_keys.count_active_project_virtual_keys(
-            org_id=scope.org_id,
-            project_id=project_id,
-            db=db,
-        ),
-        recent_usage_window_days=IMPACT_USAGE_WINDOW_DAYS,
-        recent_request_count=request_count,
-        recent_cost_cents=cost_cents,
-        effective_access=await access_planning.build_effective_access_summary(
-            project=project,
-            virtual_key=None,
-            db=db,
-        ),
-    )
-
-
 
 
 

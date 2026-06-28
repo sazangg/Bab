@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from typing import Protocol
 from uuid import UUID
 
 import structlog
@@ -17,7 +18,7 @@ from app.modules.keys.errors import (
     VirtualKeyNotFoundError,
     VirtualKeyOverlapActiveError,
 )
-from app.modules.keys.internal import access_planning, repository, state
+from app.modules.keys.internal import access_planning, repository
 from app.modules.keys.internal.models import VirtualKey
 from app.modules.keys.schemas import (
     CreatedVirtualKeyResponse,
@@ -35,14 +36,24 @@ from app.modules.keys.schemas import (
 from app.modules.settings import facade as settings_facade
 from app.modules.usage import read_models as usage_read_models
 from app.modules.workspace import facade as workspace_facade
+from app.modules.workspace import read_models as workspace_read_models
 from app.modules.workspace.errors import ProjectInactiveError, ProjectNotFoundError
-from app.modules.workspace.internal import repository as workspace_repository
-from app.modules.workspace.internal.models import Project
 from app.modules.workspace.schemas import TeamReadState
 
 logger = structlog.get_logger(__name__)
 EXPIRING_SOON_DAYS = 7
 IMPACT_USAGE_WINDOW_DAYS = 30
+
+
+class ProjectRuntimeLike(Protocol):
+    id: UUID
+    org_id: UUID
+    team_id: UUID
+    name: str
+    is_active: bool
+
+
+type ProjectRuntimeState = workspace_read_models.WorkspaceProjectRuntimeState
 
 
 async def create_virtual_key(
@@ -185,19 +196,28 @@ async def list_virtual_key_inventory(
             db=db,
         )
 
-    active_team_ids = await _active_team_ids(scope=scope, db=db)
-    rows, total = await repository.list_virtual_key_inventory(
-        org_id=scope.org_id,
-        active_team_ids=active_team_ids,
-        team_ids=visible_team_ids,
-        project_ids=visible_project_ids,
+    inventory_project_ids = await _inventory_project_ids(
+        scope=scope,
+        visible_team_ids=visible_team_ids,
+        visible_project_ids=visible_project_ids,
         team_id=team_id,
         project_id=project_id,
+        status=status,
+        db=db,
+    )
+    virtual_keys, total = await repository.list_virtual_key_inventory(
+        org_id=scope.org_id,
+        project_ids=inventory_project_ids,
         status=status,
         search=search,
         usage=usage,
         limit=limit,
         offset=offset,
+        db=db,
+    )
+    rows = await _inventory_rows_from_keys(
+        org_id=scope.org_id,
+        virtual_keys=virtual_keys,
         db=db,
     )
     items = await _inventory_items_from_rows(
@@ -232,19 +252,29 @@ async def _list_virtual_key_inventory_with_derived_status(
     offset: int,
     db: AsyncSession,
 ) -> VirtualKeyInventoryPage:
-    rows, _ = await repository.list_virtual_key_inventory(
-        org_id=scope.org_id,
-        active_team_ids=set(),
-        team_ids=visible_team_ids,
-        project_ids=visible_project_ids,
+    inventory_project_ids = await _inventory_project_ids(
+        scope=scope,
+        visible_team_ids=visible_team_ids,
+        visible_project_ids=visible_project_ids,
         team_id=team_id,
         project_id=project_id,
+        status=None,
+        db=db,
+    )
+    virtual_keys, _ = await repository.list_virtual_key_inventory(
+        org_id=scope.org_id,
+        project_ids=inventory_project_ids,
         status=None,
         search=search,
         usage=usage,
         limit=None,
         offset=0,
         include_total=False,
+        db=db,
+    )
+    rows = await _inventory_rows_from_keys(
+        org_id=scope.org_id,
+        virtual_keys=virtual_keys,
         db=db,
     )
     items = await _inventory_items_from_rows(
@@ -264,13 +294,61 @@ async def _list_virtual_key_inventory_with_derived_status(
     )
 
 
-async def _active_team_ids(*, scope: Scope, db: AsyncSession) -> set[UUID]:
-    return await workspace_facade.list_active_team_ids(scope=scope, db=db)
+async def _inventory_project_ids(
+    *,
+    scope: Scope,
+    visible_team_ids: set[UUID] | None,
+    visible_project_ids: set[UUID] | None,
+    team_id: UUID | None,
+    project_id: UUID | None,
+    status: str | None,
+    db: AsyncSession,
+) -> set[UUID]:
+    project_active: bool | None = None
+    team_active: bool | None = None
+    if status == "project_archived":
+        project_active = False
+    elif status == "team_archived":
+        project_active = True
+        team_active = False
+    elif status in {"active", "expiring_soon", "unused", "no_effective_access"}:
+        project_active = True
+        team_active = True
+    return await workspace_read_models.list_project_ids_for_hierarchy_filter(
+        org_id=scope.org_id,
+        visible_team_ids=visible_team_ids,
+        visible_project_ids=visible_project_ids,
+        team_id=team_id,
+        project_id=project_id,
+        project_active=project_active,
+        team_active=team_active,
+        db=db,
+    )
+
+
+async def _inventory_rows_from_keys(
+    *,
+    org_id: UUID,
+    virtual_keys: list[VirtualKey],
+    db: AsyncSession,
+) -> list[tuple[VirtualKey, ProjectRuntimeState]]:
+    if not virtual_keys:
+        return []
+    project_states = await workspace_read_models.get_project_runtime_states(
+        org_id=org_id,
+        project_ids={virtual_key.project_id for virtual_key in virtual_keys},
+        db=db,
+    )
+    return [
+        (virtual_key, project_states[virtual_key.project_id])
+        for virtual_key in virtual_keys
+        if virtual_key.project_id in project_states
+    ]
 
 
 async def _inventory_items_from_rows(
     *,
-    rows: list[tuple[VirtualKey, Project]],
+    rows: list[tuple[VirtualKey, ProjectRuntimeLike]],
     manageable_team_ids: set[UUID],
     manageable_project_ids: set[UUID],
     can_manage_all: bool,
@@ -371,21 +449,28 @@ async def list_virtual_key_ids_for_project_ids(
 async def list_virtual_key_options_for_project_ids(
     *, project_ids: set[UUID], usable_only: bool, scope: Scope, db: AsyncSession
 ) -> list[VirtualKeyOption]:
-    rows = await repository.list_virtual_key_options_for_project_ids(
+    project_states = await workspace_read_models.get_project_runtime_states(
         org_id=scope.org_id,
         project_ids=project_ids,
+        db=db,
+    )
+    rows = await repository.list_virtual_key_options_for_project_ids(
+        org_id=scope.org_id,
+        project_ids=set(project_states),
         usable_only=usable_only,
         db=db,
     )
-    return [
+    options = [
         VirtualKeyOption(
             id=key_id,
             name=key_name,
             project_id=project_id,
-            project_name=project_name,
+            project_name=project_states[project_id].name,
         )
-        for key_id, key_name, project_id, project_name in rows
+        for key_id, key_name, project_id in rows
+        if project_id in project_states
     ]
+    return sorted(options, key=lambda item: (item.project_name, item.name))
 
 
 async def list_virtual_key_options_by_ids(
@@ -397,34 +482,47 @@ async def list_virtual_key_options_by_ids(
         usable_only=usable_only,
         db=db,
     )
-    return [
+    project_states = await workspace_read_models.get_project_runtime_states(
+        org_id=scope.org_id,
+        project_ids={project_id for _key_id, _key_name, project_id in rows},
+        db=db,
+    )
+    options = [
         VirtualKeyOption(
             id=key_id,
             name=key_name,
             project_id=project_id,
-            project_name=project_name,
+            project_name=project_states[project_id].name,
         )
-        for key_id, key_name, project_id, project_name in rows
+        for key_id, key_name, project_id in rows
+        if project_id in project_states
     ]
+    return sorted(options, key=lambda item: (item.project_name, item.name))
 
 
 async def get_usable_virtual_key_target(
     *, virtual_key_id: UUID, scope: Scope, db: AsyncSession
 ) -> VirtualKeyTarget | None:
-    row = await repository.get_usable_virtual_key_target(
+    virtual_key = await repository.get_usable_virtual_key_target(
         org_id=scope.org_id,
         virtual_key_id=virtual_key_id,
         db=db,
     )
-    if row is None:
+    if virtual_key is None:
         return None
-    org_id, team_id, project_id, key_id, key_name = row
+    project = await workspace_read_models.get_project_runtime_state(
+        org_id=scope.org_id,
+        project_id=virtual_key.project_id,
+        db=db,
+    )
+    if project is None or not project.is_active:
+        return None
     return VirtualKeyTarget(
-        org_id=org_id,
-        team_id=team_id,
-        project_id=project_id,
-        virtual_key_id=key_id,
-        virtual_key_name=key_name,
+        org_id=virtual_key.org_id,
+        team_id=project.team_id,
+        project_id=project.id,
+        virtual_key_id=virtual_key.id,
+        virtual_key_name=virtual_key.name,
     )
 
 
@@ -627,7 +725,7 @@ async def revoke_virtual_key(
             raise VirtualKeyAlreadyRevokedError
         if (
             virtual_key.deprecated_at is not None
-            and state.as_utc(virtual_key.deprecated_at) > datetime.now(UTC)
+            and _as_utc(virtual_key.deprecated_at) > datetime.now(UTC)
             and not force
         ):
             raise VirtualKeyOverlapActiveError(virtual_key.deprecated_at)
@@ -662,16 +760,20 @@ async def revoke_virtual_key(
     )
 
 
-async def _get_active_project(*, project_id: UUID, scope: Scope, db: AsyncSession) -> Project:
-    await state.ensure_organization_active(org_id=scope.org_id, db=db)
+async def _get_active_project(
+    *, project_id: UUID, scope: Scope, db: AsyncSession
+) -> ProjectRuntimeState:
+    await workspace_read_models.ensure_organization_active(org_id=scope.org_id, db=db)
     project = await _get_project_or_raise(project_id=project_id, scope=scope, db=db)
     if not project.is_active:
         raise ProjectInactiveError
     return project
 
 
-async def _get_project_or_raise(*, project_id: UUID, scope: Scope, db: AsyncSession) -> Project:
-    project = await workspace_repository.get_project(
+async def _get_project_or_raise(
+    *, project_id: UUID, scope: Scope, db: AsyncSession
+) -> ProjectRuntimeState:
+    project = await workspace_read_models.get_project_runtime_state(
         project_id=project_id, org_id=scope.org_id, db=db
     )
     if project is None:
@@ -700,7 +802,7 @@ async def _get_virtual_key_or_raise(
 async def _to_virtual_key_response(
     virtual_key: VirtualKey,
     *,
-    project: Project,
+    project: ProjectRuntimeState,
     scope: Scope,
     db: AsyncSession,
 ) -> VirtualKeyResponse:
@@ -751,7 +853,7 @@ def _key_prefix(raw_key: str) -> str:
 def _to_inventory_item(
     *,
     virtual_key: VirtualKey,
-    project: Project,
+    project: ProjectRuntimeLike,
     team_state: TeamReadState | None,
     creator_label: UserLabel | None,
     can_manage: bool,
@@ -793,7 +895,7 @@ def _to_inventory_item(
 def _derive_inventory_state(
     *,
     virtual_key: VirtualKey,
-    project: Project,
+    project: ProjectRuntimeLike,
     team_is_active: bool,
     routing_ready: bool,
 ) -> tuple[str, bool]:
@@ -802,7 +904,7 @@ def _derive_inventory_state(
     now = datetime.now(UTC)
     if (
         virtual_key.expires_at is not None
-        and state.as_utc(virtual_key.expires_at) <= now
+        and _as_utc(virtual_key.expires_at) <= now
     ):
         return "expired", False
     if not project.is_active:
@@ -813,7 +915,7 @@ def _derive_inventory_state(
         return "no_effective_access", False
     if (
         virtual_key.expires_at is not None
-        and state.as_utc(virtual_key.expires_at)
+        and _as_utc(virtual_key.expires_at)
         <= now + timedelta(days=EXPIRING_SOON_DAYS)
     ):
         return "expiring_soon", True
@@ -825,7 +927,7 @@ def _derive_inventory_state(
 async def _derive_virtual_key_state(
     *,
     virtual_key: VirtualKey,
-    project: Project,
+    project: ProjectRuntimeState,
     scope: Scope,
     db: AsyncSession,
     team_is_active: bool | None = None,
@@ -834,7 +936,7 @@ async def _derive_virtual_key_state(
         return "revoked", False
     if (
         virtual_key.expires_at is not None
-        and state.as_utc(virtual_key.expires_at) <= datetime.now(UTC)
+        and _as_utc(virtual_key.expires_at) <= datetime.now(UTC)
     ):
         return "expired", False
     if not project.is_active:
@@ -856,7 +958,7 @@ async def _derive_virtual_key_state(
         return "no_effective_access", False
     if (
         virtual_key.expires_at is not None
-        and state.as_utc(virtual_key.expires_at)
+        and _as_utc(virtual_key.expires_at)
         <= datetime.now(UTC) + timedelta(days=EXPIRING_SOON_DAYS)
     ):
         return "expiring_soon", True
@@ -864,15 +966,7 @@ async def _derive_virtual_key_state(
         return "unused", True
     return "active", True
 
-
-
-async def count_active_team_virtual_keys(*, org_id: UUID, team_id: UUID, db: AsyncSession) -> int:
-    return await repository.count_active_team_virtual_keys(org_id=org_id, team_id=team_id, db=db)
-
-
-async def count_active_project_virtual_keys(
-    *, org_id: UUID, project_id: UUID, db: AsyncSession
-) -> int:
-    return await repository.count_active_project_virtual_keys(
-        org_id=org_id, project_id=project_id, db=db
-    )
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)

@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import Scope
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.workspace import service
-from app.modules.workspace.internal import projects, teams
+from app.modules.workspace.internal import impact, projects, teams
 from app.modules.workspace.schemas import (
     CreateProjectRequest,
     CreateTeamRequest,
@@ -163,7 +163,7 @@ async def list_team_projects(
 async def get_team_archive_impact(
     *, team_id: UUID, scope: Scope, db: AsyncSession
 ) -> TeamArchiveImpactResponse:
-    return await projects.get_team_archive_impact(team_id=team_id, scope=scope, db=db)
+    return await impact.get_team_archive_impact(team_id=team_id, scope=scope, db=db)
 
 
 async def update_project(
@@ -214,7 +214,7 @@ async def list_project_options(
 async def get_project_archive_impact(
     *, project_id: UUID, scope: Scope, db: AsyncSession
 ) -> ProjectArchiveImpactResponse:
-    return await projects.get_project_archive_impact(project_id=project_id, scope=scope, db=db)
+    return await impact.get_project_archive_impact(project_id=project_id, scope=scope, db=db)
 
 
 async def validate_filter_relationships(

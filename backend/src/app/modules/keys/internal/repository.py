@@ -5,7 +5,6 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.keys.internal.models import VirtualKey
-from app.modules.workspace.internal.models import Project
 
 
 async def create_virtual_key(
@@ -109,12 +108,11 @@ async def list_virtual_key_ids_for_project_ids(
 
 async def list_virtual_key_options_for_project_ids(
     *, org_id: UUID, project_ids: set[UUID], usable_only: bool, db: AsyncSession
-) -> list[tuple[UUID, str, UUID, str]]:
+) -> list[tuple[UUID, str, UUID]]:
     if not project_ids:
         return []
     filters = [
         VirtualKey.org_id == org_id,
-        Project.org_id == org_id,
         VirtualKey.project_id.in_(project_ids),
     ]
     if usable_only:
@@ -126,10 +124,9 @@ async def list_virtual_key_options_for_project_ids(
         )
     rows = (
         await db.execute(
-            select(VirtualKey.id, VirtualKey.name, Project.id, Project.name)
-            .join(Project, Project.id == VirtualKey.project_id)
+            select(VirtualKey.id, VirtualKey.name, VirtualKey.project_id)
             .where(*filters)
-            .order_by(Project.name, VirtualKey.name)
+            .order_by(VirtualKey.name)
         )
     ).all()
     return list(rows)
@@ -137,12 +134,11 @@ async def list_virtual_key_options_for_project_ids(
 
 async def list_virtual_key_options_by_ids(
     *, org_id: UUID, virtual_key_ids: set[UUID], usable_only: bool, db: AsyncSession
-) -> list[tuple[UUID, str, UUID, str]]:
+) -> list[tuple[UUID, str, UUID]]:
     if not virtual_key_ids:
         return []
     filters = [
         VirtualKey.org_id == org_id,
-        Project.org_id == org_id,
         VirtualKey.id.in_(virtual_key_ids),
     ]
     if usable_only:
@@ -154,10 +150,9 @@ async def list_virtual_key_options_by_ids(
         )
     rows = (
         await db.execute(
-            select(VirtualKey.id, VirtualKey.name, Project.id, Project.name)
-            .join(Project, Project.id == VirtualKey.project_id)
+            select(VirtualKey.id, VirtualKey.name, VirtualKey.project_id)
             .where(*filters)
-            .order_by(Project.name, VirtualKey.name)
+            .order_by(VirtualKey.name)
         )
     ).all()
     return list(rows)
@@ -165,56 +160,26 @@ async def list_virtual_key_options_by_ids(
 
 async def get_usable_virtual_key_target(
     *, org_id: UUID, virtual_key_id: UUID, db: AsyncSession
-) -> tuple[UUID, UUID, UUID, UUID, str | None] | None:
-    row = (
-        await db.execute(
-            select(
-                VirtualKey.org_id,
-                Project.team_id,
-                Project.id,
-                VirtualKey.id,
-                VirtualKey.name,
-            )
-            .join(Project, Project.id == VirtualKey.project_id)
-            .where(
-                VirtualKey.org_id == org_id,
-                Project.org_id == org_id,
-                VirtualKey.id == virtual_key_id,
-                VirtualKey.revoked_at.is_(None),
-                or_(VirtualKey.expires_at.is_(None), VirtualKey.expires_at > func.now()),
-                Project.is_active.is_(True),
-            )
-        )
-    ).first()
-    return row
-
-async def count_active_team_virtual_keys(*, org_id: UUID, team_id: UUID, db: AsyncSession) -> int:
-    count = await db.scalar(
-        select(func.count(VirtualKey.id))
-        .join(Project, Project.id == VirtualKey.project_id)
-        .where(
+) -> VirtualKey | None:
+    return await db.scalar(
+        select(VirtualKey).where(
             VirtualKey.org_id == org_id,
-            Project.org_id == org_id,
-            Project.team_id == team_id,
-            Project.is_active.is_(True),
+            VirtualKey.id == virtual_key_id,
             VirtualKey.revoked_at.is_(None),
             or_(VirtualKey.expires_at.is_(None), VirtualKey.expires_at > func.now()),
         )
     )
-    return int(count or 0)
 
 
-async def count_active_project_virtual_keys(
-    *, org_id: UUID, project_id: UUID, db: AsyncSession
+async def count_active_virtual_keys_for_project_ids(
+    *, org_id: UUID, project_ids: set[UUID], db: AsyncSession
 ) -> int:
+    if not project_ids:
+        return 0
     count = await db.scalar(
-        select(func.count(VirtualKey.id))
-        .join(Project, Project.id == VirtualKey.project_id)
-        .where(
+        select(func.count(VirtualKey.id)).where(
             VirtualKey.org_id == org_id,
-            Project.org_id == org_id,
-            Project.id == project_id,
-            Project.is_active.is_(True),
+            VirtualKey.project_id.in_(project_ids),
             VirtualKey.revoked_at.is_(None),
             or_(VirtualKey.expires_at.is_(None), VirtualKey.expires_at > func.now()),
         )
@@ -224,11 +189,7 @@ async def count_active_project_virtual_keys(
 async def list_virtual_key_inventory(
     *,
     org_id: UUID,
-    active_team_ids: set[UUID],
-    team_ids: set[UUID] | None,
     project_ids: set[UUID] | None,
-    team_id: UUID | None,
-    project_id: UUID | None,
     status: str | None,
     search: str | None,
     usage: str | None,
@@ -236,22 +197,14 @@ async def list_virtual_key_inventory(
     offset: int,
     include_total: bool = True,
     db: AsyncSession,
-) -> tuple[list[tuple[VirtualKey, Project]], int]:
+) -> tuple[list[VirtualKey], int]:
     filters = [
         VirtualKey.org_id == org_id,
-        Project.org_id == org_id,
     ]
-    if team_ids is not None and project_ids is not None:
-        visibility = []
-        if team_ids:
-            visibility.append(Project.team_id.in_(team_ids))
-        if project_ids:
-            visibility.append(Project.id.in_(project_ids))
-        filters.append(or_(*visibility) if visibility else Project.id.is_(None))
-    if team_id is not None:
-        filters.append(Project.team_id == team_id)
-    if project_id is not None:
-        filters.append(Project.id == project_id)
+    if project_ids is not None:
+        if not project_ids:
+            return [], 0
+        filters.append(VirtualKey.project_id.in_(project_ids))
     if search:
         # autoescape escapes %/_ so a literal wildcard in the term matches verbatim.
         term = search.strip()
@@ -282,7 +235,6 @@ async def list_virtual_key_inventory(
             [
                 VirtualKey.revoked_at.is_(None),
                 or_(VirtualKey.expires_at.is_(None), VirtualKey.expires_at > now),
-                Project.is_active.is_(False),
             ]
         )
     elif status == "team_archived":
@@ -290,8 +242,6 @@ async def list_virtual_key_inventory(
             [
                 VirtualKey.revoked_at.is_(None),
                 or_(VirtualKey.expires_at.is_(None), VirtualKey.expires_at > now),
-                Project.is_active.is_(True),
-                Project.team_id.not_in(active_team_ids),
             ]
         )
     elif status == "expiring_soon":
@@ -301,8 +251,6 @@ async def list_virtual_key_inventory(
                 VirtualKey.expires_at.is_not(None),
                 VirtualKey.expires_at > now,
                 VirtualKey.expires_at <= now + timedelta(days=7),
-                Project.is_active.is_(True),
-                Project.team_id.in_(active_team_ids),
             ]
         )
     elif status == "unused":
@@ -315,8 +263,6 @@ async def list_virtual_key_inventory(
                     VirtualKey.expires_at > now + timedelta(days=7),
                 ),
                 VirtualKey.last_used_at.is_(None),
-                Project.is_active.is_(True),
-                Project.team_id.in_(active_team_ids),
             ]
         )
     elif status == "no_effective_access":
@@ -324,8 +270,6 @@ async def list_virtual_key_inventory(
             [
                 VirtualKey.revoked_at.is_(None),
                 or_(VirtualKey.expires_at.is_(None), VirtualKey.expires_at > now),
-                Project.is_active.is_(True),
-                Project.team_id.in_(active_team_ids),
             ]
         )
     elif status == "active":
@@ -338,24 +282,20 @@ async def list_virtual_key_inventory(
                     VirtualKey.expires_at > now + timedelta(days=7),
                 ),
                 VirtualKey.last_used_at.is_not(None),
-                Project.is_active.is_(True),
-                Project.team_id.in_(active_team_ids),
             ]
         )
 
-    joins = VirtualKey.__table__.join(Project, Project.id == VirtualKey.project_id)
     total = (
-        await db.scalar(select(func.count()).select_from(joins).where(and_(*filters)))
+        await db.scalar(select(func.count(VirtualKey.id)).where(and_(*filters)))
         if include_total
         else 0
     )
     query = (
-        select(VirtualKey, Project)
-        .select_from(joins)
+        select(VirtualKey)
         .where(and_(*filters))
         .order_by(VirtualKey.created_at.desc(), VirtualKey.id.desc())
     )
     if limit is not None:
         query = query.limit(limit).offset(offset)
-    rows = (await db.execute(query)).all()
+    rows = await db.scalars(query)
     return list(rows), int(total or 0)

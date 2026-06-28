@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import Protocol
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +11,7 @@ from app.modules.keys.errors import (
     InvalidVirtualKeyError,
     VirtualKeyNotFoundError,
 )
-from app.modules.keys.internal import repository, state
+from app.modules.keys.internal import repository
 from app.modules.keys.internal.models import VirtualKey
 from app.modules.keys.runtime_routes import (
     ResolvedAccessPlanExplanation,
@@ -41,16 +42,25 @@ from app.modules.providers.schemas import (
     ProviderRouteResourceKey,
 )
 from app.modules.workspace import facade as workspace_facade
+from app.modules.workspace import read_models as workspace_read_models
 from app.modules.workspace.errors import (
     OrganizationInactiveError,
     ProjectNotFoundError,
     TeamInactiveError,
     TeamNotFoundError,
 )
-from app.modules.workspace.internal import repository as workspace_repository
-from app.modules.workspace.internal.models import Project
 
-type ResolvedKeyProject = tuple[VirtualKey, Project]
+
+class ProjectRuntimeLike(Protocol):
+    id: UUID
+    org_id: UUID
+    team_id: UUID
+    name: str
+    is_active: bool
+
+
+type ProjectRuntimeState = workspace_read_models.WorkspaceProjectRuntimeState
+type ResolvedKeyProject = tuple[VirtualKey, ProjectRuntimeState]
 type EffectiveAccessRouteCandidate = policy_read_models.AccessRuntimeRouteCandidate
 type LimitRuleMatch = policy_read_models.LimitRuntimeRule
 type ResolvedPolicyRoute = tuple[
@@ -61,7 +71,7 @@ type ResolvedPolicyRoute = tuple[
 
 async def batch_inventory_routing_readiness(
     *,
-    rows: list[tuple[VirtualKey, Project]],
+    rows: list[tuple[VirtualKey, ProjectRuntimeLike]],
     db: AsyncSession,
 ) -> dict[UUID, bool]:
     if not rows:
@@ -228,7 +238,7 @@ async def resolve_access_plan_for_subject(
         key_id=subject.virtual_key_id,
         db=db,
     )
-    project = await workspace_repository.get_project(
+    project = await workspace_read_models.get_project_runtime_state(
         project_id=subject.project_id,
         org_id=subject.org_id,
         db=db,
@@ -312,7 +322,7 @@ async def explain_access_plan_for_virtual_key(
 async def _build_resolved_access_plan(
     *,
     virtual_key: VirtualKey,
-    project: Project,
+    project: ProjectRuntimeLike,
     requested_model: str,
     provider_id: UUID | None,
     gateway_endpoint: str | None,
@@ -441,7 +451,7 @@ async def list_accessible_models(*, raw_key: str, db: AsyncSession) -> list[Acce
 async def list_project_accessible_models(
     *, project_id: UUID, scope: Scope, db: AsyncSession
 ) -> list[AccessibleModel]:
-    project = await workspace_repository.get_project(
+    project = await workspace_read_models.get_project_runtime_state(
         project_id=project_id, org_id=scope.org_id, db=db
     )
     if project is None or not project.is_active:
@@ -493,7 +503,7 @@ async def list_project_accessible_models(
 async def get_project_effective_access(
     *, project_id: UUID, scope: Scope, db: AsyncSession
 ) -> EffectiveAccessSummary:
-    project = await workspace_repository.get_project(
+    project = await workspace_read_models.get_project_runtime_state(
         project_id=project_id, org_id=scope.org_id, db=db
     )
     if project is None:
@@ -504,7 +514,7 @@ async def get_project_effective_access(
 async def get_virtual_key_effective_access(
     *, project_id: UUID, key_id: UUID, scope: Scope, db: AsyncSession
 ) -> EffectiveAccessSummary:
-    project = await workspace_repository.get_project(
+    project = await workspace_read_models.get_project_runtime_state(
         project_id=project_id, org_id=scope.org_id, db=db
     )
     if project is None:
@@ -518,17 +528,10 @@ async def get_virtual_key_effective_access(
 
 
 async def build_effective_access_summary(
-    *, project: Project, virtual_key: VirtualKey | None, db: AsyncSession
+    *, project: ProjectRuntimeState, virtual_key: VirtualKey | None, db: AsyncSession
 ) -> EffectiveAccessSummary:
-    organization = await workspace_repository.get_organization(org_id=project.org_id, db=db)
-    try:
-        team = await workspace_facade.get_team(
-            team_id=project.team_id, scope=Scope(org_id=project.org_id), db=db
-        )
-        team_active = team.is_active
-    except TeamNotFoundError:
-        team_active = False
-    organization_active = bool(organization and organization.is_active)
+    organization_active = project.organization_is_active
+    team_active = project.team_is_active
     key_active = None
     blocker: tuple[str, str] | None = None
     if virtual_key is not None:
@@ -630,7 +633,7 @@ async def _resolve_key_project(*, raw_key: str, db: AsyncSession) -> ResolvedKey
         await _ensure_organization_active(org_id=virtual_key.org_id, db=db)
     except OrganizationInactiveError as exc:
         raise InvalidVirtualKeyError from exc
-    project = await workspace_repository.get_project(
+    project = await workspace_read_models.get_project_runtime_state(
         project_id=virtual_key.project_id,
         org_id=virtual_key.org_id,
         db=db,
@@ -672,7 +675,7 @@ async def _resolve_key_project_readonly(
         await _ensure_organization_active(org_id=virtual_key.org_id, db=db)
     except OrganizationInactiveError as exc:
         raise InvalidVirtualKeyError from exc
-    project = await workspace_repository.get_project(
+    project = await workspace_read_models.get_project_runtime_state(
         project_id=virtual_key.project_id,
         org_id=virtual_key.org_id,
         db=db,
@@ -691,7 +694,7 @@ async def _resolve_key_project_readonly(
 
 
 async def _ensure_organization_active(*, org_id: UUID, db: AsyncSession) -> None:
-    await state.ensure_organization_active(org_id=org_id, db=db)
+    await workspace_read_models.ensure_organization_active(org_id=org_id, db=db)
 
 
 async def _routable_route_candidate(
@@ -769,7 +772,7 @@ async def _match_policy_route(
 async def _explain_route_candidates(
     *,
     virtual_key: VirtualKey,
-    project: Project,
+    project: ProjectRuntimeLike,
     requested_model: str,
     provider_id: UUID | None,
     gateway_endpoint: str | None,
@@ -1001,7 +1004,7 @@ def _to_resolved_limit_policy(rule: LimitRuleMatch):
 def _to_resolved_route_attempt(
     *,
     virtual_key: VirtualKey,
-    project: Project,
+    project: ProjectRuntimeLike,
     requested_model: str,
     candidate: EffectiveAccessRouteCandidate,
     resource: ProviderRouteResource,
@@ -1123,4 +1126,6 @@ def _limit_rule_matches_candidate(
 
 
 def _as_utc(value: datetime) -> datetime:
-    return state.as_utc(value)
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
