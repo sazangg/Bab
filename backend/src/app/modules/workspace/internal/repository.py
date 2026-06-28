@@ -3,13 +3,28 @@ from uuid import UUID
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.auth.internal.models import Organization
 from app.modules.workspace.errors import OrganizationInactiveError
-from app.modules.workspace.internal.models import Project, Team
+from app.modules.workspace.internal.models import Organization, Project, Team
+from app.modules.workspace.schemas import OrganizationIdentity
 
 
 async def get_organization(*, org_id: UUID, db: AsyncSession) -> Organization | None:
     return await db.scalar(select(Organization).where(Organization.id == org_id))
+
+
+async def get_organization_identity(
+    *, org_id: UUID, db: AsyncSession
+) -> OrganizationIdentity | None:
+    organization = await db.get(Organization, org_id)
+    if organization is None:
+        return None
+    return OrganizationIdentity(id=organization.id, name=organization.name)
+
+
+async def update_organization_name(*, org_id: UUID, name: str, db: AsyncSession) -> None:
+    organization = await db.get(Organization, org_id)
+    if organization is not None:
+        organization.name = name
 
 
 async def lock_organization_scope_for_update(*, org_id: UUID, db: AsyncSession) -> None:
@@ -79,6 +94,19 @@ async def get_team_read_states(
         )
     ).all()
     return {team_id: (name, is_active) for team_id, name, is_active in rows}
+
+
+async def get_team_membership_target(
+    *, org_id: UUID, team_id: UUID, db: AsyncSession
+) -> tuple[UUID, UUID, str, bool] | None:
+    return (
+        await db.execute(
+            select(Team.id, Team.org_id, Team.name, Team.is_active).where(
+                Team.org_id == org_id,
+                Team.id == team_id,
+            )
+        )
+    ).one_or_none()
 
 
 async def list_active_team_ids(*, org_id: UUID, db: AsyncSession) -> set[UUID]:

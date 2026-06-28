@@ -19,7 +19,6 @@ from app.modules.auth.errors import (
 )
 from app.modules.auth.internal.models import (
     Invite,
-    Organization,
     OrganizationMembership,
     User,
 )
@@ -29,6 +28,7 @@ from app.modules.auth.internal.refresh_sessions import (
 )
 from app.modules.auth.internal.service import refresh, verify_access_token
 from app.modules.auth.schemas import AcceptInviteRequest, AuthenticatedUser
+from app.modules.workspace.internal.models import Organization
 
 
 async def _seed_user(db: AsyncSession, *, org_id, email: str, role: str = "org_admin") -> User:

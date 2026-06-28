@@ -5,7 +5,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope
-from app.modules.auth.internal.models import Organization
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.providers import facade as providers_facade
 from app.modules.providers.internal.models import ModelCatalogEntry, ProviderModelCatalogMapping
@@ -15,6 +14,7 @@ from app.modules.providers.schemas import (
     ModelMetadataSyncMode,
     UpdateProviderModelOfferingRequest,
 )
+from app.modules.workspace.internal.models import Organization
 
 
 async def test_manual_model_metadata_survives_catalog_sync(db_session: AsyncSession) -> None:

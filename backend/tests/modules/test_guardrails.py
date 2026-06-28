@@ -6,7 +6,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope
-from app.modules.auth.internal.models import Organization
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.guardrails import facade as guardrails_facade
 from app.modules.guardrails.errors import (
@@ -36,7 +35,7 @@ from app.modules.guardrails.schemas import (
 )
 from app.modules.keys.internal.models import VirtualKey
 from app.modules.policy_kernel import repository as policy_kernel_repository
-from app.modules.workspace.internal.models import Project, Team
+from app.modules.workspace.internal.models import Organization, Project, Team
 
 
 async def _create_actor_scope(db_session: AsyncSession):

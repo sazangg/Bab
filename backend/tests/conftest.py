@@ -18,7 +18,6 @@ from app.modules.audit.internal.models import AuditEvent, AuditLedgerState  # no
 from app.modules.auth.internal.models import (  # noqa: F401
     IdentityAccount,
     Invite,
-    Organization,
     OrganizationMembership,
     RefreshSession,
     TeamMembership,

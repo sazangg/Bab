@@ -5,10 +5,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.routes import health as health_routes
 from app.core import bootstrap
-from app.modules.auth.internal.models import Organization, User
+from app.modules.auth.internal.models import User
 from app.modules.providers.internal.models import Provider
 from app.modules.settings.internal.models import OrganizationSettings
-from app.modules.workspace.internal.models import Team
+from app.modules.workspace.internal.models import Organization, Team
 
 
 async def _login(client: AsyncClient, email: str, password: str) -> dict[str, str]:

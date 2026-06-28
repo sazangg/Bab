@@ -4,7 +4,6 @@ from uuid import uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope
-from app.modules.auth.internal.models import Organization
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys.internal.models import VirtualKey
 from app.modules.policies.internal.models import (
@@ -24,7 +23,7 @@ from app.modules.providers.internal.models import (
 )
 from app.modules.providers.schemas import CreateProviderCredentialRequest, CreateProviderRequest
 from app.modules.usage.internal.models import UsageRecord
-from app.modules.workspace.internal.models import Project, Team
+from app.modules.workspace.internal.models import Organization, Project, Team
 
 
 async def test_provider_impact_detects_policy_routes_and_recent_usage(

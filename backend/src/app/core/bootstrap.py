@@ -9,7 +9,6 @@ from app.core.database import AsyncSessionLocal, transaction
 from app.core.security import hash_password
 from app.modules.auth.internal.models import (  # noqa: F401
     IdentityAccount,
-    Organization,
     OrganizationMembership,
     User,
 )
@@ -17,6 +16,7 @@ from app.modules.providers.internal.models import (
     Provider,
 )
 from app.modules.settings.internal.models import OrganizationSettings  # noqa: F401
+from app.modules.workspace.internal.models import Organization  # noqa: F401
 
 DEFAULT_ADMIN_USER_ID = UUID("00000000-0000-4000-8000-000000000001")
 

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope, transaction
 from app.modules.activity import facade as activity_facade
-from app.modules.auth.schemas import AuthenticatedUser
+from app.modules.workspace.actor import WorkspaceActor
 from app.modules.workspace.errors import (
     ProjectNotFoundError,
     ProjectSlugAlreadyExistsError,
@@ -32,7 +32,7 @@ async def create_project(
     *,
     team_id: UUID,
     payload: CreateProjectRequest,
-    actor: AuthenticatedUser,
+    actor: WorkspaceActor,
     scope: Scope,
     db: AsyncSession,
 ) -> ProjectResponse:
@@ -141,7 +141,7 @@ async def update_project(
     *,
     project_id: UUID,
     payload: UpdateProjectRequest,
-    actor: AuthenticatedUser,
+    actor: WorkspaceActor,
     scope: Scope,
     db: AsyncSession,
 ) -> ProjectResponse:
@@ -211,7 +211,7 @@ async def update_project(
 async def deactivate_project(
     *,
     project_id: UUID,
-    actor: AuthenticatedUser,
+    actor: WorkspaceActor,
     scope: Scope,
     db: AsyncSession,
 ) -> None:

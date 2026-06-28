@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import Scope
 from app.modules.activity.internal.models import ActivityEvent
 from app.modules.audit.internal.models import AuditEvent
-from app.modules.auth.internal.models import Organization
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.workspace import facade as projects_facade
 from app.modules.workspace import facade as workspace_facade
@@ -16,6 +15,7 @@ from app.modules.workspace.errors import (
     TeamInactiveError,
     TeamSlugAlreadyExistsError,
 )
+from app.modules.workspace.internal.models import Organization
 from app.modules.workspace.schemas import (
     CreateProjectRequest,
     CreateTeamRequest,

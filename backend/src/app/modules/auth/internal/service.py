@@ -34,7 +34,6 @@ from app.modules.auth.errors import (
 from app.modules.auth.internal.models import (
     IdentityAccount,
     Invite,
-    Organization,
     OrganizationMembership,
     ProjectMembership,
     TeamMembership,
@@ -60,7 +59,6 @@ from app.modules.auth.schemas import (
     MemberProjectMembershipResponse,
     MemberResponse,
     MemberTeamMembershipResponse,
-    OrganizationIdentity,
     ProjectMemberResponse,
     TeamMemberResponse,
     TokenResponse,
@@ -82,8 +80,7 @@ from app.modules.authorization.schemas import (
     ScopedMembershipTarget,
 )
 from app.modules.workspace import facade as workspace_facade
-from app.modules.workspace.internal.models import Team
-from app.modules.workspace.schemas import ProjectMembershipTarget
+from app.modules.workspace.schemas import ProjectMembershipTarget, TeamMembershipTarget
 
 MOCK_ADMIN_ID = UUID("00000000-0000-4000-8000-000000000001")
 INVITE_TOKEN_TTL = timedelta(days=7)
@@ -217,23 +214,6 @@ async def has_project_admin_membership(
         )
     )
     return membership is not None
-
-
-async def get_organization_identity(
-    *, org_id: UUID, db: AsyncSession
-) -> OrganizationIdentity | None:
-    organization = await db.get(Organization, org_id)
-    if organization is None:
-        return None
-    return OrganizationIdentity(id=organization.id, name=organization.name)
-
-
-async def update_organization_name(
-    *, org_id: UUID, name: str, db: AsyncSession
-) -> None:
-    organization = await db.get(Organization, org_id)
-    if organization is not None:
-        organization.name = name
 
 
 async def get_user_labels(
@@ -984,9 +964,14 @@ async def preview_invite(*, token: str, db: AsyncSession) -> InvitePreviewRespon
     invite = await db.scalar(select(Invite).where(Invite.token_hash == hash_token(token)))
     if invite is None:
         raise InviteNotFoundError
-    organization = await db.scalar(select(Organization).where(Organization.id == invite.org_id))
+    organization = await workspace_facade.get_organization_identity(
+        org_id=invite.org_id,
+        db=db,
+    )
     team = (
-        await db.scalar(select(Team).where(Team.id == invite.team_id)) if invite.team_id else None
+        await _team_target(team_id=invite.team_id, scope=Scope(invite.org_id), db=db)
+        if invite.team_id
+        else None
     )
     project = (
         await _project_target(project_id=invite.project_id, scope=Scope(invite.org_id), db=db)
@@ -1014,7 +999,7 @@ async def _validate_invite_target(
     payload: CreateInviteRequest,
     scope: Scope,
     db: AsyncSession,
-) -> tuple[Team | None, ProjectMembershipTarget | None]:
+) -> tuple[TeamMembershipTarget | None, ProjectMembershipTarget | None]:
     return await _validate_scoped_target(payload=payload, scope=scope, db=db)
 
 
@@ -1023,7 +1008,7 @@ async def _validate_scoped_target(
     payload: CreateInviteRequest | CreateMemberRequest,
     scope: Scope,
     db: AsyncSession,
-) -> tuple[Team | None, ProjectMembershipTarget | None]:
+) -> tuple[TeamMembershipTarget | None, ProjectMembershipTarget | None]:
     if payload.team_role and payload.team_id is None:
         raise InvalidInviteTargetError
     if payload.project_role and payload.project_id is None:
@@ -1033,14 +1018,8 @@ async def _validate_scoped_target(
 
     team = None
     if payload.team_id:
-        team = await db.scalar(
-            select(Team).where(
-                Team.id == payload.team_id,
-                Team.org_id == scope.org_id,
-                Team.is_active.is_(True),
-            )
-        )
-        if team is None:
+        team = await _team_target(team_id=payload.team_id, scope=scope, db=db)
+        if team is None or not team.is_active:
             raise InvalidInviteTargetError
 
     project = None
@@ -1078,6 +1057,16 @@ async def _ensure_no_duplicate_pending_invite(
 
 async def _project_team_by_id(*, scope: Scope, db: AsyncSession) -> dict[UUID, UUID]:
     return await workspace_facade.get_project_team_ids(scope=scope, db=db)
+
+
+async def _team_target(
+    *, team_id: UUID, scope: Scope, db: AsyncSession
+) -> TeamMembershipTarget | None:
+    return await workspace_facade.get_team_membership_target(
+        team_id=team_id,
+        scope=scope,
+        db=db,
+    )
 
 
 async def _project_target(
@@ -1254,8 +1243,10 @@ async def accept_invite(
     return _access_response(principal), raw_refresh_token
 
 
-async def _require_team(*, team_id: UUID, scope: Scope, db: AsyncSession) -> Team:
-    team = await db.scalar(select(Team).where(Team.id == team_id, Team.org_id == scope.org_id))
+async def _require_team(
+    *, team_id: UUID, scope: Scope, db: AsyncSession
+) -> TeamMembershipTarget:
+    team = await _team_target(team_id=team_id, scope=scope, db=db)
     if team is None:
         raise InvalidAccessTokenError
     return team

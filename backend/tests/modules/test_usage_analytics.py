@@ -8,7 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.auth.internal.models import Organization
 from app.modules.keys.internal.models import VirtualKey
 from app.modules.policies.internal.models import LimitPolicy, LimitPolicyRule
 from app.modules.policy_kernel import repository as policy_kernel_repository
@@ -21,7 +20,7 @@ from app.modules.usage.schemas import (
     RecordLimitPolicyCommittedUsage,
     RecordLimitPolicyReservation,
 )
-from app.modules.workspace.internal.models import Project, Team
+from app.modules.workspace.internal.models import Organization, Project, Team
 
 
 async def _create_usage_identity(db_session: AsyncSession) -> SimpleNamespace:

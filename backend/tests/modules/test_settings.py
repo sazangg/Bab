@@ -7,12 +7,12 @@ from app.core.config import settings
 from app.core.database import Scope
 from app.modules.activity.internal.models import ActivityEvent
 from app.modules.audit.internal.models import AuditEvent
-from app.modules.auth.internal.models import Organization
 from app.modules.auth.internal.service import MOCK_ADMIN_ID
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.settings import facade
 from app.modules.settings.internal.models import OrganizationSettings
 from app.modules.settings.schemas import UpdateOrganizationSettingsRequest
+from app.modules.workspace.internal.models import Organization
 
 
 async def test_settings_created_from_environment_defaults(db_session: AsyncSession):

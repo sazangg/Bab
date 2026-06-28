@@ -3,12 +3,11 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope
-from app.modules.auth import facade as auth_facade
-from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.keys import facade as keys_runtime_facade
 from app.modules.workspace.errors import WorkspaceScopeNotFoundError
 from app.modules.workspace.internal import projects, repository
 from app.modules.workspace.schemas import (
+    OrganizationIdentity,
     ValidatedScope,
     WorkspaceAllowedScopeIds,
     WorkspaceFilterValidation,
@@ -75,6 +74,16 @@ async def validate_assignment_scope(
 
 async def lock_organization_scope_for_update(*, org_id: UUID, db: AsyncSession) -> None:
     await repository.lock_organization_scope_for_update(org_id=org_id, db=db)
+
+
+async def get_organization_identity(
+    *, org_id: UUID, db: AsyncSession
+) -> OrganizationIdentity | None:
+    return await repository.get_organization_identity(org_id=org_id, db=db)
+
+
+async def update_organization_name(*, org_id: UUID, name: str, db: AsyncSession) -> None:
+    await repository.update_organization_name(org_id=org_id, name=name, db=db)
 
 
 async def validate_filter_relationships(
@@ -288,48 +297,6 @@ async def get_virtual_key_identity(
         id=virtual_key.id,
         org_id=virtual_key.org_id,
         project_id=virtual_key.project_id,
-    )
-
-
-async def has_team_membership(
-    *, team_id: UUID, actor: AuthenticatedUser, db: AsyncSession
-) -> bool:
-    return await auth_facade.has_team_membership(
-        org_id=actor.org_id,
-        team_id=team_id,
-        user_id=actor.id,
-        db=db,
-    )
-
-
-async def is_team_admin(*, team_id: UUID, actor: AuthenticatedUser, db: AsyncSession) -> bool:
-    return await auth_facade.has_team_admin_membership(
-        org_id=actor.org_id,
-        team_id=team_id,
-        user_id=actor.id,
-        db=db,
-    )
-
-
-async def has_project_membership(
-    *, project_id: UUID, actor: AuthenticatedUser, db: AsyncSession
-) -> bool:
-    return await auth_facade.has_project_membership(
-        org_id=actor.org_id,
-        project_id=project_id,
-        user_id=actor.id,
-        db=db,
-    )
-
-
-async def is_project_admin(
-    *, project_id: UUID, actor: AuthenticatedUser, db: AsyncSession
-) -> bool:
-    return await auth_facade.has_project_admin_membership(
-        org_id=actor.org_id,
-        project_id=project_id,
-        user_id=actor.id,
-        db=db,
     )
 
 

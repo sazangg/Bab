@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope
+from app.modules.auth import facade as auth_facade
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.authorization.errors import AuthorizationDeniedError
 from app.modules.authorization.grants import ROLE_PERMISSIONS
@@ -486,9 +487,10 @@ async def _scoped_workspace_reason(
         if team is None:
             return None
         if target.relationship == "member":
-            if await workspace_facade.has_team_membership(
+            if await auth_facade.has_team_membership(
+                org_id=actor.org_id,
                 team_id=target.team_id,
-                actor=actor,
+                user_id=actor.id,
                 db=db,
             ):
                 return "scoped_team_admin"
@@ -506,13 +508,15 @@ async def _scoped_workspace_reason(
         if project is None:
             return None
         if target.relationship == "member":
-            if await workspace_facade.has_project_membership(
+            if await auth_facade.has_project_membership(
+                org_id=actor.org_id,
                 project_id=project.id,
-                actor=actor,
+                user_id=actor.id,
                 db=db,
-            ) or await workspace_facade.has_team_membership(
+            ) or await auth_facade.has_team_membership(
+                org_id=actor.org_id,
                 team_id=project.team_id,
-                actor=actor,
+                user_id=actor.id,
                 db=db,
             ):
                 return "scoped_project_admin"
@@ -541,13 +545,15 @@ async def _scoped_workspace_reason(
         if project is None:
             return None
         if target.relationship == "member":
-            if await workspace_facade.has_project_membership(
+            if await auth_facade.has_project_membership(
+                org_id=actor.org_id,
                 project_id=project.id,
-                actor=actor,
+                user_id=actor.id,
                 db=db,
-            ) or await workspace_facade.has_team_membership(
+            ) or await auth_facade.has_team_membership(
+                org_id=actor.org_id,
                 team_id=project.team_id,
-                actor=actor,
+                user_id=actor.id,
                 db=db,
             ):
                 return "scoped_project_admin"

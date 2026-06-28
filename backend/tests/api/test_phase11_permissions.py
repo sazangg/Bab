@@ -16,7 +16,6 @@ from app.api.v1.routes.policies import _require_assignment_admin as require_poli
 from app.api.v1.routes.policies import create_policy_assignment
 from app.core.database import Scope
 from app.modules.auth.internal.models import (
-    Organization,
     ProjectMembership,
     TeamMembership,
     User,
@@ -37,7 +36,7 @@ from app.modules.guardrails.schemas import (
 from app.modules.keys.internal.models import VirtualKey
 from app.modules.policies import facade as policies_facade
 from app.modules.policies.schemas import CreateLimitPolicyRequest, CreatePolicyAssignmentRequest
-from app.modules.workspace.internal.models import Project, Team
+from app.modules.workspace.internal.models import Organization, Project, Team
 
 
 def _user(

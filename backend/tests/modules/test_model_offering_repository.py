@@ -2,9 +2,9 @@ from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.auth.internal.models import Organization
 from app.modules.providers.internal import repository
 from app.modules.providers.internal.models import ModelOffering, Provider
+from app.modules.workspace.internal.models import Organization
 
 
 async def test_list_model_offerings_filters_and_paginates(db_session: AsyncSession):
@@ -12,6 +12,7 @@ async def test_list_model_offerings_filters_and_paginates(db_session: AsyncSessi
     provider_id = uuid4()
     other_provider_id = uuid4()
     db_session.add(Organization(id=org_id, name="Default org", slug="default"))
+    await db_session.flush()
     db_session.add(
         Provider(
             id=provider_id,
@@ -84,6 +85,7 @@ async def test_list_model_offerings_filters_multiple_modalities(db_session: Asyn
     org_id = uuid4()
     provider_id = uuid4()
     db_session.add(Organization(id=org_id, name="Default org", slug="default"))
+    await db_session.flush()
     db_session.add(
         Provider(
             id=provider_id,

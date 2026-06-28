@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope, transaction
 from app.modules.activity import facade as activity_facade
-from app.modules.auth.schemas import AuthenticatedUser
+from app.modules.workspace.actor import WorkspaceActor
 from app.modules.workspace.errors import (
     TeamInactiveError,
     TeamNotFoundError,
@@ -18,6 +18,7 @@ from app.modules.workspace.internal.models import Team
 from app.modules.workspace.schemas import (
     CreateTeamRequest,
     TeamIdentity,
+    TeamMembershipTarget,
     TeamReadState,
     TeamResponse,
     UpdateTeamRequest,
@@ -29,7 +30,7 @@ logger = structlog.get_logger(__name__)
 async def create_team(
     *,
     payload: CreateTeamRequest,
-    actor: AuthenticatedUser,
+    actor: WorkspaceActor,
     scope: Scope,
     db: AsyncSession,
 ) -> TeamResponse:
@@ -104,6 +105,25 @@ async def get_team_read_states(
     }
 
 
+async def get_team_membership_target(
+    *, team_id: UUID, scope: Scope, db: AsyncSession
+) -> TeamMembershipTarget | None:
+    row = await repository.get_team_membership_target(
+        org_id=scope.org_id,
+        team_id=team_id,
+        db=db,
+    )
+    if row is None:
+        return None
+    team_id, org_id, name, is_active = row
+    return TeamMembershipTarget(
+        id=team_id,
+        org_id=org_id,
+        name=name,
+        is_active=is_active,
+    )
+
+
 async def list_active_team_ids(*, scope: Scope, db: AsyncSession) -> set[UUID]:
     return await repository.list_active_team_ids(org_id=scope.org_id, db=db)
 
@@ -119,7 +139,7 @@ async def update_team(
     *,
     team_id: UUID,
     payload: UpdateTeamRequest,
-    actor: AuthenticatedUser,
+    actor: WorkspaceActor,
     scope: Scope,
     db: AsyncSession,
 ) -> TeamResponse:
@@ -180,7 +200,7 @@ async def update_team(
 async def deactivate_team(
     *,
     team_id: UUID,
-    actor: AuthenticatedUser,
+    actor: WorkspaceActor,
     scope: Scope,
     db: AsyncSession,
 ) -> None:

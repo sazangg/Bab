@@ -7,6 +7,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.modules.policy_kernel.effective_access_schemas import EffectiveAccessSummary
 
 
+class OrganizationIdentity(BaseModel):
+    id: UUID
+    name: str
+
+
 class CreateProjectRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     slug: str | None = Field(default=None, min_length=1, max_length=100)
@@ -54,6 +59,13 @@ class TeamIdentity(BaseModel):
 
 class TeamReadState(BaseModel):
     id: UUID
+    name: str
+    is_active: bool
+
+
+class TeamMembershipTarget(BaseModel):
+    id: UUID
+    org_id: UUID
     name: str
     is_active: bool
 

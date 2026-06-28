@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user
 from app.modules.activity.internal.models import ActivityEvent
-from app.modules.auth.internal.models import Organization
 from app.modules.auth.schemas import (
     AuthenticatedProjectMembership,
     AuthenticatedTeamMembership,
@@ -17,7 +16,7 @@ from app.modules.gateway_history.schemas import CreateGatewayRequest, FinalizeGa
 from app.modules.keys.internal.models import VirtualKey
 from app.modules.providers.internal.models import CredentialPool, Provider
 from app.modules.usage.internal.models import UsageRecord
-from app.modules.workspace.internal.models import Project, Team
+from app.modules.workspace.internal.models import Organization, Project, Team
 
 
 def _principal(

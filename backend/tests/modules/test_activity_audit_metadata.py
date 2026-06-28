@@ -9,8 +9,8 @@ from app.modules.activity.internal.models import ActivityEvent
 from app.modules.activity.schemas import RecordActivityEvent
 from app.modules.audit.internal.models import AuditEvent
 from app.modules.audit.internal.service import record_audit_event
-from app.modules.auth.internal.models import Organization
 from app.modules.auth.schemas import AuthenticatedUser
+from app.modules.workspace.internal.models import Organization
 
 
 @pytest.mark.asyncio

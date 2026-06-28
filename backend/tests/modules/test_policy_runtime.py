@@ -11,7 +11,6 @@ from app.core.database import Scope
 from app.modules.activity.internal.models import ActivityEvent
 from app.modules.audit.internal.models import AuditEvent
 from app.modules.auth.internal.models import (
-    Organization,
     OrganizationMembership,
     User,
 )
@@ -125,7 +124,7 @@ from app.modules.workspace.errors import (
     ProjectNotFoundError,
     TeamInactiveError,
 )
-from app.modules.workspace.internal.models import Team
+from app.modules.workspace.internal.models import Organization, Team
 from app.modules.workspace.schemas import CreateProjectRequest, UpdateProjectRequest
 
 

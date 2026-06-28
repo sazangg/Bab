@@ -8,6 +8,19 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
 
+class Organization(Base):
+    __tablename__ = "organizations"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(255))
+    slug: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+    )
+
+
 class Team(Base):
     __tablename__ = "teams"
     __table_args__ = (UniqueConstraint("org_id", "slug", name="uq_team_org_slug"),)

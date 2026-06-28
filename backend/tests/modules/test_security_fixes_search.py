@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.activity import facade as activity_facade
 from app.modules.activity.schemas import RecordActivityEvent
-from app.modules.auth.internal.models import Organization
+from app.modules.workspace.internal.models import Organization
 
 
 @pytest.mark.asyncio

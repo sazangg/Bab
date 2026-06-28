@@ -15,7 +15,6 @@ from app.modules.auth.schemas import (
     LoginRequest,
     MemberOptionResponse,
     MemberResponse,
-    OrganizationIdentity,
     ProjectMemberResponse,
     TeamMemberResponse,
     TokenResponse,
@@ -87,16 +86,6 @@ async def has_project_admin_membership(
         user_id=user_id,
         db=db,
     )
-
-
-async def get_organization_identity(
-    *, org_id: UUID, db: AsyncSession
-) -> OrganizationIdentity | None:
-    return await service.get_organization_identity(org_id=org_id, db=db)
-
-
-async def update_organization_name(*, org_id: UUID, name: str, db: AsyncSession) -> None:
-    await service.update_organization_name(org_id=org_id, name=name, db=db)
 
 
 async def get_user_labels(

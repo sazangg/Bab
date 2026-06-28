@@ -12,7 +12,6 @@ from app.modules.audit.internal.service import (
     record_audit_event,
     verify_audit_chain,
 )
-from app.modules.auth.internal.models import Organization
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.guardrails import facade as guardrails_facade
 from app.modules.guardrails.schemas import (
@@ -29,6 +28,7 @@ from app.modules.providers.schemas import CreateProviderRequest
 from app.modules.settings import facade as settings_facade
 from app.modules.settings.schemas import UpdateOrganizationSettingsRequest
 from app.modules.workspace import facade as workspace_facade
+from app.modules.workspace.internal.models import Organization
 from app.modules.workspace.schemas import CreateProjectRequest, CreateTeamRequest
 
 

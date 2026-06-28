@@ -7,7 +7,6 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope
-from app.modules.auth.internal.models import Organization
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.gateway.provider_execution import (
     ProviderBodyTooLargeError,
@@ -43,6 +42,7 @@ from app.modules.providers.schemas import (
     UpdateProviderRequest,
 )
 from app.modules.providers.schemas import TestProviderModelOfferingRequest as ModelTestRequest
+from app.modules.workspace.internal.models import Organization
 
 
 async def _create_actor_scope(db_session: AsyncSession) -> tuple[AuthenticatedUser, Scope]:

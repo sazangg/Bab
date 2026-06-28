@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import bootstrap
 from app.core.database import Scope
-from app.modules.auth.internal.models import Organization
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.providers import facade as providers_facade
 from app.modules.providers.schemas import (
@@ -17,7 +16,7 @@ from app.modules.providers.schemas import (
     CreateProviderModelOfferingRequest,
     CreateProviderRequest,
 )
-from app.modules.workspace.internal.models import Team
+from app.modules.workspace.internal.models import Organization, Team
 
 
 async def _login(client: AsyncClient) -> dict[str, str]:

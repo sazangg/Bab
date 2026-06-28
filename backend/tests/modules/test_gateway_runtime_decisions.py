@@ -4,7 +4,6 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.auth.internal.models import Organization
 from app.modules.gateway_history import facade as gateway_history_facade
 from app.modules.gateway_history.internal import repository as gateway_history_repository
 from app.modules.gateway_history.internal.models import (
@@ -18,7 +17,7 @@ from app.modules.keys.internal.models import VirtualKey
 from app.modules.providers.internal.models import CredentialPool, Provider
 from app.modules.usage.internal import records as usage_records
 from app.modules.usage.schemas import RecordUsage
-from app.modules.workspace.internal.models import Project, Team
+from app.modules.workspace.internal.models import Organization, Project, Team
 
 
 async def test_gateway_runtime_decision_substrate_records_attempt_and_decision(

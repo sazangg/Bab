@@ -3,17 +3,19 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope
-from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.workspace import service
+from app.modules.workspace.actor import WorkspaceActor
 from app.modules.workspace.internal import impact, projects, teams
 from app.modules.workspace.schemas import (
     CreateProjectRequest,
     CreateTeamRequest,
+    OrganizationIdentity,
     ProjectArchiveImpactResponse,
     ProjectMembershipTarget,
     ProjectOption,
     ProjectResponse,
     TeamArchiveImpactResponse,
+    TeamMembershipTarget,
     TeamReadState,
     TeamResponse,
     UpdateProjectRequest,
@@ -54,10 +56,20 @@ async def lock_organization_scope_for_update(*, org_id: UUID, db: AsyncSession) 
     await service.lock_organization_scope_for_update(org_id=org_id, db=db)
 
 
+async def get_organization_identity(
+    *, org_id: UUID, db: AsyncSession
+) -> OrganizationIdentity | None:
+    return await service.get_organization_identity(org_id=org_id, db=db)
+
+
+async def update_organization_name(*, org_id: UUID, name: str, db: AsyncSession) -> None:
+    await service.update_organization_name(org_id=org_id, name=name, db=db)
+
+
 async def create_team(
     *,
     payload: CreateTeamRequest,
-    actor: AuthenticatedUser,
+    actor: WorkspaceActor,
     scope: Scope,
     db: AsyncSession,
 ) -> TeamResponse:
@@ -84,6 +96,12 @@ async def get_team_read_states(
     return await teams.get_team_read_states(team_ids=team_ids, scope=scope, db=db)
 
 
+async def get_team_membership_target(
+    *, team_id: UUID, scope: Scope, db: AsyncSession
+) -> TeamMembershipTarget | None:
+    return await teams.get_team_membership_target(team_id=team_id, scope=scope, db=db)
+
+
 async def list_active_team_ids(*, scope: Scope, db: AsyncSession) -> set[UUID]:
     return await teams.list_active_team_ids(scope=scope, db=db)
 
@@ -96,7 +114,7 @@ async def update_team(
     *,
     team_id: UUID,
     payload: UpdateTeamRequest,
-    actor: AuthenticatedUser,
+    actor: WorkspaceActor,
     scope: Scope,
     db: AsyncSession,
 ) -> TeamResponse:
@@ -112,7 +130,7 @@ async def update_team(
 async def deactivate_team(
     *,
     team_id: UUID,
-    actor: AuthenticatedUser,
+    actor: WorkspaceActor,
     scope: Scope,
     db: AsyncSession,
 ) -> None:
@@ -123,7 +141,7 @@ async def create_project(
     *,
     team_id: UUID,
     payload: CreateProjectRequest,
-    actor: AuthenticatedUser,
+    actor: WorkspaceActor,
     scope: Scope,
     db: AsyncSession,
 ) -> ProjectResponse:
@@ -170,7 +188,7 @@ async def update_project(
     *,
     project_id: UUID,
     payload: UpdateProjectRequest,
-    actor: AuthenticatedUser,
+    actor: WorkspaceActor,
     scope: Scope,
     db: AsyncSession,
 ) -> ProjectResponse:
@@ -180,7 +198,7 @@ async def update_project(
 
 
 async def deactivate_project(
-    *, project_id: UUID, actor: AuthenticatedUser, scope: Scope, db: AsyncSession
+    *, project_id: UUID, actor: WorkspaceActor, scope: Scope, db: AsyncSession
 ) -> None:
     await projects.deactivate_project(project_id=project_id, actor=actor, scope=scope, db=db)
 
@@ -330,25 +348,3 @@ async def get_virtual_key_identity(
         scope=scope,
         db=db,
     )
-
-
-async def has_team_membership(
-    *, team_id: UUID, actor: AuthenticatedUser, db: AsyncSession
-) -> bool:
-    return await service.has_team_membership(team_id=team_id, actor=actor, db=db)
-
-
-async def is_team_admin(*, team_id: UUID, actor: AuthenticatedUser, db: AsyncSession) -> bool:
-    return await service.is_team_admin(team_id=team_id, actor=actor, db=db)
-
-
-async def has_project_membership(
-    *, project_id: UUID, actor: AuthenticatedUser, db: AsyncSession
-) -> bool:
-    return await service.has_project_membership(project_id=project_id, actor=actor, db=db)
-
-
-async def is_project_admin(
-    *, project_id: UUID, actor: AuthenticatedUser, db: AsyncSession
-) -> bool:
-    return await service.is_project_admin(project_id=project_id, actor=actor, db=db)
