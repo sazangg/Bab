@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.usage.internal.models import UsageRecord
 from app.modules.usage.internal.query_utils import _usage_filters
-from app.modules.usage.internal.report_utils import _breakdown
+from app.modules.usage.internal.report_utils import BreakdownSpec, _breakdowns
 from app.modules.usage.schemas import UsageFilterOptions
 
 
@@ -37,35 +37,26 @@ async def get_usage_filter_options(
             allowed_virtual_key_ids=allowed_virtual_key_ids,
         )
     )
+    breakdowns = await _breakdowns(
+        [
+            BreakdownSpec(key="provider", group_column=UsageRecord.provider_id),
+            BreakdownSpec(
+                key="model",
+                group_column=UsageRecord.provider_model,
+                label_column=UsageRecord.provider_model,
+            ),
+            BreakdownSpec(key="team", group_column=UsageRecord.team_id),
+            BreakdownSpec(key="project", group_column=UsageRecord.project_id),
+            BreakdownSpec(key="virtual_key", group_column=UsageRecord.virtual_key_id),
+        ],
+        *filters,
+        db=db,
+    )
     return UsageFilterOptions(
-        by_provider=await _breakdown(
-            UsageRecord.provider_id,
-            *filters,
-            db=db,
-        ),
-        by_model=await _breakdown(
-            UsageRecord.provider_model,
-            UsageRecord.provider_model,
-            *filters,
-            db=db,
-        ),
-        by_team=await _breakdown(
-            UsageRecord.team_id,
-            None,
-            *filters,
-            db=db,
-        ),
-        by_project=await _breakdown(
-            UsageRecord.project_id,
-            None,
-            *filters,
-            db=db,
-        ),
-        by_virtual_key=await _breakdown(
-            UsageRecord.virtual_key_id,
-            None,
-            *filters,
-            db=db,
-        ),
+        by_provider=breakdowns["provider"],
+        by_model=breakdowns["model"],
+        by_team=breakdowns["team"],
+        by_project=breakdowns["project"],
+        by_virtual_key=breakdowns["virtual_key"],
     )
 

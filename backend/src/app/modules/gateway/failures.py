@@ -229,6 +229,31 @@ async def finalize_request_guardrail_denied(
         )
 
 
+async def finalize_streaming_response_guardrail_blocked(
+    *,
+    context: GatewayFailureContext,
+    db: AsyncSession,
+) -> None:
+    await gateway_limits.release_reservations(reservation_ids=context.reservation_ids, db=db)
+    await _finalize_route_attempt_if_present(
+        context=context,
+        status_="blocked",
+        http_status=400,
+        error_code="streaming_response_guardrail_unsupported",
+        db=db,
+    )
+    await gateway_tracing.finalize_gateway_request(
+        gateway_request_id=context.gateway_request_id,
+        resolved=context.resolved,
+        http_status=400,
+        attempt_count=context.attempt_count,
+        fallback_attempted=context.fallback_attempted,
+        error_code="streaming_response_guardrail_unsupported",
+        db=db,
+        final_route_attempt_id=context.route_attempt_id,
+    )
+
+
 async def finalize_provider_unavailable(
     *,
     context: GatewayFailureContext,

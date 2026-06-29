@@ -3,8 +3,8 @@
 import pytest
 from pydantic import ValidationError
 
-from app.api.v1.routes.settings import _detect_image_extension
 from app.core.csv_safe import sanitize_csv_cell
+from app.core.image_detection import detect_image_extension
 from app.core.metadata_sanitization import sanitize_metadata
 from app.modules.settings.schemas import UpdateOrganizationSettingsRequest
 
@@ -17,12 +17,12 @@ _WEBP = b"RIFF" + b"\x00\x00\x00\x00" + b"WEBP" + b"\x00" * 8
 
 
 def test_detect_image_extension_uses_magic_bytes() -> None:
-    assert _detect_image_extension(_PNG) == ".png"
-    assert _detect_image_extension(_JPEG) == ".jpg"
-    assert _detect_image_extension(_WEBP) == ".webp"
+    assert detect_image_extension(_PNG) == ".png"
+    assert detect_image_extension(_JPEG) == ".jpg"
+    assert detect_image_extension(_WEBP) == ".webp"
     # An SVG / HTML polyglot claiming to be a PNG is rejected.
-    assert _detect_image_extension(b"<svg xmlns=...>") is None
-    assert _detect_image_extension(b"<!DOCTYPE html>") is None
+    assert detect_image_extension(b"<svg xmlns=...>") is None
+    assert detect_image_extension(b"<!DOCTYPE html>") is None
 
 
 # --- #34 logo_url scheme validation -----------------------------------------

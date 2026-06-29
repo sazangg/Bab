@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -10,6 +10,9 @@ from app.core.database import Base
 
 class GatewayRequest(Base):
     __tablename__ = "gateway_requests"
+    __table_args__ = (
+        Index("ix_gateway_requests_org_started_id", "org_id", "started_at", "id"),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     org_id: Mapped[UUID | None] = mapped_column(
@@ -94,6 +97,16 @@ class GatewayRequest(Base):
 
 class GatewayRouteAttempt(Base):
     __tablename__ = "gateway_route_attempts"
+    __table_args__ = (
+        Index(
+            "ix_gateway_route_attempts_org_request_attempt",
+            "org_id",
+            "gateway_request_id",
+            "attempt_index",
+            "started_at",
+            "id",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     org_id: Mapped[UUID] = mapped_column(
@@ -188,6 +201,15 @@ class GatewayRouteAttempt(Base):
 
 class GatewayPolicyDecision(Base):
     __tablename__ = "gateway_policy_decisions"
+    __table_args__ = (
+        Index(
+            "ix_gateway_policy_decisions_org_request_created",
+            "org_id",
+            "gateway_request_id",
+            "created_at",
+            "id",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     org_id: Mapped[UUID | None] = mapped_column(

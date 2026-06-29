@@ -7,7 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.usage.internal.models import UsageRecord
 from app.modules.usage.internal.query_utils import _usage_filters
 from app.modules.usage.internal.report_utils import (
-    _breakdown,
+    BreakdownSpec,
+    _breakdowns,
     _bucket_expression,
     _coerce_report_bucket_value,
     _logical_request_count_expression,
@@ -55,49 +56,37 @@ async def get_organization_usage_summary(
             allowed_virtual_key_ids=allowed_virtual_key_ids,
         )
     )
+    breakdowns = await _breakdowns(
+        [
+            BreakdownSpec(key="provider", group_column=UsageRecord.provider_id),
+            BreakdownSpec(
+                key="model",
+                group_column=UsageRecord.provider_model,
+                label_column=UsageRecord.provider_model,
+            ),
+            BreakdownSpec(key="pool", group_column=UsageRecord.pool_id),
+            BreakdownSpec(key="team", group_column=UsageRecord.team_id),
+            BreakdownSpec(key="project", group_column=UsageRecord.project_id),
+            BreakdownSpec(
+                key="access_policy",
+                group_column=UsageRecord.access_policy_id,
+                extra_filters=(UsageRecord.access_policy_id.is_not(None),),
+            ),
+            BreakdownSpec(key="virtual_key", group_column=UsageRecord.virtual_key_id),
+        ],
+        *filters,
+        db=db,
+    )
     return OrganizationUsageSummary(
         window=window,
         totals=await _totals(*filters, db=db),
-        by_provider=await _breakdown(
-            UsageRecord.provider_id,
-            *filters,
-            db=db,
-        ),
-        by_model=await _breakdown(
-            UsageRecord.provider_model,
-            UsageRecord.provider_model,
-            *filters,
-            db=db,
-        ),
-        by_pool=await _breakdown(
-            UsageRecord.pool_id,
-            *filters,
-            db=db,
-        ),
-        by_team=await _breakdown(
-            UsageRecord.team_id,
-            None,
-            *filters,
-            db=db,
-        ),
-        by_project=await _breakdown(
-            UsageRecord.project_id,
-            None,
-            *filters,
-            db=db,
-        ),
-        by_access_policy=await _breakdown(
-            UsageRecord.access_policy_id,
-            *filters,
-            UsageRecord.access_policy_id.is_not(None),
-            db=db,
-        ),
-        by_virtual_key=await _breakdown(
-            UsageRecord.virtual_key_id,
-            None,
-            *filters,
-            db=db,
-        ),
+        by_provider=breakdowns["provider"],
+        by_model=breakdowns["model"],
+        by_pool=breakdowns["pool"],
+        by_team=breakdowns["team"],
+        by_project=breakdowns["project"],
+        by_access_policy=breakdowns["access_policy"],
+        by_virtual_key=breakdowns["virtual_key"],
         recent_errors=await _recent_errors(*filters, db=db),
     )
 
@@ -193,31 +182,31 @@ async def get_virtual_key_usage_summary(
     db: AsyncSession,
 ) -> VirtualKeyUsageSummary:
     base_filters = (UsageRecord.org_id == org_id, UsageRecord.virtual_key_id == virtual_key_id)
+    breakdowns = await _breakdowns(
+        [
+            BreakdownSpec(key="provider", group_column=UsageRecord.provider_id),
+            BreakdownSpec(
+                key="model",
+                group_column=UsageRecord.provider_model,
+                label_column=UsageRecord.provider_model,
+            ),
+            BreakdownSpec(key="pool", group_column=UsageRecord.pool_id),
+            BreakdownSpec(
+                key="access_policy",
+                group_column=UsageRecord.access_policy_id,
+                extra_filters=(UsageRecord.access_policy_id.is_not(None),),
+            ),
+        ],
+        *base_filters,
+        db=db,
+    )
     return VirtualKeyUsageSummary(
         virtual_key_id=virtual_key_id,
         totals=await _totals(*base_filters, db=db),
-        by_provider=await _breakdown(
-            UsageRecord.provider_id,
-            *base_filters,
-            db=db,
-        ),
-        by_model=await _breakdown(
-            UsageRecord.provider_model,
-            UsageRecord.provider_model,
-            *base_filters,
-            db=db,
-        ),
-        by_pool=await _breakdown(
-            UsageRecord.pool_id,
-            *base_filters,
-            db=db,
-        ),
-        by_access_policy=await _breakdown(
-            UsageRecord.access_policy_id,
-            *base_filters,
-            UsageRecord.access_policy_id.is_not(None),
-            db=db,
-        ),
+        by_provider=breakdowns["provider"],
+        by_model=breakdowns["model"],
+        by_pool=breakdowns["pool"],
+        by_access_policy=breakdowns["access_policy"],
         recent_errors=await _recent_errors(*base_filters, db=db),
     )
 

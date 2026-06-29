@@ -1,3 +1,4 @@
+from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from typing import Protocol
 from uuid import UUID
@@ -342,18 +343,21 @@ async def _build_resolved_access_plan(
     if not matched:
         raise AccessDeniedError
     primary_candidate = matched[0][0]
+    limit_rules = await policy_read_models.list_limit_runtime_rules_for_targets(
+        org_id=virtual_key.org_id,
+        team_id=project.team_id,
+        project_id=project.id,
+        virtual_key_id=virtual_key.id,
+        db=db,
+    )
     attempts: list[ResolvedRouteAttempt] = []
     attempt_limit_rules: list[list[LimitRuleMatch]] = []
     for index, (attempt_candidate, attempt_resource) in enumerate(matched):
-        limit_rules = await _matching_limit_policies(
-            org_id=virtual_key.org_id,
-            team_id=project.team_id,
-            project_id=project.id,
-            virtual_key_id=virtual_key.id,
+        matched_limit_rules = _matching_limit_policies_for_route(
+            rules=limit_rules,
             route=attempt_candidate,
-            db=db,
         )
-        attempt_limit_rules.append(limit_rules)
+        attempt_limit_rules.append(matched_limit_rules)
         attempts.append(
             _to_resolved_route_attempt(
                 virtual_key=virtual_key,
@@ -363,7 +367,7 @@ async def _build_resolved_access_plan(
                 resource=attempt_resource,
                 attempt_index=index,
                 primary_route_candidate_id=primary_candidate.route_candidate_id,
-                limit_rules=limit_rules,
+                limit_rules=matched_limit_rules,
             )
         )
     fallback_disabled_reason = None
@@ -401,17 +405,22 @@ async def list_accessible_models(*, raw_key: str, db: AsyncSession) -> list[Acce
     )
     models: list[AccessibleModel] = []
     by_id: dict[str, AccessibleModel] = {}
-    for candidate in await build_effective_access_routes_readonly(
+    routes = await build_effective_access_routes_readonly(
         org_id=virtual_key.org_id,
         team_id=project.team_id,
         project_id=project.id,
         virtual_key_id=virtual_key.id,
         db=db,
-    ):
-        routable = await _routable_route_candidate(
-            org_id=virtual_key.org_id,
+    )
+    route_resources = await _route_resources_for_candidates(
+        org_id=virtual_key.org_id,
+        candidates=routes,
+        db=db,
+    )
+    for candidate in routes:
+        routable = _routable_route_candidate_from_resources(
             candidate=candidate,
-            db=db,
+            resources=route_resources,
         )
         if routable is None:
             continue
@@ -458,17 +467,22 @@ async def list_project_accessible_models(
         raise ProjectNotFoundError
     models: list[AccessibleModel] = []
     seen: set[tuple[UUID, UUID]] = set()
-    for candidate in await build_effective_access_routes_readonly(
+    routes = await build_effective_access_routes_readonly(
         org_id=scope.org_id,
         team_id=project.team_id,
         project_id=project.id,
         virtual_key_id=None,
         db=db,
-    ):
-        routable = await _routable_route_candidate(
-            org_id=scope.org_id,
+    )
+    route_resources = await _route_resources_for_candidates(
+        org_id=scope.org_id,
+        candidates=routes,
+        db=db,
+    )
+    for candidate in routes:
+        routable = _routable_route_candidate_from_resources(
             candidate=candidate,
-            db=db,
+            resources=route_resources,
         )
         if routable is None:
             continue
@@ -557,12 +571,16 @@ async def build_effective_access_summary(
         virtual_key_id=virtual_key.id if virtual_key else None,
         db=db,
     )
+    route_resources = await _route_resources_for_candidates(
+        org_id=project.org_id,
+        candidates=routes,
+        db=db,
+    )
     routable_routes: list[EffectiveRouteSummary] = []
     for candidate in routes:
-        routable = await _routable_route_candidate(
-            org_id=project.org_id,
+        routable = _routable_route_candidate_from_resources(
             candidate=candidate,
-            db=db,
+            resources=route_resources,
         )
         if routable is None:
             continue
@@ -697,20 +715,36 @@ async def _ensure_organization_active(*, org_id: UUID, db: AsyncSession) -> None
     await workspace_read_models.ensure_organization_active(org_id=org_id, db=db)
 
 
-async def _routable_route_candidate(
-    *,
-    org_id: UUID,
-    candidate: EffectiveAccessRouteCandidate,
-    gateway_endpoint: str | None = None,
-    db: AsyncSession,
-) -> ProviderRouteResource | None:
-    resource = await provider_read_models.get_route_resource(
-        org_id=org_id,
+def _route_resource_key(candidate: EffectiveAccessRouteCandidate) -> ProviderRouteResourceKey:
+    return ProviderRouteResourceKey(
         provider_id=candidate.provider_id,
         credential_pool_id=candidate.credential_pool_id,
         model_offering_id=candidate.provider_model_offering_id or candidate.model_offering_id,
+    )
+
+
+async def _route_resources_for_candidates(
+    *,
+    org_id: UUID,
+    candidates: Iterable[EffectiveAccessRouteCandidate],
+    db: AsyncSession,
+) -> dict[ProviderRouteResourceKey, ProviderRouteResource]:
+    return await provider_read_models.get_route_resources(
+        org_id=org_id,
+        resources={_route_resource_key(candidate) for candidate in candidates},
         db=db,
     )
+
+
+def _routable_route_candidate_from_resources(
+    *,
+    candidate: EffectiveAccessRouteCandidate,
+    resources: Mapping[ProviderRouteResourceKey, ProviderRouteResource],
+    gateway_endpoint: str | None = None,
+) -> ProviderRouteResource | None:
+    resource = resources.get(_route_resource_key(candidate))
+    if resource is None:
+        return None
     if not _route_resource_is_routable(resource):
         return None
     if not _provider_supports_gateway_endpoint(resource, gateway_endpoint):
@@ -737,6 +771,11 @@ async def _match_policy_route(
         db=db,
     )
     candidates.sort(key=lambda item: (item.priority, -item.weight, item.created_at))
+    route_resources = await _route_resources_for_candidates(
+        org_id=org_id,
+        candidates=candidates,
+        db=db,
+    )
     matches: list[ResolvedPolicyRoute] = []
     matched_public_model_id: UUID | None = None
     for candidate in candidates:
@@ -747,11 +786,10 @@ async def _match_policy_route(
             continue
         if provider_id is not None and candidate.provider_id != provider_id:
             continue
-        routable = await _routable_route_candidate(
-            org_id=org_id,
+        routable = _routable_route_candidate_from_resources(
             candidate=candidate,
+            resources=route_resources,
             gateway_endpoint=gateway_endpoint,
-            db=db,
         )
         if routable is None:
             continue
@@ -787,6 +825,11 @@ async def _explain_route_candidates(
         db=db,
     )
     candidates.sort(key=lambda item: (item.priority, -item.weight, item.created_at))
+    route_resources = await _route_resources_for_candidates(
+        org_id=virtual_key.org_id,
+        candidates=candidates,
+        db=db,
+    )
     attempt_index_by_candidate = (
         {attempt.route_candidate_id: attempt.routing_attempt_index for attempt in plan.attempts}
         if plan is not None
@@ -796,13 +839,7 @@ async def _explain_route_candidates(
     explanations: list[RouteCandidateExplanation] = []
     for candidate_index, candidate in enumerate(candidates):
         model_id = candidate.provider_model_offering_id or candidate.model_offering_id
-        resource = await provider_read_models.get_route_resource(
-            org_id=virtual_key.org_id,
-            provider_id=candidate.provider_id,
-            credential_pool_id=candidate.credential_pool_id,
-            model_offering_id=model_id,
-            db=db,
-        )
+        resource = route_resources[_route_resource_key(candidate)]
         attempt_index = attempt_index_by_candidate.get(candidate.route_candidate_id)
         skipped_reason, skipped_message = _route_candidate_skip_reason(
             candidate=candidate,
@@ -1087,22 +1124,11 @@ async def _effective_limit_policy_references(
     return list(effective.values())
 
 
-async def _matching_limit_policies(
+def _matching_limit_policies_for_route(
     *,
-    org_id: UUID,
-    team_id: UUID,
-    project_id: UUID,
-    virtual_key_id: UUID,
+    rules: list[LimitRuleMatch],
     route: EffectiveAccessRouteCandidate,
-    db: AsyncSession,
 ) -> list[LimitRuleMatch]:
-    rules = await policy_read_models.list_limit_runtime_rules_for_targets(
-        org_id=org_id,
-        team_id=team_id,
-        project_id=project_id,
-        virtual_key_id=virtual_key_id,
-        db=db,
-    )
     return [rule for rule in rules if _limit_rule_matches_candidate(rule=rule, candidate=route)]
 
 

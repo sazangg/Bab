@@ -669,6 +669,84 @@ async def test_budget_burn_matches_exact_json_policy_and_rule_ids(
 
 
 @pytest.mark.asyncio
+async def test_budget_burn_groups_same_window_budget_rules(
+    db_session: AsyncSession,
+) -> None:
+    identity = await _create_usage_identity(db_session)
+    first_policy_id = uuid4()
+    first_rule_id = uuid4()
+    second_policy_id = uuid4()
+    second_rule_id = uuid4()
+    await _create_limit_policy_fixture(
+        db_session,
+        org_id=identity.org_id,
+        policy_id=first_policy_id,
+        rule_id=first_rule_id,
+        name="First budget",
+        rule_name="Monthly first",
+        limit_type="budget_cents",
+        limit_value=1000,
+    )
+    await _create_limit_policy_fixture(
+        db_session,
+        org_id=identity.org_id,
+        policy_id=second_policy_id,
+        rule_id=second_rule_id,
+        name="Second budget",
+        rule_name="Monthly second",
+        limit_type="budget_cents",
+        limit_value=1000,
+    )
+    shared = {
+        "org_id": identity.org_id,
+        "team_id": identity.team_id,
+        "project_id": identity.project_id,
+        "virtual_key_id": identity.virtual_key_id,
+        "pool_id": identity.pool_id,
+        "provider_id": identity.provider_id,
+        "provider_credential_id": None,
+        "requested_model": "gpt-5-mini",
+        "provider_model": "gpt-5-mini",
+        "http_status": 200,
+        "latency_ms": 100,
+        "total_tokens": 10,
+        "usage_source": "estimated",
+    }
+    db_session.add_all(
+        [
+            UsageRecord(
+                **shared,
+                limit_policy_ids=[str(first_policy_id)],
+                limit_policy_rule_ids=[str(first_rule_id)],
+                cost_cents=100,
+            ),
+            UsageRecord(
+                **shared,
+                limit_policy_ids=[str(second_policy_id)],
+                limit_policy_rule_ids=[str(second_rule_id)],
+                cost_cents=300,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    insights = await usage_facade.get_spend_insights(
+        org_id=identity.org_id,
+        window="lifetime",
+        db=db_session,
+    )
+
+    spent_by_rule = {
+        row.limit_policy_rule_id: row.spent_cents
+        for row in insights.limit_policy_budget_burn
+    }
+    assert spent_by_rule == {
+        first_rule_id: 100,
+        second_rule_id: 300,
+    }
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("grain", "expected_buckets"),
     [

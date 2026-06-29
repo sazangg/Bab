@@ -43,6 +43,7 @@ from app.modules.workspace.schemas import TeamReadState
 logger = structlog.get_logger(__name__)
 EXPIRING_SOON_DAYS = 7
 IMPACT_USAGE_WINDOW_DAYS = 30
+DERIVED_STATUS_INVENTORY_BATCH_SIZE = 250
 
 
 class ProjectRuntimeLike(Protocol):
@@ -258,37 +259,50 @@ async def _list_virtual_key_inventory_with_derived_status(
         visible_project_ids=visible_project_ids,
         team_id=team_id,
         project_id=project_id,
-        status=None,
+        status=status,
         db=db,
     )
-    virtual_keys, _ = await repository.list_virtual_key_inventory(
-        org_id=scope.org_id,
-        project_ids=inventory_project_ids,
-        status=None,
-        search=search,
-        usage=usage,
-        limit=None,
-        offset=0,
-        include_total=False,
-        db=db,
-    )
-    rows = await _inventory_rows_from_keys(
-        org_id=scope.org_id,
-        virtual_keys=virtual_keys,
-        db=db,
-    )
-    items = await _inventory_items_from_rows(
-        rows=rows,
-        manageable_team_ids=manageable_team_ids,
-        manageable_project_ids=manageable_project_ids,
-        can_manage_all=can_manage_all,
-        db=db,
-    )
-    matching_items = [item for item in items if item.status == status]
+    scan_offset = 0
+    matched_total = 0
+    page_items: list[VirtualKeyInventoryItem] = []
+    page_end = offset + limit
+    while True:
+        virtual_keys, _ = await repository.list_virtual_key_inventory(
+            org_id=scope.org_id,
+            project_ids=inventory_project_ids,
+            status=status,
+            search=search,
+            usage=usage,
+            limit=DERIVED_STATUS_INVENTORY_BATCH_SIZE,
+            offset=scan_offset,
+            include_total=False,
+            db=db,
+        )
+        if not virtual_keys:
+            break
+        rows = await _inventory_rows_from_keys(
+            org_id=scope.org_id,
+            virtual_keys=virtual_keys,
+            db=db,
+        )
+        items = await _inventory_items_from_rows(
+            rows=rows,
+            manageable_team_ids=manageable_team_ids,
+            manageable_project_ids=manageable_project_ids,
+            can_manage_all=can_manage_all,
+            db=db,
+        )
+        for item in items:
+            if item.status != status:
+                continue
+            if offset <= matched_total < page_end:
+                page_items.append(item)
+            matched_total += 1
+        scan_offset += len(virtual_keys)
 
     return VirtualKeyInventoryPage(
-        items=matching_items[offset : offset + limit],
-        total=len(matching_items),
+        items=page_items,
+        total=matched_total,
         limit=limit,
         offset=offset,
     )

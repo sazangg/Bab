@@ -35,6 +35,7 @@ from app.modules.auth.schemas import (
     UpdateMemberRequest,
     UpdateMemberStatusRequest,
 )
+from app.modules.authorization.permissions import Permissions
 from app.modules.settings import facade as settings_facade
 
 REFRESH_COOKIE_NAME = "bab_refresh_token"
@@ -43,7 +44,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RefreshCookie = Annotated[str | None, Cookie(alias=REFRESH_COOKIE_NAME)]
 RequestScope = Annotated[Scope, Depends(get_scope)]
-MemberAdmin = Annotated[AuthenticatedUser, Depends(require_permission("members.manage"))]
+MemberAdmin = Annotated[AuthenticatedUser, Depends(require_permission(Permissions.MEMBERS_MANAGE))]
 CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]
 
 

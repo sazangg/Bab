@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -177,38 +178,46 @@ async def list_limit_runtime_rules_for_targets(
         policy_type="limit",
         db=db,
     )
+    if not assignments:
+        return []
+    policy_ids = _policy_ids_for_assignments(assignments)
+    rows = await db.execute(
+        select(Policy.id, LimitPolicy, PolicyRevision, LimitPolicyRule)
+        .join(LimitPolicy, LimitPolicy.policy_id == Policy.id)
+        .join(
+            PolicyRevision,
+            and_(
+                PolicyRevision.policy_id == Policy.id,
+                PolicyRevision.status == "active",
+            ),
+        )
+        .join(
+            LimitPolicyRule,
+            and_(
+                LimitPolicyRule.limit_policy_id == LimitPolicy.id,
+                LimitPolicyRule.policy_revision_id == PolicyRevision.id,
+            ),
+        )
+        .where(
+            Policy.org_id == org_id,
+            Policy.id.in_(policy_ids),
+            Policy.kind == "limit",
+            Policy.is_active.is_(True),
+            LimitPolicy.org_id == org_id,
+            LimitPolicy.is_active.is_(True),
+            LimitPolicyRule.org_id == org_id,
+            LimitPolicyRule.is_active.is_(True),
+        )
+        .order_by(Policy.id, LimitPolicyRule.created_at.asc())
+    )
+    rows_by_policy_id: dict[UUID, list[tuple[LimitPolicy, PolicyRevision, LimitPolicyRule]]] = (
+        defaultdict(list)
+    )
+    for policy_id, policy, revision, rule in rows:
+        rows_by_policy_id[policy_id].append((policy, revision, rule))
     rules: list[LimitRuntimeRule] = []
     for assignment in assignments:
-        rows = await db.execute(
-            select(LimitPolicy, PolicyRevision, LimitPolicyRule)
-            .join(Policy, Policy.id == LimitPolicy.policy_id)
-            .join(
-                PolicyRevision,
-                and_(
-                    PolicyRevision.policy_id == Policy.id,
-                    PolicyRevision.status == "active",
-                ),
-            )
-            .join(
-                LimitPolicyRule,
-                and_(
-                    LimitPolicyRule.limit_policy_id == LimitPolicy.id,
-                    LimitPolicyRule.policy_revision_id == PolicyRevision.id,
-                ),
-            )
-            .where(
-                Policy.org_id == org_id,
-                Policy.id == assignment.policy_id,
-                Policy.kind == "limit",
-                Policy.is_active.is_(True),
-                LimitPolicy.org_id == org_id,
-                LimitPolicy.is_active.is_(True),
-                LimitPolicyRule.org_id == org_id,
-                LimitPolicyRule.is_active.is_(True),
-            )
-            .order_by(LimitPolicyRule.created_at.asc())
-        )
-        for policy, revision, rule in rows:
+        for policy, revision, rule in rows_by_policy_id.get(assignment.policy_id, []):
             rules.append(
                 LimitRuntimeRule(
                     assignment_id=assignment.id,
@@ -248,21 +257,27 @@ async def list_limit_runtime_policy_references_for_targets(
         policy_type="limit",
         db=db,
     )
+    if not assignments:
+        return []
+    policy_ids = _policy_ids_for_assignments(assignments)
+    rows = await db.execute(
+        select(Policy.id, LimitPolicy)
+        .join(LimitPolicy, LimitPolicy.policy_id == Policy.id)
+        .where(
+            Policy.org_id == org_id,
+            Policy.id.in_(policy_ids),
+            Policy.kind == "limit",
+            Policy.is_active.is_(True),
+            LimitPolicy.org_id == org_id,
+            LimitPolicy.is_active.is_(True),
+        )
+    )
+    policies_by_policy_id: dict[UUID, list[LimitPolicy]] = defaultdict(list)
+    for policy_id, policy in rows:
+        policies_by_policy_id[policy_id].append(policy)
     references: list[LimitRuntimePolicyReference] = []
     for assignment in assignments:
-        rows = await db.execute(
-            select(LimitPolicy)
-            .join(Policy, Policy.id == LimitPolicy.policy_id)
-            .where(
-                Policy.org_id == org_id,
-                Policy.id == assignment.policy_id,
-                Policy.kind == "limit",
-                Policy.is_active.is_(True),
-                LimitPolicy.org_id == org_id,
-                LimitPolicy.is_active.is_(True),
-            )
-        )
-        for policy, in rows:
+        for policy in policies_by_policy_id.get(assignment.policy_id, []):
             references.append(
                 LimitRuntimePolicyReference(
                     assignment_id=assignment.id,
@@ -427,45 +442,58 @@ async def _access_runtime_route_candidates_for_assignments(
     assignments: list[PolicyAssignment],
     db: AsyncSession,
 ) -> list[AccessRuntimeRouteCandidate]:
+    if not assignments:
+        return []
+    policy_ids = _policy_ids_for_assignments(assignments)
+    rows = await db.execute(
+        select(Policy, PolicyRevision, AccessPolicyPublicModel, AccessPolicyRouteCandidate)
+        .join(
+            PolicyRevision,
+            and_(
+                PolicyRevision.policy_id == Policy.id,
+                PolicyRevision.status == "active",
+            ),
+        )
+        .join(
+            AccessPolicyPublicModel,
+            and_(
+                AccessPolicyPublicModel.policy_revision_id == PolicyRevision.id,
+                AccessPolicyPublicModel.org_id == org_id,
+                AccessPolicyPublicModel.is_active.is_(True),
+            ),
+        )
+        .join(
+            AccessPolicyRouteCandidate,
+            AccessPolicyRouteCandidate.public_model_id == AccessPolicyPublicModel.id,
+        )
+        .where(
+            Policy.org_id == org_id,
+            Policy.id.in_(policy_ids),
+            Policy.kind == "access",
+            Policy.is_active.is_(True),
+            AccessPolicyRouteCandidate.org_id == org_id,
+            AccessPolicyRouteCandidate.is_active.is_(True),
+        )
+        .order_by(
+            Policy.id,
+            AccessPolicyPublicModel.created_at.asc(),
+            AccessPolicyRouteCandidate.priority,
+            AccessPolicyRouteCandidate.weight.desc(),
+            AccessPolicyRouteCandidate.created_at,
+        )
+    )
+    rows_by_policy_id: dict[
+        UUID,
+        list[tuple[Policy, PolicyRevision, AccessPolicyPublicModel, AccessPolicyRouteCandidate]],
+    ] = defaultdict(list)
+    for policy, revision, public_model, route_candidate in rows:
+        rows_by_policy_id[policy.id].append((policy, revision, public_model, route_candidate))
     candidates: list[AccessRuntimeRouteCandidate] = []
     for assignment in assignments:
-        rows = await db.execute(
-            select(Policy, PolicyRevision, AccessPolicyPublicModel, AccessPolicyRouteCandidate)
-            .join(
-                PolicyRevision,
-                and_(
-                    PolicyRevision.policy_id == Policy.id,
-                    PolicyRevision.status == "active",
-                ),
-            )
-            .join(
-                AccessPolicyPublicModel,
-                and_(
-                    AccessPolicyPublicModel.policy_revision_id == PolicyRevision.id,
-                    AccessPolicyPublicModel.org_id == org_id,
-                    AccessPolicyPublicModel.is_active.is_(True),
-                ),
-            )
-            .join(
-                AccessPolicyRouteCandidate,
-                AccessPolicyRouteCandidate.public_model_id == AccessPolicyPublicModel.id,
-            )
-            .where(
-                Policy.org_id == org_id,
-                Policy.id == assignment.policy_id,
-                Policy.kind == "access",
-                Policy.is_active.is_(True),
-                AccessPolicyRouteCandidate.org_id == org_id,
-                AccessPolicyRouteCandidate.is_active.is_(True),
-            )
-            .order_by(
-                AccessPolicyPublicModel.created_at.asc(),
-                AccessPolicyRouteCandidate.priority,
-                AccessPolicyRouteCandidate.weight.desc(),
-                AccessPolicyRouteCandidate.created_at,
-            )
-        )
-        for policy, revision, public_model, route_candidate in rows:
+        for policy, revision, public_model, route_candidate in rows_by_policy_id.get(
+            assignment.policy_id,
+            [],
+        ):
             candidates.append(
                 AccessRuntimeRouteCandidate(
                     assignment_id=assignment.id,
@@ -501,36 +529,48 @@ async def _access_runtime_assignments(
     assignments: list[PolicyAssignment],
     db: AsyncSession,
 ) -> list[AccessRuntimeAssignment]:
+    if not assignments:
+        return []
+    policy_ids = _policy_ids_for_assignments(assignments)
+    rows = await db.execute(
+        select(Policy.id, Policy.name)
+        .join(
+            PolicyRevision,
+            and_(
+                PolicyRevision.policy_id == Policy.id,
+                PolicyRevision.status == "active",
+            ),
+        )
+        .where(
+            Policy.org_id == org_id,
+            Policy.id.in_(policy_ids),
+            Policy.kind == "access",
+            Policy.is_active.is_(True),
+            PolicyRevision.org_id == org_id,
+        )
+        .order_by(Policy.id, PolicyRevision.created_at)
+    )
+    policy_names_by_id: dict[UUID, str] = {}
+    for policy_id, policy_name in rows:
+        policy_names_by_id.setdefault(policy_id, policy_name)
     runtime_assignments: list[AccessRuntimeAssignment] = []
     for assignment in assignments:
-        policy = await db.scalar(
-            select(Policy).where(
-                Policy.org_id == org_id,
-                Policy.id == assignment.policy_id,
-                Policy.kind == "access",
-                Policy.is_active.is_(True),
-            )
-        )
-        revision = None
-        if policy is not None:
-            revision = await db.scalar(
-                select(PolicyRevision).where(
-                    PolicyRevision.org_id == org_id,
-                    PolicyRevision.policy_id == policy.id,
-                    PolicyRevision.status == "active",
-                )
-            )
-        if policy is None or revision is None:
+        policy_name = policy_names_by_id.get(assignment.policy_id)
+        if policy_name is None:
             continue
         runtime_assignments.append(
             AccessRuntimeAssignment(
                 assignment_id=assignment.id,
                 shared_policy_id=assignment.policy_id,
-                policy_name=policy.name,
+                policy_name=policy_name,
                 source_scope=assignment.scope_type,
             )
         )
     return runtime_assignments
+
+
+def _policy_ids_for_assignments(assignments: list[PolicyAssignment]) -> set[UUID]:
+    return {assignment.policy_id for assignment in assignments}
 
 
 async def _list_active_policy_assignments_for_targets(

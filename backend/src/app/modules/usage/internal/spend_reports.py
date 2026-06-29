@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.usage.accounting import subtract_months
@@ -94,53 +94,87 @@ async def _limit_policy_budget_burn(
     limit_budget_rule_references: list[LimitBudgetRuleLike],
     db: AsyncSession,
 ) -> list[LimitPolicyBudgetBurnRow]:
-    rows: list[LimitPolicyBudgetBurnRow] = []
+    common_filters = [UsageRecord.org_id == org_id]
+    if until is not None:
+        common_filters.append(UsageRecord.created_at <= until)
+    if team_id is not None:
+        common_filters.append(UsageRecord.team_id == team_id)
+    if provider_id is not None:
+        common_filters.append(UsageRecord.provider_id == provider_id)
+    if project_id is not None:
+        common_filters.append(UsageRecord.project_id == project_id)
+    if virtual_key_id is not None:
+        common_filters.append(UsageRecord.virtual_key_id == virtual_key_id)
+    if model:
+        common_filters.append(UsageRecord.provider_model == model)
+    _add_allowed_scope_filters(
+        common_filters,
+        allowed_team_ids=allowed_team_ids,
+        allowed_project_ids=allowed_project_ids,
+        allowed_virtual_key_ids=allowed_virtual_key_ids,
+    )
+
+    windows_by_interval: dict[tuple[str, int], tuple[datetime | None, str]] = {}
+    rules_by_window: dict[tuple[datetime | None, str], list[LimitBudgetRuleLike]] = {}
     for rule in limit_budget_rule_references:
-        rule_since = _limit_rule_window_start(
-            interval_unit=rule.interval_unit,
-            interval_count=rule.interval_count,
-        )
-        filters = [
-            UsageRecord.org_id == org_id,
-            _json_array_contains(UsageRecord.limit_policy_ids, rule.limit_policy_id, db=db),
-            _json_array_contains(
-                UsageRecord.limit_policy_rule_ids,
-                rule.limit_policy_rule_id,
-                db=db,
+        interval_key = (rule.interval_unit, rule.interval_count)
+        window_key = windows_by_interval.setdefault(
+            interval_key,
+            (
+                _limit_rule_window_start(
+                    interval_unit=rule.interval_unit,
+                    interval_count=rule.interval_count,
+                ),
+                _limit_rule_window_descriptor(
+                    interval_unit=rule.interval_unit,
+                    interval_count=rule.interval_count,
+                ),
             ),
-        ]
+        )
+        rules_by_window.setdefault(window_key, []).append(rule)
+
+    spent_cents_by_rule_id: dict[UUID, int] = {}
+    for (rule_since, window_descriptor), rules in rules_by_window.items():
+        filters = list(common_filters)
         if rule_since is not None:
             filters.append(UsageRecord.created_at >= rule_since)
-        window_descriptor = _limit_rule_window_descriptor(
-            interval_unit=rule.interval_unit,
-            interval_count=rule.interval_count,
-        )
         filters.append(
             or_(
                 UsageRecord.limit_window_descriptor == window_descriptor,
                 UsageRecord.limit_window_descriptor.is_(None),
             )
         )
-        if until is not None:
-            filters.append(UsageRecord.created_at <= until)
-        if team_id is not None:
-            filters.append(UsageRecord.team_id == team_id)
-        if provider_id is not None:
-            filters.append(UsageRecord.provider_id == provider_id)
-        if project_id is not None:
-            filters.append(UsageRecord.project_id == project_id)
-        if virtual_key_id is not None:
-            filters.append(UsageRecord.virtual_key_id == virtual_key_id)
-        if model:
-            filters.append(UsageRecord.provider_model == model)
-        _add_allowed_scope_filters(
-            filters,
-            allowed_team_ids=allowed_team_ids,
-            allowed_project_ids=allowed_project_ids,
-            allowed_virtual_key_ids=allowed_virtual_key_ids,
-        )
-        spent_query = select(func.coalesce(func.sum(UsageRecord.cost_cents), 0)).where(*filters)
-        spent = (await db.scalar(spent_query)) or 0
+        columns = [
+            func.coalesce(
+                func.sum(
+                    case(
+                        (
+                            _json_array_contains(
+                                UsageRecord.limit_policy_ids,
+                                rule.limit_policy_id,
+                                db=db,
+                            )
+                            & _json_array_contains(
+                                UsageRecord.limit_policy_rule_ids,
+                                rule.limit_policy_rule_id,
+                                db=db,
+                            ),
+                            UsageRecord.cost_cents,
+                        ),
+                        else_=0,
+                    )
+                ),
+                0,
+            )
+            for rule in rules
+        ]
+        spent_values = (await db.execute(select(*columns).where(*filters))).one()
+        for rule, spent in zip(rules, spent_values, strict=True):
+            spent_cents_by_rule_id[rule.limit_policy_rule_id] = int(spent or 0)
+
+    rows: list[LimitPolicyBudgetBurnRow] = []
+    for rule in limit_budget_rule_references:
+        spent = spent_cents_by_rule_id.get(rule.limit_policy_rule_id, 0)
         rows.append(
             LimitPolicyBudgetBurnRow(
                 limit_policy_id=rule.limit_policy_id,
@@ -152,9 +186,9 @@ async def _limit_policy_budget_burn(
                     interval_count=rule.interval_count,
                 ),
                 budget_cents=rule.budget_cents,
-                spent_cents=int(spent),
-                remaining_cents=max(0, rule.budget_cents - int(spent)),
-                burn_rate_pct=round((int(spent) / (rule.budget_cents or 1)) * 100, 1),
+                spent_cents=spent,
+                remaining_cents=max(0, rule.budget_cents - spent),
+                burn_rate_pct=round((spent / (rule.budget_cents or 1)) * 100, 1),
             )
         )
     return sorted(rows, key=lambda row: row.spent_cents, reverse=True)[:20]

@@ -42,9 +42,12 @@ DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RequestScope = Annotated[Scope, Depends(get_scope)]
 GuardrailViewer = Annotated[
     AuthenticatedUser,
-    Depends(require_permission_or_scoped_admin("guardrails.view")),
+    Depends(require_permission_or_scoped_admin(Permissions.GUARDRAILS_VIEW)),
 ]
-GuardrailAdmin = Annotated[AuthenticatedUser, Depends(require_permission("guardrails.manage"))]
+GuardrailAdmin = Annotated[
+    AuthenticatedUser,
+    Depends(require_permission(Permissions.GUARDRAILS_MANAGE)),
+]
 AssignmentActor = Annotated[AuthenticatedUser, Depends(get_current_user)]
 
 

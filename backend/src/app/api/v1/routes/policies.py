@@ -60,9 +60,9 @@ DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RequestScope = Annotated[Scope, Depends(get_scope)]
 ScopedPolicyViewer = Annotated[
     AuthenticatedUser,
-    Depends(require_permission_or_scoped_admin("policies.view")),
+    Depends(require_permission_or_scoped_admin(Permissions.POLICIES_VIEW)),
 ]
-PolicyAdmin = Annotated[AuthenticatedUser, Depends(require_permission("policies.manage"))]
+PolicyAdmin = Annotated[AuthenticatedUser, Depends(require_permission(Permissions.POLICIES_MANAGE))]
 AssignmentActor = Annotated[AuthenticatedUser, Depends(get_current_user)]
 
 

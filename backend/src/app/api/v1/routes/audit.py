@@ -15,11 +15,12 @@ from app.core.database import Scope, get_db
 from app.modules.audit import facade
 from app.modules.audit.schemas import AuditEventResponse, AuditVerificationResponse
 from app.modules.auth.schemas import AuthenticatedUser
+from app.modules.authorization.permissions import Permissions
 
 router = APIRouter(prefix="/audit", tags=["audit"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RequestScope = Annotated[Scope, Depends(get_scope)]
-AuditViewer = Annotated[AuthenticatedUser, Depends(require_permission("audit.view"))]
+AuditViewer = Annotated[AuthenticatedUser, Depends(require_permission(Permissions.AUDIT_VIEW))]
 
 
 @router.get("")

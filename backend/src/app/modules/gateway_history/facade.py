@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 from uuid import UUID
@@ -6,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope
 from app.modules.gateway_history.internal import repository
+from app.modules.gateway_history.internal.models import GatewayRouteAttempt
 from app.modules.gateway_history.redaction import redact_trace_value
 from app.modules.gateway_history.schemas import (
     CreateGatewayRequest,
@@ -23,6 +25,7 @@ from app.modules.gateway_history.schemas import (
 from app.modules.guardrails import read_models as guardrail_read_models
 from app.modules.policies import read_models as policy_read_models
 from app.modules.providers import read_models as provider_read_models
+from app.modules.providers.schemas import CredentialPoolLabel, ProviderLabel
 from app.modules.usage import facade as usage_facade
 from app.modules.usage.schemas import UsageRecordResponse
 from app.modules.workspace import facade as workspace_facade
@@ -200,12 +203,46 @@ async def list_gateway_requests(
         },
         db=db,
     )
+    request_ids = {request.id for request in page_requests}
+    attempts = await repository.list_gateway_route_attempts_for_requests(
+        gateway_request_ids=request_ids,
+        org_id=org_id,
+        db=db,
+    )
+    attempts_by_request_id: dict[UUID, list[GatewayRouteAttempt]] = defaultdict(list)
+    for attempt in attempts:
+        attempts_by_request_id[attempt.gateway_request_id].append(attempt)
+    attempt_ids = {attempt.id for attempt in attempts}
+    provider_ids = {
+        request.final_provider_id
+        for request in page_requests
+        if request.final_provider_id is not None
+    }
+    provider_ids.update(attempt.provider_id for attempt in attempts if attempt.provider_id)
+    pool_ids = {
+        request.final_credential_pool_id
+        for request in page_requests
+        if request.final_credential_pool_id is not None
+        and request.final_route_attempt_id not in attempt_ids
+    }
+    provider_labels = await provider_read_models.get_provider_labels(
+        org_id=org_id,
+        provider_ids=provider_ids,
+        db=db,
+    )
+    pool_labels = await provider_read_models.get_credential_pool_labels(
+        org_id=org_id,
+        pool_ids=pool_ids,
+        db=db,
+    )
     items = [
-        await _to_gateway_request_trace_list_item(
+        _to_gateway_request_trace_list_item(
             request,
+            attempts=attempts_by_request_id.get(request.id, []),
             workspace_labels=workspace_labels,
             policy_labels=policy_labels,
-            db=db,
+            provider_labels=provider_labels,
+            pool_labels=pool_labels,
         )
         for request in page_requests
     ]
@@ -318,54 +355,18 @@ async def get_gateway_request_trace(
     )
 
 
-async def _to_gateway_request_trace_list_item(
+def _to_gateway_request_trace_list_item(
     request,
     *,
+    attempts: list[GatewayRouteAttempt],
     workspace_labels: WorkspaceLabelMaps,
     policy_labels: dict[UUID, policy_read_models.PolicyLabel],
-    db: AsyncSession,
+    provider_labels: dict[UUID, ProviderLabel],
+    pool_labels: dict[UUID, CredentialPoolLabel],
 ) -> GatewayRequestTraceListItem:
-    attempts = await repository.list_gateway_route_attempts(
-        gateway_request_id=request.id,
-        org_id=request.org_id,
-        db=db,
-    )
     final_attempt = next(
         (attempt for attempt in attempts if attempt.id == request.final_route_attempt_id),
         None,
-    )
-    provider_ids = {
-        provider_id
-        for provider_id in (
-            [request.final_provider_id]
-            if request.final_provider_id and final_attempt is None
-            else []
-        )
-        + [attempt.provider_id for attempt in attempts if attempt.provider_id is not None]
-        if provider_id is not None
-    }
-    pool_ids = (
-        {request.final_credential_pool_id}
-        if request.final_credential_pool_id and final_attempt is None
-        else set()
-    )
-    provider_labels = (
-        await provider_read_models.get_provider_labels(
-            org_id=request.org_id,
-            provider_ids=provider_ids,
-            db=db,
-        )
-        if request.org_id is not None
-        else {}
-    )
-    pool_labels = (
-        await provider_read_models.get_credential_pool_labels(
-            org_id=request.org_id,
-            pool_ids=pool_ids,
-            db=db,
-        )
-        if request.org_id is not None
-        else {}
     )
     final_policy = (
         policy_labels.get(request.final_access_policy_id)

@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -10,6 +10,17 @@ from app.core.database import Base
 
 class UsageRecord(Base):
     __tablename__ = "usage_records"
+    __table_args__ = (
+        Index("ix_usage_records_org_created_at_id", "org_id", "created_at", "id"),
+        Index("ix_usage_records_org_provider_created_at", "org_id", "provider_id", "created_at"),
+        Index("ix_usage_records_org_project_created_at", "org_id", "project_id", "created_at"),
+        Index(
+            "ix_usage_records_org_virtual_key_created_at",
+            "org_id",
+            "virtual_key_id",
+            "created_at",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     org_id: Mapped[UUID] = mapped_column(
@@ -114,6 +125,15 @@ class UsageRecord(Base):
 
 class LimitPolicyCommittedUsage(Base):
     __tablename__ = "limit_policy_committed_usage"
+    __table_args__ = (
+        Index(
+            "ix_limit_committed_rule_counter_window_created",
+            "limit_policy_rule_id",
+            "counter_key",
+            "window_descriptor",
+            "created_at",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     org_id: Mapped[UUID] = mapped_column(
@@ -162,6 +182,21 @@ class LimitPolicyCommittedUsage(Base):
 
 class LimitPolicyReservation(Base):
     __tablename__ = "limit_policy_reservations"
+    __table_args__ = (
+        Index(
+            "ix_limit_reservations_rule_counter_status_expires",
+            "limit_policy_rule_id",
+            "counter_key",
+            "status",
+            "expires_at",
+        ),
+        Index(
+            "ix_limit_reservations_assignment_status_expires",
+            "limit_policy_assignment_id",
+            "status",
+            "expires_at",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     org_id: Mapped[UUID] = mapped_column(

@@ -239,6 +239,30 @@ async def list_gateway_route_attempts(
     return list(result)
 
 
+async def list_gateway_route_attempts_for_requests(
+    *,
+    gateway_request_ids: set[UUID],
+    org_id: UUID,
+    db: AsyncSession,
+) -> list[GatewayRouteAttempt]:
+    if not gateway_request_ids:
+        return []
+    result = await db.scalars(
+        select(GatewayRouteAttempt)
+        .where(
+            GatewayRouteAttempt.gateway_request_id.in_(gateway_request_ids),
+            GatewayRouteAttempt.org_id == org_id,
+        )
+        .order_by(
+            GatewayRouteAttempt.gateway_request_id,
+            GatewayRouteAttempt.attempt_index,
+            GatewayRouteAttempt.started_at,
+            GatewayRouteAttempt.id,
+        )
+    )
+    return list(result)
+
+
 async def list_gateway_policy_decisions(
     *,
     gateway_request_id: UUID,

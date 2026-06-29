@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.deps import get_scope, require_permission
 from app.core.database import Scope, get_db
 from app.modules.auth.schemas import AuthenticatedUser
+from app.modules.authorization.permissions import Permissions
 from app.modules.providers import facade
 from app.modules.providers.errors import (
     ProviderCredentialRequiredError,
@@ -46,8 +47,14 @@ from app.modules.settings import facade as settings_facade
 router = APIRouter(prefix="/providers", tags=["providers"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RequestScope = Annotated[Scope, Depends(get_scope)]
-ProviderViewer = Annotated[AuthenticatedUser, Depends(require_permission("providers.view"))]
-ProviderAdmin = Annotated[AuthenticatedUser, Depends(require_permission("providers.manage"))]
+ProviderViewer = Annotated[
+    AuthenticatedUser,
+    Depends(require_permission(Permissions.PROVIDERS_VIEW)),
+]
+ProviderAdmin = Annotated[
+    AuthenticatedUser,
+    Depends(require_permission(Permissions.PROVIDERS_MANAGE)),
+]
 
 
 @router.get("")

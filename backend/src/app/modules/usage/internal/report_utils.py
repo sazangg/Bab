@@ -1,7 +1,10 @@
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from datetime import datetime
 
-from sqlalchemy import Integer, case, cast, func, select
+from sqlalchemy import Integer, String, case, cast, func, literal, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.modules.usage.internal.models import UsageRecord
 from app.modules.usage.schemas import (
@@ -9,6 +12,14 @@ from app.modules.usage.schemas import (
     UsageRecentError,
     UsageSummaryTotals,
 )
+
+
+@dataclass(frozen=True)
+class BreakdownSpec:
+    key: str
+    group_column: ColumnElement
+    label_column: ColumnElement | None = None
+    extra_filters: tuple[ColumnElement, ...] = field(default_factory=tuple)
 
 
 def _bucket_expression(*, grain: str, db: AsyncSession):
@@ -93,23 +104,64 @@ async def _breakdown(
     *filters,
     db: AsyncSession,
 ) -> list[UsageBreakdownRow]:
-    label_column = label_column if label_column is not None else group_column
-    query = select(
-        group_column,
-        label_column,
-        func.count(UsageRecord.id),
-        func.coalesce(func.sum(case((UsageRecord.http_status < 400, 1), else_=0)), 0),
-        func.coalesce(func.sum(case((UsageRecord.http_status >= 400, 1), else_=0)), 0),
-        func.coalesce(func.sum(UsageRecord.prompt_tokens), 0),
-        func.coalesce(func.sum(UsageRecord.completion_tokens), 0),
-        func.coalesce(func.sum(UsageRecord.total_tokens), 0),
-        func.coalesce(func.sum(UsageRecord.cost_cents), 0),
-        *_spend_classification_columns(),
-        func.avg(UsageRecord.latency_ms),
-    ).where(*filters)
-    query = query.group_by(group_column, label_column).order_by(func.count(UsageRecord.id).desc())
-    rows = (await db.execute(query)).all()
-    return [_row_to_breakdown(row) for row in rows]
+    rows_by_key = await _breakdowns(
+        [
+            BreakdownSpec(
+                key="breakdown",
+                group_column=group_column,
+                label_column=label_column,
+            )
+        ],
+        *filters,
+        db=db,
+    )
+    return rows_by_key["breakdown"]
+
+
+async def _breakdowns(
+    specs: Sequence[BreakdownSpec],
+    *filters,
+    db: AsyncSession,
+) -> dict[str, list[UsageBreakdownRow]]:
+    if not specs:
+        return {}
+    selects = []
+    for spec in specs:
+        label_column = spec.label_column if spec.label_column is not None else spec.group_column
+        selects.append(
+            select(
+                literal(spec.key).label("breakdown_key"),
+                cast(spec.group_column, String).label("group_value"),
+                cast(label_column, String).label("label_value"),
+                func.count(UsageRecord.id).label("requests"),
+                func.coalesce(
+                    func.sum(case((UsageRecord.http_status < 400, 1), else_=0)),
+                    0,
+                ).label("successful_requests"),
+                func.coalesce(
+                    func.sum(case((UsageRecord.http_status >= 400, 1), else_=0)),
+                    0,
+                ).label("failed_requests"),
+                func.coalesce(func.sum(UsageRecord.prompt_tokens), 0).label("prompt_tokens"),
+                func.coalesce(
+                    func.sum(UsageRecord.completion_tokens),
+                    0,
+                ).label("completion_tokens"),
+                func.coalesce(func.sum(UsageRecord.total_tokens), 0).label("total_tokens"),
+                func.coalesce(func.sum(UsageRecord.cost_cents), 0).label("cost_cents"),
+                *_spend_classification_columns(),
+                func.avg(UsageRecord.latency_ms).label("average_latency_ms"),
+            )
+            .where(*filters, *spec.extra_filters)
+            .group_by(spec.group_column, label_column)
+        )
+    rows = (await db.execute(union_all(*selects))).all()
+    results = {spec.key: [] for spec in specs}
+    for row in rows:
+        results[row[0]].append(_row_to_breakdown(row[1:]))
+    for breakdown_rows in results.values():
+        breakdown_rows.sort(key=lambda item: item.requests, reverse=True)
+    return results
 
 
 def _row_to_totals(row) -> UsageSummaryTotals:

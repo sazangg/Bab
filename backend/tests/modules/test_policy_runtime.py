@@ -3,7 +3,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import event, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.routes.projects import create_virtual_key as create_virtual_key_route
@@ -46,6 +46,7 @@ from app.modules.keys.errors import (
     VirtualKeyNotFoundError,
     VirtualKeyOverlapActiveError,
 )
+from app.modules.keys.internal import virtual_keys as virtual_key_service
 from app.modules.keys.internal.models import VirtualKey
 from app.modules.keys.schemas import (
     CreateVirtualKeyRequest,
@@ -1362,6 +1363,7 @@ async def test_virtual_key_inventory_is_paginated_filtered_and_scoped(
 
 async def test_virtual_key_inventory_derived_status_pagination_is_not_truncated(
     db_session: AsyncSession,
+    monkeypatch,
 ) -> None:
     (
         actor,
@@ -1400,40 +1402,52 @@ async def test_virtual_key_inventory_derived_status_pagination_is_not_truncated(
     db_session.add_all(keys)
     await db_session.commit()
 
-    query_count = 0
+    inventory_calls: list[dict] = []
+    original_list_inventory = virtual_key_service.repository.list_virtual_key_inventory
 
-    def count_query(*_args) -> None:
-        nonlocal query_count
-        query_count += 1
-
-    assert db_session.bind is not None
-    event.listen(db_session.bind.sync_engine, "before_cursor_execute", count_query)
-    try:
-        page = await keys_facade.list_virtual_key_inventory(
-            scope=scope,
-            visible_team_ids=None,
-            visible_project_ids=None,
-            manageable_team_ids={team.id},
-            manageable_project_ids=set(),
-            can_manage_all=False,
-            team_id=None,
-            project_id=None,
-            status="active",
-            search="Bulk key",
-            usage="used",
-            limit=5,
-            offset=1000,
-            db=db_session,
+    async def counted_list_inventory(**kwargs):
+        inventory_calls.append(
+            {
+                "status": kwargs["status"],
+                "limit": kwargs["limit"],
+                "offset": kwargs["offset"],
+                "include_total": kwargs["include_total"],
+            }
         )
-    finally:
-        event.remove(db_session.bind.sync_engine, "before_cursor_execute", count_query)
+        return await original_list_inventory(**kwargs)
+
+    monkeypatch.setattr(
+        virtual_key_service.repository,
+        "list_virtual_key_inventory",
+        counted_list_inventory,
+    )
+
+    page = await keys_facade.list_virtual_key_inventory(
+        scope=scope,
+        visible_team_ids=None,
+        visible_project_ids=None,
+        manageable_team_ids={team.id},
+        manageable_project_ids=set(),
+        can_manage_all=False,
+        team_id=None,
+        project_id=None,
+        status="active",
+        search="Bulk key",
+        usage="used",
+        limit=5,
+        offset=1000,
+        db=db_session,
+    )
 
     assert page.total == 1005
-    assert query_count <= 10
     assert len(page.items) == 5
     assert [item.name for item in page.items] == [
         f"Bulk key {index:04d}" for index in range(4, -1, -1)
     ]
+    assert all(call["status"] == "active" for call in inventory_calls)
+    assert all(call["limit"] == 250 for call in inventory_calls)
+    assert all(call["include_total"] is False for call in inventory_calls)
+    assert [call["offset"] for call in inventory_calls] == [0, 250, 500, 750, 1000, 1005]
 
 
 async def test_effective_access_explains_routability_and_key_blockers(

@@ -93,6 +93,13 @@ class PolicyAssignment(Base):
             sqlite_where=text("effective_to is null"),
             postgresql_where=text("effective_to is null"),
         ),
+        Index(
+            "ix_policy_assignments_org_type_active_created",
+            "org_id",
+            "policy_type",
+            "is_active",
+            "created_at",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)

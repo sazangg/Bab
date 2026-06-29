@@ -251,6 +251,17 @@ async def create_chat_completion(
         ) from exc
     except gateway_streaming.StreamingBlockedByResponseGuardrailError as exc:
         sync_execution_state()
+        await gateway_failures.finalize_streaming_response_guardrail_blocked(
+            context=_failure_context(
+                resolved=resolved,
+                gateway_request_id=gateway_request_id,
+                current_route_attempt_id=current_route_attempt_id,
+                reservation_ids=reservation_ids,
+                started_at=started_at,
+                gateway_endpoint="chat_completions",
+            ),
+            db=db,
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=exc.detail,
@@ -269,11 +280,11 @@ async def create_chat_completion(
             db=db,
         )
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail=exc.detail,
         ) from exc
     except HTTPException as exc:
-        if exc.status_code != status.HTTP_413_REQUEST_ENTITY_TOO_LARGE:
+        if exc.status_code != status.HTTP_413_CONTENT_TOO_LARGE:
             raise
         await gateway_failures.finalize_request_body_too_large(
             context=_failure_context(
@@ -515,7 +526,7 @@ async def create_anthropic_message(
             db=db,
         )
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail=exc.detail,
         ) from exc
     except InvalidVirtualKeyError as exc:
@@ -529,7 +540,7 @@ async def create_anthropic_message(
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
     except HTTPException as exc:
-        if exc.status_code != status.HTTP_413_REQUEST_ENTITY_TOO_LARGE:
+        if exc.status_code != status.HTTP_413_CONTENT_TOO_LARGE:
             raise
         await gateway_failures.finalize_request_body_too_large(
             context=_failure_context(
@@ -813,7 +824,7 @@ async def _handle_openai_compatible_proxy(
             db=db,
         )
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail=exc.detail,
         ) from exc
     except InvalidVirtualKeyError as exc:
@@ -827,7 +838,7 @@ async def _handle_openai_compatible_proxy(
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
     except HTTPException as exc:
-        if exc.status_code != status.HTTP_413_REQUEST_ENTITY_TOO_LARGE:
+        if exc.status_code != status.HTTP_413_CONTENT_TOO_LARGE:
             raise
         await gateway_failures.finalize_request_body_too_large(
             context=_failure_context(
@@ -985,7 +996,10 @@ async def _read_body_within_limit(request: Request, max_body_bytes: int) -> byte
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="invalid content-length header") from exc
         if declared > max_body_bytes:
-            raise HTTPException(status_code=413, detail="request body is too large")
+            raise HTTPException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                detail="request body is too large",
+            )
     # Stream with a running byte counter so a chunked or under-declared body is
     # aborted before the whole payload is buffered into memory. This runs before
     # virtual-key authentication, so it is the guard against unauthenticated OOM.
@@ -994,14 +1008,20 @@ async def _read_body_within_limit(request: Request, max_body_bytes: int) -> byte
     async for chunk in request.stream():
         total += len(chunk)
         if total > max_body_bytes:
-            raise HTTPException(status_code=413, detail="request body is too large")
+            raise HTTPException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                detail="request body is too large",
+            )
         chunks.append(chunk)
     return b"".join(chunks)
 
 
 def _enforce_body_size(raw_body: bytes, max_body_bytes: int) -> None:
     if len(raw_body) > max_body_bytes:
-        raise HTTPException(status_code=413, detail="request body is too large")
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="request body is too large",
+        )
 
 
 def _failure_context(

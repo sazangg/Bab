@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, String
+from sqlalchemy import DateTime, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -10,6 +10,16 @@ from app.core.database import Base
 
 class VirtualKey(Base):
     __tablename__ = "virtual_keys"
+    __table_args__ = (
+        Index("ix_virtual_keys_org_created_id", "org_id", "created_at", "id"),
+        Index(
+            "ix_virtual_keys_org_project_created_id",
+            "org_id",
+            "project_id",
+            "created_at",
+            "id",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     org_id: Mapped[UUID] = mapped_column(

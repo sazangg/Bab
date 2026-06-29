@@ -7,7 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.deps import get_current_user, get_scope, require_permission
 from app.core.config import settings
 from app.core.database import Scope, get_db
+from app.core.image_detection import detect_image_extension
 from app.modules.auth.schemas import AuthenticatedUser
+from app.modules.authorization.permissions import Permissions
 from app.modules.settings import facade
 from app.modules.settings.schemas import (
     GatewayMetadataResponse,
@@ -18,8 +20,14 @@ from app.modules.settings.schemas import (
 router = APIRouter(prefix="/settings", tags=["settings"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RequestScope = Annotated[Scope, Depends(get_scope)]
-SettingsViewer = Annotated[AuthenticatedUser, Depends(require_permission("settings.view"))]
-SettingsAdmin = Annotated[AuthenticatedUser, Depends(require_permission("settings.manage"))]
+SettingsViewer = Annotated[
+    AuthenticatedUser,
+    Depends(require_permission(Permissions.SETTINGS_VIEW)),
+]
+SettingsAdmin = Annotated[
+    AuthenticatedUser,
+    Depends(require_permission(Permissions.SETTINGS_MANAGE)),
+]
 CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]
 
 
@@ -67,10 +75,13 @@ async def upload_organization_logo(
     # buffering the whole (potentially huge) body into memory.
     content = await file.read(2_000_001)
     if len(content) > 2_000_000:
-        raise HTTPException(status_code=413, detail="logo image is too large")
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="logo image is too large",
+        )
     # Derive the type from the actual bytes (magic number), not the client-supplied
     # content-type, so a non-image / polyglot payload cannot be stored as org_logo.*.
-    extension = _detect_image_extension(content)
+    extension = detect_image_extension(content)
     if extension is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -90,12 +101,3 @@ async def upload_organization_logo(
         db=db,
     )
 
-
-def _detect_image_extension(content: bytes) -> str | None:
-    if content.startswith(b"\x89PNG\r\n\x1a\n"):
-        return ".png"
-    if content.startswith(b"\xff\xd8\xff"):
-        return ".jpg"
-    if len(content) >= 12 and content[0:4] == b"RIFF" and content[8:12] == b"WEBP":
-        return ".webp"
-    return None

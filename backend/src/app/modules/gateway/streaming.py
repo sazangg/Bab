@@ -132,7 +132,6 @@ async def prepare_openai_compatible_streaming(
         context=guardrail_context,
         db=db,
     ):
-        await gateway_limits.release_reservations(reservation_ids=reservation_ids, db=db)
         raise StreamingBlockedByResponseGuardrailError()
     upstream = await providers_facade.stream_chat_completion(
         provider_id=resolved.provider_id,

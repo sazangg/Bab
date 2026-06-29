@@ -22,7 +22,7 @@ from app.modules.gateway_history.internal.models import (
 from app.modules.guardrails.internal.models import GuardrailEvent
 from app.modules.keys import facade as keys_facade
 from app.modules.keys.schemas import ResolveAccessRequest
-from app.modules.usage.internal.models import UsageRecord
+from app.modules.usage.internal.models import LimitPolicyReservation, UsageRecord
 
 
 async def _login(client: AsyncClient) -> dict[str, str]:
@@ -1617,6 +1617,20 @@ async def test_streaming_is_disabled_when_output_guardrail_is_enforced(
         "streaming is disabled when enforced output guardrails apply"
     )
     assert upstream_called is False
+    gateway_request = await db_session.scalar(select(GatewayRequest))
+    assert gateway_request is not None
+    assert gateway_request.final_http_status == 400
+    assert gateway_request.final_error_code == "streaming_response_guardrail_unsupported"
+    route_attempt = await db_session.scalar(select(GatewayRouteAttempt))
+    assert route_attempt is not None
+    assert route_attempt.status == "blocked"
+    assert route_attempt.error_code == "streaming_response_guardrail_unsupported"
+    active_reservations = (
+        await db_session.scalars(
+            select(LimitPolicyReservation).where(LimitPolicyReservation.status == "active")
+        )
+    ).all()
+    assert active_reservations == []
 
 
 @pytest.mark.asyncio
