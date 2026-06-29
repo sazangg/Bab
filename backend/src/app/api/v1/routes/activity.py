@@ -13,7 +13,7 @@ from app.api.v1.deps import get_current_user, get_scope
 from app.core.csv_safe import sanitize_csv_cell
 from app.core.database import Scope, get_db
 from app.modules.activity import facade
-from app.modules.activity.schemas import ActivityEventResponse
+from app.modules.activity.schemas import ActivityEventPageResponse
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.authorization import facade as authorization_facade
 from app.modules.authorization.permissions import Permissions
@@ -45,7 +45,7 @@ async def list_activity_events(
     before_at: datetime | None = None,
     before_id: UUID | None = None,
     limit: int = Query(default=100, ge=1, le=100),
-) -> list[ActivityEventResponse]:
+) -> ActivityEventPageResponse:
     team_id, project_id, virtual_key_id = _merge_entity_filter(
         entity_type=entity_type,
         entity_id=entity_id,
@@ -61,7 +61,7 @@ async def list_activity_events(
         project_id=project_id,
         virtual_key_id=virtual_key_id,
     )
-    return await facade.list_events(
+    events = await facade.list_events(
         org_id=scope.org_id,
         category=category,
         severity=severity,
@@ -77,8 +77,18 @@ async def list_activity_events(
         search=q.strip() if q and q.strip() else None,
         before_at=before_at,
         before_id=before_id,
-        limit=limit,
+        limit=limit + 1,
         db=db,
+    )
+    items = events[:limit]
+    has_more = len(events) > limit
+    next_item = items[-1] if has_more and items else None
+    return ActivityEventPageResponse(
+        items=items,
+        limit=limit,
+        has_more=has_more,
+        next_before_at=next_item.created_at if next_item else None,
+        next_before_id=next_item.id if next_item else None,
     )
 
 

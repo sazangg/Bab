@@ -32,13 +32,13 @@ import type {
   CreatePolicyAssignmentRequest,
   CreateScopedPolicyAssignmentRequest,
   GetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetParams,
-  HTTPValidationError,
   LimitPolicyResponse,
   LimitPolicyRuleResponse,
   PolicyAssignmentResponse,
   PolicyImpactResponse,
   PolicySimulationRequest,
   PolicySimulationResponse,
+  ProblemDetail,
   ScopedPolicyAssignmentResponse,
   UpdateAccessPolicyRequest,
   UpdateLimitPolicyRequest,
@@ -51,17 +51,32 @@ import { apiMutator } from '../../orval-mutator';
 
 
 
+export type HTTPStatusCode1xx = 100 | 101 | 102 | 103;
+export type HTTPStatusCode2xx = 200 | 201 | 202 | 203 | 204 | 205 | 206 | 207;
+export type HTTPStatusCode3xx = 300 | 301 | 302 | 303 | 304 | 305 | 307 | 308;
+export type HTTPStatusCode4xx = 400 | 401 | 402 | 403 | 404 | 405 | 406 | 407 | 408 | 409 | 410 | 411 | 412 | 413 | 414 | 415 | 416 | 417 | 418 | 419 | 420 | 421 | 422 | 423 | 424 | 426 | 428 | 429 | 431 | 451;
+export type HTTPStatusCode5xx = 500 | 501 | 502 | 503 | 504 | 505 | 507 | 511;
+export type HTTPStatusCodes = HTTPStatusCode1xx | HTTPStatusCode2xx | HTTPStatusCode3xx | HTTPStatusCode4xx | HTTPStatusCode5xx;
+
+
 export type listAccessPoliciesApiV1PoliciesAccessGetResponse200 = {
   data: AccessPolicyResponse[]
   status: 200
 }
 
+export type listAccessPoliciesApiV1PoliciesAccessGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
 export type listAccessPoliciesApiV1PoliciesAccessGetResponseSuccess = (listAccessPoliciesApiV1PoliciesAccessGetResponse200) & {
   headers: Headers;
 };
-;
+export type listAccessPoliciesApiV1PoliciesAccessGetResponseError = (listAccessPoliciesApiV1PoliciesAccessGetResponseDefault) & {
+  headers: Headers;
+};
 
-export type listAccessPoliciesApiV1PoliciesAccessGetResponse = (listAccessPoliciesApiV1PoliciesAccessGetResponseSuccess)
+export type listAccessPoliciesApiV1PoliciesAccessGetResponse = (listAccessPoliciesApiV1PoliciesAccessGetResponseSuccess | listAccessPoliciesApiV1PoliciesAccessGetResponseError)
 
 export const getListAccessPoliciesApiV1PoliciesAccessGetUrl = () => {
 
@@ -96,7 +111,7 @@ export const getListAccessPoliciesApiV1PoliciesAccessGetQueryKey = () => {
     }
 
 
-export const getListAccessPoliciesApiV1PoliciesAccessGetQueryOptions = <TData = Awaited<ReturnType<typeof listAccessPoliciesApiV1PoliciesAccessGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAccessPoliciesApiV1PoliciesAccessGet>>, TError, TData>>, }
+export const getListAccessPoliciesApiV1PoliciesAccessGetQueryOptions = <TData = Awaited<ReturnType<typeof listAccessPoliciesApiV1PoliciesAccessGet>>, TError = ProblemDetail>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAccessPoliciesApiV1PoliciesAccessGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -115,10 +130,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type ListAccessPoliciesApiV1PoliciesAccessGetQueryResult = NonNullable<Awaited<ReturnType<typeof listAccessPoliciesApiV1PoliciesAccessGet>>>
-export type ListAccessPoliciesApiV1PoliciesAccessGetQueryError = unknown
+export type ListAccessPoliciesApiV1PoliciesAccessGetQueryError = ProblemDetail
 
 
-export function useListAccessPoliciesApiV1PoliciesAccessGet<TData = Awaited<ReturnType<typeof listAccessPoliciesApiV1PoliciesAccessGet>>, TError = unknown>(
+export function useListAccessPoliciesApiV1PoliciesAccessGet<TData = Awaited<ReturnType<typeof listAccessPoliciesApiV1PoliciesAccessGet>>, TError = ProblemDetail>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAccessPoliciesApiV1PoliciesAccessGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listAccessPoliciesApiV1PoliciesAccessGet>>,
@@ -128,7 +143,7 @@ export function useListAccessPoliciesApiV1PoliciesAccessGet<TData = Awaited<Retu
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListAccessPoliciesApiV1PoliciesAccessGet<TData = Awaited<ReturnType<typeof listAccessPoliciesApiV1PoliciesAccessGet>>, TError = unknown>(
+export function useListAccessPoliciesApiV1PoliciesAccessGet<TData = Awaited<ReturnType<typeof listAccessPoliciesApiV1PoliciesAccessGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAccessPoliciesApiV1PoliciesAccessGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listAccessPoliciesApiV1PoliciesAccessGet>>,
@@ -138,7 +153,7 @@ export function useListAccessPoliciesApiV1PoliciesAccessGet<TData = Awaited<Retu
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListAccessPoliciesApiV1PoliciesAccessGet<TData = Awaited<ReturnType<typeof listAccessPoliciesApiV1PoliciesAccessGet>>, TError = unknown>(
+export function useListAccessPoliciesApiV1PoliciesAccessGet<TData = Awaited<ReturnType<typeof listAccessPoliciesApiV1PoliciesAccessGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAccessPoliciesApiV1PoliciesAccessGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -146,7 +161,7 @@ export function useListAccessPoliciesApiV1PoliciesAccessGet<TData = Awaited<Retu
  * @summary List Access Policies
  */
 
-export function useListAccessPoliciesApiV1PoliciesAccessGet<TData = Awaited<ReturnType<typeof listAccessPoliciesApiV1PoliciesAccessGet>>, TError = unknown>(
+export function useListAccessPoliciesApiV1PoliciesAccessGet<TData = Awaited<ReturnType<typeof listAccessPoliciesApiV1PoliciesAccessGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAccessPoliciesApiV1PoliciesAccessGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -169,14 +184,19 @@ export type createAccessPolicyApiV1PoliciesAccessPostResponse201 = {
 }
 
 export type createAccessPolicyApiV1PoliciesAccessPostResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type createAccessPolicyApiV1PoliciesAccessPostResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 201 | 422>
 }
 
 export type createAccessPolicyApiV1PoliciesAccessPostResponseSuccess = (createAccessPolicyApiV1PoliciesAccessPostResponse201) & {
   headers: Headers;
 };
-export type createAccessPolicyApiV1PoliciesAccessPostResponseError = (createAccessPolicyApiV1PoliciesAccessPostResponse422) & {
+export type createAccessPolicyApiV1PoliciesAccessPostResponseError = (createAccessPolicyApiV1PoliciesAccessPostResponse422 | createAccessPolicyApiV1PoliciesAccessPostResponseDefault) & {
   headers: Headers;
 };
 
@@ -208,7 +228,7 @@ export const createAccessPolicyApiV1PoliciesAccessPost = async (createAccessPoli
 
 
 
-export const getCreateAccessPolicyApiV1PoliciesAccessPostMutationOptions = <TError = HTTPValidationError,
+export const getCreateAccessPolicyApiV1PoliciesAccessPostMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAccessPolicyApiV1PoliciesAccessPost>>, TError,{data: CreateAccessPolicyRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof createAccessPolicyApiV1PoliciesAccessPost>>, TError,{data: CreateAccessPolicyRequest}, TContext> => {
 
@@ -237,12 +257,12 @@ const {mutation: mutationOptions} = options ?
 
     export type CreateAccessPolicyApiV1PoliciesAccessPostMutationResult = NonNullable<Awaited<ReturnType<typeof createAccessPolicyApiV1PoliciesAccessPost>>>
     export type CreateAccessPolicyApiV1PoliciesAccessPostMutationBody = CreateAccessPolicyRequest
-    export type CreateAccessPolicyApiV1PoliciesAccessPostMutationError = HTTPValidationError
+    export type CreateAccessPolicyApiV1PoliciesAccessPostMutationError = ProblemDetail
 
     /**
  * @summary Create Access Policy
  */
-export const useCreateAccessPolicyApiV1PoliciesAccessPost = <TError = HTTPValidationError,
+export const useCreateAccessPolicyApiV1PoliciesAccessPost = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAccessPolicyApiV1PoliciesAccessPost>>, TError,{data: CreateAccessPolicyRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof createAccessPolicyApiV1PoliciesAccessPost>>,
@@ -258,14 +278,19 @@ export const useCreateAccessPolicyApiV1PoliciesAccessPost = <TError = HTTPValida
 }
 
 export type getAccessPolicyApiV1PoliciesAccessPolicyIdGetResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type getAccessPolicyApiV1PoliciesAccessPolicyIdGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type getAccessPolicyApiV1PoliciesAccessPolicyIdGetResponseSuccess = (getAccessPolicyApiV1PoliciesAccessPolicyIdGetResponse200) & {
   headers: Headers;
 };
-export type getAccessPolicyApiV1PoliciesAccessPolicyIdGetResponseError = (getAccessPolicyApiV1PoliciesAccessPolicyIdGetResponse422) & {
+export type getAccessPolicyApiV1PoliciesAccessPolicyIdGetResponseError = (getAccessPolicyApiV1PoliciesAccessPolicyIdGetResponse422 | getAccessPolicyApiV1PoliciesAccessPolicyIdGetResponseDefault) & {
   headers: Headers;
 };
 
@@ -304,7 +329,7 @@ export const getGetAccessPolicyApiV1PoliciesAccessPolicyIdGetQueryKey = (policyI
     }
 
 
-export const getGetAccessPolicyApiV1PoliciesAccessPolicyIdGetQueryOptions = <TData = Awaited<ReturnType<typeof getAccessPolicyApiV1PoliciesAccessPolicyIdGet>>, TError = HTTPValidationError>(policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyApiV1PoliciesAccessPolicyIdGet>>, TError, TData>>, }
+export const getGetAccessPolicyApiV1PoliciesAccessPolicyIdGetQueryOptions = <TData = Awaited<ReturnType<typeof getAccessPolicyApiV1PoliciesAccessPolicyIdGet>>, TError = ProblemDetail>(policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyApiV1PoliciesAccessPolicyIdGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -323,10 +348,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type GetAccessPolicyApiV1PoliciesAccessPolicyIdGetQueryResult = NonNullable<Awaited<ReturnType<typeof getAccessPolicyApiV1PoliciesAccessPolicyIdGet>>>
-export type GetAccessPolicyApiV1PoliciesAccessPolicyIdGetQueryError = HTTPValidationError
+export type GetAccessPolicyApiV1PoliciesAccessPolicyIdGetQueryError = ProblemDetail
 
 
-export function useGetAccessPolicyApiV1PoliciesAccessPolicyIdGet<TData = Awaited<ReturnType<typeof getAccessPolicyApiV1PoliciesAccessPolicyIdGet>>, TError = HTTPValidationError>(
+export function useGetAccessPolicyApiV1PoliciesAccessPolicyIdGet<TData = Awaited<ReturnType<typeof getAccessPolicyApiV1PoliciesAccessPolicyIdGet>>, TError = ProblemDetail>(
  policyId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyApiV1PoliciesAccessPolicyIdGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getAccessPolicyApiV1PoliciesAccessPolicyIdGet>>,
@@ -336,7 +361,7 @@ export function useGetAccessPolicyApiV1PoliciesAccessPolicyIdGet<TData = Awaited
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetAccessPolicyApiV1PoliciesAccessPolicyIdGet<TData = Awaited<ReturnType<typeof getAccessPolicyApiV1PoliciesAccessPolicyIdGet>>, TError = HTTPValidationError>(
+export function useGetAccessPolicyApiV1PoliciesAccessPolicyIdGet<TData = Awaited<ReturnType<typeof getAccessPolicyApiV1PoliciesAccessPolicyIdGet>>, TError = ProblemDetail>(
  policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyApiV1PoliciesAccessPolicyIdGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getAccessPolicyApiV1PoliciesAccessPolicyIdGet>>,
@@ -346,7 +371,7 @@ export function useGetAccessPolicyApiV1PoliciesAccessPolicyIdGet<TData = Awaited
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetAccessPolicyApiV1PoliciesAccessPolicyIdGet<TData = Awaited<ReturnType<typeof getAccessPolicyApiV1PoliciesAccessPolicyIdGet>>, TError = HTTPValidationError>(
+export function useGetAccessPolicyApiV1PoliciesAccessPolicyIdGet<TData = Awaited<ReturnType<typeof getAccessPolicyApiV1PoliciesAccessPolicyIdGet>>, TError = ProblemDetail>(
  policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyApiV1PoliciesAccessPolicyIdGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -354,7 +379,7 @@ export function useGetAccessPolicyApiV1PoliciesAccessPolicyIdGet<TData = Awaited
  * @summary Get Access Policy
  */
 
-export function useGetAccessPolicyApiV1PoliciesAccessPolicyIdGet<TData = Awaited<ReturnType<typeof getAccessPolicyApiV1PoliciesAccessPolicyIdGet>>, TError = HTTPValidationError>(
+export function useGetAccessPolicyApiV1PoliciesAccessPolicyIdGet<TData = Awaited<ReturnType<typeof getAccessPolicyApiV1PoliciesAccessPolicyIdGet>>, TError = ProblemDetail>(
  policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyApiV1PoliciesAccessPolicyIdGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -377,14 +402,19 @@ export type updateAccessPolicyApiV1PoliciesAccessPolicyIdPatchResponse200 = {
 }
 
 export type updateAccessPolicyApiV1PoliciesAccessPolicyIdPatchResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type updateAccessPolicyApiV1PoliciesAccessPolicyIdPatchResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type updateAccessPolicyApiV1PoliciesAccessPolicyIdPatchResponseSuccess = (updateAccessPolicyApiV1PoliciesAccessPolicyIdPatchResponse200) & {
   headers: Headers;
 };
-export type updateAccessPolicyApiV1PoliciesAccessPolicyIdPatchResponseError = (updateAccessPolicyApiV1PoliciesAccessPolicyIdPatchResponse422) & {
+export type updateAccessPolicyApiV1PoliciesAccessPolicyIdPatchResponseError = (updateAccessPolicyApiV1PoliciesAccessPolicyIdPatchResponse422 | updateAccessPolicyApiV1PoliciesAccessPolicyIdPatchResponseDefault) & {
   headers: Headers;
 };
 
@@ -417,7 +447,7 @@ export const updateAccessPolicyApiV1PoliciesAccessPolicyIdPatch = async (policyI
 
 
 
-export const getUpdateAccessPolicyApiV1PoliciesAccessPolicyIdPatchMutationOptions = <TError = HTTPValidationError,
+export const getUpdateAccessPolicyApiV1PoliciesAccessPolicyIdPatchMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAccessPolicyApiV1PoliciesAccessPolicyIdPatch>>, TError,{policyId: string;data: UpdateAccessPolicyRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof updateAccessPolicyApiV1PoliciesAccessPolicyIdPatch>>, TError,{policyId: string;data: UpdateAccessPolicyRequest}, TContext> => {
 
@@ -446,12 +476,12 @@ const {mutation: mutationOptions} = options ?
 
     export type UpdateAccessPolicyApiV1PoliciesAccessPolicyIdPatchMutationResult = NonNullable<Awaited<ReturnType<typeof updateAccessPolicyApiV1PoliciesAccessPolicyIdPatch>>>
     export type UpdateAccessPolicyApiV1PoliciesAccessPolicyIdPatchMutationBody = UpdateAccessPolicyRequest
-    export type UpdateAccessPolicyApiV1PoliciesAccessPolicyIdPatchMutationError = HTTPValidationError
+    export type UpdateAccessPolicyApiV1PoliciesAccessPolicyIdPatchMutationError = ProblemDetail
 
     /**
  * @summary Update Access Policy
  */
-export const useUpdateAccessPolicyApiV1PoliciesAccessPolicyIdPatch = <TError = HTTPValidationError,
+export const useUpdateAccessPolicyApiV1PoliciesAccessPolicyIdPatch = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAccessPolicyApiV1PoliciesAccessPolicyIdPatch>>, TError,{policyId: string;data: UpdateAccessPolicyRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof updateAccessPolicyApiV1PoliciesAccessPolicyIdPatch>>,
@@ -467,14 +497,19 @@ export const useUpdateAccessPolicyApiV1PoliciesAccessPolicyIdPatch = <TError = H
 }
 
 export type deleteAccessPolicyApiV1PoliciesAccessPolicyIdDeleteResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type deleteAccessPolicyApiV1PoliciesAccessPolicyIdDeleteResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 204 | 422>
 }
 
 export type deleteAccessPolicyApiV1PoliciesAccessPolicyIdDeleteResponseSuccess = (deleteAccessPolicyApiV1PoliciesAccessPolicyIdDeleteResponse204) & {
   headers: Headers;
 };
-export type deleteAccessPolicyApiV1PoliciesAccessPolicyIdDeleteResponseError = (deleteAccessPolicyApiV1PoliciesAccessPolicyIdDeleteResponse422) & {
+export type deleteAccessPolicyApiV1PoliciesAccessPolicyIdDeleteResponseError = (deleteAccessPolicyApiV1PoliciesAccessPolicyIdDeleteResponse422 | deleteAccessPolicyApiV1PoliciesAccessPolicyIdDeleteResponseDefault) & {
   headers: Headers;
 };
 
@@ -505,7 +540,7 @@ export const deleteAccessPolicyApiV1PoliciesAccessPolicyIdDelete = async (policy
 
 
 
-export const getDeleteAccessPolicyApiV1PoliciesAccessPolicyIdDeleteMutationOptions = <TError = HTTPValidationError,
+export const getDeleteAccessPolicyApiV1PoliciesAccessPolicyIdDeleteMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAccessPolicyApiV1PoliciesAccessPolicyIdDelete>>, TError,{policyId: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof deleteAccessPolicyApiV1PoliciesAccessPolicyIdDelete>>, TError,{policyId: string}, TContext> => {
 
@@ -534,12 +569,12 @@ const {mutation: mutationOptions} = options ?
 
     export type DeleteAccessPolicyApiV1PoliciesAccessPolicyIdDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof deleteAccessPolicyApiV1PoliciesAccessPolicyIdDelete>>>
 
-    export type DeleteAccessPolicyApiV1PoliciesAccessPolicyIdDeleteMutationError = HTTPValidationError
+    export type DeleteAccessPolicyApiV1PoliciesAccessPolicyIdDeleteMutationError = ProblemDetail
 
     /**
  * @summary Delete Access Policy
  */
-export const useDeleteAccessPolicyApiV1PoliciesAccessPolicyIdDelete = <TError = HTTPValidationError,
+export const useDeleteAccessPolicyApiV1PoliciesAccessPolicyIdDelete = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAccessPolicyApiV1PoliciesAccessPolicyIdDelete>>, TError,{policyId: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof deleteAccessPolicyApiV1PoliciesAccessPolicyIdDelete>>,
@@ -555,14 +590,19 @@ export const useDeleteAccessPolicyApiV1PoliciesAccessPolicyIdDelete = <TError = 
 }
 
 export type getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetResponseSuccess = (getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetResponse200) & {
   headers: Headers;
 };
-export type getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetResponseError = (getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetResponse422) & {
+export type getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetResponseError = (getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetResponse422 | getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetResponseDefault) & {
   headers: Headers;
 };
 
@@ -601,7 +641,7 @@ export const getGetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetQueryKe
     }
 
 
-export const getGetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>, TError = HTTPValidationError>(policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>, TError, TData>>, }
+export const getGetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>, TError = ProblemDetail>(policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -620,10 +660,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type GetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetQueryResult = NonNullable<Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>>
-export type GetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetQueryError = HTTPValidationError
+export type GetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGetQueryError = ProblemDetail
 
 
-export function useGetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>, TError = ProblemDetail>(
  policyId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>,
@@ -633,7 +673,7 @@ export function useGetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet<TDa
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>, TError = ProblemDetail>(
  policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>,
@@ -643,7 +683,7 @@ export function useGetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet<TDa
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>, TError = ProblemDetail>(
  policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -651,7 +691,7 @@ export function useGetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet<TDa
  * @summary Get Access Policy Impact
  */
 
-export function useGetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>, TError = ProblemDetail>(
  policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyImpactApiV1PoliciesAccessPolicyIdImpactGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -674,14 +714,19 @@ export type getAccessPolicyOptionsApiV1PoliciesAccessOptionsGetResponse200 = {
 }
 
 export type getAccessPolicyOptionsApiV1PoliciesAccessOptionsGetResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type getAccessPolicyOptionsApiV1PoliciesAccessOptionsGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type getAccessPolicyOptionsApiV1PoliciesAccessOptionsGetResponseSuccess = (getAccessPolicyOptionsApiV1PoliciesAccessOptionsGetResponse200) & {
   headers: Headers;
 };
-export type getAccessPolicyOptionsApiV1PoliciesAccessOptionsGetResponseError = (getAccessPolicyOptionsApiV1PoliciesAccessOptionsGetResponse422) & {
+export type getAccessPolicyOptionsApiV1PoliciesAccessOptionsGetResponseError = (getAccessPolicyOptionsApiV1PoliciesAccessOptionsGetResponse422 | getAccessPolicyOptionsApiV1PoliciesAccessOptionsGetResponseDefault) & {
   headers: Headers;
 };
 
@@ -727,7 +772,7 @@ export const getGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetQueryKey = (p
     }
 
 
-export const getGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetQueryOptions = <TData = Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>, TError = HTTPValidationError>(params: GetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>, TError, TData>>, }
+export const getGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetQueryOptions = <TData = Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>, TError = ProblemDetail>(params: GetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -746,10 +791,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type GetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetQueryResult = NonNullable<Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>>
-export type GetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetQueryError = HTTPValidationError
+export type GetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetQueryError = ProblemDetail
 
 
-export function useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet<TData = Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>, TError = HTTPValidationError>(
+export function useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet<TData = Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>, TError = ProblemDetail>(
  params: GetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>,
@@ -759,7 +804,7 @@ export function useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet<TData = A
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet<TData = Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>, TError = HTTPValidationError>(
+export function useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet<TData = Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>, TError = ProblemDetail>(
  params: GetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>,
@@ -769,7 +814,7 @@ export function useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet<TData = A
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet<TData = Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>, TError = HTTPValidationError>(
+export function useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet<TData = Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>, TError = ProblemDetail>(
  params: GetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -777,7 +822,7 @@ export function useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet<TData = A
  * @summary Get Access Policy Options
  */
 
-export function useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet<TData = Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>, TError = HTTPValidationError>(
+export function useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet<TData = Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>, TError = ProblemDetail>(
  params: GetAccessPolicyOptionsApiV1PoliciesAccessOptionsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAccessPolicyOptionsApiV1PoliciesAccessOptionsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -800,14 +845,19 @@ export type simulatePoliciesApiV1PoliciesSimulationsPostResponse200 = {
 }
 
 export type simulatePoliciesApiV1PoliciesSimulationsPostResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type simulatePoliciesApiV1PoliciesSimulationsPostResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type simulatePoliciesApiV1PoliciesSimulationsPostResponseSuccess = (simulatePoliciesApiV1PoliciesSimulationsPostResponse200) & {
   headers: Headers;
 };
-export type simulatePoliciesApiV1PoliciesSimulationsPostResponseError = (simulatePoliciesApiV1PoliciesSimulationsPostResponse422) & {
+export type simulatePoliciesApiV1PoliciesSimulationsPostResponseError = (simulatePoliciesApiV1PoliciesSimulationsPostResponse422 | simulatePoliciesApiV1PoliciesSimulationsPostResponseDefault) & {
   headers: Headers;
 };
 
@@ -839,7 +889,7 @@ export const simulatePoliciesApiV1PoliciesSimulationsPost = async (policySimulat
 
 
 
-export const getSimulatePoliciesApiV1PoliciesSimulationsPostMutationOptions = <TError = HTTPValidationError,
+export const getSimulatePoliciesApiV1PoliciesSimulationsPostMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof simulatePoliciesApiV1PoliciesSimulationsPost>>, TError,{data: PolicySimulationRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof simulatePoliciesApiV1PoliciesSimulationsPost>>, TError,{data: PolicySimulationRequest}, TContext> => {
 
@@ -868,12 +918,12 @@ const {mutation: mutationOptions} = options ?
 
     export type SimulatePoliciesApiV1PoliciesSimulationsPostMutationResult = NonNullable<Awaited<ReturnType<typeof simulatePoliciesApiV1PoliciesSimulationsPost>>>
     export type SimulatePoliciesApiV1PoliciesSimulationsPostMutationBody = PolicySimulationRequest
-    export type SimulatePoliciesApiV1PoliciesSimulationsPostMutationError = HTTPValidationError
+    export type SimulatePoliciesApiV1PoliciesSimulationsPostMutationError = ProblemDetail
 
     /**
  * @summary Simulate Policies
  */
-export const useSimulatePoliciesApiV1PoliciesSimulationsPost = <TError = HTTPValidationError,
+export const useSimulatePoliciesApiV1PoliciesSimulationsPost = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof simulatePoliciesApiV1PoliciesSimulationsPost>>, TError,{data: PolicySimulationRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof simulatePoliciesApiV1PoliciesSimulationsPost>>,
@@ -888,12 +938,19 @@ export const useSimulatePoliciesApiV1PoliciesSimulationsPost = <TError = HTTPVal
   status: 200
 }
 
+export type listLimitPoliciesApiV1PoliciesLimitsGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
 export type listLimitPoliciesApiV1PoliciesLimitsGetResponseSuccess = (listLimitPoliciesApiV1PoliciesLimitsGetResponse200) & {
   headers: Headers;
 };
-;
+export type listLimitPoliciesApiV1PoliciesLimitsGetResponseError = (listLimitPoliciesApiV1PoliciesLimitsGetResponseDefault) & {
+  headers: Headers;
+};
 
-export type listLimitPoliciesApiV1PoliciesLimitsGetResponse = (listLimitPoliciesApiV1PoliciesLimitsGetResponseSuccess)
+export type listLimitPoliciesApiV1PoliciesLimitsGetResponse = (listLimitPoliciesApiV1PoliciesLimitsGetResponseSuccess | listLimitPoliciesApiV1PoliciesLimitsGetResponseError)
 
 export const getListLimitPoliciesApiV1PoliciesLimitsGetUrl = () => {
 
@@ -928,7 +985,7 @@ export const getListLimitPoliciesApiV1PoliciesLimitsGetQueryKey = () => {
     }
 
 
-export const getListLimitPoliciesApiV1PoliciesLimitsGetQueryOptions = <TData = Awaited<ReturnType<typeof listLimitPoliciesApiV1PoliciesLimitsGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listLimitPoliciesApiV1PoliciesLimitsGet>>, TError, TData>>, }
+export const getListLimitPoliciesApiV1PoliciesLimitsGetQueryOptions = <TData = Awaited<ReturnType<typeof listLimitPoliciesApiV1PoliciesLimitsGet>>, TError = ProblemDetail>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listLimitPoliciesApiV1PoliciesLimitsGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -947,10 +1004,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type ListLimitPoliciesApiV1PoliciesLimitsGetQueryResult = NonNullable<Awaited<ReturnType<typeof listLimitPoliciesApiV1PoliciesLimitsGet>>>
-export type ListLimitPoliciesApiV1PoliciesLimitsGetQueryError = unknown
+export type ListLimitPoliciesApiV1PoliciesLimitsGetQueryError = ProblemDetail
 
 
-export function useListLimitPoliciesApiV1PoliciesLimitsGet<TData = Awaited<ReturnType<typeof listLimitPoliciesApiV1PoliciesLimitsGet>>, TError = unknown>(
+export function useListLimitPoliciesApiV1PoliciesLimitsGet<TData = Awaited<ReturnType<typeof listLimitPoliciesApiV1PoliciesLimitsGet>>, TError = ProblemDetail>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listLimitPoliciesApiV1PoliciesLimitsGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listLimitPoliciesApiV1PoliciesLimitsGet>>,
@@ -960,7 +1017,7 @@ export function useListLimitPoliciesApiV1PoliciesLimitsGet<TData = Awaited<Retur
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListLimitPoliciesApiV1PoliciesLimitsGet<TData = Awaited<ReturnType<typeof listLimitPoliciesApiV1PoliciesLimitsGet>>, TError = unknown>(
+export function useListLimitPoliciesApiV1PoliciesLimitsGet<TData = Awaited<ReturnType<typeof listLimitPoliciesApiV1PoliciesLimitsGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listLimitPoliciesApiV1PoliciesLimitsGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listLimitPoliciesApiV1PoliciesLimitsGet>>,
@@ -970,7 +1027,7 @@ export function useListLimitPoliciesApiV1PoliciesLimitsGet<TData = Awaited<Retur
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListLimitPoliciesApiV1PoliciesLimitsGet<TData = Awaited<ReturnType<typeof listLimitPoliciesApiV1PoliciesLimitsGet>>, TError = unknown>(
+export function useListLimitPoliciesApiV1PoliciesLimitsGet<TData = Awaited<ReturnType<typeof listLimitPoliciesApiV1PoliciesLimitsGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listLimitPoliciesApiV1PoliciesLimitsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -978,7 +1035,7 @@ export function useListLimitPoliciesApiV1PoliciesLimitsGet<TData = Awaited<Retur
  * @summary List Limit Policies
  */
 
-export function useListLimitPoliciesApiV1PoliciesLimitsGet<TData = Awaited<ReturnType<typeof listLimitPoliciesApiV1PoliciesLimitsGet>>, TError = unknown>(
+export function useListLimitPoliciesApiV1PoliciesLimitsGet<TData = Awaited<ReturnType<typeof listLimitPoliciesApiV1PoliciesLimitsGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listLimitPoliciesApiV1PoliciesLimitsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -1001,14 +1058,19 @@ export type createLimitPolicyApiV1PoliciesLimitsPostResponse201 = {
 }
 
 export type createLimitPolicyApiV1PoliciesLimitsPostResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type createLimitPolicyApiV1PoliciesLimitsPostResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 201 | 422>
 }
 
 export type createLimitPolicyApiV1PoliciesLimitsPostResponseSuccess = (createLimitPolicyApiV1PoliciesLimitsPostResponse201) & {
   headers: Headers;
 };
-export type createLimitPolicyApiV1PoliciesLimitsPostResponseError = (createLimitPolicyApiV1PoliciesLimitsPostResponse422) & {
+export type createLimitPolicyApiV1PoliciesLimitsPostResponseError = (createLimitPolicyApiV1PoliciesLimitsPostResponse422 | createLimitPolicyApiV1PoliciesLimitsPostResponseDefault) & {
   headers: Headers;
 };
 
@@ -1040,7 +1102,7 @@ export const createLimitPolicyApiV1PoliciesLimitsPost = async (createLimitPolicy
 
 
 
-export const getCreateLimitPolicyApiV1PoliciesLimitsPostMutationOptions = <TError = HTTPValidationError,
+export const getCreateLimitPolicyApiV1PoliciesLimitsPostMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createLimitPolicyApiV1PoliciesLimitsPost>>, TError,{data: CreateLimitPolicyRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof createLimitPolicyApiV1PoliciesLimitsPost>>, TError,{data: CreateLimitPolicyRequest}, TContext> => {
 
@@ -1069,12 +1131,12 @@ const {mutation: mutationOptions} = options ?
 
     export type CreateLimitPolicyApiV1PoliciesLimitsPostMutationResult = NonNullable<Awaited<ReturnType<typeof createLimitPolicyApiV1PoliciesLimitsPost>>>
     export type CreateLimitPolicyApiV1PoliciesLimitsPostMutationBody = CreateLimitPolicyRequest
-    export type CreateLimitPolicyApiV1PoliciesLimitsPostMutationError = HTTPValidationError
+    export type CreateLimitPolicyApiV1PoliciesLimitsPostMutationError = ProblemDetail
 
     /**
  * @summary Create Limit Policy
  */
-export const useCreateLimitPolicyApiV1PoliciesLimitsPost = <TError = HTTPValidationError,
+export const useCreateLimitPolicyApiV1PoliciesLimitsPost = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createLimitPolicyApiV1PoliciesLimitsPost>>, TError,{data: CreateLimitPolicyRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof createLimitPolicyApiV1PoliciesLimitsPost>>,
@@ -1090,14 +1152,19 @@ export const useCreateLimitPolicyApiV1PoliciesLimitsPost = <TError = HTTPValidat
 }
 
 export type getLimitPolicyApiV1PoliciesLimitsPolicyIdGetResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type getLimitPolicyApiV1PoliciesLimitsPolicyIdGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type getLimitPolicyApiV1PoliciesLimitsPolicyIdGetResponseSuccess = (getLimitPolicyApiV1PoliciesLimitsPolicyIdGetResponse200) & {
   headers: Headers;
 };
-export type getLimitPolicyApiV1PoliciesLimitsPolicyIdGetResponseError = (getLimitPolicyApiV1PoliciesLimitsPolicyIdGetResponse422) & {
+export type getLimitPolicyApiV1PoliciesLimitsPolicyIdGetResponseError = (getLimitPolicyApiV1PoliciesLimitsPolicyIdGetResponse422 | getLimitPolicyApiV1PoliciesLimitsPolicyIdGetResponseDefault) & {
   headers: Headers;
 };
 
@@ -1136,7 +1203,7 @@ export const getGetLimitPolicyApiV1PoliciesLimitsPolicyIdGetQueryKey = (policyId
     }
 
 
-export const getGetLimitPolicyApiV1PoliciesLimitsPolicyIdGetQueryOptions = <TData = Awaited<ReturnType<typeof getLimitPolicyApiV1PoliciesLimitsPolicyIdGet>>, TError = HTTPValidationError>(policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyApiV1PoliciesLimitsPolicyIdGet>>, TError, TData>>, }
+export const getGetLimitPolicyApiV1PoliciesLimitsPolicyIdGetQueryOptions = <TData = Awaited<ReturnType<typeof getLimitPolicyApiV1PoliciesLimitsPolicyIdGet>>, TError = ProblemDetail>(policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyApiV1PoliciesLimitsPolicyIdGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -1155,10 +1222,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type GetLimitPolicyApiV1PoliciesLimitsPolicyIdGetQueryResult = NonNullable<Awaited<ReturnType<typeof getLimitPolicyApiV1PoliciesLimitsPolicyIdGet>>>
-export type GetLimitPolicyApiV1PoliciesLimitsPolicyIdGetQueryError = HTTPValidationError
+export type GetLimitPolicyApiV1PoliciesLimitsPolicyIdGetQueryError = ProblemDetail
 
 
-export function useGetLimitPolicyApiV1PoliciesLimitsPolicyIdGet<TData = Awaited<ReturnType<typeof getLimitPolicyApiV1PoliciesLimitsPolicyIdGet>>, TError = HTTPValidationError>(
+export function useGetLimitPolicyApiV1PoliciesLimitsPolicyIdGet<TData = Awaited<ReturnType<typeof getLimitPolicyApiV1PoliciesLimitsPolicyIdGet>>, TError = ProblemDetail>(
  policyId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyApiV1PoliciesLimitsPolicyIdGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getLimitPolicyApiV1PoliciesLimitsPolicyIdGet>>,
@@ -1168,7 +1235,7 @@ export function useGetLimitPolicyApiV1PoliciesLimitsPolicyIdGet<TData = Awaited<
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetLimitPolicyApiV1PoliciesLimitsPolicyIdGet<TData = Awaited<ReturnType<typeof getLimitPolicyApiV1PoliciesLimitsPolicyIdGet>>, TError = HTTPValidationError>(
+export function useGetLimitPolicyApiV1PoliciesLimitsPolicyIdGet<TData = Awaited<ReturnType<typeof getLimitPolicyApiV1PoliciesLimitsPolicyIdGet>>, TError = ProblemDetail>(
  policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyApiV1PoliciesLimitsPolicyIdGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getLimitPolicyApiV1PoliciesLimitsPolicyIdGet>>,
@@ -1178,7 +1245,7 @@ export function useGetLimitPolicyApiV1PoliciesLimitsPolicyIdGet<TData = Awaited<
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetLimitPolicyApiV1PoliciesLimitsPolicyIdGet<TData = Awaited<ReturnType<typeof getLimitPolicyApiV1PoliciesLimitsPolicyIdGet>>, TError = HTTPValidationError>(
+export function useGetLimitPolicyApiV1PoliciesLimitsPolicyIdGet<TData = Awaited<ReturnType<typeof getLimitPolicyApiV1PoliciesLimitsPolicyIdGet>>, TError = ProblemDetail>(
  policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyApiV1PoliciesLimitsPolicyIdGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -1186,7 +1253,7 @@ export function useGetLimitPolicyApiV1PoliciesLimitsPolicyIdGet<TData = Awaited<
  * @summary Get Limit Policy
  */
 
-export function useGetLimitPolicyApiV1PoliciesLimitsPolicyIdGet<TData = Awaited<ReturnType<typeof getLimitPolicyApiV1PoliciesLimitsPolicyIdGet>>, TError = HTTPValidationError>(
+export function useGetLimitPolicyApiV1PoliciesLimitsPolicyIdGet<TData = Awaited<ReturnType<typeof getLimitPolicyApiV1PoliciesLimitsPolicyIdGet>>, TError = ProblemDetail>(
  policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyApiV1PoliciesLimitsPolicyIdGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -1209,14 +1276,19 @@ export type updateLimitPolicyApiV1PoliciesLimitsPolicyIdPatchResponse200 = {
 }
 
 export type updateLimitPolicyApiV1PoliciesLimitsPolicyIdPatchResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type updateLimitPolicyApiV1PoliciesLimitsPolicyIdPatchResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type updateLimitPolicyApiV1PoliciesLimitsPolicyIdPatchResponseSuccess = (updateLimitPolicyApiV1PoliciesLimitsPolicyIdPatchResponse200) & {
   headers: Headers;
 };
-export type updateLimitPolicyApiV1PoliciesLimitsPolicyIdPatchResponseError = (updateLimitPolicyApiV1PoliciesLimitsPolicyIdPatchResponse422) & {
+export type updateLimitPolicyApiV1PoliciesLimitsPolicyIdPatchResponseError = (updateLimitPolicyApiV1PoliciesLimitsPolicyIdPatchResponse422 | updateLimitPolicyApiV1PoliciesLimitsPolicyIdPatchResponseDefault) & {
   headers: Headers;
 };
 
@@ -1249,7 +1321,7 @@ export const updateLimitPolicyApiV1PoliciesLimitsPolicyIdPatch = async (policyId
 
 
 
-export const getUpdateLimitPolicyApiV1PoliciesLimitsPolicyIdPatchMutationOptions = <TError = HTTPValidationError,
+export const getUpdateLimitPolicyApiV1PoliciesLimitsPolicyIdPatchMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateLimitPolicyApiV1PoliciesLimitsPolicyIdPatch>>, TError,{policyId: string;data: UpdateLimitPolicyRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof updateLimitPolicyApiV1PoliciesLimitsPolicyIdPatch>>, TError,{policyId: string;data: UpdateLimitPolicyRequest}, TContext> => {
 
@@ -1278,12 +1350,12 @@ const {mutation: mutationOptions} = options ?
 
     export type UpdateLimitPolicyApiV1PoliciesLimitsPolicyIdPatchMutationResult = NonNullable<Awaited<ReturnType<typeof updateLimitPolicyApiV1PoliciesLimitsPolicyIdPatch>>>
     export type UpdateLimitPolicyApiV1PoliciesLimitsPolicyIdPatchMutationBody = UpdateLimitPolicyRequest
-    export type UpdateLimitPolicyApiV1PoliciesLimitsPolicyIdPatchMutationError = HTTPValidationError
+    export type UpdateLimitPolicyApiV1PoliciesLimitsPolicyIdPatchMutationError = ProblemDetail
 
     /**
  * @summary Update Limit Policy
  */
-export const useUpdateLimitPolicyApiV1PoliciesLimitsPolicyIdPatch = <TError = HTTPValidationError,
+export const useUpdateLimitPolicyApiV1PoliciesLimitsPolicyIdPatch = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateLimitPolicyApiV1PoliciesLimitsPolicyIdPatch>>, TError,{policyId: string;data: UpdateLimitPolicyRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof updateLimitPolicyApiV1PoliciesLimitsPolicyIdPatch>>,
@@ -1299,14 +1371,19 @@ export const useUpdateLimitPolicyApiV1PoliciesLimitsPolicyIdPatch = <TError = HT
 }
 
 export type deleteLimitPolicyApiV1PoliciesLimitsPolicyIdDeleteResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type deleteLimitPolicyApiV1PoliciesLimitsPolicyIdDeleteResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 204 | 422>
 }
 
 export type deleteLimitPolicyApiV1PoliciesLimitsPolicyIdDeleteResponseSuccess = (deleteLimitPolicyApiV1PoliciesLimitsPolicyIdDeleteResponse204) & {
   headers: Headers;
 };
-export type deleteLimitPolicyApiV1PoliciesLimitsPolicyIdDeleteResponseError = (deleteLimitPolicyApiV1PoliciesLimitsPolicyIdDeleteResponse422) & {
+export type deleteLimitPolicyApiV1PoliciesLimitsPolicyIdDeleteResponseError = (deleteLimitPolicyApiV1PoliciesLimitsPolicyIdDeleteResponse422 | deleteLimitPolicyApiV1PoliciesLimitsPolicyIdDeleteResponseDefault) & {
   headers: Headers;
 };
 
@@ -1337,7 +1414,7 @@ export const deleteLimitPolicyApiV1PoliciesLimitsPolicyIdDelete = async (policyI
 
 
 
-export const getDeleteLimitPolicyApiV1PoliciesLimitsPolicyIdDeleteMutationOptions = <TError = HTTPValidationError,
+export const getDeleteLimitPolicyApiV1PoliciesLimitsPolicyIdDeleteMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteLimitPolicyApiV1PoliciesLimitsPolicyIdDelete>>, TError,{policyId: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof deleteLimitPolicyApiV1PoliciesLimitsPolicyIdDelete>>, TError,{policyId: string}, TContext> => {
 
@@ -1366,12 +1443,12 @@ const {mutation: mutationOptions} = options ?
 
     export type DeleteLimitPolicyApiV1PoliciesLimitsPolicyIdDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof deleteLimitPolicyApiV1PoliciesLimitsPolicyIdDelete>>>
 
-    export type DeleteLimitPolicyApiV1PoliciesLimitsPolicyIdDeleteMutationError = HTTPValidationError
+    export type DeleteLimitPolicyApiV1PoliciesLimitsPolicyIdDeleteMutationError = ProblemDetail
 
     /**
  * @summary Delete Limit Policy
  */
-export const useDeleteLimitPolicyApiV1PoliciesLimitsPolicyIdDelete = <TError = HTTPValidationError,
+export const useDeleteLimitPolicyApiV1PoliciesLimitsPolicyIdDelete = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteLimitPolicyApiV1PoliciesLimitsPolicyIdDelete>>, TError,{policyId: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof deleteLimitPolicyApiV1PoliciesLimitsPolicyIdDelete>>,
@@ -1387,14 +1464,19 @@ export const useDeleteLimitPolicyApiV1PoliciesLimitsPolicyIdDelete = <TError = H
 }
 
 export type createLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPostResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type createLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPostResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 201 | 422>
 }
 
 export type createLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPostResponseSuccess = (createLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPostResponse201) & {
   headers: Headers;
 };
-export type createLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPostResponseError = (createLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPostResponse422) & {
+export type createLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPostResponseError = (createLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPostResponse422 | createLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPostResponseDefault) & {
   headers: Headers;
 };
 
@@ -1427,7 +1509,7 @@ export const createLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPost = async (
 
 
 
-export const getCreateLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPostMutationOptions = <TError = HTTPValidationError,
+export const getCreateLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPostMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPost>>, TError,{policyId: string;data: CreateLimitPolicyRuleRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof createLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPost>>, TError,{policyId: string;data: CreateLimitPolicyRuleRequest}, TContext> => {
 
@@ -1456,12 +1538,12 @@ const {mutation: mutationOptions} = options ?
 
     export type CreateLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPostMutationResult = NonNullable<Awaited<ReturnType<typeof createLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPost>>>
     export type CreateLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPostMutationBody = CreateLimitPolicyRuleRequest
-    export type CreateLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPostMutationError = HTTPValidationError
+    export type CreateLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPostMutationError = ProblemDetail
 
     /**
  * @summary Create Limit Policy Rule
  */
-export const useCreateLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPost = <TError = HTTPValidationError,
+export const useCreateLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPost = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPost>>, TError,{policyId: string;data: CreateLimitPolicyRuleRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof createLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPost>>,
@@ -1477,14 +1559,19 @@ export const useCreateLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPost = <TEr
 }
 
 export type updateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatchResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type updateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatchResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type updateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatchResponseSuccess = (updateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatchResponse200) & {
   headers: Headers;
 };
-export type updateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatchResponseError = (updateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatchResponse422) & {
+export type updateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatchResponseError = (updateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatchResponse422 | updateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatchResponseDefault) & {
   headers: Headers;
 };
 
@@ -1517,7 +1604,7 @@ export const updateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatch = async (r
 
 
 
-export const getUpdateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatchMutationOptions = <TError = HTTPValidationError,
+export const getUpdateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatchMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatch>>, TError,{ruleId: string;data: UpdateLimitPolicyRuleRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof updateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatch>>, TError,{ruleId: string;data: UpdateLimitPolicyRuleRequest}, TContext> => {
 
@@ -1546,12 +1633,12 @@ const {mutation: mutationOptions} = options ?
 
     export type UpdateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatchMutationResult = NonNullable<Awaited<ReturnType<typeof updateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatch>>>
     export type UpdateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatchMutationBody = UpdateLimitPolicyRuleRequest
-    export type UpdateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatchMutationError = HTTPValidationError
+    export type UpdateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatchMutationError = ProblemDetail
 
     /**
  * @summary Update Limit Policy Rule
  */
-export const useUpdateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatch = <TError = HTTPValidationError,
+export const useUpdateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatch = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatch>>, TError,{ruleId: string;data: UpdateLimitPolicyRuleRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof updateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatch>>,
@@ -1567,14 +1654,19 @@ export const useUpdateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatch = <TErr
 }
 
 export type deleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDeleteResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type deleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDeleteResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 204 | 422>
 }
 
 export type deleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDeleteResponseSuccess = (deleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDeleteResponse204) & {
   headers: Headers;
 };
-export type deleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDeleteResponseError = (deleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDeleteResponse422) & {
+export type deleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDeleteResponseError = (deleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDeleteResponse422 | deleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDeleteResponseDefault) & {
   headers: Headers;
 };
 
@@ -1605,7 +1697,7 @@ export const deleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDelete = async (
 
 
 
-export const getDeleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDeleteMutationOptions = <TError = HTTPValidationError,
+export const getDeleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDeleteMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDelete>>, TError,{ruleId: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof deleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDelete>>, TError,{ruleId: string}, TContext> => {
 
@@ -1634,12 +1726,12 @@ const {mutation: mutationOptions} = options ?
 
     export type DeleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof deleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDelete>>>
 
-    export type DeleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDeleteMutationError = HTTPValidationError
+    export type DeleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDeleteMutationError = ProblemDetail
 
     /**
  * @summary Delete Limit Policy Rule
  */
-export const useDeleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDelete = <TError = HTTPValidationError,
+export const useDeleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDelete = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDelete>>, TError,{ruleId: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof deleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDelete>>,
@@ -1655,14 +1747,19 @@ export const useDeleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDelete = <TEr
 }
 
 export type getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetResponseSuccess = (getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetResponse200) & {
   headers: Headers;
 };
-export type getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetResponseError = (getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetResponse422) & {
+export type getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetResponseError = (getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetResponse422 | getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetResponseDefault) & {
   headers: Headers;
 };
 
@@ -1701,7 +1798,7 @@ export const getGetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetQueryKey
     }
 
 
-export const getGetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>, TError = HTTPValidationError>(policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>, TError, TData>>, }
+export const getGetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>, TError = ProblemDetail>(policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -1720,10 +1817,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type GetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetQueryResult = NonNullable<Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>>
-export type GetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetQueryError = HTTPValidationError
+export type GetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGetQueryError = ProblemDetail
 
 
-export function useGetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>, TError = ProblemDetail>(
  policyId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>,
@@ -1733,7 +1830,7 @@ export function useGetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet<TDat
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>, TError = ProblemDetail>(
  policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>,
@@ -1743,7 +1840,7 @@ export function useGetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet<TDat
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>, TError = ProblemDetail>(
  policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -1751,7 +1848,7 @@ export function useGetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet<TDat
  * @summary Get Limit Policy Impact
  */
 
-export function useGetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>, TError = ProblemDetail>(
  policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyImpactApiV1PoliciesLimitsPolicyIdImpactGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -1774,14 +1871,19 @@ export type getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetRespo
 }
 
 export type getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetResponseSuccess = (getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetResponse200) & {
   headers: Headers;
 };
-export type getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetResponseError = (getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetResponse422) & {
+export type getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetResponseError = (getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetResponse422 | getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetResponseDefault) & {
   headers: Headers;
 };
 
@@ -1820,7 +1922,7 @@ export const getGetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetQ
     }
 
 
-export const getGetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>, TError = HTTPValidationError>(ruleId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>, TError, TData>>, }
+export const getGetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>, TError = ProblemDetail>(ruleId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -1839,10 +1941,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type GetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetQueryResult = NonNullable<Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>>
-export type GetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetQueryError = HTTPValidationError
+export type GetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGetQueryError = ProblemDetail
 
 
-export function useGetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet<TData = Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet<TData = Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>, TError = ProblemDetail>(
  ruleId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>,
@@ -1852,7 +1954,7 @@ export function useGetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactG
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet<TData = Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet<TData = Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>, TError = ProblemDetail>(
  ruleId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>,
@@ -1862,7 +1964,7 @@ export function useGetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactG
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet<TData = Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet<TData = Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>, TError = ProblemDetail>(
  ruleId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -1870,7 +1972,7 @@ export function useGetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactG
  * @summary Get Limit Policy Rule Impact
  */
 
-export function useGetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet<TData = Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet<TData = Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>, TError = ProblemDetail>(
  ruleId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -1892,12 +1994,19 @@ export type listPolicyAssignmentsApiV1PoliciesAssignmentsGetResponse200 = {
   status: 200
 }
 
+export type listPolicyAssignmentsApiV1PoliciesAssignmentsGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
 export type listPolicyAssignmentsApiV1PoliciesAssignmentsGetResponseSuccess = (listPolicyAssignmentsApiV1PoliciesAssignmentsGetResponse200) & {
   headers: Headers;
 };
-;
+export type listPolicyAssignmentsApiV1PoliciesAssignmentsGetResponseError = (listPolicyAssignmentsApiV1PoliciesAssignmentsGetResponseDefault) & {
+  headers: Headers;
+};
 
-export type listPolicyAssignmentsApiV1PoliciesAssignmentsGetResponse = (listPolicyAssignmentsApiV1PoliciesAssignmentsGetResponseSuccess)
+export type listPolicyAssignmentsApiV1PoliciesAssignmentsGetResponse = (listPolicyAssignmentsApiV1PoliciesAssignmentsGetResponseSuccess | listPolicyAssignmentsApiV1PoliciesAssignmentsGetResponseError)
 
 export const getListPolicyAssignmentsApiV1PoliciesAssignmentsGetUrl = () => {
 
@@ -1932,7 +2041,7 @@ export const getListPolicyAssignmentsApiV1PoliciesAssignmentsGetQueryKey = () =>
     }
 
 
-export const getListPolicyAssignmentsApiV1PoliciesAssignmentsGetQueryOptions = <TData = Awaited<ReturnType<typeof listPolicyAssignmentsApiV1PoliciesAssignmentsGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPolicyAssignmentsApiV1PoliciesAssignmentsGet>>, TError, TData>>, }
+export const getListPolicyAssignmentsApiV1PoliciesAssignmentsGetQueryOptions = <TData = Awaited<ReturnType<typeof listPolicyAssignmentsApiV1PoliciesAssignmentsGet>>, TError = ProblemDetail>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPolicyAssignmentsApiV1PoliciesAssignmentsGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -1951,10 +2060,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type ListPolicyAssignmentsApiV1PoliciesAssignmentsGetQueryResult = NonNullable<Awaited<ReturnType<typeof listPolicyAssignmentsApiV1PoliciesAssignmentsGet>>>
-export type ListPolicyAssignmentsApiV1PoliciesAssignmentsGetQueryError = unknown
+export type ListPolicyAssignmentsApiV1PoliciesAssignmentsGetQueryError = ProblemDetail
 
 
-export function useListPolicyAssignmentsApiV1PoliciesAssignmentsGet<TData = Awaited<ReturnType<typeof listPolicyAssignmentsApiV1PoliciesAssignmentsGet>>, TError = unknown>(
+export function useListPolicyAssignmentsApiV1PoliciesAssignmentsGet<TData = Awaited<ReturnType<typeof listPolicyAssignmentsApiV1PoliciesAssignmentsGet>>, TError = ProblemDetail>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPolicyAssignmentsApiV1PoliciesAssignmentsGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listPolicyAssignmentsApiV1PoliciesAssignmentsGet>>,
@@ -1964,7 +2073,7 @@ export function useListPolicyAssignmentsApiV1PoliciesAssignmentsGet<TData = Awai
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListPolicyAssignmentsApiV1PoliciesAssignmentsGet<TData = Awaited<ReturnType<typeof listPolicyAssignmentsApiV1PoliciesAssignmentsGet>>, TError = unknown>(
+export function useListPolicyAssignmentsApiV1PoliciesAssignmentsGet<TData = Awaited<ReturnType<typeof listPolicyAssignmentsApiV1PoliciesAssignmentsGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPolicyAssignmentsApiV1PoliciesAssignmentsGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listPolicyAssignmentsApiV1PoliciesAssignmentsGet>>,
@@ -1974,7 +2083,7 @@ export function useListPolicyAssignmentsApiV1PoliciesAssignmentsGet<TData = Awai
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListPolicyAssignmentsApiV1PoliciesAssignmentsGet<TData = Awaited<ReturnType<typeof listPolicyAssignmentsApiV1PoliciesAssignmentsGet>>, TError = unknown>(
+export function useListPolicyAssignmentsApiV1PoliciesAssignmentsGet<TData = Awaited<ReturnType<typeof listPolicyAssignmentsApiV1PoliciesAssignmentsGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPolicyAssignmentsApiV1PoliciesAssignmentsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -1982,7 +2091,7 @@ export function useListPolicyAssignmentsApiV1PoliciesAssignmentsGet<TData = Awai
  * @summary List Policy Assignments
  */
 
-export function useListPolicyAssignmentsApiV1PoliciesAssignmentsGet<TData = Awaited<ReturnType<typeof listPolicyAssignmentsApiV1PoliciesAssignmentsGet>>, TError = unknown>(
+export function useListPolicyAssignmentsApiV1PoliciesAssignmentsGet<TData = Awaited<ReturnType<typeof listPolicyAssignmentsApiV1PoliciesAssignmentsGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPolicyAssignmentsApiV1PoliciesAssignmentsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -2005,14 +2114,19 @@ export type createPolicyAssignmentApiV1PoliciesAssignmentsPostResponse201 = {
 }
 
 export type createPolicyAssignmentApiV1PoliciesAssignmentsPostResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type createPolicyAssignmentApiV1PoliciesAssignmentsPostResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 201 | 422>
 }
 
 export type createPolicyAssignmentApiV1PoliciesAssignmentsPostResponseSuccess = (createPolicyAssignmentApiV1PoliciesAssignmentsPostResponse201) & {
   headers: Headers;
 };
-export type createPolicyAssignmentApiV1PoliciesAssignmentsPostResponseError = (createPolicyAssignmentApiV1PoliciesAssignmentsPostResponse422) & {
+export type createPolicyAssignmentApiV1PoliciesAssignmentsPostResponseError = (createPolicyAssignmentApiV1PoliciesAssignmentsPostResponse422 | createPolicyAssignmentApiV1PoliciesAssignmentsPostResponseDefault) & {
   headers: Headers;
 };
 
@@ -2044,7 +2158,7 @@ export const createPolicyAssignmentApiV1PoliciesAssignmentsPost = async (createP
 
 
 
-export const getCreatePolicyAssignmentApiV1PoliciesAssignmentsPostMutationOptions = <TError = HTTPValidationError,
+export const getCreatePolicyAssignmentApiV1PoliciesAssignmentsPostMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPolicyAssignmentApiV1PoliciesAssignmentsPost>>, TError,{data: CreatePolicyAssignmentRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof createPolicyAssignmentApiV1PoliciesAssignmentsPost>>, TError,{data: CreatePolicyAssignmentRequest}, TContext> => {
 
@@ -2073,12 +2187,12 @@ const {mutation: mutationOptions} = options ?
 
     export type CreatePolicyAssignmentApiV1PoliciesAssignmentsPostMutationResult = NonNullable<Awaited<ReturnType<typeof createPolicyAssignmentApiV1PoliciesAssignmentsPost>>>
     export type CreatePolicyAssignmentApiV1PoliciesAssignmentsPostMutationBody = CreatePolicyAssignmentRequest
-    export type CreatePolicyAssignmentApiV1PoliciesAssignmentsPostMutationError = HTTPValidationError
+    export type CreatePolicyAssignmentApiV1PoliciesAssignmentsPostMutationError = ProblemDetail
 
     /**
  * @summary Create Policy Assignment
  */
-export const useCreatePolicyAssignmentApiV1PoliciesAssignmentsPost = <TError = HTTPValidationError,
+export const useCreatePolicyAssignmentApiV1PoliciesAssignmentsPost = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPolicyAssignmentApiV1PoliciesAssignmentsPost>>, TError,{data: CreatePolicyAssignmentRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof createPolicyAssignmentApiV1PoliciesAssignmentsPost>>,
@@ -2094,14 +2208,19 @@ export const useCreatePolicyAssignmentApiV1PoliciesAssignmentsPost = <TError = H
 }
 
 export type createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 201 | 422>
 }
 
 export type createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostResponseSuccess = (createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostResponse201) & {
   headers: Headers;
 };
-export type createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostResponseError = (createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostResponse422) & {
+export type createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostResponseError = (createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostResponse422 | createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostResponseDefault) & {
   headers: Headers;
 };
 
@@ -2133,7 +2252,7 @@ export const createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPos
 
 
 
-export const getCreateScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostMutationOptions = <TError = HTTPValidationError,
+export const getCreateScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPost>>, TError,{data: CreateScopedPolicyAssignmentRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPost>>, TError,{data: CreateScopedPolicyAssignmentRequest}, TContext> => {
 
@@ -2162,12 +2281,12 @@ const {mutation: mutationOptions} = options ?
 
     export type CreateScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostMutationResult = NonNullable<Awaited<ReturnType<typeof createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPost>>>
     export type CreateScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostMutationBody = CreateScopedPolicyAssignmentRequest
-    export type CreateScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostMutationError = HTTPValidationError
+    export type CreateScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPostMutationError = ProblemDetail
 
     /**
  * @summary Create Scoped Policy Assignment
  */
-export const useCreateScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPost = <TError = HTTPValidationError,
+export const useCreateScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPost = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPost>>, TError,{data: CreateScopedPolicyAssignmentRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof createScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPost>>,
@@ -2183,14 +2302,19 @@ export const useCreateScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicy
 }
 
 export type updatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatchResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type updatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatchResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type updatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatchResponseSuccess = (updatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatchResponse200) & {
   headers: Headers;
 };
-export type updatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatchResponseError = (updatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatchResponse422) & {
+export type updatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatchResponseError = (updatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatchResponse422 | updatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatchResponseDefault) & {
   headers: Headers;
 };
 
@@ -2223,7 +2347,7 @@ export const updatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatch = a
 
 
 
-export const getUpdatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatchMutationOptions = <TError = HTTPValidationError,
+export const getUpdatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatchMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatch>>, TError,{assignmentId: string;data: UpdatePolicyAssignmentRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof updatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatch>>, TError,{assignmentId: string;data: UpdatePolicyAssignmentRequest}, TContext> => {
 
@@ -2252,12 +2376,12 @@ const {mutation: mutationOptions} = options ?
 
     export type UpdatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatchMutationResult = NonNullable<Awaited<ReturnType<typeof updatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatch>>>
     export type UpdatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatchMutationBody = UpdatePolicyAssignmentRequest
-    export type UpdatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatchMutationError = HTTPValidationError
+    export type UpdatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatchMutationError = ProblemDetail
 
     /**
  * @summary Update Policy Assignment
  */
-export const useUpdatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatch = <TError = HTTPValidationError,
+export const useUpdatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatch = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatch>>, TError,{assignmentId: string;data: UpdatePolicyAssignmentRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof updatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatch>>,
@@ -2273,14 +2397,19 @@ export const useUpdatePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdPatch 
 }
 
 export type deletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDeleteResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type deletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDeleteResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 204 | 422>
 }
 
 export type deletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDeleteResponseSuccess = (deletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDeleteResponse204) & {
   headers: Headers;
 };
-export type deletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDeleteResponseError = (deletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDeleteResponse422) & {
+export type deletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDeleteResponseError = (deletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDeleteResponse422 | deletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDeleteResponseDefault) & {
   headers: Headers;
 };
 
@@ -2311,7 +2440,7 @@ export const deletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDelete = 
 
 
 
-export const getDeletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDeleteMutationOptions = <TError = HTTPValidationError,
+export const getDeletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDeleteMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDelete>>, TError,{assignmentId: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof deletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDelete>>, TError,{assignmentId: string}, TContext> => {
 
@@ -2340,12 +2469,12 @@ const {mutation: mutationOptions} = options ?
 
     export type DeletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof deletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDelete>>>
 
-    export type DeletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDeleteMutationError = HTTPValidationError
+    export type DeletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDeleteMutationError = ProblemDetail
 
     /**
  * @summary Delete Policy Assignment
  */
-export const useDeletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDelete = <TError = HTTPValidationError,
+export const useDeletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDelete = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDelete>>, TError,{assignmentId: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof deletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDelete>>,

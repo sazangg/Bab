@@ -26,8 +26,8 @@ import type {
 import type {
   BodyUploadOrganizationLogoApiV1SettingsOrganizationLogoPost,
   GatewayMetadataResponse,
-  HTTPValidationError,
   OrganizationSettingsResponse,
+  ProblemDetail,
   UpdateOrganizationSettingsRequest
 } from '../schemas';
 
@@ -36,17 +36,32 @@ import { apiMutator } from '../../orval-mutator';
 
 
 
+export type HTTPStatusCode1xx = 100 | 101 | 102 | 103;
+export type HTTPStatusCode2xx = 200 | 201 | 202 | 203 | 204 | 205 | 206 | 207;
+export type HTTPStatusCode3xx = 300 | 301 | 302 | 303 | 304 | 305 | 307 | 308;
+export type HTTPStatusCode4xx = 400 | 401 | 402 | 403 | 404 | 405 | 406 | 407 | 408 | 409 | 410 | 411 | 412 | 413 | 414 | 415 | 416 | 417 | 418 | 419 | 420 | 421 | 422 | 423 | 424 | 426 | 428 | 429 | 431 | 451;
+export type HTTPStatusCode5xx = 500 | 501 | 502 | 503 | 504 | 505 | 507 | 511;
+export type HTTPStatusCodes = HTTPStatusCode1xx | HTTPStatusCode2xx | HTTPStatusCode3xx | HTTPStatusCode4xx | HTTPStatusCode5xx;
+
+
 export type getSettingsApiV1SettingsGetResponse200 = {
   data: OrganizationSettingsResponse
   status: 200
 }
 
+export type getSettingsApiV1SettingsGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
 export type getSettingsApiV1SettingsGetResponseSuccess = (getSettingsApiV1SettingsGetResponse200) & {
   headers: Headers;
 };
-;
+export type getSettingsApiV1SettingsGetResponseError = (getSettingsApiV1SettingsGetResponseDefault) & {
+  headers: Headers;
+};
 
-export type getSettingsApiV1SettingsGetResponse = (getSettingsApiV1SettingsGetResponseSuccess)
+export type getSettingsApiV1SettingsGetResponse = (getSettingsApiV1SettingsGetResponseSuccess | getSettingsApiV1SettingsGetResponseError)
 
 export const getGetSettingsApiV1SettingsGetUrl = () => {
 
@@ -81,7 +96,7 @@ export const getGetSettingsApiV1SettingsGetQueryKey = () => {
     }
 
 
-export const getGetSettingsApiV1SettingsGetQueryOptions = <TData = Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError, TData>>, }
+export const getGetSettingsApiV1SettingsGetQueryOptions = <TData = Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError = ProblemDetail>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -100,10 +115,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type GetSettingsApiV1SettingsGetQueryResult = NonNullable<Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>>
-export type GetSettingsApiV1SettingsGetQueryError = unknown
+export type GetSettingsApiV1SettingsGetQueryError = ProblemDetail
 
 
-export function useGetSettingsApiV1SettingsGet<TData = Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError = unknown>(
+export function useGetSettingsApiV1SettingsGet<TData = Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError = ProblemDetail>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>,
@@ -113,7 +128,7 @@ export function useGetSettingsApiV1SettingsGet<TData = Awaited<ReturnType<typeof
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetSettingsApiV1SettingsGet<TData = Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError = unknown>(
+export function useGetSettingsApiV1SettingsGet<TData = Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>,
@@ -123,7 +138,7 @@ export function useGetSettingsApiV1SettingsGet<TData = Awaited<ReturnType<typeof
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetSettingsApiV1SettingsGet<TData = Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError = unknown>(
+export function useGetSettingsApiV1SettingsGet<TData = Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -131,7 +146,7 @@ export function useGetSettingsApiV1SettingsGet<TData = Awaited<ReturnType<typeof
  * @summary Get Settings
  */
 
-export function useGetSettingsApiV1SettingsGet<TData = Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError = unknown>(
+export function useGetSettingsApiV1SettingsGet<TData = Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSettingsApiV1SettingsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -154,14 +169,19 @@ export type updateSettingsApiV1SettingsPatchResponse200 = {
 }
 
 export type updateSettingsApiV1SettingsPatchResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type updateSettingsApiV1SettingsPatchResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type updateSettingsApiV1SettingsPatchResponseSuccess = (updateSettingsApiV1SettingsPatchResponse200) & {
   headers: Headers;
 };
-export type updateSettingsApiV1SettingsPatchResponseError = (updateSettingsApiV1SettingsPatchResponse422) & {
+export type updateSettingsApiV1SettingsPatchResponseError = (updateSettingsApiV1SettingsPatchResponse422 | updateSettingsApiV1SettingsPatchResponseDefault) & {
   headers: Headers;
 };
 
@@ -193,7 +213,7 @@ export const updateSettingsApiV1SettingsPatch = async (updateOrganizationSetting
 
 
 
-export const getUpdateSettingsApiV1SettingsPatchMutationOptions = <TError = HTTPValidationError,
+export const getUpdateSettingsApiV1SettingsPatchMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSettingsApiV1SettingsPatch>>, TError,{data: UpdateOrganizationSettingsRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof updateSettingsApiV1SettingsPatch>>, TError,{data: UpdateOrganizationSettingsRequest}, TContext> => {
 
@@ -222,12 +242,12 @@ const {mutation: mutationOptions} = options ?
 
     export type UpdateSettingsApiV1SettingsPatchMutationResult = NonNullable<Awaited<ReturnType<typeof updateSettingsApiV1SettingsPatch>>>
     export type UpdateSettingsApiV1SettingsPatchMutationBody = UpdateOrganizationSettingsRequest
-    export type UpdateSettingsApiV1SettingsPatchMutationError = HTTPValidationError
+    export type UpdateSettingsApiV1SettingsPatchMutationError = ProblemDetail
 
     /**
  * @summary Update Settings
  */
-export const useUpdateSettingsApiV1SettingsPatch = <TError = HTTPValidationError,
+export const useUpdateSettingsApiV1SettingsPatch = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSettingsApiV1SettingsPatch>>, TError,{data: UpdateOrganizationSettingsRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof updateSettingsApiV1SettingsPatch>>,
@@ -242,12 +262,19 @@ export const useUpdateSettingsApiV1SettingsPatch = <TError = HTTPValidationError
   status: 200
 }
 
+export type getGatewayMetadataApiV1SettingsGatewayMetadataGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
 export type getGatewayMetadataApiV1SettingsGatewayMetadataGetResponseSuccess = (getGatewayMetadataApiV1SettingsGatewayMetadataGetResponse200) & {
   headers: Headers;
 };
-;
+export type getGatewayMetadataApiV1SettingsGatewayMetadataGetResponseError = (getGatewayMetadataApiV1SettingsGatewayMetadataGetResponseDefault) & {
+  headers: Headers;
+};
 
-export type getGatewayMetadataApiV1SettingsGatewayMetadataGetResponse = (getGatewayMetadataApiV1SettingsGatewayMetadataGetResponseSuccess)
+export type getGatewayMetadataApiV1SettingsGatewayMetadataGetResponse = (getGatewayMetadataApiV1SettingsGatewayMetadataGetResponseSuccess | getGatewayMetadataApiV1SettingsGatewayMetadataGetResponseError)
 
 export const getGetGatewayMetadataApiV1SettingsGatewayMetadataGetUrl = () => {
 
@@ -282,7 +309,7 @@ export const getGetGatewayMetadataApiV1SettingsGatewayMetadataGetQueryKey = () =
     }
 
 
-export const getGetGatewayMetadataApiV1SettingsGatewayMetadataGetQueryOptions = <TData = Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>, TError, TData>>, }
+export const getGetGatewayMetadataApiV1SettingsGatewayMetadataGetQueryOptions = <TData = Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>, TError = ProblemDetail>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -301,10 +328,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type GetGatewayMetadataApiV1SettingsGatewayMetadataGetQueryResult = NonNullable<Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>>
-export type GetGatewayMetadataApiV1SettingsGatewayMetadataGetQueryError = unknown
+export type GetGatewayMetadataApiV1SettingsGatewayMetadataGetQueryError = ProblemDetail
 
 
-export function useGetGatewayMetadataApiV1SettingsGatewayMetadataGet<TData = Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>, TError = unknown>(
+export function useGetGatewayMetadataApiV1SettingsGatewayMetadataGet<TData = Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>, TError = ProblemDetail>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>,
@@ -314,7 +341,7 @@ export function useGetGatewayMetadataApiV1SettingsGatewayMetadataGet<TData = Awa
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetGatewayMetadataApiV1SettingsGatewayMetadataGet<TData = Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>, TError = unknown>(
+export function useGetGatewayMetadataApiV1SettingsGatewayMetadataGet<TData = Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>,
@@ -324,7 +351,7 @@ export function useGetGatewayMetadataApiV1SettingsGatewayMetadataGet<TData = Awa
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetGatewayMetadataApiV1SettingsGatewayMetadataGet<TData = Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>, TError = unknown>(
+export function useGetGatewayMetadataApiV1SettingsGatewayMetadataGet<TData = Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -332,7 +359,7 @@ export function useGetGatewayMetadataApiV1SettingsGatewayMetadataGet<TData = Awa
  * @summary Get Gateway Metadata
  */
 
-export function useGetGatewayMetadataApiV1SettingsGatewayMetadataGet<TData = Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>, TError = unknown>(
+export function useGetGatewayMetadataApiV1SettingsGatewayMetadataGet<TData = Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayMetadataApiV1SettingsGatewayMetadataGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -355,14 +382,19 @@ export type uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponse200 =
 }
 
 export type uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponseSuccess = (uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponse200) & {
   headers: Headers;
 };
-export type uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponseError = (uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponse422) & {
+export type uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponseError = (uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponse422 | uploadOrganizationLogoApiV1SettingsOrganizationLogoPostResponseDefault) & {
   headers: Headers;
 };
 
@@ -396,7 +428,7 @@ formData.append(`file`, bodyUploadOrganizationLogoApiV1SettingsOrganizationLogoP
 
 
 
-export const getUploadOrganizationLogoApiV1SettingsOrganizationLogoPostMutationOptions = <TError = HTTPValidationError,
+export const getUploadOrganizationLogoApiV1SettingsOrganizationLogoPostMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadOrganizationLogoApiV1SettingsOrganizationLogoPost>>, TError,{data: BodyUploadOrganizationLogoApiV1SettingsOrganizationLogoPost}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof uploadOrganizationLogoApiV1SettingsOrganizationLogoPost>>, TError,{data: BodyUploadOrganizationLogoApiV1SettingsOrganizationLogoPost}, TContext> => {
 
@@ -425,12 +457,12 @@ const {mutation: mutationOptions} = options ?
 
     export type UploadOrganizationLogoApiV1SettingsOrganizationLogoPostMutationResult = NonNullable<Awaited<ReturnType<typeof uploadOrganizationLogoApiV1SettingsOrganizationLogoPost>>>
     export type UploadOrganizationLogoApiV1SettingsOrganizationLogoPostMutationBody = BodyUploadOrganizationLogoApiV1SettingsOrganizationLogoPost
-    export type UploadOrganizationLogoApiV1SettingsOrganizationLogoPostMutationError = HTTPValidationError
+    export type UploadOrganizationLogoApiV1SettingsOrganizationLogoPostMutationError = ProblemDetail
 
     /**
  * @summary Upload Organization Logo
  */
-export const useUploadOrganizationLogoApiV1SettingsOrganizationLogoPost = <TError = HTTPValidationError,
+export const useUploadOrganizationLogoApiV1SettingsOrganizationLogoPost = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadOrganizationLogoApiV1SettingsOrganizationLogoPost>>, TError,{data: BodyUploadOrganizationLogoApiV1SettingsOrganizationLogoPost}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof uploadOrganizationLogoApiV1SettingsOrganizationLogoPost>>,

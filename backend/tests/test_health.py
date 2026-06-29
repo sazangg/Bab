@@ -85,6 +85,31 @@ async def test_readiness_reports_database_and_migrations() -> None:
 
 
 @pytest.mark.asyncio
+async def test_readiness_failure_returns_problem_details(monkeypatch) -> None:
+    async def unavailable_migration_state(_engine):
+        raise RuntimeError("unavailable")
+
+    monkeypatch.setattr(health_routes, "get_migration_state", unavailable_migration_state)
+    app = create_app()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get("/api/v1/ready")
+        readyz_response = await client.get("/readyz")
+
+    for result, path in ((response, "/api/v1/ready"), (readyz_response, "/readyz")):
+        body = result.json()
+        assert result.status_code == 503
+        assert result.headers["content-type"].startswith("application/problem+json")
+        assert body["status"] == 503
+        assert body["instance"] == path
+        assert body["readiness_status"] == "not_ready"
+        assert body["checks"]["migrations"] == {"ok": False, "error": "RuntimeError"}
+
+
+@pytest.mark.asyncio
 async def test_runtime_info_returns_safe_runtime_summary() -> None:
     app = create_app()
 

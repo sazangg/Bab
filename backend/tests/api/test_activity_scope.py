@@ -125,7 +125,7 @@ async def test_activity_viewer_can_see_org_activity(
     )
 
     assert response.status_code == 200
-    assert {item["message"] for item in response.json()} == {
+    assert {item["message"] for item in response.json()["items"]} == {
         "allowed workspace event",
         "blocked workspace event",
     }
@@ -148,7 +148,7 @@ async def test_team_member_activity_is_limited_to_direct_team(
 
     response = await _get(app_client, user, "/api/v1/activity")
     assert response.status_code == 200
-    assert {item["message"] for item in response.json()} == {
+    assert {item["message"] for item in response.json()["items"]} == {
         "allowed workspace event",
         "allowed project-only event",
     }
@@ -176,7 +176,7 @@ async def test_project_admin_activity_is_limited_to_direct_project(
 
     response = await _get(app_client, user, "/api/v1/activity")
     assert response.status_code == 200
-    assert {item["message"] for item in response.json()} == {
+    assert {item["message"] for item in response.json()["items"]} == {
         "allowed workspace event",
         "allowed key-only event",
     }
@@ -258,7 +258,10 @@ async def test_activity_date_filters_and_export_use_scope(
 
     empty = await _get(app_client, user, f"/api/v1/activity?start_at={future}")
     assert empty.status_code == 200
-    assert empty.json() == []
+    assert empty.json()["items"] == []
+    assert empty.json()["has_more"] is False
+    assert empty.json()["next_before_at"] is None
+    assert empty.json()["next_before_id"] is None
 
     exported = await _get(app_client, user, "/api/v1/activity/export")
     assert exported.status_code == 200
@@ -303,8 +306,13 @@ async def test_activity_search_cursor_and_export_share_filters(
         "/api/v1/activity?q=quota_exceeded&limit=1",
     )
     assert first_page.status_code == 200
-    [newer] = first_page.json()
+    first_body = first_page.json()
+    [newer] = first_body["items"]
     assert newer["message"] == "matching newer event"
+    assert first_body["limit"] == 1
+    assert first_body["has_more"] is True
+    assert first_body["next_before_at"] == newer["created_at"]
+    assert first_body["next_before_id"] == newer["id"]
 
     second_page = await _get(
         app_client,
@@ -315,13 +323,32 @@ async def test_activity_search_cursor_and_export_share_filters(
         ),
     )
     assert second_page.status_code == 200
-    assert [item["message"] for item in second_page.json()] == ["matching older event"]
+    second_body = second_page.json()
+    assert [item["message"] for item in second_body["items"]] == ["matching older event"]
+    assert second_body["has_more"] is False
+    assert second_body["next_before_at"] is None
+    assert second_body["next_before_id"] is None
 
     exported = await _get(app_client, user, "/api/v1/activity/export?q=req-search")
     assert exported.status_code == 200
     assert "matching older event" in exported.text
     assert "matching newer event" in exported.text
     assert "allowed workspace event" not in exported.text
+
+
+@pytest.mark.asyncio
+async def test_activity_invalid_limit_returns_problem_detail(
+    app_client,
+    db_session: AsyncSession,
+) -> None:
+    org, *_ = await _workspace(db_session)
+    user = _principal(org_id=org.id, permissions=["activity.view"])
+
+    response = await _get(app_client, user, "/api/v1/activity?limit=0")
+
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json()["status"] == 422
 
 
 @pytest.mark.asyncio
@@ -352,8 +379,9 @@ async def test_team_scoped_users_see_only_team_policy_assignment_activity(
         response = await _get(app_client, user, "/api/v1/activity?category=policy")
 
         assert response.status_code == 200
-        assert [item["action"] for item in response.json()] == ["policy_assignment.created"]
-        assert response.json()[0]["team_id"] == str(team.id)
+        items = response.json()["items"]
+        assert [item["action"] for item in items] == ["policy_assignment.created"]
+        assert items[0]["team_id"] == str(team.id)
 
 
 @pytest.mark.asyncio
@@ -384,8 +412,9 @@ async def test_project_admin_sees_only_project_policy_assignment_activity(
     response = await _get(app_client, user, "/api/v1/activity?category=policy")
 
     assert response.status_code == 200
-    assert [item["action"] for item in response.json()] == ["policy_assignment.created"]
-    assert response.json()[0]["project_id"] == str(project.id)
+    items = response.json()["items"]
+    assert [item["action"] for item in items] == ["policy_assignment.created"]
+    assert items[0]["project_id"] == str(project.id)
 
 
 @pytest.mark.asyncio
@@ -408,7 +437,7 @@ async def test_virtual_key_policy_assignment_activity_includes_parent_context(
     response = await _get(app_client, user, "/api/v1/activity?category=policy")
 
     assert response.status_code == 200
-    [event] = response.json()
+    [event] = response.json()["items"]
     assert event["action"] == "policy_assignment.created"
     assert event["team_id"] == str(team.id)
     assert event["project_id"] == str(project.id)
@@ -435,7 +464,7 @@ async def test_scoped_users_do_not_see_org_policy_definition_activity(
     response = await _get(app_client, user, "/api/v1/activity?category=policy")
 
     assert response.status_code == 200
-    assert response.json() == []
+    assert response.json()["items"] == []
 
 
 def _activity(

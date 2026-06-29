@@ -16,5 +16,11 @@ virtual_key_id?: string | null;
 provider_id?: string | null;
 pool_id?: string | null;
 model?: string | null;
+before_at?: string | null;
+before_id?: string | null;
+/**
+ * @minimum 1
+ * @maximum 200
+ */
 limit?: number;
 };

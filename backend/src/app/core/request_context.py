@@ -6,6 +6,10 @@ import structlog
 from fastapi import Request, Response
 from structlog.contextvars import bind_contextvars, clear_contextvars
 
+from app.core.metrics import record_http_request
+from app.core.observability import outcome_for_status, safe_path, status_class
+from app.core.tracing import current_trace_ids
+
 logger = structlog.get_logger(__name__)
 
 REQUEST_ID_HEADER = "X-Request-ID"
@@ -38,24 +42,59 @@ async def request_context_middleware(
         response = await call_next(request)
     except Exception:
         duration_ms = round((time.perf_counter() - started_at) * 1000)
+        path = safe_path(request.url.path)
+        if path != "/metrics":
+            record_http_request(
+                method=request.method,
+                route=_request_metric_route(request),
+                status_code=500,
+                duration_seconds=duration_ms / 1000,
+            )
         logger.exception(
             "request_failed",
             method=request.method,
-            path=request.url.path,
+            path=path,
+            route=_request_route(request, path),
+            status_code=500,
+            status_class=status_class(500),
+            outcome=outcome_for_status(500),
             duration_ms=duration_ms,
+            **current_trace_ids(),
         )
         clear_contextvars()
         raise
 
     duration_ms = round((time.perf_counter() - started_at) * 1000)
+    path = safe_path(request.url.path)
     response.headers[REQUEST_ID_HEADER] = request_id
     _apply_security_headers(response)
+    if path != "/metrics":
+        record_http_request(
+            method=request.method,
+            route=_request_metric_route(request),
+            status_code=response.status_code,
+            duration_seconds=duration_ms / 1000,
+        )
     logger.info(
         "request_completed",
         method=request.method,
-        path=request.url.path,
+        path=path,
+        route=_request_route(request, path),
         status_code=response.status_code,
+        status_class=status_class(response.status_code),
+        outcome=outcome_for_status(response.status_code),
         duration_ms=duration_ms,
+        **current_trace_ids(),
     )
     clear_contextvars()
     return response
+
+
+def _request_route(request: Request, fallback: str) -> str:
+    route = request.scope.get("route")
+    route_path = getattr(route, "path", None)
+    return route_path if isinstance(route_path, str) else fallback
+
+
+def _request_metric_route(request: Request) -> str:
+    return _request_route(request, "unmatched")

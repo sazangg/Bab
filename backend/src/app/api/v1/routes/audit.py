@@ -13,7 +13,7 @@ from app.api.v1.deps import get_scope, require_permission
 from app.core.csv_safe import sanitize_csv_cell
 from app.core.database import Scope, get_db
 from app.modules.audit import facade
-from app.modules.audit.schemas import AuditEventResponse, AuditVerificationResponse
+from app.modules.audit.schemas import AuditEventPageResponse, AuditVerificationResponse
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.authorization.permissions import Permissions
 
@@ -38,11 +38,11 @@ async def list_audit_events(
     before_at: datetime | None = None,
     before_id: UUID | None = None,
     limit: int = Query(default=100, ge=1, le=500),
-) -> list[AuditEventResponse]:
-    return await facade.list_audit_events(
+) -> AuditEventPageResponse:
+    events = await facade.list_audit_events(
         scope=scope,
         db=db,
-        limit=limit,
+        limit=limit + 1,
         start_at=start_at,
         end_at=end_at,
         actor_user_id=actor_user_id,
@@ -52,6 +52,16 @@ async def list_audit_events(
         search=q.strip() if q and q.strip() else None,
         before_at=before_at,
         before_id=before_id,
+    )
+    items = events[:limit]
+    has_more = len(events) > limit
+    next_item = items[-1] if has_more and items else None
+    return AuditEventPageResponse(
+        items=items,
+        limit=limit,
+        has_more=has_more,
+        next_before_at=next_item.created_at if next_item else None,
+        next_before_id=next_item.id if next_item else None,
     )
 
 

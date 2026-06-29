@@ -1,0 +1,22 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: bab-prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+
+  - name: Tempo
+    type: tempo
+    uid: bab-tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: true
+    jsonData:
+      tracesToMetrics:
+        datasourceUid: bab-prometheus
+      serviceMap:
+        datasourceUid: bab-prometheus

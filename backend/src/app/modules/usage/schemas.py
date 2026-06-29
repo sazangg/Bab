@@ -96,6 +96,13 @@ class UsageRecordResponse(RecordUsage):
         return self.cost_cents or 0 if self.spend_type == "estimated" else 0
 
 
+class UsageRecordPageResponse(BaseModel):
+    items: list[UsageRecordResponse]
+    limit: int
+    offset: int
+    has_more: bool
+
+
 class RecordLimitPolicyReservation(BaseModel):
     org_id: UUID
     limit_policy_id: UUID

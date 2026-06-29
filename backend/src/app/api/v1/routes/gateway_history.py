@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, get_scope
@@ -12,7 +12,7 @@ from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.authorization.permissions import Permissions
 from app.modules.gateway_history import facade
 from app.modules.gateway_history.schemas import (
-    GatewayRequestTraceListResponse,
+    GatewayRequestTracePageResponse,
     GatewayRequestTraceResponse,
 )
 
@@ -44,9 +44,9 @@ async def list_gateway_requests(
     fallback: GatewayRequestTraceFallback | None = None,
     error_code: str | None = None,
     search: str | None = None,
-    limit: int = 50,
-    offset: int = 0,
-) -> GatewayRequestTraceListResponse:
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> GatewayRequestTracePageResponse:
     history_scope = await resolve_workspace_filter_scope(
         user=user,
         org_id=scope.org_id,
@@ -74,8 +74,8 @@ async def list_gateway_requests(
         search=search,
         allowed_team_ids=history_scope.allowed_team_ids,
         allowed_project_ids=history_scope.allowed_project_ids,
-        limit=min(max(limit, 1), 200),
-        offset=max(offset, 0),
+        limit=limit,
+        offset=offset,
         db=db,
     )
 

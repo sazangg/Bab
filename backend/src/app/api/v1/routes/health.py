@@ -1,12 +1,13 @@
 from typing import Any
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, status
 from pydantic import BaseModel
 from sqlalchemy import text
 
 from app.core.config import settings
 from app.core.database import engine
 from app.core.migrations import get_migration_state
+from app.core.problems import ProblemException
 
 router = APIRouter(tags=["health"])
 root_router = APIRouter(tags=["health"])
@@ -33,7 +34,7 @@ async def health_check() -> dict[str, str]:
 
 
 @router.get("/ready")
-async def readiness_check(response: Response) -> dict[str, Any]:
+async def readiness_check() -> dict[str, Any]:
     checks: dict[str, Any] = {
         "database": {"ok": False},
         "migrations": {"ok": False},
@@ -57,14 +58,20 @@ async def readiness_check(response: Response) -> dict[str, Any]:
 
     ready = all(check["ok"] for check in checks.values())
     if not ready:
-        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-    return {"status": "ready" if ready else "not_ready", "checks": checks}
+        raise ProblemException(
+            problem_type="urn:bab:error:not-ready",
+            title="Service Unavailable",
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Service is not ready",
+            extra={"readiness_status": "not_ready", "checks": checks},
+        )
+    return {"status": "ready", "checks": checks}
 
 
 @router.get("/readyz")
 @root_router.get("/readyz")
-async def readiness_probe(response: Response) -> dict[str, Any]:
-    return await readiness_check(response)
+async def readiness_probe() -> dict[str, Any]:
+    return await readiness_check()
 
 
 @router.get(

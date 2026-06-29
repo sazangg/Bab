@@ -34,6 +34,7 @@ import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
 import { canViewActivity, hasPermission } from "@/features/auth/lib/permissions";
 import { httpClient } from "@/shared/api/http-client";
 import type {
+  ActivityEventPageResponse,
   ActivityEventResponse,
   AuthenticatedUser,
   ProjectResponse,
@@ -113,7 +114,7 @@ export function ActivityPage() {
     enabled: !dateRange.error,
     initialPageParam: undefined as ActivityCursor | undefined,
     queryFn: async ({ pageParam }) => {
-      const response = await httpClient.get<ActivityEventResponse[]>("/api/v1/activity", {
+      const response = await httpClient.get<ActivityEventPageResponse>("/api/v1/activity", {
         params: {
           ...activityParams,
           limit: PAGE_SIZE,
@@ -124,12 +125,11 @@ export function ActivityPage() {
       return response.data;
     },
     getNextPageParam: (page) => {
-      if (page.length < PAGE_SIZE) return undefined;
-      const last = page.at(-1);
-      return last ? { beforeAt: last.created_at, beforeId: last.id } : undefined;
+      if (!page.has_more || !page.next_before_at || !page.next_before_id) return undefined;
+      return { beforeAt: page.next_before_at, beforeId: page.next_before_id };
     },
   });
-  const events = activityQuery.data?.pages.flat() ?? [];
+  const events = activityQuery.data?.pages.flatMap((page) => page.items) ?? [];
   useEffect(() => {
     updateSearchParam(setSearchParams, "q", debouncedSearch);
   }, [debouncedSearch, setSearchParams]);

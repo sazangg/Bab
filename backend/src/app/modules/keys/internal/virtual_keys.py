@@ -27,7 +27,7 @@ from app.modules.keys.schemas import (
     UpdateVirtualKeyRequest,
     VirtualKeyIdentity,
     VirtualKeyInventoryItem,
-    VirtualKeyInventoryPage,
+    VirtualKeyInventoryPageResponse,
     VirtualKeyOption,
     VirtualKeyResponse,
     VirtualKeyRevokeImpactResponse,
@@ -172,7 +172,7 @@ async def list_virtual_key_inventory(
     limit: int,
     offset: int,
     db: AsyncSession,
-) -> VirtualKeyInventoryPage:
+) -> VirtualKeyInventoryPageResponse:
     derived_status_filter = status in {
         "active",
         "no_effective_access",
@@ -228,7 +228,7 @@ async def list_virtual_key_inventory(
         can_manage_all=can_manage_all,
         db=db,
     )
-    return VirtualKeyInventoryPage(
+    return VirtualKeyInventoryPageResponse(
         items=items,
         total=total,
         limit=limit,
@@ -252,7 +252,7 @@ async def _list_virtual_key_inventory_with_derived_status(
     limit: int,
     offset: int,
     db: AsyncSession,
-) -> VirtualKeyInventoryPage:
+) -> VirtualKeyInventoryPageResponse:
     inventory_project_ids = await _inventory_project_ids(
         scope=scope,
         visible_team_ids=visible_team_ids,
@@ -300,7 +300,7 @@ async def _list_virtual_key_inventory_with_derived_status(
             matched_total += 1
         scan_offset += len(virtual_keys)
 
-    return VirtualKeyInventoryPage(
+    return VirtualKeyInventoryPageResponse(
         items=page_items,
         total=matched_total,
         limit=limit,

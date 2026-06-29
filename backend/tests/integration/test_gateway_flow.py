@@ -4,16 +4,15 @@ from uuid import UUID
 
 import httpx
 import pytest
-from alembic.config import Config
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import inspect, select, text
+from sqlalchemy import inspect, select
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from alembic import command
 from app.api.v1.routes.proxy import get_proxy_http_client
 from app.core.bootstrap import sync_default_workspace
 from app.core.config import settings
-from app.core.migrations import run_database_migrations
+from app.core.database import Base
+from app.core.migrations import get_migration_state, run_database_migrations
 from app.modules.gateway_history.internal.models import (
     GatewayPolicyDecision,
     GatewayRequest,
@@ -370,17 +369,30 @@ async def test_migrations_create_current_schema(tmp_path) -> None:
                 item["name"] for item in inspect(sync_connection).get_columns("usage_records")
             }
         )
+        committed_columns = await connection.run_sync(
+            lambda sync_connection: {
+                item["name"]: item
+                for item in inspect(sync_connection).get_columns(
+                    "limit_policy_committed_usage"
+                )
+            }
+        )
+        reservation_columns = await connection.run_sync(
+            lambda sync_connection: {
+                item["name"]: item
+                for item in inspect(sync_connection).get_columns("limit_policy_reservations")
+            }
+        )
+        performance_indexes = await connection.run_sync(_performance_indexes)
         policy_owner_schema = await connection.run_sync(_policy_owner_schema)
+    migration_state = await get_migration_state(engine)
 
     await engine.dispose()
 
-    assert "alembic_version" in table_names
-    assert "provider_credentials" in table_names
-    assert "credential_pool_credentials" in table_names
-    assert "usage_records" in table_names
-    assert "access_policy_public_models" in table_names
-    assert "access_policy_route_candidates" in table_names
-    assert "gateway_requests" in table_names
+    assert set(table_names) == {*Base.metadata.tables, "alembic_version"}
+    assert migration_state["is_current"] is True
+    assert migration_state["current_revision"] == "20260629_0001"
+    assert migration_state["head_revision"] == "20260629_0001"
     assert "fallback_policy" not in provider_columns
     assert {"secret_backend", "secret_reference"} <= credential_columns
     assert {
@@ -392,7 +404,6 @@ async def test_migrations_create_current_schema(tmp_path) -> None:
     assert {
         "ix_virtual_keys_created_by",
         "ix_virtual_keys_last_used_at",
-        "ix_virtual_keys_project_revoked",
     } <= virtual_key_indexes
     assert "slug" in project_columns
     assert "ix_projects_slug" in project_indexes
@@ -443,6 +454,21 @@ async def test_migrations_create_current_schema(tmp_path) -> None:
             ("owning_project_id", "projects", "id"),
             ("owning_virtual_key_id", "virtual_keys", "id"),
         } <= table_schema["foreign_keys"]
+    required_columns = {
+        "limit_policy_id",
+        "limit_policy_revision_id",
+        "limit_policy_rule_id",
+        "limit_policy_assignment_id",
+    }
+    assert all(not committed_columns[name]["nullable"] for name in required_columns)
+    assert all(not reservation_columns[name]["nullable"] for name in required_columns)
+    assert {
+        "ix_usage_records_org_created_at_id",
+        "ix_gateway_requests_org_started_id",
+        "ix_policy_assignments_org_type_active_created",
+        "ix_gateway_route_attempts_org_request_attempt",
+        "ix_gateway_policy_decisions_org_request_created",
+    } <= performance_indexes
 
 
 def _policy_owner_schema(sync_connection):
@@ -470,117 +496,19 @@ def _policy_owner_schema(sync_connection):
     return schema
 
 
-@pytest.mark.asyncio
-async def test_anthropic_migration_backfill_requires_canonical_base_url(tmp_path) -> None:
-    database_path = tmp_path / "migration-backfill.db"
-    engine = create_async_engine(f"sqlite+aiosqlite:///{database_path}")
-
-    def upgrade_to(connection, revision: str) -> None:
-        config = Config("alembic.ini")
-        config.attributes["connection"] = connection
-        command.upgrade(config, revision)
-
-    async with engine.begin() as connection:
-        await connection.run_sync(upgrade_to, "20260605_0017")
-        now = "2026-06-05 00:00:00"
-        await connection.execute(
-            text(
-                "INSERT INTO organizations "
-                "(id, name, slug, is_active, created_at) "
-                "VALUES ('org1', 'Org', 'org', 1, :now)"
-            ),
-            {"now": now},
+def _performance_indexes(sync_connection) -> set[str]:
+    inspector = inspect(sync_connection)
+    return {
+        index["name"]
+        for table_name in (
+            "usage_records",
+            "gateway_requests",
+            "policy_assignments",
+            "gateway_route_attempts",
+            "gateway_policy_decisions",
         )
-        provider_sql = text(
-            "INSERT INTO providers ("
-            "id, org_id, name, slug, base_url, api_key_encrypted, adapter_type, "
-            "display_name, description, capabilities, supported_integration, "
-            "request_timeout_seconds, max_body_bytes, retry_policy, model_sync_mode, "
-            "circuit_breaker_policy, max_concurrent_requests, is_favorite, is_active, "
-            "created_at, updated_at) VALUES ("
-            ":id, 'org1', :name, :slug, :base_url, NULL, 'openai_compat', "
-            "NULL, NULL, '{}', 'openai_compatible_default', NULL, NULL, NULL, NULL, "
-            "'{}', NULL, 0, 1, :now, :now)"
-        )
-        rows = [
-            {
-                "id": "catalog",
-                "name": "Anthropic",
-                "slug": "anthropic",
-                "base_url": "https://api.anthropic.com/v1/",
-                "now": now,
-            },
-            {
-                "id": "custom-slug",
-                "name": "Custom",
-                "slug": "anthropic-custom",
-                "base_url": "https://custom.example/v1",
-                "now": now,
-            },
-            {
-                "id": "custom-name",
-                "name": "Anthropic Compatible",
-                "slug": "anthropic-like",
-                "base_url": "https://another.example/v1",
-                "now": now,
-            },
-        ]
-        for row in rows:
-            await connection.execute(provider_sql, row)
-        await connection.run_sync(upgrade_to, "head")
-        integrations = dict(
-            (
-                await connection.execute(text("SELECT id, supported_integration FROM providers"))
-            ).all()
-        )
-
-    await engine.dispose()
-    assert integrations == {
-        "catalog": "anthropic_messages",
-        "custom-slug": "openai_compatible_default",
-        "custom-name": "openai_compatible_default",
+        for index in inspector.get_indexes(table_name)
     }
-
-
-@pytest.mark.asyncio
-async def test_limit_accounting_migrations_create_required_reference_columns(tmp_path) -> None:
-    database_path = tmp_path / "limit-accounting-required-refs.db"
-    engine = create_async_engine(f"sqlite+aiosqlite:///{database_path}")
-
-    def upgrade_to_head(connection) -> None:
-        config = Config("alembic.ini")
-        config.attributes["connection"] = connection
-        command.upgrade(config, "head")
-
-    async with engine.begin() as connection:
-        await connection.run_sync(upgrade_to_head)
-        committed_columns = {
-            column["name"]: column
-            for column in await connection.run_sync(
-                lambda sync_connection: inspect(sync_connection).get_columns(
-                    "limit_policy_committed_usage"
-                )
-            )
-        }
-        reservation_columns = {
-            column["name"]: column
-            for column in await connection.run_sync(
-                lambda sync_connection: inspect(sync_connection).get_columns(
-                    "limit_policy_reservations"
-                )
-            )
-        }
-
-    await engine.dispose()
-
-    required_columns = {
-        "limit_policy_id",
-        "limit_policy_revision_id",
-        "limit_policy_rule_id",
-        "limit_policy_assignment_id",
-    }
-    assert all(not committed_columns[column_name]["nullable"] for column_name in required_columns)
-    assert all(not reservation_columns[column_name]["nullable"] for column_name in required_columns)
 
 
 @pytest.mark.asyncio
@@ -663,7 +591,7 @@ async def test_gateway_path_records_usage_with_mocked_upstream(app_client, db_se
 
         usage_response = await client.get("/api/v1/usage/records", headers=admin_headers)
         assert usage_response.status_code == 200
-        records = usage_response.json()
+        records = usage_response.json()["items"]
         assert len(records) == 1
         assert records[0]["requested_model"] == "gpt-test"
         assert records[0]["provider_model"] == "gpt-test"
@@ -747,7 +675,7 @@ async def test_native_anthropic_messages_preserves_shape_and_records_usage(
 
     assert response.status_code == 200
     assert response.json()["type"] == "message"
-    records = usage_response.json()
+    records = usage_response.json()["items"]
     assert len(records) == 1
     assert records[0]["provider_credential_id"] == credential_id
     assert records[0]["prompt_tokens"] == 8
@@ -835,12 +763,12 @@ async def test_native_anthropic_messages_applies_output_guardrails(
 
     assert response.status_code == 403
     assert response.json()["detail"] == "response blocked by guardrail prompt_contains rule"
-    records = usage_response.json()
+    records = usage_response.json()["items"]
     assert len(records) == 1
     assert records[0]["http_status"] == 403
     assert records[0]["error_code"] == "guardrail_output_denied"
     assert records[0]["total_tokens"] == 11
-    events = events_response.json()
+    events = events_response.json()["items"]
     assert len(events) == 1
     assert events[0]["metadata"]["matched_values"] == ["blocked output"]
     assert records[0]["route_attempt_id"] is not None
@@ -915,13 +843,62 @@ async def test_native_anthropic_messages_records_upstream_failure(app_client, db
         usage_response = await client.get("/api/v1/usage/records", headers=admin_headers)
 
     assert response.status_code == 401
-    assert response.json()["type"] == "error"
-    records = usage_response.json()
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json() == {
+        "type": "urn:bab:error:provider-upstream",
+        "title": "Upstream Provider Error",
+        "status": 401,
+        "detail": "Upstream provider request failed",
+        "instance": "/v1/messages",
+        "failure_reason": "provider_error",
+        "upstream_status": 401,
+    }
+    records = usage_response.json()["items"]
     assert len(records) == 1
     assert records[0]["http_status"] == 401
     assert records[0]["error_code"] == "provider_upstream_error"
     assert records[0]["usage_source"] == "unknown"
     assert records[0]["total_tokens"] is None
+
+
+@pytest.mark.asyncio
+async def test_malformed_successful_upstream_response_records_bad_gateway(
+    app_client,
+    db_session,
+) -> None:
+    await sync_default_workspace(db_session)
+
+    async def upstream_handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=["invalid"])
+
+    async def override_proxy_http_client() -> AsyncGenerator[httpx.AsyncClient]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(upstream_handler)) as client:
+            yield client
+
+    app_client.dependency_overrides[get_proxy_http_client] = override_proxy_http_client
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://test",
+    ) as client:
+        admin_headers = await _login(client)
+        virtual_key, _, _ = await _provision_gateway_path(client, admin_headers)
+        response = await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": f"Bearer {virtual_key}"},
+            json={"model": "gpt-test", "messages": [{"role": "user", "content": "Hello"}]},
+        )
+        usage_response = await client.get("/api/v1/usage/records", headers=admin_headers)
+
+    assert response.status_code == 502
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json()["failure_reason"] == "invalid_response"
+    records = usage_response.json()["items"]
+    assert records[0]["http_status"] == 502
+    assert records[0]["error_code"] == "provider_upstream_error"
+    gateway_request = (await db_session.execute(select(GatewayRequest))).scalar_one()
+    assert gateway_request.final_http_status == 502
+    assert gateway_request.final_error_code == "provider_upstream_error"
+    app_client.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio
@@ -1059,7 +1036,7 @@ async def test_native_anthropic_messages_falls_back_to_second_candidate(
     assert response.status_code == 200
     assert response.json()["content"][0]["text"] == "anthropic-fallback-ok"
     assert calls == ["claude-primary", "claude-secondary"]
-    records = usage_response.json()
+    records = usage_response.json()["items"]
     assert [record["provider_model"] for record in records[:2]] == [
         "claude-secondary",
         "claude-primary",
@@ -1264,7 +1241,7 @@ async def test_gateway_enforces_virtual_key_request_rate_limit(app_client, db_se
 
         usage_response = await client.get("/api/v1/usage/records", headers=admin_headers)
         assert usage_response.status_code == 200
-        limit_record = usage_response.json()[0]
+        limit_record = usage_response.json()["items"][0]
         assert limit_record["http_status"] == 429
         assert limit_record["error_code"] == "limit_policy_denied"
         assert limit_record["gateway_endpoint"] == "chat_completions"
@@ -1423,11 +1400,12 @@ async def test_gateway_proxy_does_not_cross_provider_fallback(app_client, db_ses
             },
         )
         assert proxy_response.status_code == 500
-        assert proxy_response.json()["error"]["message"] == "primary failed"
+        assert proxy_response.json()["type"] == "urn:bab:error:provider-upstream"
+        assert proxy_response.json()["failure_reason"] == "provider_5xx"
 
         usage_response = await client.get("/api/v1/usage/records", headers=admin_headers)
         assert usage_response.status_code == 200
-        records = usage_response.json()
+        records = usage_response.json()["items"]
         assert len(records) == 1
         assert records[0]["provider_id"] == provider_id
         assert records[0]["request_id"] == "req-no-fallback"
@@ -1511,7 +1489,7 @@ async def test_output_guardrail_blocks_non_streaming_response_and_records_spend(
 
         usage_response = await client.get("/api/v1/usage/records", headers=admin_headers)
         assert usage_response.status_code == 200
-        records = usage_response.json()
+        records = usage_response.json()["items"]
         assert len(records) == 1
         assert records[0]["http_status"] == 403
         assert records[0]["total_tokens"] == 12
@@ -1522,12 +1500,49 @@ async def test_output_guardrail_blocks_non_streaming_response_and_records_spend(
             params={"phase": "response", "decision": "blocked"},
             headers=admin_headers,
         )
+        first_events_page_response = await client.get(
+            "/api/v1/guardrails/events",
+            params={"limit": 1},
+            headers=admin_headers,
+        )
+        first_events_page = first_events_page_response.json()
+        second_events_page_response = await client.get(
+            "/api/v1/guardrails/events",
+            params={
+                "limit": 1,
+                "before_at": first_events_page["next_before_at"],
+                "before_id": first_events_page["next_before_id"],
+            },
+            headers=admin_headers,
+        )
+        invalid_events_limit_response = await client.get(
+            "/api/v1/guardrails/events",
+            params={"limit": 0},
+            headers=admin_headers,
+        )
         assert events_response.status_code == 200
-        events = events_response.json()
+        events = events_response.json()["items"]
         assert len(events) == 1
         assert events[0]["phase"] == "response"
         assert events[0]["gateway_request_id"] == records[0]["gateway_request_id"]
         assert events[0]["metadata"]["matched_values"] == ["blocked output"]
+        assert first_events_page_response.status_code == 200
+        [latest_event] = first_events_page["items"]
+        assert first_events_page["limit"] == 1
+        assert first_events_page["has_more"] is True
+        assert first_events_page["next_before_at"] == latest_event["created_at"]
+        assert first_events_page["next_before_id"] == latest_event["id"]
+        assert second_events_page_response.status_code == 200
+        second_events_page = second_events_page_response.json()
+        assert len(second_events_page["items"]) == 1
+        assert second_events_page["items"][0]["id"] != latest_event["id"]
+        assert second_events_page["has_more"] is False
+        assert second_events_page["next_before_at"] is None
+        assert second_events_page["next_before_id"] is None
+        assert invalid_events_limit_response.status_code == 422
+        assert invalid_events_limit_response.headers["content-type"].startswith(
+            "application/problem+json"
+        )
         stored_event = await db_session.scalar(
             select(GuardrailEvent).where(GuardrailEvent.id == UUID(events[0]["id"]))
         )
@@ -1738,7 +1753,7 @@ async def test_input_guardrail_denial_does_not_consume_request_limit(
             "/api/v1/guardrails/events",
             headers=admin_headers,
         )
-        events = events_response.json()
+        events = events_response.json()["items"]
         blocked_event = next(event for event in events if event["decision"] == "blocked")
         assert blocked_event["gateway_request_id"] is not None
         assert blocked_event["route_attempt_id"] is not None
@@ -1848,11 +1863,11 @@ async def test_streaming_is_allowed_when_output_guardrail_is_monitor_only(
 
     assert proxy_response.status_code == 200
     assert upstream_called is True
-    records = usage_response.json()
+    records = usage_response.json()["items"]
     assert len(records) == 1
     assert records[0]["usage_source"] == "estimated"
     assert records[0]["total_tokens"] > 0
-    events = events_response.json()
+    events = events_response.json()["items"]
     assert len(events) == 1
     assert events[0]["metadata"]["matched_values"] == ["blocked output"]
 
@@ -2078,7 +2093,7 @@ async def test_chat_completion_falls_back_to_second_public_model_candidate(
     assert len(calls) == 2
     assert "primary.example.test" in calls[0]
     assert "secondary.example.test" in calls[1]
-    records = usage.json()
+    records = usage.json()["items"]
     assert [record["provider_model"] for record in records[:2]] == [
         "secondary-chat",
         "primary-chat",
@@ -2292,9 +2307,14 @@ async def test_chat_completion_returns_primary_error_when_fallback_exhausts(
         usage = await client.get("/api/v1/usage/records", headers=admin_headers)
 
     assert response.status_code == 503
-    assert response.json()["error"]["message"] == "secondary unavailable"
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json()["type"] == "urn:bab:error:provider-upstream"
+    assert response.json()["status"] == 503
+    assert response.json()["instance"] == "/v1/chat/completions"
+    assert response.json()["failure_reason"] == "provider_5xx"
+    assert response.json()["upstream_status"] == 503
     assert len(calls) == 2
-    records = usage.json()
+    records = usage.json()["items"]
     assert [record["provider_model"] for record in records[:2]] == [
         "secondary-exhausted-chat",
         "primary-exhausted-chat",
@@ -2381,9 +2401,10 @@ async def test_chat_completion_does_not_fallback_for_nonfallbackable_status(
         usage = await client.get("/api/v1/usage/records", headers=admin_headers)
 
     assert response.status_code == 400
-    assert response.json()["error"]["message"] == "bad request"
+    assert response.json()["type"] == "urn:bab:error:provider-upstream"
+    assert response.json()["failure_reason"] == "provider_error"
     assert len(calls) == 1
-    records = usage.json()
+    records = usage.json()["items"]
     assert len(records) == 1
     assert records[0]["is_final_attempt"] is True
     assert records[0]["attempt_failure_reason"] == "provider_error"
@@ -2450,7 +2471,7 @@ async def test_chat_completion_falls_back_for_configured_rate_limit(
     assert response.status_code == 200
     assert response.json()["choices"][0]["message"]["content"] == "rate-limit-fallback-ok"
     assert len(calls) == 2
-    records = usage.json()
+    records = usage.json()["items"]
     assert records[1]["attempt_failure_reason"] == "rate_limited"
     assert records[1]["is_final_attempt"] is False
     app_client.dependency_overrides.clear()
@@ -2528,7 +2549,7 @@ async def test_responses_and_completions_fall_back_to_second_candidate(
         "primary-openai-compatible.example.test:primary-openai-compatible-chat",
         "secondary-openai-compatible.example.test:secondary-openai-compatible-chat",
     ]
-    records = usage.json()
+    records = usage.json()["items"]
     assert [record["gateway_endpoint"] for record in records[:4]] == [
         "completions",
         "completions",
@@ -2586,7 +2607,7 @@ async def test_responses_exhausted_fallback_records_response_endpoint(
         usage = await client.get("/api/v1/usage/records", headers=admin_headers)
 
     assert response.status_code == 503
-    records = usage.json()
+    records = usage.json()["items"]
     assert [record["gateway_endpoint"] for record in records[:2]] == [
         "responses",
         "responses",
@@ -2642,9 +2663,10 @@ async def test_chat_completion_provider_pin_disables_fallback(
         usage = await client.get("/api/v1/usage/records", headers=admin_headers)
 
     assert response.status_code == 503
-    assert response.json()["error"]["message"] == "pinned provider down"
+    assert response.json()["type"] == "urn:bab:error:provider-upstream"
+    assert response.json()["failure_reason"] == "provider_5xx"
     assert len(calls) == 1
-    records = usage.json()
+    records = usage.json()["items"]
     assert len(records) == 1
     assert records[0]["provider_id"] == primary_provider_id
     assert records[0]["is_final_attempt"] is True

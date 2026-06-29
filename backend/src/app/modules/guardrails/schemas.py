@@ -244,6 +244,14 @@ class GuardrailEventResponse(BaseModel):
     created_at: datetime
 
 
+class GuardrailEventPageResponse(BaseModel):
+    items: list[GuardrailEventResponse]
+    limit: int
+    has_more: bool
+    next_before_at: datetime | None
+    next_before_id: UUID | None
+
+
 class GuardrailEvaluationContext(BaseModel):
     org_id: UUID
     team_id: UUID

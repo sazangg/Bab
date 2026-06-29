@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from http import HTTPStatus
 from typing import Protocol
 
 import httpx
@@ -67,7 +68,7 @@ class OpenAICompatibleAdapter:
             raise ProviderUpstreamError(status_code=response.status_code, body=body)
         if not isinstance(body, dict) or not isinstance(body.get("data"), list):
             raise ProviderUpstreamError(
-                status_code=response.status_code,
+                status_code=HTTPStatus.BAD_GATEWAY,
                 body=body,
                 failure_reason="invalid_response",
             )
@@ -95,7 +96,7 @@ class OpenAICompatibleAdapter:
             raise ProviderUpstreamError(status_code=response.status_code, body=body)
         if not isinstance(body, dict):
             raise ProviderUpstreamError(
-                status_code=response.status_code,
+                status_code=HTTPStatus.BAD_GATEWAY,
                 body=body,
                 failure_reason="invalid_response",
             )
@@ -145,7 +146,7 @@ class AnthropicMessagesAdapter:
             raise ProviderUpstreamError(status_code=response.status_code, body=body)
         if not isinstance(body, dict) or not isinstance(body.get("data"), list):
             raise ProviderUpstreamError(
-                status_code=response.status_code,
+                status_code=HTTPStatus.BAD_GATEWAY,
                 body=body,
                 failure_reason="invalid_response",
             )
@@ -180,7 +181,7 @@ class AnthropicMessagesAdapter:
             raise ProviderUpstreamError(status_code=response.status_code, body=body)
         if not isinstance(body, dict):
             raise ProviderUpstreamError(
-                status_code=response.status_code,
+                status_code=HTTPStatus.BAD_GATEWAY,
                 body=body,
                 failure_reason="invalid_response",
             )

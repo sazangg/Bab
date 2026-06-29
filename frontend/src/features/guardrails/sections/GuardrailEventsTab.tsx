@@ -69,7 +69,7 @@ export function GuardrailEventsTab({
     model: model.trim() || undefined,
     limit: 50,
   });
-  const events = eventsQuery.data?.status === 200 ? eventsQuery.data.data : [];
+  const events = eventsQuery.data?.status === 200 ? eventsQuery.data.data.items : [];
   const eventScopeOptions = scopeType === "all" ? [] : scopeOptions[scopeType];
 
   const clearScope = () => {

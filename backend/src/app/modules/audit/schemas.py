@@ -20,6 +20,14 @@ class AuditEventResponse(BaseModel):
     created_at: datetime
 
 
+class AuditEventPageResponse(BaseModel):
+    items: list[AuditEventResponse]
+    limit: int
+    has_more: bool
+    next_before_at: datetime | None
+    next_before_id: UUID | None
+
+
 class AuditVerificationResponse(BaseModel):
     valid: bool
     checked_events: int

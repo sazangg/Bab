@@ -5,6 +5,8 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.metrics import record_gateway_denial
+from app.core.tracing import add_span_event
 from app.modules.gateway import accounting as gateway_accounting
 from app.modules.gateway import guardrails as gateway_guardrails
 from app.modules.gateway import limits as gateway_limits
@@ -41,6 +43,7 @@ async def finalize_invalid_virtual_key(
     gateway_request_id: UUID | None,
     db: AsyncSession,
 ) -> None:
+    _record_denial(denial_type="invalid_virtual_key", phase="access")
     await gateway_tracing.finalize_gateway_request(
         gateway_request_id=gateway_request_id,
         resolved=None,
@@ -57,6 +60,11 @@ async def finalize_request_body_too_large(
     context: GatewayFailureContext,
     db: AsyncSession,
 ) -> None:
+    _record_denial(
+        denial_type="request_body_too_large",
+        gateway_endpoint=context.gateway_endpoint,
+        phase="request",
+    )
     await gateway_limits.release_reservations(reservation_ids=context.reservation_ids, db=db)
     if context.resolved is not None:
         await gateway_tracing.record_gateway_request_validation_decision(
@@ -80,6 +88,7 @@ async def finalize_request_body_too_large(
         error_code="request_body_too_large",
         db=db,
         final_route_attempt_id=context.route_attempt_id,
+        gateway_endpoint=context.gateway_endpoint,
     )
 
 
@@ -89,6 +98,11 @@ async def finalize_limit_denial(
     denial: gateway_limits.GatewayLimitDeniedError,
     db: AsyncSession,
 ) -> None:
+    _record_denial(
+        denial_type="limit_denied",
+        gateway_endpoint=context.gateway_endpoint,
+        phase="limit",
+    )
     await gateway_limits.release_reservations(reservation_ids=context.reservation_ids, db=db)
     if context.resolved is not None:
         await gateway_accounting.record_limit_denial_side_effects(
@@ -114,6 +128,7 @@ async def finalize_limit_denial(
         error_code="limit_exceeded",
         db=db,
         final_route_attempt_id=context.route_attempt_id,
+        gateway_endpoint=context.gateway_endpoint,
     )
 
 
@@ -124,6 +139,11 @@ async def finalize_access_denied(
     record_usage: bool,
     db: AsyncSession,
 ) -> None:
+    _record_denial(
+        denial_type="access_denied",
+        gateway_endpoint=context.gateway_endpoint,
+        phase="access",
+    )
     await gateway_limits.release_reservations(reservation_ids=context.reservation_ids, db=db)
     if context.resolved is not None:
         if record_usage:
@@ -154,6 +174,7 @@ async def finalize_access_denied(
             error_code="access_denied",
             db=db,
             final_route_attempt_id=context.route_attempt_id,
+            gateway_endpoint=context.gateway_endpoint,
         )
         await gateway_accounting.record_proxy_activity(
             resolved=context.resolved,
@@ -173,6 +194,7 @@ async def finalize_access_denied(
             fallback_attempted=False,
             error_code="access_denied",
             db=db,
+            gateway_endpoint=context.gateway_endpoint,
         )
 
 
@@ -183,6 +205,11 @@ async def finalize_request_guardrail_denied(
     record_usage: bool,
     db: AsyncSession,
 ) -> None:
+    _record_denial(
+        denial_type="request_guardrail_denied",
+        gateway_endpoint=context.gateway_endpoint,
+        phase="request",
+    )
     await gateway_limits.release_reservations(reservation_ids=context.reservation_ids, db=db)
     if context.resolved is not None:
         if record_usage:
@@ -213,6 +240,7 @@ async def finalize_request_guardrail_denied(
             error_code="guardrail_denied",
             db=db,
             final_route_attempt_id=context.route_attempt_id,
+            gateway_endpoint=context.gateway_endpoint,
         )
         await gateway_accounting.record_proxy_activity(
             resolved=context.resolved,
@@ -234,6 +262,11 @@ async def finalize_streaming_response_guardrail_blocked(
     context: GatewayFailureContext,
     db: AsyncSession,
 ) -> None:
+    _record_denial(
+        denial_type="streaming_response_guardrail_blocked",
+        gateway_endpoint=context.gateway_endpoint,
+        phase="response",
+    )
     await gateway_limits.release_reservations(reservation_ids=context.reservation_ids, db=db)
     await _finalize_route_attempt_if_present(
         context=context,
@@ -251,6 +284,7 @@ async def finalize_streaming_response_guardrail_blocked(
         error_code="streaming_response_guardrail_unsupported",
         db=db,
         final_route_attempt_id=context.route_attempt_id,
+        gateway_endpoint=context.gateway_endpoint,
     )
 
 
@@ -260,6 +294,11 @@ async def finalize_provider_unavailable(
     message: str,
     db: AsyncSession,
 ) -> None:
+    _record_denial(
+        denial_type="provider_unavailable",
+        gateway_endpoint=context.gateway_endpoint,
+        phase="provider",
+    )
     await gateway_limits.release_reservations(reservation_ids=context.reservation_ids, db=db)
     if context.resolved is not None:
         await gateway_accounting.record_proxy_request(
@@ -289,6 +328,7 @@ async def finalize_provider_unavailable(
             error_code="provider_unavailable",
             db=db,
             final_route_attempt_id=context.route_attempt_id,
+            gateway_endpoint=context.gateway_endpoint,
         )
         await gateway_accounting.record_proxy_activity(
             resolved=context.resolved,
@@ -313,6 +353,11 @@ async def finalize_provider_upstream_error(
     provider_error_metadata: dict[str, Any] | None = None,
     db: AsyncSession,
 ) -> None:
+    _record_denial(
+        denial_type="provider_upstream_error",
+        gateway_endpoint=context.gateway_endpoint,
+        phase="provider",
+    )
     if context.resolved is not None:
         await gateway_accounting.record_proxy_request(
             resolved=context.resolved,
@@ -345,6 +390,7 @@ async def finalize_provider_upstream_error(
             error_code="provider_upstream_error",
             db=db,
             final_route_attempt_id=context.route_attempt_id,
+            gateway_endpoint=context.gateway_endpoint,
         )
         if context.fallback_attempted and fallback_exhausted_message is not None:
             await gateway_accounting.record_proxy_activity(
@@ -402,3 +448,24 @@ async def _finalize_route_attempt_if_present(
 
 def _elapsed_ms(started_at: float) -> int:
     return max(0, round((perf_counter() - started_at) * 1000))
+
+
+def _record_denial(
+    *,
+    denial_type: str,
+    gateway_endpoint: str | None = None,
+    phase: str,
+) -> None:
+    record_gateway_denial(
+        denial_type=denial_type,
+        gateway_endpoint=gateway_endpoint,
+        phase=phase,
+    )
+    add_span_event(
+        "bab.gateway.denial",
+        {
+            "bab.gateway.phase": phase,
+            "bab.gateway.endpoint": gateway_endpoint,
+            "bab.gateway.error_code": denial_type,
+        },
+    )

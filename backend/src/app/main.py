@@ -12,6 +12,7 @@ from app.api.v1.routes.gateway_history import router as gateway_history_router
 from app.api.v1.routes.guardrails import router as guardrails_router
 from app.api.v1.routes.health import root_router as root_health_router
 from app.api.v1.routes.health import router as health_router
+from app.api.v1.routes.metrics import router as metrics_router
 from app.api.v1.routes.policies import router as policies_router
 from app.api.v1.routes.projects import router as projects_router
 from app.api.v1.routes.providers import router as providers_router
@@ -25,8 +26,9 @@ from app.core.config import settings, validate_runtime_settings
 from app.core.database import engine
 from app.core.logging import configure_logging
 from app.core.migrations import run_database_migrations
-from app.core.problems import install_problem_handlers
+from app.core.problems import install_problem_handlers, install_problem_openapi
 from app.core.request_context import request_context_middleware
+from app.core.tracing import configure_tracing
 
 
 @asynccontextmanager
@@ -44,6 +46,7 @@ def create_app() -> FastAPI:
     Path(settings.assets_dir).mkdir(parents=True, exist_ok=True)
     app = FastAPI(title="Bab API", lifespan=lifespan)
     app.middleware("http")(request_context_middleware)
+    configure_tracing(app)
     install_problem_handlers(app)
     app.include_router(activity_router, prefix="/api/v1")
     app.include_router(audit_router, prefix="/api/v1")
@@ -58,8 +61,10 @@ def create_app() -> FastAPI:
     app.include_router(teams_router, prefix="/api/v1")
     app.include_router(usage_router, prefix="/api/v1")
     app.include_router(virtual_keys_router, prefix="/api/v1")
+    app.include_router(metrics_router)
     app.include_router(root_health_router)
     app.include_router(proxy_router)
+    install_problem_openapi(app)
     app.mount("/assets", StaticFiles(directory=settings.assets_dir), name="assets")
     return app
 

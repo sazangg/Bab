@@ -124,7 +124,7 @@ export function GuardrailsPage() {
   const teams = teamsQuery.data?.status === 200 ? teamsQuery.data.data : [];
   const projects = projectsQuery.data?.status === 200 ? projectsQuery.data.data : [];
   const recentBlockCount =
-    recentBlocksQuery.data?.status === 200 ? recentBlocksQuery.data.data.length : 0;
+    recentBlocksQuery.data?.status === 200 ? recentBlocksQuery.data.data.items.length : 0;
 
   const virtualKeyQueries = useQueries({
     queries: projects.map((project) => ({

@@ -235,7 +235,7 @@ class GatewayRequestTraceListItem(BaseModel):
     duration_ms: int | None = None
 
 
-class GatewayRequestTraceListResponse(BaseModel):
+class GatewayRequestTracePageResponse(BaseModel):
     items: list[GatewayRequestTraceListItem]
     limit: int
     offset: int

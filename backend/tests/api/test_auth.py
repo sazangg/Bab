@@ -439,6 +439,26 @@ async def test_invite_acceptance_and_team_membership_flow(
             headers=admin_headers,
         )
         audit_response = await client.get("/api/v1/audit", headers=admin_headers)
+        audit_first_page_response = await client.get(
+            "/api/v1/audit",
+            params={"limit": 1},
+            headers=admin_headers,
+        )
+        audit_first_page = audit_first_page_response.json()
+        audit_second_page_response = await client.get(
+            "/api/v1/audit",
+            params={
+                "limit": 1,
+                "before_at": audit_first_page["next_before_at"],
+                "before_id": audit_first_page["next_before_id"],
+            },
+            headers=admin_headers,
+        )
+        audit_invalid_limit_response = await client.get(
+            "/api/v1/audit",
+            params={"limit": 0},
+            headers=admin_headers,
+        )
         audit_export_response = await client.get(
             "/api/v1/audit/export",
             params={"action": "team_member.added"},
@@ -460,13 +480,27 @@ async def test_invite_acceptance_and_team_membership_flow(
     assert remove_response.status_code == 204
     assert missing_remove_response.status_code == 404
     assert audit_response.status_code == 200
-    audit_actions = {event["action"] for event in audit_response.json()}
+    audit_actions = {event["action"] for event in audit_response.json()["items"]}
     assert {
         "invite.created",
         "team_member.added",
         "team_member.role_updated",
         "team_member.removed",
     }.issubset(audit_actions)
+    assert audit_first_page_response.status_code == 200
+    [latest_audit_event] = audit_first_page["items"]
+    assert audit_first_page["limit"] == 1
+    assert audit_first_page["has_more"] is True
+    assert audit_first_page["next_before_at"] == latest_audit_event["created_at"]
+    assert audit_first_page["next_before_id"] == latest_audit_event["id"]
+    assert audit_second_page_response.status_code == 200
+    audit_second_page = audit_second_page_response.json()
+    assert len(audit_second_page["items"]) == 1
+    assert audit_second_page["items"][0]["id"] != latest_audit_event["id"]
+    assert audit_invalid_limit_response.status_code == 422
+    assert audit_invalid_limit_response.headers["content-type"].startswith(
+        "application/problem+json"
+    )
     assert audit_export_response.status_code == 200
     assert audit_export_response.headers["content-type"].startswith("text/csv")
     assert "team_member.added" in audit_export_response.text

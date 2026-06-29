@@ -55,6 +55,7 @@ import type {
   LimitPolicyBudgetBurnRow,
   ProjectResponse,
   TeamResponse,
+  UsageRecordPageResponse,
   UsageRecordResponse,
   UsageBreakdownRow,
   UsageTimeSeriesPoint,
@@ -180,11 +181,11 @@ export function UsagePage() {
   const recordsQuery = useQuery({
     queryKey: ["usage-records", usageParams, trimmedRecordSearch, recordPage],
     queryFn: async () => {
-      const response = await httpClient.get<UsageRecordResponse[]>("/api/v1/usage/records", {
+      const response = await httpClient.get<UsageRecordPageResponse>("/api/v1/usage/records", {
         params: {
           ...usageParams,
           search: trimmedRecordSearch || undefined,
-          limit: RECORDS_PAGE_SIZE + 1,
+          limit: RECORDS_PAGE_SIZE,
           offset: recordPage * RECORDS_PAGE_SIZE,
         },
       });
@@ -212,9 +213,8 @@ export function UsagePage() {
     startDate,
     endDate,
   );
-  const records = recordsQuery.data ?? [];
-  const visibleRecords = records.slice(0, RECORDS_PAGE_SIZE);
-  const hasNextRecordsPage = records.length > RECORDS_PAGE_SIZE;
+  const visibleRecords = recordsQuery.data?.items ?? [];
+  const hasNextRecordsPage = recordsQuery.data?.has_more ?? false;
   const requestList =
     requestsQuery.data?.status === 200
       ? requestsQuery.data.data

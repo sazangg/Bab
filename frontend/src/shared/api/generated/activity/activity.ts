@@ -20,10 +20,10 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
-  ActivityEventResponse,
+  ActivityEventPageResponse,
   ExportActivityEventsApiV1ActivityExportGetParams,
-  HTTPValidationError,
-  ListActivityEventsApiV1ActivityGetParams
+  ListActivityEventsApiV1ActivityGetParams,
+  ProblemDetail
 } from '../schemas';
 
 import { apiMutator } from '../../orval-mutator';
@@ -31,20 +31,33 @@ import { apiMutator } from '../../orval-mutator';
 
 
 
+export type HTTPStatusCode1xx = 100 | 101 | 102 | 103;
+export type HTTPStatusCode2xx = 200 | 201 | 202 | 203 | 204 | 205 | 206 | 207;
+export type HTTPStatusCode3xx = 300 | 301 | 302 | 303 | 304 | 305 | 307 | 308;
+export type HTTPStatusCode4xx = 400 | 401 | 402 | 403 | 404 | 405 | 406 | 407 | 408 | 409 | 410 | 411 | 412 | 413 | 414 | 415 | 416 | 417 | 418 | 419 | 420 | 421 | 422 | 423 | 424 | 426 | 428 | 429 | 431 | 451;
+export type HTTPStatusCode5xx = 500 | 501 | 502 | 503 | 504 | 505 | 507 | 511;
+export type HTTPStatusCodes = HTTPStatusCode1xx | HTTPStatusCode2xx | HTTPStatusCode3xx | HTTPStatusCode4xx | HTTPStatusCode5xx;
+
+
 export type listActivityEventsApiV1ActivityGetResponse200 = {
-  data: ActivityEventResponse[]
+  data: ActivityEventPageResponse
   status: 200
 }
 
 export type listActivityEventsApiV1ActivityGetResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type listActivityEventsApiV1ActivityGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type listActivityEventsApiV1ActivityGetResponseSuccess = (listActivityEventsApiV1ActivityGetResponse200) & {
   headers: Headers;
 };
-export type listActivityEventsApiV1ActivityGetResponseError = (listActivityEventsApiV1ActivityGetResponse422) & {
+export type listActivityEventsApiV1ActivityGetResponseError = (listActivityEventsApiV1ActivityGetResponse422 | listActivityEventsApiV1ActivityGetResponseDefault) & {
   headers: Headers;
 };
 
@@ -90,7 +103,7 @@ export const getListActivityEventsApiV1ActivityGetQueryKey = (params?: ListActiv
     }
 
 
-export const getListActivityEventsApiV1ActivityGetQueryOptions = <TData = Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError = HTTPValidationError>(params?: ListActivityEventsApiV1ActivityGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError, TData>>, }
+export const getListActivityEventsApiV1ActivityGetQueryOptions = <TData = Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError = ProblemDetail>(params?: ListActivityEventsApiV1ActivityGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -109,10 +122,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type ListActivityEventsApiV1ActivityGetQueryResult = NonNullable<Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>>
-export type ListActivityEventsApiV1ActivityGetQueryError = HTTPValidationError
+export type ListActivityEventsApiV1ActivityGetQueryError = ProblemDetail
 
 
-export function useListActivityEventsApiV1ActivityGet<TData = Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError = HTTPValidationError>(
+export function useListActivityEventsApiV1ActivityGet<TData = Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError = ProblemDetail>(
  params: undefined |  ListActivityEventsApiV1ActivityGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>,
@@ -122,7 +135,7 @@ export function useListActivityEventsApiV1ActivityGet<TData = Awaited<ReturnType
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListActivityEventsApiV1ActivityGet<TData = Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError = HTTPValidationError>(
+export function useListActivityEventsApiV1ActivityGet<TData = Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError = ProblemDetail>(
  params?: ListActivityEventsApiV1ActivityGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>,
@@ -132,7 +145,7 @@ export function useListActivityEventsApiV1ActivityGet<TData = Awaited<ReturnType
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListActivityEventsApiV1ActivityGet<TData = Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError = HTTPValidationError>(
+export function useListActivityEventsApiV1ActivityGet<TData = Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError = ProblemDetail>(
  params?: ListActivityEventsApiV1ActivityGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -140,7 +153,7 @@ export function useListActivityEventsApiV1ActivityGet<TData = Awaited<ReturnType
  * @summary List Activity Events
  */
 
-export function useListActivityEventsApiV1ActivityGet<TData = Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError = HTTPValidationError>(
+export function useListActivityEventsApiV1ActivityGet<TData = Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError = ProblemDetail>(
  params?: ListActivityEventsApiV1ActivityGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listActivityEventsApiV1ActivityGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -163,14 +176,19 @@ export type exportActivityEventsApiV1ActivityExportGetResponse200 = {
 }
 
 export type exportActivityEventsApiV1ActivityExportGetResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type exportActivityEventsApiV1ActivityExportGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type exportActivityEventsApiV1ActivityExportGetResponseSuccess = (exportActivityEventsApiV1ActivityExportGetResponse200) & {
   headers: Headers;
 };
-export type exportActivityEventsApiV1ActivityExportGetResponseError = (exportActivityEventsApiV1ActivityExportGetResponse422) & {
+export type exportActivityEventsApiV1ActivityExportGetResponseError = (exportActivityEventsApiV1ActivityExportGetResponse422 | exportActivityEventsApiV1ActivityExportGetResponseDefault) & {
   headers: Headers;
 };
 
@@ -216,7 +234,7 @@ export const getExportActivityEventsApiV1ActivityExportGetQueryKey = (params?: E
     }
 
 
-export const getExportActivityEventsApiV1ActivityExportGetQueryOptions = <TData = Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>, TError = HTTPValidationError>(params?: ExportActivityEventsApiV1ActivityExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>, TError, TData>>, }
+export const getExportActivityEventsApiV1ActivityExportGetQueryOptions = <TData = Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>, TError = ProblemDetail>(params?: ExportActivityEventsApiV1ActivityExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -235,10 +253,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type ExportActivityEventsApiV1ActivityExportGetQueryResult = NonNullable<Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>>
-export type ExportActivityEventsApiV1ActivityExportGetQueryError = HTTPValidationError
+export type ExportActivityEventsApiV1ActivityExportGetQueryError = ProblemDetail
 
 
-export function useExportActivityEventsApiV1ActivityExportGet<TData = Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>, TError = HTTPValidationError>(
+export function useExportActivityEventsApiV1ActivityExportGet<TData = Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>, TError = ProblemDetail>(
  params: undefined |  ExportActivityEventsApiV1ActivityExportGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>,
@@ -248,7 +266,7 @@ export function useExportActivityEventsApiV1ActivityExportGet<TData = Awaited<Re
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useExportActivityEventsApiV1ActivityExportGet<TData = Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>, TError = HTTPValidationError>(
+export function useExportActivityEventsApiV1ActivityExportGet<TData = Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>, TError = ProblemDetail>(
  params?: ExportActivityEventsApiV1ActivityExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>,
@@ -258,7 +276,7 @@ export function useExportActivityEventsApiV1ActivityExportGet<TData = Awaited<Re
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useExportActivityEventsApiV1ActivityExportGet<TData = Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>, TError = HTTPValidationError>(
+export function useExportActivityEventsApiV1ActivityExportGet<TData = Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>, TError = ProblemDetail>(
  params?: ExportActivityEventsApiV1ActivityExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -266,7 +284,7 @@ export function useExportActivityEventsApiV1ActivityExportGet<TData = Awaited<Re
  * @summary Export Activity Events
  */
 
-export function useExportActivityEventsApiV1ActivityExportGet<TData = Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>, TError = HTTPValidationError>(
+export function useExportActivityEventsApiV1ActivityExportGet<TData = Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>, TError = ProblemDetail>(
  params?: ExportActivityEventsApiV1ActivityExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportActivityEventsApiV1ActivityExportGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {

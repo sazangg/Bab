@@ -127,7 +127,7 @@ class VirtualKeyInventoryItem(BaseModel):
     revoked_reason: str | None
 
 
-class VirtualKeyInventoryPage(BaseModel):
+class VirtualKeyInventoryPageResponse(BaseModel):
     items: list[VirtualKeyInventoryItem]
     total: int
     limit: int

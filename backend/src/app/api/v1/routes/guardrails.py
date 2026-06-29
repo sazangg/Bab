@@ -1,7 +1,8 @@
+from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import (
@@ -27,7 +28,7 @@ from app.modules.guardrails.schemas import (
     CreateGuardrailAssignmentRequest,
     CreateGuardrailPolicyRequest,
     GuardrailAssignmentResponse,
-    GuardrailEventResponse,
+    GuardrailEventPageResponse,
     GuardrailImpactResponse,
     GuardrailPolicyOptionResponse,
     GuardrailPolicyResponse,
@@ -290,9 +291,11 @@ async def list_events(
     provider_id: UUID | None = None,
     pool_id: UUID | None = None,
     model: str | None = None,
-    limit: int = 50,
-) -> list[GuardrailEventResponse]:
-    return await facade.list_events(
+    before_at: datetime | None = None,
+    before_id: UUID | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+) -> GuardrailEventPageResponse:
+    events = await facade.list_events(
         scope=scope,
         decision=decision,
         phase=phase,
@@ -304,9 +307,21 @@ async def list_events(
         provider_id=provider_id,
         pool_id=pool_id,
         model=model,
-        limit=min(max(limit, 1), 200),
+        before_at=before_at,
+        before_id=before_id,
+        limit=limit + 1,
         actor=actor,
         db=db,
+    )
+    items = events[:limit]
+    has_more = len(events) > limit
+    next_item = items[-1] if has_more and items else None
+    return GuardrailEventPageResponse(
+        items=items,
+        limit=limit,
+        has_more=has_more,
+        next_before_at=next_item.created_at if next_item else None,
+        next_before_id=next_item.id if next_item else None,
     )
 
 

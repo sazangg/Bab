@@ -20,11 +20,11 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
-  AuditEventResponse,
+  AuditEventPageResponse,
   AuditVerificationResponse,
   ExportAuditEventsApiV1AuditExportGetParams,
-  HTTPValidationError,
-  ListAuditEventsApiV1AuditGetParams
+  ListAuditEventsApiV1AuditGetParams,
+  ProblemDetail
 } from '../schemas';
 
 import { apiMutator } from '../../orval-mutator';
@@ -32,20 +32,33 @@ import { apiMutator } from '../../orval-mutator';
 
 
 
+export type HTTPStatusCode1xx = 100 | 101 | 102 | 103;
+export type HTTPStatusCode2xx = 200 | 201 | 202 | 203 | 204 | 205 | 206 | 207;
+export type HTTPStatusCode3xx = 300 | 301 | 302 | 303 | 304 | 305 | 307 | 308;
+export type HTTPStatusCode4xx = 400 | 401 | 402 | 403 | 404 | 405 | 406 | 407 | 408 | 409 | 410 | 411 | 412 | 413 | 414 | 415 | 416 | 417 | 418 | 419 | 420 | 421 | 422 | 423 | 424 | 426 | 428 | 429 | 431 | 451;
+export type HTTPStatusCode5xx = 500 | 501 | 502 | 503 | 504 | 505 | 507 | 511;
+export type HTTPStatusCodes = HTTPStatusCode1xx | HTTPStatusCode2xx | HTTPStatusCode3xx | HTTPStatusCode4xx | HTTPStatusCode5xx;
+
+
 export type listAuditEventsApiV1AuditGetResponse200 = {
-  data: AuditEventResponse[]
+  data: AuditEventPageResponse
   status: 200
 }
 
 export type listAuditEventsApiV1AuditGetResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type listAuditEventsApiV1AuditGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type listAuditEventsApiV1AuditGetResponseSuccess = (listAuditEventsApiV1AuditGetResponse200) & {
   headers: Headers;
 };
-export type listAuditEventsApiV1AuditGetResponseError = (listAuditEventsApiV1AuditGetResponse422) & {
+export type listAuditEventsApiV1AuditGetResponseError = (listAuditEventsApiV1AuditGetResponse422 | listAuditEventsApiV1AuditGetResponseDefault) & {
   headers: Headers;
 };
 
@@ -91,7 +104,7 @@ export const getListAuditEventsApiV1AuditGetQueryKey = (params?: ListAuditEvents
     }
 
 
-export const getListAuditEventsApiV1AuditGetQueryOptions = <TData = Awaited<ReturnType<typeof listAuditEventsApiV1AuditGet>>, TError = HTTPValidationError>(params?: ListAuditEventsApiV1AuditGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAuditEventsApiV1AuditGet>>, TError, TData>>, }
+export const getListAuditEventsApiV1AuditGetQueryOptions = <TData = Awaited<ReturnType<typeof listAuditEventsApiV1AuditGet>>, TError = ProblemDetail>(params?: ListAuditEventsApiV1AuditGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAuditEventsApiV1AuditGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -110,10 +123,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type ListAuditEventsApiV1AuditGetQueryResult = NonNullable<Awaited<ReturnType<typeof listAuditEventsApiV1AuditGet>>>
-export type ListAuditEventsApiV1AuditGetQueryError = HTTPValidationError
+export type ListAuditEventsApiV1AuditGetQueryError = ProblemDetail
 
 
-export function useListAuditEventsApiV1AuditGet<TData = Awaited<ReturnType<typeof listAuditEventsApiV1AuditGet>>, TError = HTTPValidationError>(
+export function useListAuditEventsApiV1AuditGet<TData = Awaited<ReturnType<typeof listAuditEventsApiV1AuditGet>>, TError = ProblemDetail>(
  params: undefined |  ListAuditEventsApiV1AuditGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAuditEventsApiV1AuditGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listAuditEventsApiV1AuditGet>>,
@@ -123,7 +136,7 @@ export function useListAuditEventsApiV1AuditGet<TData = Awaited<ReturnType<typeo
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListAuditEventsApiV1AuditGet<TData = Awaited<ReturnType<typeof listAuditEventsApiV1AuditGet>>, TError = HTTPValidationError>(
+export function useListAuditEventsApiV1AuditGet<TData = Awaited<ReturnType<typeof listAuditEventsApiV1AuditGet>>, TError = ProblemDetail>(
  params?: ListAuditEventsApiV1AuditGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAuditEventsApiV1AuditGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listAuditEventsApiV1AuditGet>>,
@@ -133,7 +146,7 @@ export function useListAuditEventsApiV1AuditGet<TData = Awaited<ReturnType<typeo
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListAuditEventsApiV1AuditGet<TData = Awaited<ReturnType<typeof listAuditEventsApiV1AuditGet>>, TError = HTTPValidationError>(
+export function useListAuditEventsApiV1AuditGet<TData = Awaited<ReturnType<typeof listAuditEventsApiV1AuditGet>>, TError = ProblemDetail>(
  params?: ListAuditEventsApiV1AuditGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAuditEventsApiV1AuditGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -141,7 +154,7 @@ export function useListAuditEventsApiV1AuditGet<TData = Awaited<ReturnType<typeo
  * @summary List Audit Events
  */
 
-export function useListAuditEventsApiV1AuditGet<TData = Awaited<ReturnType<typeof listAuditEventsApiV1AuditGet>>, TError = HTTPValidationError>(
+export function useListAuditEventsApiV1AuditGet<TData = Awaited<ReturnType<typeof listAuditEventsApiV1AuditGet>>, TError = ProblemDetail>(
  params?: ListAuditEventsApiV1AuditGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAuditEventsApiV1AuditGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -164,14 +177,19 @@ export type exportAuditEventsApiV1AuditExportGetResponse200 = {
 }
 
 export type exportAuditEventsApiV1AuditExportGetResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type exportAuditEventsApiV1AuditExportGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type exportAuditEventsApiV1AuditExportGetResponseSuccess = (exportAuditEventsApiV1AuditExportGetResponse200) & {
   headers: Headers;
 };
-export type exportAuditEventsApiV1AuditExportGetResponseError = (exportAuditEventsApiV1AuditExportGetResponse422) & {
+export type exportAuditEventsApiV1AuditExportGetResponseError = (exportAuditEventsApiV1AuditExportGetResponse422 | exportAuditEventsApiV1AuditExportGetResponseDefault) & {
   headers: Headers;
 };
 
@@ -217,7 +235,7 @@ export const getExportAuditEventsApiV1AuditExportGetQueryKey = (params?: ExportA
     }
 
 
-export const getExportAuditEventsApiV1AuditExportGetQueryOptions = <TData = Awaited<ReturnType<typeof exportAuditEventsApiV1AuditExportGet>>, TError = HTTPValidationError>(params?: ExportAuditEventsApiV1AuditExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportAuditEventsApiV1AuditExportGet>>, TError, TData>>, }
+export const getExportAuditEventsApiV1AuditExportGetQueryOptions = <TData = Awaited<ReturnType<typeof exportAuditEventsApiV1AuditExportGet>>, TError = ProblemDetail>(params?: ExportAuditEventsApiV1AuditExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportAuditEventsApiV1AuditExportGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -236,10 +254,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type ExportAuditEventsApiV1AuditExportGetQueryResult = NonNullable<Awaited<ReturnType<typeof exportAuditEventsApiV1AuditExportGet>>>
-export type ExportAuditEventsApiV1AuditExportGetQueryError = HTTPValidationError
+export type ExportAuditEventsApiV1AuditExportGetQueryError = ProblemDetail
 
 
-export function useExportAuditEventsApiV1AuditExportGet<TData = Awaited<ReturnType<typeof exportAuditEventsApiV1AuditExportGet>>, TError = HTTPValidationError>(
+export function useExportAuditEventsApiV1AuditExportGet<TData = Awaited<ReturnType<typeof exportAuditEventsApiV1AuditExportGet>>, TError = ProblemDetail>(
  params: undefined |  ExportAuditEventsApiV1AuditExportGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportAuditEventsApiV1AuditExportGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof exportAuditEventsApiV1AuditExportGet>>,
@@ -249,7 +267,7 @@ export function useExportAuditEventsApiV1AuditExportGet<TData = Awaited<ReturnTy
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useExportAuditEventsApiV1AuditExportGet<TData = Awaited<ReturnType<typeof exportAuditEventsApiV1AuditExportGet>>, TError = HTTPValidationError>(
+export function useExportAuditEventsApiV1AuditExportGet<TData = Awaited<ReturnType<typeof exportAuditEventsApiV1AuditExportGet>>, TError = ProblemDetail>(
  params?: ExportAuditEventsApiV1AuditExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportAuditEventsApiV1AuditExportGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof exportAuditEventsApiV1AuditExportGet>>,
@@ -259,7 +277,7 @@ export function useExportAuditEventsApiV1AuditExportGet<TData = Awaited<ReturnTy
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useExportAuditEventsApiV1AuditExportGet<TData = Awaited<ReturnType<typeof exportAuditEventsApiV1AuditExportGet>>, TError = HTTPValidationError>(
+export function useExportAuditEventsApiV1AuditExportGet<TData = Awaited<ReturnType<typeof exportAuditEventsApiV1AuditExportGet>>, TError = ProblemDetail>(
  params?: ExportAuditEventsApiV1AuditExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportAuditEventsApiV1AuditExportGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -267,7 +285,7 @@ export function useExportAuditEventsApiV1AuditExportGet<TData = Awaited<ReturnTy
  * @summary Export Audit Events
  */
 
-export function useExportAuditEventsApiV1AuditExportGet<TData = Awaited<ReturnType<typeof exportAuditEventsApiV1AuditExportGet>>, TError = HTTPValidationError>(
+export function useExportAuditEventsApiV1AuditExportGet<TData = Awaited<ReturnType<typeof exportAuditEventsApiV1AuditExportGet>>, TError = ProblemDetail>(
  params?: ExportAuditEventsApiV1AuditExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportAuditEventsApiV1AuditExportGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -289,12 +307,19 @@ export type verifyAuditChainApiV1AuditVerifyGetResponse200 = {
   status: 200
 }
 
+export type verifyAuditChainApiV1AuditVerifyGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
 export type verifyAuditChainApiV1AuditVerifyGetResponseSuccess = (verifyAuditChainApiV1AuditVerifyGetResponse200) & {
   headers: Headers;
 };
-;
+export type verifyAuditChainApiV1AuditVerifyGetResponseError = (verifyAuditChainApiV1AuditVerifyGetResponseDefault) & {
+  headers: Headers;
+};
 
-export type verifyAuditChainApiV1AuditVerifyGetResponse = (verifyAuditChainApiV1AuditVerifyGetResponseSuccess)
+export type verifyAuditChainApiV1AuditVerifyGetResponse = (verifyAuditChainApiV1AuditVerifyGetResponseSuccess | verifyAuditChainApiV1AuditVerifyGetResponseError)
 
 export const getVerifyAuditChainApiV1AuditVerifyGetUrl = () => {
 
@@ -329,7 +354,7 @@ export const getVerifyAuditChainApiV1AuditVerifyGetQueryKey = () => {
     }
 
 
-export const getVerifyAuditChainApiV1AuditVerifyGetQueryOptions = <TData = Awaited<ReturnType<typeof verifyAuditChainApiV1AuditVerifyGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof verifyAuditChainApiV1AuditVerifyGet>>, TError, TData>>, }
+export const getVerifyAuditChainApiV1AuditVerifyGetQueryOptions = <TData = Awaited<ReturnType<typeof verifyAuditChainApiV1AuditVerifyGet>>, TError = ProblemDetail>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof verifyAuditChainApiV1AuditVerifyGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -348,10 +373,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type VerifyAuditChainApiV1AuditVerifyGetQueryResult = NonNullable<Awaited<ReturnType<typeof verifyAuditChainApiV1AuditVerifyGet>>>
-export type VerifyAuditChainApiV1AuditVerifyGetQueryError = unknown
+export type VerifyAuditChainApiV1AuditVerifyGetQueryError = ProblemDetail
 
 
-export function useVerifyAuditChainApiV1AuditVerifyGet<TData = Awaited<ReturnType<typeof verifyAuditChainApiV1AuditVerifyGet>>, TError = unknown>(
+export function useVerifyAuditChainApiV1AuditVerifyGet<TData = Awaited<ReturnType<typeof verifyAuditChainApiV1AuditVerifyGet>>, TError = ProblemDetail>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof verifyAuditChainApiV1AuditVerifyGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof verifyAuditChainApiV1AuditVerifyGet>>,
@@ -361,7 +386,7 @@ export function useVerifyAuditChainApiV1AuditVerifyGet<TData = Awaited<ReturnTyp
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useVerifyAuditChainApiV1AuditVerifyGet<TData = Awaited<ReturnType<typeof verifyAuditChainApiV1AuditVerifyGet>>, TError = unknown>(
+export function useVerifyAuditChainApiV1AuditVerifyGet<TData = Awaited<ReturnType<typeof verifyAuditChainApiV1AuditVerifyGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof verifyAuditChainApiV1AuditVerifyGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof verifyAuditChainApiV1AuditVerifyGet>>,
@@ -371,7 +396,7 @@ export function useVerifyAuditChainApiV1AuditVerifyGet<TData = Awaited<ReturnTyp
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useVerifyAuditChainApiV1AuditVerifyGet<TData = Awaited<ReturnType<typeof verifyAuditChainApiV1AuditVerifyGet>>, TError = unknown>(
+export function useVerifyAuditChainApiV1AuditVerifyGet<TData = Awaited<ReturnType<typeof verifyAuditChainApiV1AuditVerifyGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof verifyAuditChainApiV1AuditVerifyGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -379,7 +404,7 @@ export function useVerifyAuditChainApiV1AuditVerifyGet<TData = Awaited<ReturnTyp
  * @summary Verify Audit Chain
  */
 
-export function useVerifyAuditChainApiV1AuditVerifyGet<TData = Awaited<ReturnType<typeof verifyAuditChainApiV1AuditVerifyGet>>, TError = unknown>(
+export function useVerifyAuditChainApiV1AuditVerifyGet<TData = Awaited<ReturnType<typeof verifyAuditChainApiV1AuditVerifyGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof verifyAuditChainApiV1AuditVerifyGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {

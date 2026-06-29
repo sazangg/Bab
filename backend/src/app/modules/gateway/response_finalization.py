@@ -5,6 +5,8 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.metrics import record_gateway_denial
+from app.core.tracing import add_span_event
 from app.modules.gateway import accounting as gateway_accounting
 from app.modules.gateway import costing as gateway_costing
 from app.modules.gateway import guardrails as gateway_guardrails
@@ -65,6 +67,19 @@ async def finalize_openai_compatible_non_streaming_response(
             db=db,
         )
     except gateway_guardrails.GatewayGuardrailDenied as exc:
+        record_gateway_denial(
+            denial_type="response_guardrail_denied",
+            gateway_endpoint=gateway_endpoint,
+            phase="response",
+        )
+        add_span_event(
+            "bab.gateway.denial",
+            {
+                "bab.gateway.phase": "response",
+                "bab.gateway.endpoint": gateway_endpoint,
+                "bab.gateway.error_code": "response_guardrail_denied",
+            },
+        )
         actual_cost_cents = await gateway_accounting.record_proxy_request(
             resolved=resolved,
             gateway_request_id=gateway_request_id,
@@ -104,6 +119,7 @@ async def finalize_openai_compatible_non_streaming_response(
             error_code="guardrail_output_denied",
             db=db,
             final_route_attempt_id=final_route_attempt_id,
+            gateway_endpoint=gateway_endpoint,
         )
         await gateway_limits.commit_reservations(
             reservation_ids=reservation_ids,
@@ -166,6 +182,7 @@ async def finalize_openai_compatible_non_streaming_response(
         error_code=None,
         db=db,
         final_route_attempt_id=final_route_attempt_id,
+        gateway_endpoint=gateway_endpoint,
     )
     if fallback_attempted:
         await gateway_accounting.record_proxy_activity(
@@ -230,6 +247,19 @@ async def finalize_native_anthropic_non_streaming_response(
             db=db,
         )
     except gateway_guardrails.GatewayGuardrailDenied as exc:
+        record_gateway_denial(
+            denial_type="response_guardrail_denied",
+            gateway_endpoint="anthropic_messages",
+            phase="response",
+        )
+        add_span_event(
+            "bab.gateway.denial",
+            {
+                "bab.gateway.phase": "response",
+                "bab.gateway.endpoint": "anthropic_messages",
+                "bab.gateway.error_code": "response_guardrail_denied",
+            },
+        )
         actual_cost_cents = await gateway_accounting.record_proxy_request(
             resolved=resolved,
             gateway_request_id=gateway_request_id,
@@ -269,6 +299,7 @@ async def finalize_native_anthropic_non_streaming_response(
             error_code="guardrail_output_denied",
             db=db,
             final_route_attempt_id=final_route_attempt_id,
+            gateway_endpoint="anthropic_messages",
         )
         await gateway_limits.commit_reservations(
             reservation_ids=reservation_ids,
@@ -331,6 +362,7 @@ async def finalize_native_anthropic_non_streaming_response(
         error_code=None,
         db=db,
         final_route_attempt_id=final_route_attempt_id,
+        gateway_endpoint="anthropic_messages",
     )
     if fallback_attempted:
         await gateway_accounting.record_proxy_activity(

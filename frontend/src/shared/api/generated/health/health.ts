@@ -22,6 +22,7 @@ import type {
 import type {
   HealthCheckApiV1HealthGet200,
   HealthCheckHealthGet200,
+  ProblemDetail,
   ReadinessCheckApiV1ReadyGet200,
   ReadinessProbeApiV1ReadyzGet200,
   ReadinessProbeReadyzGet200,
@@ -33,17 +34,32 @@ import { apiMutator } from '../../orval-mutator';
 
 
 
+export type HTTPStatusCode1xx = 100 | 101 | 102 | 103;
+export type HTTPStatusCode2xx = 200 | 201 | 202 | 203 | 204 | 205 | 206 | 207;
+export type HTTPStatusCode3xx = 300 | 301 | 302 | 303 | 304 | 305 | 307 | 308;
+export type HTTPStatusCode4xx = 400 | 401 | 402 | 403 | 404 | 405 | 406 | 407 | 408 | 409 | 410 | 411 | 412 | 413 | 414 | 415 | 416 | 417 | 418 | 419 | 420 | 421 | 422 | 423 | 424 | 426 | 428 | 429 | 431 | 451;
+export type HTTPStatusCode5xx = 500 | 501 | 502 | 503 | 504 | 505 | 507 | 511;
+export type HTTPStatusCodes = HTTPStatusCode1xx | HTTPStatusCode2xx | HTTPStatusCode3xx | HTTPStatusCode4xx | HTTPStatusCode5xx;
+
+
 export type healthCheckApiV1HealthGetResponse200 = {
   data: HealthCheckApiV1HealthGet200
   status: 200
 }
 
+export type healthCheckApiV1HealthGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
 export type healthCheckApiV1HealthGetResponseSuccess = (healthCheckApiV1HealthGetResponse200) & {
   headers: Headers;
 };
-;
+export type healthCheckApiV1HealthGetResponseError = (healthCheckApiV1HealthGetResponseDefault) & {
+  headers: Headers;
+};
 
-export type healthCheckApiV1HealthGetResponse = (healthCheckApiV1HealthGetResponseSuccess)
+export type healthCheckApiV1HealthGetResponse = (healthCheckApiV1HealthGetResponseSuccess | healthCheckApiV1HealthGetResponseError)
 
 export const getHealthCheckApiV1HealthGetUrl = () => {
 
@@ -78,7 +94,7 @@ export const getHealthCheckApiV1HealthGetQueryKey = () => {
     }
 
 
-export const getHealthCheckApiV1HealthGetQueryOptions = <TData = Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError, TData>>, }
+export const getHealthCheckApiV1HealthGetQueryOptions = <TData = Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError = ProblemDetail>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -97,10 +113,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type HealthCheckApiV1HealthGetQueryResult = NonNullable<Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>>
-export type HealthCheckApiV1HealthGetQueryError = unknown
+export type HealthCheckApiV1HealthGetQueryError = ProblemDetail
 
 
-export function useHealthCheckApiV1HealthGet<TData = Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError = unknown>(
+export function useHealthCheckApiV1HealthGet<TData = Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError = ProblemDetail>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>,
@@ -110,7 +126,7 @@ export function useHealthCheckApiV1HealthGet<TData = Awaited<ReturnType<typeof h
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useHealthCheckApiV1HealthGet<TData = Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError = unknown>(
+export function useHealthCheckApiV1HealthGet<TData = Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>,
@@ -120,7 +136,7 @@ export function useHealthCheckApiV1HealthGet<TData = Awaited<ReturnType<typeof h
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useHealthCheckApiV1HealthGet<TData = Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError = unknown>(
+export function useHealthCheckApiV1HealthGet<TData = Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -128,7 +144,7 @@ export function useHealthCheckApiV1HealthGet<TData = Awaited<ReturnType<typeof h
  * @summary Health Check
  */
 
-export function useHealthCheckApiV1HealthGet<TData = Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError = unknown>(
+export function useHealthCheckApiV1HealthGet<TData = Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof healthCheckApiV1HealthGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -150,12 +166,19 @@ export type readinessCheckApiV1ReadyGetResponse200 = {
   status: 200
 }
 
+export type readinessCheckApiV1ReadyGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
 export type readinessCheckApiV1ReadyGetResponseSuccess = (readinessCheckApiV1ReadyGetResponse200) & {
   headers: Headers;
 };
-;
+export type readinessCheckApiV1ReadyGetResponseError = (readinessCheckApiV1ReadyGetResponseDefault) & {
+  headers: Headers;
+};
 
-export type readinessCheckApiV1ReadyGetResponse = (readinessCheckApiV1ReadyGetResponseSuccess)
+export type readinessCheckApiV1ReadyGetResponse = (readinessCheckApiV1ReadyGetResponseSuccess | readinessCheckApiV1ReadyGetResponseError)
 
 export const getReadinessCheckApiV1ReadyGetUrl = () => {
 
@@ -190,7 +213,7 @@ export const getReadinessCheckApiV1ReadyGetQueryKey = () => {
     }
 
 
-export const getReadinessCheckApiV1ReadyGetQueryOptions = <TData = Awaited<ReturnType<typeof readinessCheckApiV1ReadyGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof readinessCheckApiV1ReadyGet>>, TError, TData>>, }
+export const getReadinessCheckApiV1ReadyGetQueryOptions = <TData = Awaited<ReturnType<typeof readinessCheckApiV1ReadyGet>>, TError = ProblemDetail>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof readinessCheckApiV1ReadyGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -209,10 +232,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type ReadinessCheckApiV1ReadyGetQueryResult = NonNullable<Awaited<ReturnType<typeof readinessCheckApiV1ReadyGet>>>
-export type ReadinessCheckApiV1ReadyGetQueryError = unknown
+export type ReadinessCheckApiV1ReadyGetQueryError = ProblemDetail
 
 
-export function useReadinessCheckApiV1ReadyGet<TData = Awaited<ReturnType<typeof readinessCheckApiV1ReadyGet>>, TError = unknown>(
+export function useReadinessCheckApiV1ReadyGet<TData = Awaited<ReturnType<typeof readinessCheckApiV1ReadyGet>>, TError = ProblemDetail>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof readinessCheckApiV1ReadyGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof readinessCheckApiV1ReadyGet>>,
@@ -222,7 +245,7 @@ export function useReadinessCheckApiV1ReadyGet<TData = Awaited<ReturnType<typeof
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useReadinessCheckApiV1ReadyGet<TData = Awaited<ReturnType<typeof readinessCheckApiV1ReadyGet>>, TError = unknown>(
+export function useReadinessCheckApiV1ReadyGet<TData = Awaited<ReturnType<typeof readinessCheckApiV1ReadyGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof readinessCheckApiV1ReadyGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof readinessCheckApiV1ReadyGet>>,
@@ -232,7 +255,7 @@ export function useReadinessCheckApiV1ReadyGet<TData = Awaited<ReturnType<typeof
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useReadinessCheckApiV1ReadyGet<TData = Awaited<ReturnType<typeof readinessCheckApiV1ReadyGet>>, TError = unknown>(
+export function useReadinessCheckApiV1ReadyGet<TData = Awaited<ReturnType<typeof readinessCheckApiV1ReadyGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof readinessCheckApiV1ReadyGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -240,7 +263,7 @@ export function useReadinessCheckApiV1ReadyGet<TData = Awaited<ReturnType<typeof
  * @summary Readiness Check
  */
 
-export function useReadinessCheckApiV1ReadyGet<TData = Awaited<ReturnType<typeof readinessCheckApiV1ReadyGet>>, TError = unknown>(
+export function useReadinessCheckApiV1ReadyGet<TData = Awaited<ReturnType<typeof readinessCheckApiV1ReadyGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof readinessCheckApiV1ReadyGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -262,12 +285,19 @@ export type readinessProbeApiV1ReadyzGetResponse200 = {
   status: 200
 }
 
+export type readinessProbeApiV1ReadyzGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
 export type readinessProbeApiV1ReadyzGetResponseSuccess = (readinessProbeApiV1ReadyzGetResponse200) & {
   headers: Headers;
 };
-;
+export type readinessProbeApiV1ReadyzGetResponseError = (readinessProbeApiV1ReadyzGetResponseDefault) & {
+  headers: Headers;
+};
 
-export type readinessProbeApiV1ReadyzGetResponse = (readinessProbeApiV1ReadyzGetResponseSuccess)
+export type readinessProbeApiV1ReadyzGetResponse = (readinessProbeApiV1ReadyzGetResponseSuccess | readinessProbeApiV1ReadyzGetResponseError)
 
 export const getReadinessProbeApiV1ReadyzGetUrl = () => {
 
@@ -302,7 +332,7 @@ export const getReadinessProbeApiV1ReadyzGetQueryKey = () => {
     }
 
 
-export const getReadinessProbeApiV1ReadyzGetQueryOptions = <TData = Awaited<ReturnType<typeof readinessProbeApiV1ReadyzGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof readinessProbeApiV1ReadyzGet>>, TError, TData>>, }
+export const getReadinessProbeApiV1ReadyzGetQueryOptions = <TData = Awaited<ReturnType<typeof readinessProbeApiV1ReadyzGet>>, TError = ProblemDetail>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof readinessProbeApiV1ReadyzGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -321,10 +351,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type ReadinessProbeApiV1ReadyzGetQueryResult = NonNullable<Awaited<ReturnType<typeof readinessProbeApiV1ReadyzGet>>>
-export type ReadinessProbeApiV1ReadyzGetQueryError = unknown
+export type ReadinessProbeApiV1ReadyzGetQueryError = ProblemDetail
 
 
-export function useReadinessProbeApiV1ReadyzGet<TData = Awaited<ReturnType<typeof readinessProbeApiV1ReadyzGet>>, TError = unknown>(
+export function useReadinessProbeApiV1ReadyzGet<TData = Awaited<ReturnType<typeof readinessProbeApiV1ReadyzGet>>, TError = ProblemDetail>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof readinessProbeApiV1ReadyzGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof readinessProbeApiV1ReadyzGet>>,
@@ -334,7 +364,7 @@ export function useReadinessProbeApiV1ReadyzGet<TData = Awaited<ReturnType<typeo
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useReadinessProbeApiV1ReadyzGet<TData = Awaited<ReturnType<typeof readinessProbeApiV1ReadyzGet>>, TError = unknown>(
+export function useReadinessProbeApiV1ReadyzGet<TData = Awaited<ReturnType<typeof readinessProbeApiV1ReadyzGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof readinessProbeApiV1ReadyzGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof readinessProbeApiV1ReadyzGet>>,
@@ -344,7 +374,7 @@ export function useReadinessProbeApiV1ReadyzGet<TData = Awaited<ReturnType<typeo
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useReadinessProbeApiV1ReadyzGet<TData = Awaited<ReturnType<typeof readinessProbeApiV1ReadyzGet>>, TError = unknown>(
+export function useReadinessProbeApiV1ReadyzGet<TData = Awaited<ReturnType<typeof readinessProbeApiV1ReadyzGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof readinessProbeApiV1ReadyzGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -352,7 +382,7 @@ export function useReadinessProbeApiV1ReadyzGet<TData = Awaited<ReturnType<typeo
  * @summary Readiness Probe
  */
 
-export function useReadinessProbeApiV1ReadyzGet<TData = Awaited<ReturnType<typeof readinessProbeApiV1ReadyzGet>>, TError = unknown>(
+export function useReadinessProbeApiV1ReadyzGet<TData = Awaited<ReturnType<typeof readinessProbeApiV1ReadyzGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof readinessProbeApiV1ReadyzGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -374,12 +404,19 @@ export type runtimeInfoApiV1RuntimeInfoGetResponse200 = {
   status: 200
 }
 
+export type runtimeInfoApiV1RuntimeInfoGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
 export type runtimeInfoApiV1RuntimeInfoGetResponseSuccess = (runtimeInfoApiV1RuntimeInfoGetResponse200) & {
   headers: Headers;
 };
-;
+export type runtimeInfoApiV1RuntimeInfoGetResponseError = (runtimeInfoApiV1RuntimeInfoGetResponseDefault) & {
+  headers: Headers;
+};
 
-export type runtimeInfoApiV1RuntimeInfoGetResponse = (runtimeInfoApiV1RuntimeInfoGetResponseSuccess)
+export type runtimeInfoApiV1RuntimeInfoGetResponse = (runtimeInfoApiV1RuntimeInfoGetResponseSuccess | runtimeInfoApiV1RuntimeInfoGetResponseError)
 
 export const getRuntimeInfoApiV1RuntimeInfoGetUrl = () => {
 
@@ -414,7 +451,7 @@ export const getRuntimeInfoApiV1RuntimeInfoGetQueryKey = () => {
     }
 
 
-export const getRuntimeInfoApiV1RuntimeInfoGetQueryOptions = <TData = Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>, TError, TData>>, }
+export const getRuntimeInfoApiV1RuntimeInfoGetQueryOptions = <TData = Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>, TError = ProblemDetail>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -433,10 +470,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type RuntimeInfoApiV1RuntimeInfoGetQueryResult = NonNullable<Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>>
-export type RuntimeInfoApiV1RuntimeInfoGetQueryError = unknown
+export type RuntimeInfoApiV1RuntimeInfoGetQueryError = ProblemDetail
 
 
-export function useRuntimeInfoApiV1RuntimeInfoGet<TData = Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>, TError = unknown>(
+export function useRuntimeInfoApiV1RuntimeInfoGet<TData = Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>, TError = ProblemDetail>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>,
@@ -446,7 +483,7 @@ export function useRuntimeInfoApiV1RuntimeInfoGet<TData = Awaited<ReturnType<typ
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useRuntimeInfoApiV1RuntimeInfoGet<TData = Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>, TError = unknown>(
+export function useRuntimeInfoApiV1RuntimeInfoGet<TData = Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>,
@@ -456,7 +493,7 @@ export function useRuntimeInfoApiV1RuntimeInfoGet<TData = Awaited<ReturnType<typ
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useRuntimeInfoApiV1RuntimeInfoGet<TData = Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>, TError = unknown>(
+export function useRuntimeInfoApiV1RuntimeInfoGet<TData = Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -464,7 +501,7 @@ export function useRuntimeInfoApiV1RuntimeInfoGet<TData = Awaited<ReturnType<typ
  * @summary Runtime Info
  */
 
-export function useRuntimeInfoApiV1RuntimeInfoGet<TData = Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>, TError = unknown>(
+export function useRuntimeInfoApiV1RuntimeInfoGet<TData = Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof runtimeInfoApiV1RuntimeInfoGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -486,12 +523,19 @@ export type healthCheckHealthGetResponse200 = {
   status: 200
 }
 
+export type healthCheckHealthGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
 export type healthCheckHealthGetResponseSuccess = (healthCheckHealthGetResponse200) & {
   headers: Headers;
 };
-;
+export type healthCheckHealthGetResponseError = (healthCheckHealthGetResponseDefault) & {
+  headers: Headers;
+};
 
-export type healthCheckHealthGetResponse = (healthCheckHealthGetResponseSuccess)
+export type healthCheckHealthGetResponse = (healthCheckHealthGetResponseSuccess | healthCheckHealthGetResponseError)
 
 export const getHealthCheckHealthGetUrl = () => {
 
@@ -526,7 +570,7 @@ export const getHealthCheckHealthGetQueryKey = () => {
     }
 
 
-export const getHealthCheckHealthGetQueryOptions = <TData = Awaited<ReturnType<typeof healthCheckHealthGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof healthCheckHealthGet>>, TError, TData>>, }
+export const getHealthCheckHealthGetQueryOptions = <TData = Awaited<ReturnType<typeof healthCheckHealthGet>>, TError = ProblemDetail>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof healthCheckHealthGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -545,10 +589,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type HealthCheckHealthGetQueryResult = NonNullable<Awaited<ReturnType<typeof healthCheckHealthGet>>>
-export type HealthCheckHealthGetQueryError = unknown
+export type HealthCheckHealthGetQueryError = ProblemDetail
 
 
-export function useHealthCheckHealthGet<TData = Awaited<ReturnType<typeof healthCheckHealthGet>>, TError = unknown>(
+export function useHealthCheckHealthGet<TData = Awaited<ReturnType<typeof healthCheckHealthGet>>, TError = ProblemDetail>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof healthCheckHealthGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof healthCheckHealthGet>>,
@@ -558,7 +602,7 @@ export function useHealthCheckHealthGet<TData = Awaited<ReturnType<typeof health
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useHealthCheckHealthGet<TData = Awaited<ReturnType<typeof healthCheckHealthGet>>, TError = unknown>(
+export function useHealthCheckHealthGet<TData = Awaited<ReturnType<typeof healthCheckHealthGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof healthCheckHealthGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof healthCheckHealthGet>>,
@@ -568,7 +612,7 @@ export function useHealthCheckHealthGet<TData = Awaited<ReturnType<typeof health
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useHealthCheckHealthGet<TData = Awaited<ReturnType<typeof healthCheckHealthGet>>, TError = unknown>(
+export function useHealthCheckHealthGet<TData = Awaited<ReturnType<typeof healthCheckHealthGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof healthCheckHealthGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -576,7 +620,7 @@ export function useHealthCheckHealthGet<TData = Awaited<ReturnType<typeof health
  * @summary Health Check
  */
 
-export function useHealthCheckHealthGet<TData = Awaited<ReturnType<typeof healthCheckHealthGet>>, TError = unknown>(
+export function useHealthCheckHealthGet<TData = Awaited<ReturnType<typeof healthCheckHealthGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof healthCheckHealthGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -598,12 +642,19 @@ export type readinessProbeReadyzGetResponse200 = {
   status: 200
 }
 
+export type readinessProbeReadyzGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
 export type readinessProbeReadyzGetResponseSuccess = (readinessProbeReadyzGetResponse200) & {
   headers: Headers;
 };
-;
+export type readinessProbeReadyzGetResponseError = (readinessProbeReadyzGetResponseDefault) & {
+  headers: Headers;
+};
 
-export type readinessProbeReadyzGetResponse = (readinessProbeReadyzGetResponseSuccess)
+export type readinessProbeReadyzGetResponse = (readinessProbeReadyzGetResponseSuccess | readinessProbeReadyzGetResponseError)
 
 export const getReadinessProbeReadyzGetUrl = () => {
 
@@ -638,7 +689,7 @@ export const getReadinessProbeReadyzGetQueryKey = () => {
     }
 
 
-export const getReadinessProbeReadyzGetQueryOptions = <TData = Awaited<ReturnType<typeof readinessProbeReadyzGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof readinessProbeReadyzGet>>, TError, TData>>, }
+export const getReadinessProbeReadyzGetQueryOptions = <TData = Awaited<ReturnType<typeof readinessProbeReadyzGet>>, TError = ProblemDetail>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof readinessProbeReadyzGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -657,10 +708,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type ReadinessProbeReadyzGetQueryResult = NonNullable<Awaited<ReturnType<typeof readinessProbeReadyzGet>>>
-export type ReadinessProbeReadyzGetQueryError = unknown
+export type ReadinessProbeReadyzGetQueryError = ProblemDetail
 
 
-export function useReadinessProbeReadyzGet<TData = Awaited<ReturnType<typeof readinessProbeReadyzGet>>, TError = unknown>(
+export function useReadinessProbeReadyzGet<TData = Awaited<ReturnType<typeof readinessProbeReadyzGet>>, TError = ProblemDetail>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof readinessProbeReadyzGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof readinessProbeReadyzGet>>,
@@ -670,7 +721,7 @@ export function useReadinessProbeReadyzGet<TData = Awaited<ReturnType<typeof rea
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useReadinessProbeReadyzGet<TData = Awaited<ReturnType<typeof readinessProbeReadyzGet>>, TError = unknown>(
+export function useReadinessProbeReadyzGet<TData = Awaited<ReturnType<typeof readinessProbeReadyzGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof readinessProbeReadyzGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof readinessProbeReadyzGet>>,
@@ -680,7 +731,7 @@ export function useReadinessProbeReadyzGet<TData = Awaited<ReturnType<typeof rea
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useReadinessProbeReadyzGet<TData = Awaited<ReturnType<typeof readinessProbeReadyzGet>>, TError = unknown>(
+export function useReadinessProbeReadyzGet<TData = Awaited<ReturnType<typeof readinessProbeReadyzGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof readinessProbeReadyzGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -688,7 +739,7 @@ export function useReadinessProbeReadyzGet<TData = Awaited<ReturnType<typeof rea
  * @summary Readiness Probe
  */
 
-export function useReadinessProbeReadyzGet<TData = Awaited<ReturnType<typeof readinessProbeReadyzGet>>, TError = unknown>(
+export function useReadinessProbeReadyzGet<TData = Awaited<ReturnType<typeof readinessProbeReadyzGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof readinessProbeReadyzGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {

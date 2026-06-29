@@ -167,6 +167,51 @@ async def test_usage_viewer_can_see_org_usage(app_client, db_session: AsyncSessi
 
 
 @pytest.mark.asyncio
+async def test_usage_records_return_explicit_history_pages(
+    app_client,
+    db_session: AsyncSession,
+) -> None:
+    org, *_ = await _workspace(db_session)
+    user = _principal(org_id=org.id, permissions=["usage.view"])
+
+    first = await _get(app_client, user, "/api/v1/usage/records?limit=1&offset=0")
+    second = await _get(app_client, user, "/api/v1/usage/records?limit=1&offset=1")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["limit"] == 1
+    assert first.json()["offset"] == 0
+    assert first.json()["has_more"] is True
+    assert len(first.json()["items"]) == 1
+    assert second.json()["limit"] == 1
+    assert second.json()["offset"] == 1
+    assert second.json()["has_more"] is False
+    assert len(second.json()["items"]) == 1
+    assert {
+        first.json()["items"][0]["total_tokens"],
+        second.json()["items"][0]["total_tokens"],
+    } == {10, 30}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("query", ["limit=0", "limit=501", "offset=-1"])
+async def test_usage_record_pagination_rejects_invalid_values(
+    app_client,
+    db_session: AsyncSession,
+    query: str,
+) -> None:
+    org, *_ = await _workspace(db_session)
+    user = _principal(org_id=org.id, permissions=["usage.view"])
+
+    response = await _get(app_client, user, f"/api/v1/usage/records?{query}")
+
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json()["type"] == "urn:bab:error:validation-error"
+    assert response.json()["status"] == 422
+
+
+@pytest.mark.asyncio
 async def test_team_member_usage_is_limited_to_member_team(
     app_client,
     db_session: AsyncSession,
@@ -205,7 +250,7 @@ async def test_team_admin_usage_is_limited_to_admin_team(
     )
 
     assert response.status_code == 200
-    assert [item["total_tokens"] for item in response.json()] == [10]
+    assert [item["total_tokens"] for item in response.json()["items"]] == [10]
 
 
 @pytest.mark.asyncio
@@ -311,6 +356,23 @@ async def test_trace_request_list_is_scoped_to_team_membership(
 
     assert response.status_code == 200
     assert [item["request_id"] for item in response.json()["items"]] == ["req-visible"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("query", ["limit=0", "limit=201", "offset=-1"])
+async def test_trace_request_list_rejects_invalid_pagination(
+    app_client,
+    db_session: AsyncSession,
+    query: str,
+) -> None:
+    org, *_ = await _workspace(db_session)
+    user = _principal(org_id=org.id, permissions=["gateway_history.view"])
+
+    response = await _get(app_client, user, f"/api/v1/gateway-history/requests?{query}")
+
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json()["status"] == 422
 
 
 @pytest.mark.asyncio

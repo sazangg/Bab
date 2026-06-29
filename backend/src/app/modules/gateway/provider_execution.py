@@ -3,9 +3,13 @@ from time import perf_counter
 from uuid import UUID
 
 import httpx
+import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope
+from app.core.metrics import record_gateway_provider_attempt
+from app.core.observability import outcome_for_status
+from app.core.tracing import start_span
 from app.modules.gateway import accounting as gateway_accounting
 from app.modules.gateway import guardrails as gateway_guardrails
 from app.modules.gateway import limits as gateway_limits
@@ -22,6 +26,8 @@ from app.modules.providers.schemas import (
     ProviderChatCompletionResponse,
 )
 from app.modules.usage.accounting import estimate_request_tokens, unknown_usage
+
+logger = structlog.get_logger(__name__)
 
 
 @dataclass
@@ -129,21 +135,53 @@ async def execute_openai_compatible_non_streaming(
                     db=db,
                 )
             )
-            upstream = await providers_facade.create_chat_completion(
-                provider_id=resolved.provider_id,
-                pool_id=resolved.pool_id,
-                provider_credential_id=resolved.provider_key_id,
-                payload=ProviderChatCompletionRequest(
-                    model=resolved.provider_model,
-                    messages=provider_payload.messages,
-                    extra_body=normalize_provider_extra_body(
-                        extra_body=provider_payload.extra_body,
-                        provider_model=resolved.provider_model,
+            with start_span(
+                "bab.gateway.provider_attempt",
+                {
+                    "bab.gateway.endpoint": gateway_endpoint,
+                    "bab.gateway.attempt_index": attempt_index,
+                    "bab.gateway.request_id": str(gateway_request_id)
+                    if gateway_request_id
+                    else None,
+                    "bab.gateway.route_attempt_id": str(state.current_route_attempt_id)
+                    if state.current_route_attempt_id
+                    else None,
+                },
+            ):
+                upstream = await providers_facade.create_chat_completion(
+                    provider_id=resolved.provider_id,
+                    pool_id=resolved.pool_id,
+                    provider_credential_id=resolved.provider_key_id,
+                    payload=ProviderChatCompletionRequest(
+                        model=resolved.provider_model,
+                        messages=provider_payload.messages,
+                        extra_body=normalize_provider_extra_body(
+                            extra_body=provider_payload.extra_body,
+                            provider_model=resolved.provider_model,
+                        ),
                     ),
+                    scope=Scope(org_id=resolved.org_id),
+                    db=db,
+                    http_client=http_client,
+                )
+            logger.info(
+                "gateway_provider_attempt_succeeded",
+                **_provider_attempt_log_fields(
+                    resolved=resolved,
+                    gateway_request_id=gateway_request_id,
+                    route_attempt_id=state.current_route_attempt_id,
+                    gateway_endpoint=gateway_endpoint,
+                    attempt_index=attempt_index,
                 ),
-                scope=Scope(org_id=resolved.org_id),
-                db=db,
-                http_client=http_client,
+                status_code=upstream.status_code,
+                outcome=outcome_for_status(upstream.status_code),
+                duration_ms=_elapsed_ms(started_at),
+            )
+            record_gateway_provider_attempt(
+                gateway_endpoint=gateway_endpoint,
+                status_code=upstream.status_code,
+                error_code=None,
+                duration_seconds=_elapsed_ms(started_at) / 1000,
             )
             state.selected_attempt_index = attempt_index
             state.final_route_attempt_id = state.current_route_attempt_id
@@ -158,6 +196,27 @@ async def execute_openai_compatible_non_streaming(
             )
         except ProviderUpstreamError as exc:
             last_upstream_error = exc
+            logger.warning(
+                "gateway_provider_attempt_failed",
+                **_provider_attempt_log_fields(
+                    resolved=resolved,
+                    gateway_request_id=gateway_request_id,
+                    route_attempt_id=state.current_route_attempt_id,
+                    gateway_endpoint=gateway_endpoint,
+                    attempt_index=attempt_index,
+                ),
+                status_code=exc.status_code,
+                outcome=outcome_for_status(exc.status_code),
+                error_code="provider_upstream_error",
+                failure_reason=exc.failure_reason,
+                duration_ms=_elapsed_ms(started_at),
+            )
+            record_gateway_provider_attempt(
+                gateway_endpoint=gateway_endpoint,
+                status_code=exc.status_code,
+                error_code="provider_upstream_error",
+                duration_seconds=_elapsed_ms(started_at) / 1000,
+            )
             await gateway_tracing.finalize_gateway_route_attempt(
                 route_attempt_id=state.current_route_attempt_id,
                 status_="failed",
@@ -291,19 +350,51 @@ async def execute_native_anthropic_non_streaming(
                     db=db,
                 )
             )
-            upstream = await providers_facade.create_anthropic_message(
-                provider_id=resolved.provider_id,
-                pool_id=resolved.pool_id,
-                provider_credential_id=resolved.provider_key_id,
-                payload=ProviderAnthropicMessagesRequest(
-                    model=resolved.provider_model,
-                    messages=provider_payload.messages,
-                    extra_body=provider_payload.extra_body,
+            with start_span(
+                "bab.gateway.provider_attempt",
+                {
+                    "bab.gateway.endpoint": gateway_endpoint,
+                    "bab.gateway.attempt_index": attempt_index,
+                    "bab.gateway.request_id": str(gateway_request_id)
+                    if gateway_request_id
+                    else None,
+                    "bab.gateway.route_attempt_id": str(state.current_route_attempt_id)
+                    if state.current_route_attempt_id
+                    else None,
+                },
+            ):
+                upstream = await providers_facade.create_anthropic_message(
+                    provider_id=resolved.provider_id,
+                    pool_id=resolved.pool_id,
+                    provider_credential_id=resolved.provider_key_id,
+                    payload=ProviderAnthropicMessagesRequest(
+                        model=resolved.provider_model,
+                        messages=provider_payload.messages,
+                        extra_body=provider_payload.extra_body,
+                    ),
+                    anthropic_version=anthropic_version,
+                    scope=Scope(org_id=resolved.org_id),
+                    db=db,
+                    http_client=http_client,
+                )
+            logger.info(
+                "gateway_provider_attempt_succeeded",
+                **_provider_attempt_log_fields(
+                    resolved=resolved,
+                    gateway_request_id=gateway_request_id,
+                    route_attempt_id=state.current_route_attempt_id,
+                    gateway_endpoint=gateway_endpoint,
+                    attempt_index=attempt_index,
                 ),
-                anthropic_version=anthropic_version,
-                scope=Scope(org_id=resolved.org_id),
-                db=db,
-                http_client=http_client,
+                status_code=upstream.status_code,
+                outcome=outcome_for_status(upstream.status_code),
+                duration_ms=_elapsed_ms(started_at),
+            )
+            record_gateway_provider_attempt(
+                gateway_endpoint=gateway_endpoint,
+                status_code=upstream.status_code,
+                error_code=None,
+                duration_seconds=_elapsed_ms(started_at) / 1000,
             )
             state.final_route_attempt_id = state.current_route_attempt_id
             return NativeAnthropicExecutionResult(
@@ -318,6 +409,27 @@ async def execute_native_anthropic_non_streaming(
             )
         except ProviderUpstreamError as exc:
             last_upstream_error = exc
+            logger.warning(
+                "gateway_provider_attempt_failed",
+                **_provider_attempt_log_fields(
+                    resolved=resolved,
+                    gateway_request_id=gateway_request_id,
+                    route_attempt_id=state.current_route_attempt_id,
+                    gateway_endpoint=gateway_endpoint,
+                    attempt_index=attempt_index,
+                ),
+                status_code=exc.status_code,
+                outcome=outcome_for_status(exc.status_code),
+                error_code="provider_upstream_error",
+                failure_reason=exc.failure_reason,
+                duration_ms=_elapsed_ms(started_at),
+            )
+            record_gateway_provider_attempt(
+                gateway_endpoint=gateway_endpoint,
+                status_code=exc.status_code,
+                error_code="provider_upstream_error",
+                duration_seconds=_elapsed_ms(started_at) / 1000,
+            )
             await gateway_tracing.finalize_gateway_route_attempt(
                 route_attempt_id=state.current_route_attempt_id,
                 status_="failed",
@@ -382,6 +494,35 @@ def enforce_provider_body_size(raw_body: bytes, max_body_bytes: int | None) -> N
 
 def _elapsed_ms(started_at: float) -> int:
     return max(0, round((perf_counter() - started_at) * 1000))
+
+
+def _provider_attempt_log_fields(
+    *,
+    resolved: ResolvedAccess,
+    gateway_request_id: UUID | None,
+    route_attempt_id: UUID | None,
+    gateway_endpoint: str,
+    attempt_index: int,
+) -> dict[str, object]:
+    return {
+        "gateway_request_id": str(gateway_request_id) if gateway_request_id else None,
+        "route_attempt_id": str(route_attempt_id) if route_attempt_id else None,
+        "org_id": str(resolved.org_id),
+        "team_id": str(resolved.team_id) if resolved.team_id else None,
+        "project_id": str(resolved.project_id) if resolved.project_id else None,
+        "virtual_key_id": str(resolved.virtual_key_id),
+        "provider_id": str(resolved.provider_id),
+        "credential_pool_id": str(resolved.pool_id),
+        "provider_credential_id": str(resolved.provider_key_id)
+        if resolved.provider_key_id
+        else None,
+        "model_offering_id": str(resolved.model_offering_id),
+        "requested_model": resolved.requested_model,
+        "public_model_name": resolved.public_model_name,
+        "provider_model": resolved.provider_model,
+        "gateway_endpoint": gateway_endpoint,
+        "attempt_index": attempt_index,
+    }
 
 
 def requested_output_tokens(extra_body: dict) -> int | None:

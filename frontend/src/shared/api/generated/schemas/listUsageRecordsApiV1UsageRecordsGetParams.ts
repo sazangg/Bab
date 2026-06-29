@@ -17,6 +17,13 @@ virtual_key_id?: string | null;
 model?: string | null;
 request_id?: string | null;
 search?: string | null;
+/**
+ * @minimum 1
+ * @maximum 500
+ */
 limit?: number;
+/**
+ * @minimum 0
+ */
 offset?: number;
 };

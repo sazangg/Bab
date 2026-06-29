@@ -379,6 +379,8 @@ async def list_events(
     provider_id: UUID | None,
     pool_id: UUID | None,
     model: str | None,
+    before_at: datetime | None,
+    before_id: UUID | None,
     limit: int,
     db: AsyncSession,
     allowed_team_ids: set[UUID] | None = None,
@@ -420,10 +422,21 @@ async def list_events(
                 GuardrailEvent.provider_model.ilike(model_filter),
             )
         )
+    if before_at is not None:
+        cursor_filter = GuardrailEvent.created_at < before_at
+        if before_id is not None:
+            cursor_filter = or_(
+                cursor_filter,
+                and_(
+                    GuardrailEvent.created_at == before_at,
+                    GuardrailEvent.id < before_id,
+                ),
+            )
+        filters.append(cursor_filter)
     result = await db.scalars(
         select(GuardrailEvent)
         .where(*filters)
-        .order_by(GuardrailEvent.created_at.desc())
+        .order_by(GuardrailEvent.created_at.desc(), GuardrailEvent.id.desc())
         .limit(limit)
     )
     return list(result)

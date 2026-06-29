@@ -9,24 +9,10 @@ from alembic import command
 from app.core.database import Base
 from app.core.model_imports import import_all_models
 
-APP_TABLES = {
-    "organizations",
-    "users",
-    "providers",
-    "provider_credentials",
-    "credential_pools",
-    "access_policies",
-    "limit_policies",
-    "virtual_keys",
-    "usage_records",
-}
-BASELINE_REVISION = "20260529_0001"
-
 
 async def run_database_migrations(engine: AsyncEngine) -> None:
     import_all_models()
     async with engine.begin() as connection:
-        await connection.run_sync(_stamp_existing_schema_if_needed)
         await connection.run_sync(_upgrade_to_head)
         await connection.run_sync(_validate_current_schema)
 
@@ -41,20 +27,6 @@ def _alembic_config(connection) -> Config:
     config = Config(str(backend_dir / "alembic.ini"))
     config.attributes["connection"] = connection
     return config
-
-
-def _stamp_existing_schema_if_needed(connection) -> None:
-    inspector = inspect(connection)
-    table_names = set(inspector.get_table_names())
-    if "alembic_version" in table_names or not table_names.intersection(APP_TABLES):
-        return
-
-    connection.execute(text("CREATE TABLE IF NOT EXISTS alembic_version (version_num VARCHAR(32))"))
-    connection.execute(text("DELETE FROM alembic_version"))
-    connection.execute(
-        text("INSERT INTO alembic_version (version_num) VALUES (:version_num)"),
-        {"version_num": BASELINE_REVISION},
-    )
 
 
 def _upgrade_to_head(connection) -> None:

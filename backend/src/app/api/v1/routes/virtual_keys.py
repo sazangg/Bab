@@ -10,7 +10,7 @@ from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.authorization import facade as authorization_facade
 from app.modules.authorization.permissions import Permissions
 from app.modules.keys import facade
-from app.modules.keys.schemas import VirtualKeyInventoryPage
+from app.modules.keys.schemas import VirtualKeyInventoryPageResponse
 
 router = APIRouter(prefix="/virtual-keys", tags=["virtual-keys"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
@@ -40,7 +40,7 @@ async def list_virtual_key_inventory(
     usage: Literal["used", "never"] | None = None,
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
-) -> VirtualKeyInventoryPage:
+) -> VirtualKeyInventoryPageResponse:
     can_view_all = authorization_facade.has_permission(user, Permissions.PROJECTS_VIEW)
     visible_scopes = authorization_facade.authorized_workspace_ids(user, relationship="member")
     manageable_scopes = authorization_facade.authorized_workspace_ids(user, relationship="admin")

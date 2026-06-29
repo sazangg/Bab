@@ -105,6 +105,16 @@ class Settings(BaseSettings):
         ge=1,
         validation_alias="BAB_TRACE_RETENTION_DAYS",
     )
+    otel_enabled: bool = Field(default=False, validation_alias="BAB_OTEL_ENABLED")
+    otel_exporter: str = Field(default="none", validation_alias="BAB_OTEL_EXPORTER")
+    otel_otlp_endpoint: str = Field(
+        default="http://localhost:4318/v1/traces",
+        validation_alias="BAB_OTEL_OTLP_ENDPOINT",
+    )
+    otel_service_name: str = Field(
+        default="bab-backend",
+        validation_alias="BAB_OTEL_SERVICE_NAME",
+    )
 
     @field_validator("environment")
     @classmethod
@@ -120,6 +130,14 @@ class Settings(BaseSettings):
         normalized = value.lower()
         if normalized not in {"lax", "strict", "none"}:
             raise ValueError("BAB_REFRESH_COOKIE_SAMESITE must be lax, strict, or none")
+        return normalized
+
+    @field_validator("otel_exporter")
+    @classmethod
+    def validate_otel_exporter(cls, value: str) -> str:
+        normalized = value.lower()
+        if normalized not in {"none", "console", "otlp"}:
+            raise ValueError("BAB_OTEL_EXPORTER must be none, console, or otlp")
         return normalized
 
     @field_validator(

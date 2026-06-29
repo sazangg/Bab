@@ -20,10 +20,10 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
-  GatewayRequestTraceListResponse,
+  GatewayRequestTracePageResponse,
   GatewayRequestTraceResponse,
-  HTTPValidationError,
-  ListGatewayRequestsApiV1GatewayHistoryRequestsGetParams
+  ListGatewayRequestsApiV1GatewayHistoryRequestsGetParams,
+  ProblemDetail
 } from '../schemas';
 
 import { apiMutator } from '../../orval-mutator';
@@ -31,20 +31,33 @@ import { apiMutator } from '../../orval-mutator';
 
 
 
+export type HTTPStatusCode1xx = 100 | 101 | 102 | 103;
+export type HTTPStatusCode2xx = 200 | 201 | 202 | 203 | 204 | 205 | 206 | 207;
+export type HTTPStatusCode3xx = 300 | 301 | 302 | 303 | 304 | 305 | 307 | 308;
+export type HTTPStatusCode4xx = 400 | 401 | 402 | 403 | 404 | 405 | 406 | 407 | 408 | 409 | 410 | 411 | 412 | 413 | 414 | 415 | 416 | 417 | 418 | 419 | 420 | 421 | 422 | 423 | 424 | 426 | 428 | 429 | 431 | 451;
+export type HTTPStatusCode5xx = 500 | 501 | 502 | 503 | 504 | 505 | 507 | 511;
+export type HTTPStatusCodes = HTTPStatusCode1xx | HTTPStatusCode2xx | HTTPStatusCode3xx | HTTPStatusCode4xx | HTTPStatusCode5xx;
+
+
 export type listGatewayRequestsApiV1GatewayHistoryRequestsGetResponse200 = {
-  data: GatewayRequestTraceListResponse
+  data: GatewayRequestTracePageResponse
   status: 200
 }
 
 export type listGatewayRequestsApiV1GatewayHistoryRequestsGetResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type listGatewayRequestsApiV1GatewayHistoryRequestsGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type listGatewayRequestsApiV1GatewayHistoryRequestsGetResponseSuccess = (listGatewayRequestsApiV1GatewayHistoryRequestsGetResponse200) & {
   headers: Headers;
 };
-export type listGatewayRequestsApiV1GatewayHistoryRequestsGetResponseError = (listGatewayRequestsApiV1GatewayHistoryRequestsGetResponse422) & {
+export type listGatewayRequestsApiV1GatewayHistoryRequestsGetResponseError = (listGatewayRequestsApiV1GatewayHistoryRequestsGetResponse422 | listGatewayRequestsApiV1GatewayHistoryRequestsGetResponseDefault) & {
   headers: Headers;
 };
 
@@ -90,7 +103,7 @@ export const getListGatewayRequestsApiV1GatewayHistoryRequestsGetQueryKey = (par
     }
 
 
-export const getListGatewayRequestsApiV1GatewayHistoryRequestsGetQueryOptions = <TData = Awaited<ReturnType<typeof listGatewayRequestsApiV1GatewayHistoryRequestsGet>>, TError = HTTPValidationError>(params?: ListGatewayRequestsApiV1GatewayHistoryRequestsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listGatewayRequestsApiV1GatewayHistoryRequestsGet>>, TError, TData>>, }
+export const getListGatewayRequestsApiV1GatewayHistoryRequestsGetQueryOptions = <TData = Awaited<ReturnType<typeof listGatewayRequestsApiV1GatewayHistoryRequestsGet>>, TError = ProblemDetail>(params?: ListGatewayRequestsApiV1GatewayHistoryRequestsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listGatewayRequestsApiV1GatewayHistoryRequestsGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -109,10 +122,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type ListGatewayRequestsApiV1GatewayHistoryRequestsGetQueryResult = NonNullable<Awaited<ReturnType<typeof listGatewayRequestsApiV1GatewayHistoryRequestsGet>>>
-export type ListGatewayRequestsApiV1GatewayHistoryRequestsGetQueryError = HTTPValidationError
+export type ListGatewayRequestsApiV1GatewayHistoryRequestsGetQueryError = ProblemDetail
 
 
-export function useListGatewayRequestsApiV1GatewayHistoryRequestsGet<TData = Awaited<ReturnType<typeof listGatewayRequestsApiV1GatewayHistoryRequestsGet>>, TError = HTTPValidationError>(
+export function useListGatewayRequestsApiV1GatewayHistoryRequestsGet<TData = Awaited<ReturnType<typeof listGatewayRequestsApiV1GatewayHistoryRequestsGet>>, TError = ProblemDetail>(
  params: undefined |  ListGatewayRequestsApiV1GatewayHistoryRequestsGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listGatewayRequestsApiV1GatewayHistoryRequestsGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listGatewayRequestsApiV1GatewayHistoryRequestsGet>>,
@@ -122,7 +135,7 @@ export function useListGatewayRequestsApiV1GatewayHistoryRequestsGet<TData = Awa
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListGatewayRequestsApiV1GatewayHistoryRequestsGet<TData = Awaited<ReturnType<typeof listGatewayRequestsApiV1GatewayHistoryRequestsGet>>, TError = HTTPValidationError>(
+export function useListGatewayRequestsApiV1GatewayHistoryRequestsGet<TData = Awaited<ReturnType<typeof listGatewayRequestsApiV1GatewayHistoryRequestsGet>>, TError = ProblemDetail>(
  params?: ListGatewayRequestsApiV1GatewayHistoryRequestsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listGatewayRequestsApiV1GatewayHistoryRequestsGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listGatewayRequestsApiV1GatewayHistoryRequestsGet>>,
@@ -132,7 +145,7 @@ export function useListGatewayRequestsApiV1GatewayHistoryRequestsGet<TData = Awa
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListGatewayRequestsApiV1GatewayHistoryRequestsGet<TData = Awaited<ReturnType<typeof listGatewayRequestsApiV1GatewayHistoryRequestsGet>>, TError = HTTPValidationError>(
+export function useListGatewayRequestsApiV1GatewayHistoryRequestsGet<TData = Awaited<ReturnType<typeof listGatewayRequestsApiV1GatewayHistoryRequestsGet>>, TError = ProblemDetail>(
  params?: ListGatewayRequestsApiV1GatewayHistoryRequestsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listGatewayRequestsApiV1GatewayHistoryRequestsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -140,7 +153,7 @@ export function useListGatewayRequestsApiV1GatewayHistoryRequestsGet<TData = Awa
  * @summary List Gateway Requests
  */
 
-export function useListGatewayRequestsApiV1GatewayHistoryRequestsGet<TData = Awaited<ReturnType<typeof listGatewayRequestsApiV1GatewayHistoryRequestsGet>>, TError = HTTPValidationError>(
+export function useListGatewayRequestsApiV1GatewayHistoryRequestsGet<TData = Awaited<ReturnType<typeof listGatewayRequestsApiV1GatewayHistoryRequestsGet>>, TError = ProblemDetail>(
  params?: ListGatewayRequestsApiV1GatewayHistoryRequestsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listGatewayRequestsApiV1GatewayHistoryRequestsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -163,14 +176,19 @@ export type getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet
 }
 
 export type getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGetResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGetResponseSuccess = (getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGetResponse200) & {
   headers: Headers;
 };
-export type getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGetResponseError = (getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGetResponse422) & {
+export type getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGetResponseError = (getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGetResponse422 | getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGetResponseDefault) & {
   headers: Headers;
 };
 
@@ -209,7 +227,7 @@ export const getGetGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestI
     }
 
 
-export const getGetGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGetQueryOptions = <TData = Awaited<ReturnType<typeof getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet>>, TError = HTTPValidationError>(gatewayRequestId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet>>, TError, TData>>, }
+export const getGetGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGetQueryOptions = <TData = Awaited<ReturnType<typeof getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet>>, TError = ProblemDetail>(gatewayRequestId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -228,10 +246,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type GetGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGetQueryResult = NonNullable<Awaited<ReturnType<typeof getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet>>>
-export type GetGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGetQueryError = HTTPValidationError
+export type GetGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGetQueryError = ProblemDetail
 
 
-export function useGetGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet<TData = Awaited<ReturnType<typeof getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet>>, TError = HTTPValidationError>(
+export function useGetGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet<TData = Awaited<ReturnType<typeof getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet>>, TError = ProblemDetail>(
  gatewayRequestId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet>>,
@@ -241,7 +259,7 @@ export function useGetGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayReque
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet<TData = Awaited<ReturnType<typeof getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet>>, TError = HTTPValidationError>(
+export function useGetGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet<TData = Awaited<ReturnType<typeof getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet>>, TError = ProblemDetail>(
  gatewayRequestId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet>>,
@@ -251,7 +269,7 @@ export function useGetGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayReque
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet<TData = Awaited<ReturnType<typeof getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet>>, TError = HTTPValidationError>(
+export function useGetGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet<TData = Awaited<ReturnType<typeof getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet>>, TError = ProblemDetail>(
  gatewayRequestId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -259,7 +277,7 @@ export function useGetGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayReque
  * @summary Get Gateway Request Trace
  */
 
-export function useGetGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet<TData = Awaited<ReturnType<typeof getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet>>, TError = HTTPValidationError>(
+export function useGetGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet<TData = Awaited<ReturnType<typeof getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet>>, TError = ProblemDetail>(
  gatewayRequestId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGatewayRequestTraceApiV1GatewayHistoryRequestsGatewayRequestIdGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {

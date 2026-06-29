@@ -27,8 +27,8 @@ async def test_runtime_info_migration_state_shape_uses_public_keys(
 ) -> None:
     async def migration_state(_engine):
         return {
-            "current_revision": "20260609_0024",
-            "head_revision": "20260609_0024",
+            "current_revision": "20260629_0001",
+            "head_revision": "20260629_0001",
             "is_current": True,
         }
 
@@ -46,6 +46,17 @@ async def test_runtime_info_migration_state_shape_uses_public_keys(
     assert migrations["ok"] is True
     assert isinstance(migrations["current_revision"], str)
     assert isinstance(migrations["head_revision"], str)
+
+
+def test_public_page_response_schema_names_are_consistent(app_client) -> None:
+    schemas = app_client.openapi()["components"]["schemas"]
+
+    assert "GatewayRequestTracePageResponse" in schemas
+    assert "VirtualKeyInventoryPageResponse" in schemas
+    assert "OrganizationUsagePageResponse" in schemas
+    assert "GatewayRequestTraceListResponse" not in schemas
+    assert "VirtualKeyInventoryPage" not in schemas
+    assert "OrganizationUsagePage" not in schemas
 
 
 @pytest.mark.asyncio

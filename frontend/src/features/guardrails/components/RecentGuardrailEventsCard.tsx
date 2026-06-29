@@ -27,7 +27,7 @@ export function RecentGuardrailEventsCard({
     { query: { enabled } },
   );
   const [traceRequestId, setTraceRequestId] = useState<string | null>(null);
-  const events = eventsQuery.data?.status === 200 ? eventsQuery.data.data : [];
+  const events = eventsQuery.data?.status === 200 ? eventsQuery.data.data.items : [];
   const activityHref = buildActivityHref(filters);
 
   if (!enabled) return null;

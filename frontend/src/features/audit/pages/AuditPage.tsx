@@ -18,7 +18,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { httpClient } from "@/shared/api/http-client";
-import type { AuditEventResponse, AuditVerificationResponse } from "@/shared/api/generated/schemas";
+import type {
+  AuditEventPageResponse,
+  AuditEventResponse,
+  AuditVerificationResponse,
+} from "@/shared/api/generated/schemas";
 import { EventDetailSheet, type EventDetailRow } from "@/shared/components/EventDetailSheet";
 import { FilterToolbar, type FilterChip } from "@/shared/components/FilterToolbar";
 import { PageHeader } from "@/shared/components/PageHeader";
@@ -73,7 +77,7 @@ export function AuditPage() {
     enabled: !dateRange.error,
     initialPageParam: undefined as AuditCursor | undefined,
     queryFn: async ({ pageParam }) => {
-      const response = await httpClient.get<AuditEventResponse[]>("/api/v1/audit", {
+      const response = await httpClient.get<AuditEventPageResponse>("/api/v1/audit", {
         params: {
           ...params,
           limit: PAGE_SIZE,
@@ -84,12 +88,11 @@ export function AuditPage() {
       return response.data;
     },
     getNextPageParam: (page) => {
-      if (page.length < PAGE_SIZE) return undefined;
-      const last = page.at(-1);
-      return last ? { beforeAt: last.created_at, beforeId: last.id } : undefined;
+      if (!page.has_more || !page.next_before_at || !page.next_before_id) return undefined;
+      return { beforeAt: page.next_before_at, beforeId: page.next_before_id };
     },
   });
-  const events = auditQuery.data?.pages.flat() ?? [];
+  const events = auditQuery.data?.pages.flatMap((page) => page.items) ?? [];
 
   const clearFilters = () => {
     setSearch("");

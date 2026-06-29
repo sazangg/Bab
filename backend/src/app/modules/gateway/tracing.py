@@ -5,7 +5,13 @@ from uuid import UUID
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.metrics import (
+    record_gateway_request_finalized,
+    record_gateway_route_attempt_finalized,
+)
+from app.core.observability import outcome_for_status
 from app.core.request_ids import current_request_id
+from app.core.tracing import add_span_event, set_span_attributes
 from app.modules.gateway_history import facade as gateway_history_facade
 from app.modules.gateway_history.schemas import (
     CreateGatewayRequest,
@@ -59,7 +65,7 @@ async def create_gateway_request(
     db: AsyncSession,
 ) -> UUID | None:
     try:
-        return await gateway_history_facade.create_gateway_request(
+        gateway_request_id = await gateway_history_facade.create_gateway_request(
             payload=CreateGatewayRequest(
                 org_id=resolved.org_id if resolved else None,
                 team_id=resolved.team_id if resolved else None,
@@ -74,6 +80,32 @@ async def create_gateway_request(
             ),
             db=db,
         )
+        logger.info(
+            "gateway_request_started",
+            gateway_request_id=str(gateway_request_id),
+            org_id=str(resolved.org_id) if resolved else None,
+            team_id=str(resolved.team_id) if resolved and resolved.team_id else None,
+            project_id=str(resolved.project_id) if resolved and resolved.project_id else None,
+            virtual_key_id=str(resolved.virtual_key_id) if resolved else None,
+            requested_model=resolved.requested_model if resolved else requested_model,
+            public_model_name=resolved.public_model_name if resolved else None,
+            gateway_endpoint=gateway_endpoint,
+        )
+        set_span_attributes(
+            {
+                "bab.gateway.endpoint": gateway_endpoint,
+                "bab.gateway.request_id": str(gateway_request_id),
+            }
+        )
+        add_span_event(
+            "bab.gateway.request",
+            {
+                "bab.gateway.phase": "started",
+                "bab.gateway.endpoint": gateway_endpoint,
+                "bab.gateway.request_id": str(gateway_request_id),
+            },
+        )
+        return gateway_request_id
     except Exception:
         await db.rollback()
         return None
@@ -141,6 +173,7 @@ async def finalize_gateway_request(
     error_code: str | None,
     db: AsyncSession,
     final_route_attempt_id: UUID | None = None,
+    gateway_endpoint: str | None = None,
 ) -> None:
     if gateway_request_id is None:
         return
@@ -161,6 +194,52 @@ async def finalize_gateway_request(
             final_error_code=error_code,
         ),
         db=db,
+    )
+    logger.info(
+        "gateway_request_finalized",
+        gateway_request_id=str(gateway_request_id),
+        org_id=str(resolved.org_id) if resolved else None,
+        team_id=str(resolved.team_id) if resolved and resolved.team_id else None,
+        project_id=str(resolved.project_id) if resolved and resolved.project_id else None,
+        virtual_key_id=str(resolved.virtual_key_id) if resolved else None,
+        provider_id=str(resolved.provider_id) if resolved else None,
+        credential_pool_id=str(resolved.pool_id) if resolved else None,
+        model_offering_id=str(resolved.model_offering_id) if resolved else None,
+        requested_model=resolved.requested_model if resolved else None,
+        public_model_name=resolved.public_model_name if resolved else None,
+        provider_model=resolved.provider_model if resolved else None,
+        status_code=http_status,
+        outcome=outcome_for_status(http_status),
+        error_code=error_code,
+        attempt_count=attempt_count,
+        fallback_attempted=fallback_attempted,
+        route_attempt_id=str(final_route_attempt_id) if final_route_attempt_id else None,
+    )
+    record_gateway_request_finalized(
+        gateway_endpoint=gateway_endpoint,
+        status_code=http_status,
+        error_code=error_code,
+    )
+    set_span_attributes(
+        {
+            "bab.gateway.endpoint": gateway_endpoint,
+            "bab.gateway.outcome": outcome_for_status(http_status),
+            "bab.gateway.error_code": error_code,
+            "bab.gateway.request_id": str(gateway_request_id),
+            "bab.gateway.route_attempt_id": str(final_route_attempt_id)
+            if final_route_attempt_id
+            else None,
+        }
+    )
+    add_span_event(
+        "bab.gateway.request",
+        {
+            "bab.gateway.phase": "finalized",
+            "bab.gateway.endpoint": gateway_endpoint,
+            "bab.gateway.outcome": outcome_for_status(http_status),
+            "bab.gateway.error_code": error_code,
+            "bab.gateway.request_id": str(gateway_request_id),
+        },
     )
 
 
@@ -265,6 +344,32 @@ async def record_gateway_route_attempt_started(
         },
         db=db,
     )
+    logger.info(
+        "gateway_route_attempt_started",
+        gateway_request_id=str(gateway_request_id),
+        route_attempt_id=str(route_attempt_id),
+        org_id=str(resolved.org_id),
+        team_id=str(resolved.team_id) if resolved.team_id else None,
+        project_id=str(resolved.project_id) if resolved.project_id else None,
+        virtual_key_id=str(resolved.virtual_key_id),
+        provider_id=str(resolved.provider_id),
+        credential_pool_id=str(resolved.pool_id),
+        provider_credential_id=str(resolved.provider_key_id) if resolved.provider_key_id else None,
+        model_offering_id=str(resolved.model_offering_id),
+        requested_model=resolved.requested_model,
+        public_model_name=resolved.public_model_name,
+        provider_model=resolved.provider_model,
+        attempt_index=attempt_index,
+    )
+    add_span_event(
+        "bab.gateway.route_attempt",
+        {
+            "bab.gateway.phase": "started",
+            "bab.gateway.request_id": str(gateway_request_id),
+            "bab.gateway.route_attempt_id": str(route_attempt_id),
+            "bab.gateway.attempt_index": attempt_index,
+        },
+    )
     return route_attempt_id
 
 
@@ -301,6 +406,33 @@ async def finalize_gateway_route_attempt(
             "completed_at": datetime.now(UTC),
         },
         db=db,
+    )
+    logger.info(
+        "gateway_route_attempt_finalized",
+        route_attempt_id=str(route_attempt_id),
+        status=status_,
+        status_code=http_status,
+        outcome=outcome_for_status(http_status) if http_status is not None else None,
+        error_code=error_code,
+        failure_reason=failure_reason,
+        duration_ms=latency_ms,
+    )
+    record_gateway_route_attempt_finalized(
+        status_code=http_status,
+        status=status_,
+        error_code=error_code,
+        duration_seconds=(latency_ms / 1000) if latency_ms is not None else None,
+    )
+    add_span_event(
+        "bab.gateway.route_attempt",
+        {
+            "bab.gateway.phase": "finalized",
+            "bab.gateway.outcome": outcome_for_status(http_status)
+            if http_status is not None
+            else None,
+            "bab.gateway.error_code": error_code,
+            "bab.gateway.route_attempt_id": str(route_attempt_id),
+        },
     )
 
 

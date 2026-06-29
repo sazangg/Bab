@@ -15,6 +15,7 @@ from starlette.responses import StreamingResponse
 
 from app.core.config import settings
 from app.core.database import Scope, get_db
+from app.core.problems import ProblemException
 from app.modules.gateway import failures as gateway_failures
 from app.modules.gateway import guardrails as gateway_guardrails
 from app.modules.gateway import limits as gateway_limits
@@ -392,7 +393,7 @@ async def create_chat_completion(
             provider_error_metadata={"status_code": exc.status_code},
             db=db,
         )
-        return JSONResponse(status_code=exc.status_code, content=exc.body)
+        _raise_provider_upstream_problem(exc)
 
 
 @router.post("/messages", response_model=None)
@@ -662,7 +663,7 @@ async def create_anthropic_message(
             finalize_route_attempt=False,
             db=db,
         )
-        return JSONResponse(status_code=exc.status_code, content=exc.body)
+        _raise_provider_upstream_problem(exc)
 
     try:
         finalized_response = (
@@ -690,16 +691,12 @@ async def create_anthropic_message(
 
 
 @router.post("/embeddings", response_model=None)
-async def create_embeddings() -> JSONResponse:
-    return JSONResponse(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        content={
-            "error": {
-                "message": "Embeddings are not implemented yet.",
-                "type": "not_implemented",
-                "code": "embeddings_not_implemented",
-            }
-        },
+async def create_embeddings() -> None:
+    raise ProblemException(
+        problem_type="urn:bab:error:not-implemented",
+        title="Not Implemented",
+        status=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Embeddings are not implemented yet.",
     )
 
 
@@ -960,7 +957,7 @@ async def _handle_openai_compatible_proxy(
             finalize_route_attempt=False,
             db=db,
         )
-        return JSONResponse(status_code=exc.status_code, content=exc.body)
+        _raise_provider_upstream_problem(exc)
 
     try:
         finalized_response = (
@@ -1022,6 +1019,19 @@ def _enforce_body_size(raw_body: bytes, max_body_bytes: int) -> None:
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail="request body is too large",
         )
+
+
+def _raise_provider_upstream_problem(exc: ProviderUpstreamError) -> None:
+    raise ProblemException(
+        problem_type="urn:bab:error:provider-upstream",
+        title="Upstream Provider Error",
+        status=exc.status_code,
+        detail="Upstream provider request failed",
+        extra={
+            "failure_reason": exc.failure_reason,
+            "upstream_status": exc.status_code,
+        },
+    ) from exc
 
 
 def _failure_context(

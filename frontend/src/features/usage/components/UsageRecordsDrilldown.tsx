@@ -30,7 +30,7 @@ export function UsageRecordsDrilldown({
     limit: 100,
     ...filters,
   });
-  const records = recordsQuery.data?.status === 200 ? recordsQuery.data.data : [];
+  const records = recordsQuery.data?.status === 200 ? recordsQuery.data.data.items : [];
 
   const columns: DataTableColumn<UsageRecordResponse>[] = [
     {

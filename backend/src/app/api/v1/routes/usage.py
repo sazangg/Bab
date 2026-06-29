@@ -4,7 +4,7 @@ from io import StringIO
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,7 +24,7 @@ from app.modules.usage.schemas import (
     OrganizationUsageSummary,
     SpendInsights,
     UsageFilterOptions,
-    UsageRecordResponse,
+    UsageRecordPageResponse,
     UsageTimeSeriesPoint,
 )
 
@@ -36,7 +36,7 @@ UsageWindow = Literal["24h", "7d", "30d", "90d", "lifetime"]
 UsageGrain = Literal["hour", "day", "week"]
 
 
-class OrganizationUsagePage(OrganizationUsageSummary):
+class OrganizationUsagePageResponse(OrganizationUsageSummary):
     recent_denials: list[ActivityEventResponse]
 
 
@@ -53,7 +53,7 @@ async def get_organization_usage_summary(
     project_id: UUID | None = None,
     virtual_key_id: UUID | None = None,
     model: str | None = None,
-) -> OrganizationUsagePage:
+) -> OrganizationUsagePageResponse:
     usage_scope = await resolve_workspace_filter_scope(
         user=user,
         org_id=scope.org_id,
@@ -89,7 +89,7 @@ async def get_organization_usage_summary(
         limit=20,
         db=db,
     )
-    return OrganizationUsagePage(
+    return OrganizationUsagePageResponse(
         **summary.model_dump(),
         recent_denials=recent_denials,
     )
@@ -110,9 +110,9 @@ async def list_usage_records(
     model: str | None = None,
     request_id: str | None = None,
     search: str | None = None,
-    limit: int = 100,
-    offset: int = 0,
-) -> list[UsageRecordResponse]:
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> UsageRecordPageResponse:
     usage_scope = await resolve_workspace_filter_scope(
         user=user,
         org_id=scope.org_id,
@@ -122,7 +122,7 @@ async def list_usage_records(
         project_id=project_id,
         virtual_key_id=virtual_key_id,
     )
-    return await facade.list_usage_records(
+    records = await facade.list_usage_records(
         org_id=scope.org_id,
         window=window,
         start_at=start_at,
@@ -136,9 +136,15 @@ async def list_usage_records(
         search=search,
         allowed_team_ids=usage_scope.allowed_team_ids,
         allowed_project_ids=usage_scope.allowed_project_ids,
-        limit=min(max(limit, 1), 500),
-        offset=max(offset, 0),
+        limit=limit + 1,
+        offset=offset,
         db=db,
+    )
+    return UsageRecordPageResponse(
+        items=records[:limit],
+        limit=limit,
+        offset=offset,
+        has_more=len(records) > limit,
     )
 
 

@@ -21,6 +21,13 @@ status?: 'succeeded' | 'failed' | 'denied' | 'pending' | null;
 fallback?: 'attempted' | 'not_attempted' | null;
 error_code?: string | null;
 search?: string | null;
+/**
+ * @minimum 1
+ * @maximum 200
+ */
 limit?: number;
+/**
+ * @minimum 0
+ */
 offset?: number;
 };

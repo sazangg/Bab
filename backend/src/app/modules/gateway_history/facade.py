@@ -15,7 +15,7 @@ from app.modules.gateway_history.schemas import (
     GatewayPolicyDecisionTrace,
     GatewayRequestResolvedSubject,
     GatewayRequestTraceListItem,
-    GatewayRequestTraceListResponse,
+    GatewayRequestTracePageResponse,
     GatewayRequestTraceResponse,
     GatewayRequestTraceSummary,
     GatewayRouteAttemptTrace,
@@ -154,7 +154,7 @@ async def list_gateway_requests(
     limit: int,
     offset: int,
     db: AsyncSession,
-) -> GatewayRequestTraceListResponse:
+) -> GatewayRequestTracePageResponse:
     now = datetime.now(UTC)
     allowed_scope = await _expand_allowed_scope_ids(
         org_id=org_id,
@@ -246,7 +246,7 @@ async def list_gateway_requests(
         )
         for request in page_requests
     ]
-    return GatewayRequestTraceListResponse(
+    return GatewayRequestTracePageResponse(
         items=items,
         limit=limit,
         offset=offset,

@@ -28,12 +28,12 @@ import type {
   AuthenticatedUser,
   CreateInviteRequest,
   CreateMemberRequest,
-  HTTPValidationError,
   InvitePreviewResponse,
   InviteResponse,
   LoginRequest,
   MemberResponse,
   PreviewInviteApiV1AuthInvitesPreviewGetParams,
+  ProblemDetail,
   TokenResponse,
   UpdateMemberRequest,
   UpdateMemberStatusRequest
@@ -44,20 +44,33 @@ import { apiMutator } from '../../orval-mutator';
 
 
 
+export type HTTPStatusCode1xx = 100 | 101 | 102 | 103;
+export type HTTPStatusCode2xx = 200 | 201 | 202 | 203 | 204 | 205 | 206 | 207;
+export type HTTPStatusCode3xx = 300 | 301 | 302 | 303 | 304 | 305 | 307 | 308;
+export type HTTPStatusCode4xx = 400 | 401 | 402 | 403 | 404 | 405 | 406 | 407 | 408 | 409 | 410 | 411 | 412 | 413 | 414 | 415 | 416 | 417 | 418 | 419 | 420 | 421 | 422 | 423 | 424 | 426 | 428 | 429 | 431 | 451;
+export type HTTPStatusCode5xx = 500 | 501 | 502 | 503 | 504 | 505 | 507 | 511;
+export type HTTPStatusCodes = HTTPStatusCode1xx | HTTPStatusCode2xx | HTTPStatusCode3xx | HTTPStatusCode4xx | HTTPStatusCode5xx;
+
+
 export type loginApiV1AuthLoginPostResponse200 = {
   data: TokenResponse
   status: 200
 }
 
 export type loginApiV1AuthLoginPostResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type loginApiV1AuthLoginPostResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type loginApiV1AuthLoginPostResponseSuccess = (loginApiV1AuthLoginPostResponse200) & {
   headers: Headers;
 };
-export type loginApiV1AuthLoginPostResponseError = (loginApiV1AuthLoginPostResponse422) & {
+export type loginApiV1AuthLoginPostResponseError = (loginApiV1AuthLoginPostResponse422 | loginApiV1AuthLoginPostResponseDefault) & {
   headers: Headers;
 };
 
@@ -89,7 +102,7 @@ export const loginApiV1AuthLoginPost = async (loginRequest: LoginRequest, option
 
 
 
-export const getLoginApiV1AuthLoginPostMutationOptions = <TError = HTTPValidationError,
+export const getLoginApiV1AuthLoginPostMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>, TError,{data: LoginRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>, TError,{data: LoginRequest}, TContext> => {
 
@@ -118,12 +131,12 @@ const {mutation: mutationOptions} = options ?
 
     export type LoginApiV1AuthLoginPostMutationResult = NonNullable<Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>>
     export type LoginApiV1AuthLoginPostMutationBody = LoginRequest
-    export type LoginApiV1AuthLoginPostMutationError = HTTPValidationError
+    export type LoginApiV1AuthLoginPostMutationError = ProblemDetail
 
     /**
  * @summary Login
  */
-export const useLoginApiV1AuthLoginPost = <TError = HTTPValidationError,
+export const useLoginApiV1AuthLoginPost = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>, TError,{data: LoginRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof loginApiV1AuthLoginPost>>,
@@ -139,14 +152,19 @@ export const useLoginApiV1AuthLoginPost = <TError = HTTPValidationError,
 }
 
 export type acceptInviteApiV1AuthInvitesAcceptPostResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type acceptInviteApiV1AuthInvitesAcceptPostResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type acceptInviteApiV1AuthInvitesAcceptPostResponseSuccess = (acceptInviteApiV1AuthInvitesAcceptPostResponse200) & {
   headers: Headers;
 };
-export type acceptInviteApiV1AuthInvitesAcceptPostResponseError = (acceptInviteApiV1AuthInvitesAcceptPostResponse422) & {
+export type acceptInviteApiV1AuthInvitesAcceptPostResponseError = (acceptInviteApiV1AuthInvitesAcceptPostResponse422 | acceptInviteApiV1AuthInvitesAcceptPostResponseDefault) & {
   headers: Headers;
 };
 
@@ -178,7 +196,7 @@ export const acceptInviteApiV1AuthInvitesAcceptPost = async (acceptInviteRequest
 
 
 
-export const getAcceptInviteApiV1AuthInvitesAcceptPostMutationOptions = <TError = HTTPValidationError,
+export const getAcceptInviteApiV1AuthInvitesAcceptPostMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acceptInviteApiV1AuthInvitesAcceptPost>>, TError,{data: AcceptInviteRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof acceptInviteApiV1AuthInvitesAcceptPost>>, TError,{data: AcceptInviteRequest}, TContext> => {
 
@@ -207,12 +225,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AcceptInviteApiV1AuthInvitesAcceptPostMutationResult = NonNullable<Awaited<ReturnType<typeof acceptInviteApiV1AuthInvitesAcceptPost>>>
     export type AcceptInviteApiV1AuthInvitesAcceptPostMutationBody = AcceptInviteRequest
-    export type AcceptInviteApiV1AuthInvitesAcceptPostMutationError = HTTPValidationError
+    export type AcceptInviteApiV1AuthInvitesAcceptPostMutationError = ProblemDetail
 
     /**
  * @summary Accept Invite
  */
-export const useAcceptInviteApiV1AuthInvitesAcceptPost = <TError = HTTPValidationError,
+export const useAcceptInviteApiV1AuthInvitesAcceptPost = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acceptInviteApiV1AuthInvitesAcceptPost>>, TError,{data: AcceptInviteRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof acceptInviteApiV1AuthInvitesAcceptPost>>,
@@ -228,14 +246,19 @@ export const useAcceptInviteApiV1AuthInvitesAcceptPost = <TError = HTTPValidatio
 }
 
 export type refreshApiV1AuthRefreshPostResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type refreshApiV1AuthRefreshPostResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type refreshApiV1AuthRefreshPostResponseSuccess = (refreshApiV1AuthRefreshPostResponse200) & {
   headers: Headers;
 };
-export type refreshApiV1AuthRefreshPostResponseError = (refreshApiV1AuthRefreshPostResponse422) & {
+export type refreshApiV1AuthRefreshPostResponseError = (refreshApiV1AuthRefreshPostResponse422 | refreshApiV1AuthRefreshPostResponseDefault) & {
   headers: Headers;
 };
 
@@ -266,7 +289,7 @@ export const refreshApiV1AuthRefreshPost = async ( options?: RequestInit): Promi
 
 
 
-export const getRefreshApiV1AuthRefreshPostMutationOptions = <TError = HTTPValidationError,
+export const getRefreshApiV1AuthRefreshPostMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>, TError,void, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>, TError,void, TContext> => {
 
@@ -295,12 +318,12 @@ const {mutation: mutationOptions} = options ?
 
     export type RefreshApiV1AuthRefreshPostMutationResult = NonNullable<Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>>
 
-    export type RefreshApiV1AuthRefreshPostMutationError = HTTPValidationError
+    export type RefreshApiV1AuthRefreshPostMutationError = ProblemDetail
 
     /**
  * @summary Refresh
  */
-export const useRefreshApiV1AuthRefreshPost = <TError = HTTPValidationError,
+export const useRefreshApiV1AuthRefreshPost = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>, TError,void, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof refreshApiV1AuthRefreshPost>>,
@@ -316,14 +339,19 @@ export const useRefreshApiV1AuthRefreshPost = <TError = HTTPValidationError,
 }
 
 export type logoutApiV1AuthLogoutPostResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type logoutApiV1AuthLogoutPostResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 204 | 422>
 }
 
 export type logoutApiV1AuthLogoutPostResponseSuccess = (logoutApiV1AuthLogoutPostResponse204) & {
   headers: Headers;
 };
-export type logoutApiV1AuthLogoutPostResponseError = (logoutApiV1AuthLogoutPostResponse422) & {
+export type logoutApiV1AuthLogoutPostResponseError = (logoutApiV1AuthLogoutPostResponse422 | logoutApiV1AuthLogoutPostResponseDefault) & {
   headers: Headers;
 };
 
@@ -354,7 +382,7 @@ export const logoutApiV1AuthLogoutPost = async ( options?: RequestInit): Promise
 
 
 
-export const getLogoutApiV1AuthLogoutPostMutationOptions = <TError = HTTPValidationError,
+export const getLogoutApiV1AuthLogoutPostMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>, TError,void, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>, TError,void, TContext> => {
 
@@ -383,12 +411,12 @@ const {mutation: mutationOptions} = options ?
 
     export type LogoutApiV1AuthLogoutPostMutationResult = NonNullable<Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>>
 
-    export type LogoutApiV1AuthLogoutPostMutationError = HTTPValidationError
+    export type LogoutApiV1AuthLogoutPostMutationError = ProblemDetail
 
     /**
  * @summary Logout
  */
-export const useLogoutApiV1AuthLogoutPost = <TError = HTTPValidationError,
+export const useLogoutApiV1AuthLogoutPost = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>, TError,void, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>,
@@ -403,12 +431,19 @@ export const useLogoutApiV1AuthLogoutPost = <TError = HTTPValidationError,
   status: 200
 }
 
+export type meApiV1AuthMeGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
 export type meApiV1AuthMeGetResponseSuccess = (meApiV1AuthMeGetResponse200) & {
   headers: Headers;
 };
-;
+export type meApiV1AuthMeGetResponseError = (meApiV1AuthMeGetResponseDefault) & {
+  headers: Headers;
+};
 
-export type meApiV1AuthMeGetResponse = (meApiV1AuthMeGetResponseSuccess)
+export type meApiV1AuthMeGetResponse = (meApiV1AuthMeGetResponseSuccess | meApiV1AuthMeGetResponseError)
 
 export const getMeApiV1AuthMeGetUrl = () => {
 
@@ -443,7 +478,7 @@ export const getMeApiV1AuthMeGetQueryKey = () => {
     }
 
 
-export const getMeApiV1AuthMeGetQueryOptions = <TData = Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError, TData>>, }
+export const getMeApiV1AuthMeGetQueryOptions = <TData = Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError = ProblemDetail>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -462,10 +497,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type MeApiV1AuthMeGetQueryResult = NonNullable<Awaited<ReturnType<typeof meApiV1AuthMeGet>>>
-export type MeApiV1AuthMeGetQueryError = unknown
+export type MeApiV1AuthMeGetQueryError = ProblemDetail
 
 
-export function useMeApiV1AuthMeGet<TData = Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError = unknown>(
+export function useMeApiV1AuthMeGet<TData = Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError = ProblemDetail>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof meApiV1AuthMeGet>>,
@@ -475,7 +510,7 @@ export function useMeApiV1AuthMeGet<TData = Awaited<ReturnType<typeof meApiV1Aut
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useMeApiV1AuthMeGet<TData = Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError = unknown>(
+export function useMeApiV1AuthMeGet<TData = Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof meApiV1AuthMeGet>>,
@@ -485,7 +520,7 @@ export function useMeApiV1AuthMeGet<TData = Awaited<ReturnType<typeof meApiV1Aut
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useMeApiV1AuthMeGet<TData = Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError = unknown>(
+export function useMeApiV1AuthMeGet<TData = Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -493,7 +528,7 @@ export function useMeApiV1AuthMeGet<TData = Awaited<ReturnType<typeof meApiV1Aut
  * @summary Me
  */
 
-export function useMeApiV1AuthMeGet<TData = Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError = unknown>(
+export function useMeApiV1AuthMeGet<TData = Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof meApiV1AuthMeGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -516,14 +551,19 @@ export type previewInviteApiV1AuthInvitesPreviewGetResponse200 = {
 }
 
 export type previewInviteApiV1AuthInvitesPreviewGetResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type previewInviteApiV1AuthInvitesPreviewGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type previewInviteApiV1AuthInvitesPreviewGetResponseSuccess = (previewInviteApiV1AuthInvitesPreviewGetResponse200) & {
   headers: Headers;
 };
-export type previewInviteApiV1AuthInvitesPreviewGetResponseError = (previewInviteApiV1AuthInvitesPreviewGetResponse422) & {
+export type previewInviteApiV1AuthInvitesPreviewGetResponseError = (previewInviteApiV1AuthInvitesPreviewGetResponse422 | previewInviteApiV1AuthInvitesPreviewGetResponseDefault) & {
   headers: Headers;
 };
 
@@ -569,7 +609,7 @@ export const getPreviewInviteApiV1AuthInvitesPreviewGetQueryKey = (params?: Prev
     }
 
 
-export const getPreviewInviteApiV1AuthInvitesPreviewGetQueryOptions = <TData = Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>, TError = HTTPValidationError>(params: PreviewInviteApiV1AuthInvitesPreviewGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>, TError, TData>>, }
+export const getPreviewInviteApiV1AuthInvitesPreviewGetQueryOptions = <TData = Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>, TError = ProblemDetail>(params: PreviewInviteApiV1AuthInvitesPreviewGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -588,10 +628,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type PreviewInviteApiV1AuthInvitesPreviewGetQueryResult = NonNullable<Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>>
-export type PreviewInviteApiV1AuthInvitesPreviewGetQueryError = HTTPValidationError
+export type PreviewInviteApiV1AuthInvitesPreviewGetQueryError = ProblemDetail
 
 
-export function usePreviewInviteApiV1AuthInvitesPreviewGet<TData = Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>, TError = HTTPValidationError>(
+export function usePreviewInviteApiV1AuthInvitesPreviewGet<TData = Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>, TError = ProblemDetail>(
  params: PreviewInviteApiV1AuthInvitesPreviewGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>,
@@ -601,7 +641,7 @@ export function usePreviewInviteApiV1AuthInvitesPreviewGet<TData = Awaited<Retur
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function usePreviewInviteApiV1AuthInvitesPreviewGet<TData = Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>, TError = HTTPValidationError>(
+export function usePreviewInviteApiV1AuthInvitesPreviewGet<TData = Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>, TError = ProblemDetail>(
  params: PreviewInviteApiV1AuthInvitesPreviewGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>,
@@ -611,7 +651,7 @@ export function usePreviewInviteApiV1AuthInvitesPreviewGet<TData = Awaited<Retur
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function usePreviewInviteApiV1AuthInvitesPreviewGet<TData = Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>, TError = HTTPValidationError>(
+export function usePreviewInviteApiV1AuthInvitesPreviewGet<TData = Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>, TError = ProblemDetail>(
  params: PreviewInviteApiV1AuthInvitesPreviewGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -619,7 +659,7 @@ export function usePreviewInviteApiV1AuthInvitesPreviewGet<TData = Awaited<Retur
  * @summary Preview Invite
  */
 
-export function usePreviewInviteApiV1AuthInvitesPreviewGet<TData = Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>, TError = HTTPValidationError>(
+export function usePreviewInviteApiV1AuthInvitesPreviewGet<TData = Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>, TError = ProblemDetail>(
  params: PreviewInviteApiV1AuthInvitesPreviewGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof previewInviteApiV1AuthInvitesPreviewGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -641,12 +681,19 @@ export type listMembersApiV1AuthMembersGetResponse200 = {
   status: 200
 }
 
+export type listMembersApiV1AuthMembersGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
 export type listMembersApiV1AuthMembersGetResponseSuccess = (listMembersApiV1AuthMembersGetResponse200) & {
   headers: Headers;
 };
-;
+export type listMembersApiV1AuthMembersGetResponseError = (listMembersApiV1AuthMembersGetResponseDefault) & {
+  headers: Headers;
+};
 
-export type listMembersApiV1AuthMembersGetResponse = (listMembersApiV1AuthMembersGetResponseSuccess)
+export type listMembersApiV1AuthMembersGetResponse = (listMembersApiV1AuthMembersGetResponseSuccess | listMembersApiV1AuthMembersGetResponseError)
 
 export const getListMembersApiV1AuthMembersGetUrl = () => {
 
@@ -681,7 +728,7 @@ export const getListMembersApiV1AuthMembersGetQueryKey = () => {
     }
 
 
-export const getListMembersApiV1AuthMembersGetQueryOptions = <TData = Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError, TData>>, }
+export const getListMembersApiV1AuthMembersGetQueryOptions = <TData = Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError = ProblemDetail>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -700,10 +747,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type ListMembersApiV1AuthMembersGetQueryResult = NonNullable<Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>>
-export type ListMembersApiV1AuthMembersGetQueryError = unknown
+export type ListMembersApiV1AuthMembersGetQueryError = ProblemDetail
 
 
-export function useListMembersApiV1AuthMembersGet<TData = Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError = unknown>(
+export function useListMembersApiV1AuthMembersGet<TData = Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError = ProblemDetail>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>,
@@ -713,7 +760,7 @@ export function useListMembersApiV1AuthMembersGet<TData = Awaited<ReturnType<typ
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListMembersApiV1AuthMembersGet<TData = Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError = unknown>(
+export function useListMembersApiV1AuthMembersGet<TData = Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>,
@@ -723,7 +770,7 @@ export function useListMembersApiV1AuthMembersGet<TData = Awaited<ReturnType<typ
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListMembersApiV1AuthMembersGet<TData = Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError = unknown>(
+export function useListMembersApiV1AuthMembersGet<TData = Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -731,7 +778,7 @@ export function useListMembersApiV1AuthMembersGet<TData = Awaited<ReturnType<typ
  * @summary List Members
  */
 
-export function useListMembersApiV1AuthMembersGet<TData = Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError = unknown>(
+export function useListMembersApiV1AuthMembersGet<TData = Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembersApiV1AuthMembersGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -754,14 +801,19 @@ export type createMemberApiV1AuthMembersPostResponse201 = {
 }
 
 export type createMemberApiV1AuthMembersPostResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type createMemberApiV1AuthMembersPostResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 201 | 422>
 }
 
 export type createMemberApiV1AuthMembersPostResponseSuccess = (createMemberApiV1AuthMembersPostResponse201) & {
   headers: Headers;
 };
-export type createMemberApiV1AuthMembersPostResponseError = (createMemberApiV1AuthMembersPostResponse422) & {
+export type createMemberApiV1AuthMembersPostResponseError = (createMemberApiV1AuthMembersPostResponse422 | createMemberApiV1AuthMembersPostResponseDefault) & {
   headers: Headers;
 };
 
@@ -793,7 +845,7 @@ export const createMemberApiV1AuthMembersPost = async (createMemberRequest: Crea
 
 
 
-export const getCreateMemberApiV1AuthMembersPostMutationOptions = <TError = HTTPValidationError,
+export const getCreateMemberApiV1AuthMembersPostMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMemberApiV1AuthMembersPost>>, TError,{data: CreateMemberRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof createMemberApiV1AuthMembersPost>>, TError,{data: CreateMemberRequest}, TContext> => {
 
@@ -822,12 +874,12 @@ const {mutation: mutationOptions} = options ?
 
     export type CreateMemberApiV1AuthMembersPostMutationResult = NonNullable<Awaited<ReturnType<typeof createMemberApiV1AuthMembersPost>>>
     export type CreateMemberApiV1AuthMembersPostMutationBody = CreateMemberRequest
-    export type CreateMemberApiV1AuthMembersPostMutationError = HTTPValidationError
+    export type CreateMemberApiV1AuthMembersPostMutationError = ProblemDetail
 
     /**
  * @summary Create Member
  */
-export const useCreateMemberApiV1AuthMembersPost = <TError = HTTPValidationError,
+export const useCreateMemberApiV1AuthMembersPost = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMemberApiV1AuthMembersPost>>, TError,{data: CreateMemberRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof createMemberApiV1AuthMembersPost>>,
@@ -843,14 +895,19 @@ export const useCreateMemberApiV1AuthMembersPost = <TError = HTTPValidationError
 }
 
 export type updateMemberApiV1AuthMembersUserIdPatchResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type updateMemberApiV1AuthMembersUserIdPatchResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type updateMemberApiV1AuthMembersUserIdPatchResponseSuccess = (updateMemberApiV1AuthMembersUserIdPatchResponse200) & {
   headers: Headers;
 };
-export type updateMemberApiV1AuthMembersUserIdPatchResponseError = (updateMemberApiV1AuthMembersUserIdPatchResponse422) & {
+export type updateMemberApiV1AuthMembersUserIdPatchResponseError = (updateMemberApiV1AuthMembersUserIdPatchResponse422 | updateMemberApiV1AuthMembersUserIdPatchResponseDefault) & {
   headers: Headers;
 };
 
@@ -883,7 +940,7 @@ export const updateMemberApiV1AuthMembersUserIdPatch = async (userId: string,
 
 
 
-export const getUpdateMemberApiV1AuthMembersUserIdPatchMutationOptions = <TError = HTTPValidationError,
+export const getUpdateMemberApiV1AuthMembersUserIdPatchMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateMemberApiV1AuthMembersUserIdPatch>>, TError,{userId: string;data: UpdateMemberRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof updateMemberApiV1AuthMembersUserIdPatch>>, TError,{userId: string;data: UpdateMemberRequest}, TContext> => {
 
@@ -912,12 +969,12 @@ const {mutation: mutationOptions} = options ?
 
     export type UpdateMemberApiV1AuthMembersUserIdPatchMutationResult = NonNullable<Awaited<ReturnType<typeof updateMemberApiV1AuthMembersUserIdPatch>>>
     export type UpdateMemberApiV1AuthMembersUserIdPatchMutationBody = UpdateMemberRequest
-    export type UpdateMemberApiV1AuthMembersUserIdPatchMutationError = HTTPValidationError
+    export type UpdateMemberApiV1AuthMembersUserIdPatchMutationError = ProblemDetail
 
     /**
  * @summary Update Member
  */
-export const useUpdateMemberApiV1AuthMembersUserIdPatch = <TError = HTTPValidationError,
+export const useUpdateMemberApiV1AuthMembersUserIdPatch = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateMemberApiV1AuthMembersUserIdPatch>>, TError,{userId: string;data: UpdateMemberRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof updateMemberApiV1AuthMembersUserIdPatch>>,
@@ -933,14 +990,19 @@ export const useUpdateMemberApiV1AuthMembersUserIdPatch = <TError = HTTPValidati
 }
 
 export type updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponseSuccess = (updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponse200) & {
   headers: Headers;
 };
-export type updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponseError = (updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponse422) & {
+export type updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponseError = (updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponse422 | updateMemberStatusApiV1AuthMembersUserIdStatusPatchResponseDefault) & {
   headers: Headers;
 };
 
@@ -973,7 +1035,7 @@ export const updateMemberStatusApiV1AuthMembersUserIdStatusPatch = async (userId
 
 
 
-export const getUpdateMemberStatusApiV1AuthMembersUserIdStatusPatchMutationOptions = <TError = HTTPValidationError,
+export const getUpdateMemberStatusApiV1AuthMembersUserIdStatusPatchMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateMemberStatusApiV1AuthMembersUserIdStatusPatch>>, TError,{userId: string;data: UpdateMemberStatusRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof updateMemberStatusApiV1AuthMembersUserIdStatusPatch>>, TError,{userId: string;data: UpdateMemberStatusRequest}, TContext> => {
 
@@ -1002,12 +1064,12 @@ const {mutation: mutationOptions} = options ?
 
     export type UpdateMemberStatusApiV1AuthMembersUserIdStatusPatchMutationResult = NonNullable<Awaited<ReturnType<typeof updateMemberStatusApiV1AuthMembersUserIdStatusPatch>>>
     export type UpdateMemberStatusApiV1AuthMembersUserIdStatusPatchMutationBody = UpdateMemberStatusRequest
-    export type UpdateMemberStatusApiV1AuthMembersUserIdStatusPatchMutationError = HTTPValidationError
+    export type UpdateMemberStatusApiV1AuthMembersUserIdStatusPatchMutationError = ProblemDetail
 
     /**
  * @summary Update Member Status
  */
-export const useUpdateMemberStatusApiV1AuthMembersUserIdStatusPatch = <TError = HTTPValidationError,
+export const useUpdateMemberStatusApiV1AuthMembersUserIdStatusPatch = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateMemberStatusApiV1AuthMembersUserIdStatusPatch>>, TError,{userId: string;data: UpdateMemberStatusRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof updateMemberStatusApiV1AuthMembersUserIdStatusPatch>>,
@@ -1022,12 +1084,19 @@ export const useUpdateMemberStatusApiV1AuthMembersUserIdStatusPatch = <TError = 
   status: 200
 }
 
+export type listInvitesApiV1AuthInvitesGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
 export type listInvitesApiV1AuthInvitesGetResponseSuccess = (listInvitesApiV1AuthInvitesGetResponse200) & {
   headers: Headers;
 };
-;
+export type listInvitesApiV1AuthInvitesGetResponseError = (listInvitesApiV1AuthInvitesGetResponseDefault) & {
+  headers: Headers;
+};
 
-export type listInvitesApiV1AuthInvitesGetResponse = (listInvitesApiV1AuthInvitesGetResponseSuccess)
+export type listInvitesApiV1AuthInvitesGetResponse = (listInvitesApiV1AuthInvitesGetResponseSuccess | listInvitesApiV1AuthInvitesGetResponseError)
 
 export const getListInvitesApiV1AuthInvitesGetUrl = () => {
 
@@ -1062,7 +1131,7 @@ export const getListInvitesApiV1AuthInvitesGetQueryKey = () => {
     }
 
 
-export const getListInvitesApiV1AuthInvitesGetQueryOptions = <TData = Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError, TData>>, }
+export const getListInvitesApiV1AuthInvitesGetQueryOptions = <TData = Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError = ProblemDetail>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -1081,10 +1150,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type ListInvitesApiV1AuthInvitesGetQueryResult = NonNullable<Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>>
-export type ListInvitesApiV1AuthInvitesGetQueryError = unknown
+export type ListInvitesApiV1AuthInvitesGetQueryError = ProblemDetail
 
 
-export function useListInvitesApiV1AuthInvitesGet<TData = Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError = unknown>(
+export function useListInvitesApiV1AuthInvitesGet<TData = Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError = ProblemDetail>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>,
@@ -1094,7 +1163,7 @@ export function useListInvitesApiV1AuthInvitesGet<TData = Awaited<ReturnType<typ
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListInvitesApiV1AuthInvitesGet<TData = Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError = unknown>(
+export function useListInvitesApiV1AuthInvitesGet<TData = Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>,
@@ -1104,7 +1173,7 @@ export function useListInvitesApiV1AuthInvitesGet<TData = Awaited<ReturnType<typ
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListInvitesApiV1AuthInvitesGet<TData = Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError = unknown>(
+export function useListInvitesApiV1AuthInvitesGet<TData = Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -1112,7 +1181,7 @@ export function useListInvitesApiV1AuthInvitesGet<TData = Awaited<ReturnType<typ
  * @summary List Invites
  */
 
-export function useListInvitesApiV1AuthInvitesGet<TData = Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError = unknown>(
+export function useListInvitesApiV1AuthInvitesGet<TData = Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInvitesApiV1AuthInvitesGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -1135,14 +1204,19 @@ export type createInviteApiV1AuthInvitesPostResponse201 = {
 }
 
 export type createInviteApiV1AuthInvitesPostResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type createInviteApiV1AuthInvitesPostResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 201 | 422>
 }
 
 export type createInviteApiV1AuthInvitesPostResponseSuccess = (createInviteApiV1AuthInvitesPostResponse201) & {
   headers: Headers;
 };
-export type createInviteApiV1AuthInvitesPostResponseError = (createInviteApiV1AuthInvitesPostResponse422) & {
+export type createInviteApiV1AuthInvitesPostResponseError = (createInviteApiV1AuthInvitesPostResponse422 | createInviteApiV1AuthInvitesPostResponseDefault) & {
   headers: Headers;
 };
 
@@ -1174,7 +1248,7 @@ export const createInviteApiV1AuthInvitesPost = async (createInviteRequest: Crea
 
 
 
-export const getCreateInviteApiV1AuthInvitesPostMutationOptions = <TError = HTTPValidationError,
+export const getCreateInviteApiV1AuthInvitesPostMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createInviteApiV1AuthInvitesPost>>, TError,{data: CreateInviteRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof createInviteApiV1AuthInvitesPost>>, TError,{data: CreateInviteRequest}, TContext> => {
 
@@ -1203,12 +1277,12 @@ const {mutation: mutationOptions} = options ?
 
     export type CreateInviteApiV1AuthInvitesPostMutationResult = NonNullable<Awaited<ReturnType<typeof createInviteApiV1AuthInvitesPost>>>
     export type CreateInviteApiV1AuthInvitesPostMutationBody = CreateInviteRequest
-    export type CreateInviteApiV1AuthInvitesPostMutationError = HTTPValidationError
+    export type CreateInviteApiV1AuthInvitesPostMutationError = ProblemDetail
 
     /**
  * @summary Create Invite
  */
-export const useCreateInviteApiV1AuthInvitesPost = <TError = HTTPValidationError,
+export const useCreateInviteApiV1AuthInvitesPost = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createInviteApiV1AuthInvitesPost>>, TError,{data: CreateInviteRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof createInviteApiV1AuthInvitesPost>>,
@@ -1224,14 +1298,19 @@ export const useCreateInviteApiV1AuthInvitesPost = <TError = HTTPValidationError
 }
 
 export type revokeInviteApiV1AuthInvitesInviteIdDeleteResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type revokeInviteApiV1AuthInvitesInviteIdDeleteResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 204 | 422>
 }
 
 export type revokeInviteApiV1AuthInvitesInviteIdDeleteResponseSuccess = (revokeInviteApiV1AuthInvitesInviteIdDeleteResponse204) & {
   headers: Headers;
 };
-export type revokeInviteApiV1AuthInvitesInviteIdDeleteResponseError = (revokeInviteApiV1AuthInvitesInviteIdDeleteResponse422) & {
+export type revokeInviteApiV1AuthInvitesInviteIdDeleteResponseError = (revokeInviteApiV1AuthInvitesInviteIdDeleteResponse422 | revokeInviteApiV1AuthInvitesInviteIdDeleteResponseDefault) & {
   headers: Headers;
 };
 
@@ -1262,7 +1341,7 @@ export const revokeInviteApiV1AuthInvitesInviteIdDelete = async (inviteId: strin
 
 
 
-export const getRevokeInviteApiV1AuthInvitesInviteIdDeleteMutationOptions = <TError = HTTPValidationError,
+export const getRevokeInviteApiV1AuthInvitesInviteIdDeleteMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeInviteApiV1AuthInvitesInviteIdDelete>>, TError,{inviteId: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof revokeInviteApiV1AuthInvitesInviteIdDelete>>, TError,{inviteId: string}, TContext> => {
 
@@ -1291,12 +1370,12 @@ const {mutation: mutationOptions} = options ?
 
     export type RevokeInviteApiV1AuthInvitesInviteIdDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof revokeInviteApiV1AuthInvitesInviteIdDelete>>>
 
-    export type RevokeInviteApiV1AuthInvitesInviteIdDeleteMutationError = HTTPValidationError
+    export type RevokeInviteApiV1AuthInvitesInviteIdDeleteMutationError = ProblemDetail
 
     /**
  * @summary Revoke Invite
  */
-export const useRevokeInviteApiV1AuthInvitesInviteIdDelete = <TError = HTTPValidationError,
+export const useRevokeInviteApiV1AuthInvitesInviteIdDelete = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeInviteApiV1AuthInvitesInviteIdDelete>>, TError,{inviteId: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof revokeInviteApiV1AuthInvitesInviteIdDelete>>,

@@ -31,8 +31,8 @@ import type {
   CreateProviderRequest,
   CredentialPoolCredentialResponse,
   CredentialPoolResponse,
-  HTTPValidationError,
   ListProviderModelOfferingsParams,
+  ProblemDetail,
   ProviderCredentialResponse,
   ProviderImpactResponse,
   ProviderModelOfferingPageResponse,
@@ -56,17 +56,32 @@ import { apiMutator } from '../../orval-mutator';
 
 
 
+export type HTTPStatusCode1xx = 100 | 101 | 102 | 103;
+export type HTTPStatusCode2xx = 200 | 201 | 202 | 203 | 204 | 205 | 206 | 207;
+export type HTTPStatusCode3xx = 300 | 301 | 302 | 303 | 304 | 305 | 307 | 308;
+export type HTTPStatusCode4xx = 400 | 401 | 402 | 403 | 404 | 405 | 406 | 407 | 408 | 409 | 410 | 411 | 412 | 413 | 414 | 415 | 416 | 417 | 418 | 419 | 420 | 421 | 422 | 423 | 424 | 426 | 428 | 429 | 431 | 451;
+export type HTTPStatusCode5xx = 500 | 501 | 502 | 503 | 504 | 505 | 507 | 511;
+export type HTTPStatusCodes = HTTPStatusCode1xx | HTTPStatusCode2xx | HTTPStatusCode3xx | HTTPStatusCode4xx | HTTPStatusCode5xx;
+
+
 export type listProvidersApiV1ProvidersGetResponse200 = {
   data: ProviderResponse[]
   status: 200
 }
 
+export type listProvidersApiV1ProvidersGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
 export type listProvidersApiV1ProvidersGetResponseSuccess = (listProvidersApiV1ProvidersGetResponse200) & {
   headers: Headers;
 };
-;
+export type listProvidersApiV1ProvidersGetResponseError = (listProvidersApiV1ProvidersGetResponseDefault) & {
+  headers: Headers;
+};
 
-export type listProvidersApiV1ProvidersGetResponse = (listProvidersApiV1ProvidersGetResponseSuccess)
+export type listProvidersApiV1ProvidersGetResponse = (listProvidersApiV1ProvidersGetResponseSuccess | listProvidersApiV1ProvidersGetResponseError)
 
 export const getListProvidersApiV1ProvidersGetUrl = () => {
 
@@ -101,7 +116,7 @@ export const getListProvidersApiV1ProvidersGetQueryKey = () => {
     }
 
 
-export const getListProvidersApiV1ProvidersGetQueryOptions = <TData = Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError, TData>>, }
+export const getListProvidersApiV1ProvidersGetQueryOptions = <TData = Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError = ProblemDetail>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -120,10 +135,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type ListProvidersApiV1ProvidersGetQueryResult = NonNullable<Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>>
-export type ListProvidersApiV1ProvidersGetQueryError = unknown
+export type ListProvidersApiV1ProvidersGetQueryError = ProblemDetail
 
 
-export function useListProvidersApiV1ProvidersGet<TData = Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError = unknown>(
+export function useListProvidersApiV1ProvidersGet<TData = Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError = ProblemDetail>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>,
@@ -133,7 +148,7 @@ export function useListProvidersApiV1ProvidersGet<TData = Awaited<ReturnType<typ
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListProvidersApiV1ProvidersGet<TData = Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError = unknown>(
+export function useListProvidersApiV1ProvidersGet<TData = Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>,
@@ -143,7 +158,7 @@ export function useListProvidersApiV1ProvidersGet<TData = Awaited<ReturnType<typ
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListProvidersApiV1ProvidersGet<TData = Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError = unknown>(
+export function useListProvidersApiV1ProvidersGet<TData = Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -151,7 +166,7 @@ export function useListProvidersApiV1ProvidersGet<TData = Awaited<ReturnType<typ
  * @summary List Providers
  */
 
-export function useListProvidersApiV1ProvidersGet<TData = Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError = unknown>(
+export function useListProvidersApiV1ProvidersGet<TData = Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProvidersApiV1ProvidersGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -174,14 +189,19 @@ export type createProviderApiV1ProvidersPostResponse201 = {
 }
 
 export type createProviderApiV1ProvidersPostResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type createProviderApiV1ProvidersPostResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 201 | 422>
 }
 
 export type createProviderApiV1ProvidersPostResponseSuccess = (createProviderApiV1ProvidersPostResponse201) & {
   headers: Headers;
 };
-export type createProviderApiV1ProvidersPostResponseError = (createProviderApiV1ProvidersPostResponse422) & {
+export type createProviderApiV1ProvidersPostResponseError = (createProviderApiV1ProvidersPostResponse422 | createProviderApiV1ProvidersPostResponseDefault) & {
   headers: Headers;
 };
 
@@ -213,7 +233,7 @@ export const createProviderApiV1ProvidersPost = async (createProviderRequest: Cr
 
 
 
-export const getCreateProviderApiV1ProvidersPostMutationOptions = <TError = HTTPValidationError,
+export const getCreateProviderApiV1ProvidersPostMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProviderApiV1ProvidersPost>>, TError,{data: CreateProviderRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof createProviderApiV1ProvidersPost>>, TError,{data: CreateProviderRequest}, TContext> => {
 
@@ -242,12 +262,12 @@ const {mutation: mutationOptions} = options ?
 
     export type CreateProviderApiV1ProvidersPostMutationResult = NonNullable<Awaited<ReturnType<typeof createProviderApiV1ProvidersPost>>>
     export type CreateProviderApiV1ProvidersPostMutationBody = CreateProviderRequest
-    export type CreateProviderApiV1ProvidersPostMutationError = HTTPValidationError
+    export type CreateProviderApiV1ProvidersPostMutationError = ProblemDetail
 
     /**
  * @summary Create Provider
  */
-export const useCreateProviderApiV1ProvidersPost = <TError = HTTPValidationError,
+export const useCreateProviderApiV1ProvidersPost = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProviderApiV1ProvidersPost>>, TError,{data: CreateProviderRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof createProviderApiV1ProvidersPost>>,
@@ -263,14 +283,19 @@ export const useCreateProviderApiV1ProvidersPost = <TError = HTTPValidationError
 }
 
 export type getProviderApiV1ProvidersProviderIdGetResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type getProviderApiV1ProvidersProviderIdGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type getProviderApiV1ProvidersProviderIdGetResponseSuccess = (getProviderApiV1ProvidersProviderIdGetResponse200) & {
   headers: Headers;
 };
-export type getProviderApiV1ProvidersProviderIdGetResponseError = (getProviderApiV1ProvidersProviderIdGetResponse422) & {
+export type getProviderApiV1ProvidersProviderIdGetResponseError = (getProviderApiV1ProvidersProviderIdGetResponse422 | getProviderApiV1ProvidersProviderIdGetResponseDefault) & {
   headers: Headers;
 };
 
@@ -309,7 +334,7 @@ export const getGetProviderApiV1ProvidersProviderIdGetQueryKey = (providerId: st
     }
 
 
-export const getGetProviderApiV1ProvidersProviderIdGetQueryOptions = <TData = Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>, TError = HTTPValidationError>(providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>, TError, TData>>, }
+export const getGetProviderApiV1ProvidersProviderIdGetQueryOptions = <TData = Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>, TError = ProblemDetail>(providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -328,10 +353,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type GetProviderApiV1ProvidersProviderIdGetQueryResult = NonNullable<Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>>
-export type GetProviderApiV1ProvidersProviderIdGetQueryError = HTTPValidationError
+export type GetProviderApiV1ProvidersProviderIdGetQueryError = ProblemDetail
 
 
-export function useGetProviderApiV1ProvidersProviderIdGet<TData = Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>, TError = HTTPValidationError>(
+export function useGetProviderApiV1ProvidersProviderIdGet<TData = Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>, TError = ProblemDetail>(
  providerId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>,
@@ -341,7 +366,7 @@ export function useGetProviderApiV1ProvidersProviderIdGet<TData = Awaited<Return
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetProviderApiV1ProvidersProviderIdGet<TData = Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>, TError = HTTPValidationError>(
+export function useGetProviderApiV1ProvidersProviderIdGet<TData = Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>, TError = ProblemDetail>(
  providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>,
@@ -351,7 +376,7 @@ export function useGetProviderApiV1ProvidersProviderIdGet<TData = Awaited<Return
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetProviderApiV1ProvidersProviderIdGet<TData = Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>, TError = HTTPValidationError>(
+export function useGetProviderApiV1ProvidersProviderIdGet<TData = Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>, TError = ProblemDetail>(
  providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -359,7 +384,7 @@ export function useGetProviderApiV1ProvidersProviderIdGet<TData = Awaited<Return
  * @summary Get Provider
  */
 
-export function useGetProviderApiV1ProvidersProviderIdGet<TData = Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>, TError = HTTPValidationError>(
+export function useGetProviderApiV1ProvidersProviderIdGet<TData = Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>, TError = ProblemDetail>(
  providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderApiV1ProvidersProviderIdGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -382,14 +407,19 @@ export type updateProviderApiV1ProvidersProviderIdPatchResponse200 = {
 }
 
 export type updateProviderApiV1ProvidersProviderIdPatchResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type updateProviderApiV1ProvidersProviderIdPatchResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type updateProviderApiV1ProvidersProviderIdPatchResponseSuccess = (updateProviderApiV1ProvidersProviderIdPatchResponse200) & {
   headers: Headers;
 };
-export type updateProviderApiV1ProvidersProviderIdPatchResponseError = (updateProviderApiV1ProvidersProviderIdPatchResponse422) & {
+export type updateProviderApiV1ProvidersProviderIdPatchResponseError = (updateProviderApiV1ProvidersProviderIdPatchResponse422 | updateProviderApiV1ProvidersProviderIdPatchResponseDefault) & {
   headers: Headers;
 };
 
@@ -422,7 +452,7 @@ export const updateProviderApiV1ProvidersProviderIdPatch = async (providerId: st
 
 
 
-export const getUpdateProviderApiV1ProvidersProviderIdPatchMutationOptions = <TError = HTTPValidationError,
+export const getUpdateProviderApiV1ProvidersProviderIdPatchMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProviderApiV1ProvidersProviderIdPatch>>, TError,{providerId: string;data: UpdateProviderRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof updateProviderApiV1ProvidersProviderIdPatch>>, TError,{providerId: string;data: UpdateProviderRequest}, TContext> => {
 
@@ -451,12 +481,12 @@ const {mutation: mutationOptions} = options ?
 
     export type UpdateProviderApiV1ProvidersProviderIdPatchMutationResult = NonNullable<Awaited<ReturnType<typeof updateProviderApiV1ProvidersProviderIdPatch>>>
     export type UpdateProviderApiV1ProvidersProviderIdPatchMutationBody = UpdateProviderRequest
-    export type UpdateProviderApiV1ProvidersProviderIdPatchMutationError = HTTPValidationError
+    export type UpdateProviderApiV1ProvidersProviderIdPatchMutationError = ProblemDetail
 
     /**
  * @summary Update Provider
  */
-export const useUpdateProviderApiV1ProvidersProviderIdPatch = <TError = HTTPValidationError,
+export const useUpdateProviderApiV1ProvidersProviderIdPatch = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProviderApiV1ProvidersProviderIdPatch>>, TError,{providerId: string;data: UpdateProviderRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof updateProviderApiV1ProvidersProviderIdPatch>>,
@@ -472,14 +502,19 @@ export const useUpdateProviderApiV1ProvidersProviderIdPatch = <TError = HTTPVali
 }
 
 export type deactivateProviderApiV1ProvidersProviderIdDeleteResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type deactivateProviderApiV1ProvidersProviderIdDeleteResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 204 | 422>
 }
 
 export type deactivateProviderApiV1ProvidersProviderIdDeleteResponseSuccess = (deactivateProviderApiV1ProvidersProviderIdDeleteResponse204) & {
   headers: Headers;
 };
-export type deactivateProviderApiV1ProvidersProviderIdDeleteResponseError = (deactivateProviderApiV1ProvidersProviderIdDeleteResponse422) & {
+export type deactivateProviderApiV1ProvidersProviderIdDeleteResponseError = (deactivateProviderApiV1ProvidersProviderIdDeleteResponse422 | deactivateProviderApiV1ProvidersProviderIdDeleteResponseDefault) & {
   headers: Headers;
 };
 
@@ -510,7 +545,7 @@ export const deactivateProviderApiV1ProvidersProviderIdDelete = async (providerI
 
 
 
-export const getDeactivateProviderApiV1ProvidersProviderIdDeleteMutationOptions = <TError = HTTPValidationError,
+export const getDeactivateProviderApiV1ProvidersProviderIdDeleteMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deactivateProviderApiV1ProvidersProviderIdDelete>>, TError,{providerId: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof deactivateProviderApiV1ProvidersProviderIdDelete>>, TError,{providerId: string}, TContext> => {
 
@@ -539,12 +574,12 @@ const {mutation: mutationOptions} = options ?
 
     export type DeactivateProviderApiV1ProvidersProviderIdDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof deactivateProviderApiV1ProvidersProviderIdDelete>>>
 
-    export type DeactivateProviderApiV1ProvidersProviderIdDeleteMutationError = HTTPValidationError
+    export type DeactivateProviderApiV1ProvidersProviderIdDeleteMutationError = ProblemDetail
 
     /**
  * @summary Deactivate Provider
  */
-export const useDeactivateProviderApiV1ProvidersProviderIdDelete = <TError = HTTPValidationError,
+export const useDeactivateProviderApiV1ProvidersProviderIdDelete = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deactivateProviderApiV1ProvidersProviderIdDelete>>, TError,{providerId: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof deactivateProviderApiV1ProvidersProviderIdDelete>>,
@@ -560,14 +595,19 @@ export const useDeactivateProviderApiV1ProvidersProviderIdDelete = <TError = HTT
 }
 
 export type getProviderImpactApiV1ProvidersProviderIdImpactGetResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type getProviderImpactApiV1ProvidersProviderIdImpactGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type getProviderImpactApiV1ProvidersProviderIdImpactGetResponseSuccess = (getProviderImpactApiV1ProvidersProviderIdImpactGetResponse200) & {
   headers: Headers;
 };
-export type getProviderImpactApiV1ProvidersProviderIdImpactGetResponseError = (getProviderImpactApiV1ProvidersProviderIdImpactGetResponse422) & {
+export type getProviderImpactApiV1ProvidersProviderIdImpactGetResponseError = (getProviderImpactApiV1ProvidersProviderIdImpactGetResponse422 | getProviderImpactApiV1ProvidersProviderIdImpactGetResponseDefault) & {
   headers: Headers;
 };
 
@@ -606,7 +646,7 @@ export const getGetProviderImpactApiV1ProvidersProviderIdImpactGetQueryKey = (pr
     }
 
 
-export const getGetProviderImpactApiV1ProvidersProviderIdImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>, TError = HTTPValidationError>(providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>, TError, TData>>, }
+export const getGetProviderImpactApiV1ProvidersProviderIdImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>, TError = ProblemDetail>(providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -625,10 +665,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type GetProviderImpactApiV1ProvidersProviderIdImpactGetQueryResult = NonNullable<Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>>
-export type GetProviderImpactApiV1ProvidersProviderIdImpactGetQueryError = HTTPValidationError
+export type GetProviderImpactApiV1ProvidersProviderIdImpactGetQueryError = ProblemDetail
 
 
-export function useGetProviderImpactApiV1ProvidersProviderIdImpactGet<TData = Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetProviderImpactApiV1ProvidersProviderIdImpactGet<TData = Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>, TError = ProblemDetail>(
  providerId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>,
@@ -638,7 +678,7 @@ export function useGetProviderImpactApiV1ProvidersProviderIdImpactGet<TData = Aw
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetProviderImpactApiV1ProvidersProviderIdImpactGet<TData = Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetProviderImpactApiV1ProvidersProviderIdImpactGet<TData = Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>, TError = ProblemDetail>(
  providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>,
@@ -648,7 +688,7 @@ export function useGetProviderImpactApiV1ProvidersProviderIdImpactGet<TData = Aw
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetProviderImpactApiV1ProvidersProviderIdImpactGet<TData = Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetProviderImpactApiV1ProvidersProviderIdImpactGet<TData = Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>, TError = ProblemDetail>(
  providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -656,7 +696,7 @@ export function useGetProviderImpactApiV1ProvidersProviderIdImpactGet<TData = Aw
  * @summary Get Provider Impact
  */
 
-export function useGetProviderImpactApiV1ProvidersProviderIdImpactGet<TData = Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetProviderImpactApiV1ProvidersProviderIdImpactGet<TData = Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>, TError = ProblemDetail>(
  providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderImpactApiV1ProvidersProviderIdImpactGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -679,14 +719,19 @@ export type getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProvid
 }
 
 export type getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetResponseSuccess = (getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetResponse200) & {
   headers: Headers;
 };
-export type getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetResponseError = (getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetResponse422) & {
+export type getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetResponseError = (getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetResponse422 | getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetResponseDefault) & {
   headers: Headers;
 };
 
@@ -728,7 +773,7 @@ export const getGetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsPr
     }
 
 
-export const getGetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>, TError = HTTPValidationError>(providerId: string,
+export const getGetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>, TError = ProblemDetail>(providerId: string,
     providerCredentialId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>, TError, TData>>, }
 ) => {
 
@@ -748,10 +793,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type GetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetQueryResult = NonNullable<Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>>
-export type GetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetQueryError = HTTPValidationError
+export type GetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGetQueryError = ProblemDetail
 
 
-export function useGetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet<TData = Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet<TData = Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>, TError = ProblemDetail>(
  providerId: string,
     providerCredentialId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
@@ -762,7 +807,7 @@ export function useGetProviderCredentialImpactApiV1ProvidersProviderIdCredential
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet<TData = Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet<TData = Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>, TError = ProblemDetail>(
  providerId: string,
     providerCredentialId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
@@ -773,7 +818,7 @@ export function useGetProviderCredentialImpactApiV1ProvidersProviderIdCredential
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet<TData = Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet<TData = Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>, TError = ProblemDetail>(
  providerId: string,
     providerCredentialId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>, TError, TData>>, }
  , queryClient?: QueryClient
@@ -782,7 +827,7 @@ export function useGetProviderCredentialImpactApiV1ProvidersProviderIdCredential
  * @summary Get Provider Credential Impact
  */
 
-export function useGetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet<TData = Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet<TData = Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>, TError = ProblemDetail>(
  providerId: string,
     providerCredentialId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderCredentialImpactApiV1ProvidersProviderIdCredentialsProviderCredentialIdImpactGet>>, TError, TData>>, }
  , queryClient?: QueryClient
@@ -806,14 +851,19 @@ export type getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetR
 }
 
 export type getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetResponseSuccess = (getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetResponse200) & {
   headers: Headers;
 };
-export type getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetResponseError = (getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetResponse422) & {
+export type getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetResponseError = (getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetResponse422 | getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetResponseDefault) & {
   headers: Headers;
 };
 
@@ -855,7 +905,7 @@ export const getGetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpact
     }
 
 
-export const getGetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>, TError = HTTPValidationError>(providerId: string,
+export const getGetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>, TError = ProblemDetail>(providerId: string,
     poolId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>, TError, TData>>, }
 ) => {
 
@@ -875,10 +925,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type GetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetQueryResult = NonNullable<Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>>
-export type GetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetQueryError = HTTPValidationError
+export type GetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGetQueryError = ProblemDetail
 
 
-export function useGetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet<TData = Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet<TData = Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>, TError = ProblemDetail>(
  providerId: string,
     poolId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
@@ -889,7 +939,7 @@ export function useGetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImp
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet<TData = Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet<TData = Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>, TError = ProblemDetail>(
  providerId: string,
     poolId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
@@ -900,7 +950,7 @@ export function useGetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImp
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet<TData = Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet<TData = Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>, TError = ProblemDetail>(
  providerId: string,
     poolId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>, TError, TData>>, }
  , queryClient?: QueryClient
@@ -909,7 +959,7 @@ export function useGetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImp
  * @summary Get Credential Pool Impact
  */
 
-export function useGetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet<TData = Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet<TData = Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>, TError = ProblemDetail>(
  providerId: string,
     poolId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCredentialPoolImpactApiV1ProvidersProviderIdPoolsPoolIdImpactGet>>, TError, TData>>, }
  , queryClient?: QueryClient
@@ -933,14 +983,19 @@ export type getProviderModelOfferingImpactResponse200 = {
 }
 
 export type getProviderModelOfferingImpactResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type getProviderModelOfferingImpactResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type getProviderModelOfferingImpactResponseSuccess = (getProviderModelOfferingImpactResponse200) & {
   headers: Headers;
 };
-export type getProviderModelOfferingImpactResponseError = (getProviderModelOfferingImpactResponse422) & {
+export type getProviderModelOfferingImpactResponseError = (getProviderModelOfferingImpactResponse422 | getProviderModelOfferingImpactResponseDefault) & {
   headers: Headers;
 };
 
@@ -982,7 +1037,7 @@ export const getGetProviderModelOfferingImpactQueryKey = (providerId: string,
     }
 
 
-export const getGetProviderModelOfferingImpactQueryOptions = <TData = Awaited<ReturnType<typeof getProviderModelOfferingImpact>>, TError = HTTPValidationError>(providerId: string,
+export const getGetProviderModelOfferingImpactQueryOptions = <TData = Awaited<ReturnType<typeof getProviderModelOfferingImpact>>, TError = ProblemDetail>(providerId: string,
     modelOfferingId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderModelOfferingImpact>>, TError, TData>>, }
 ) => {
 
@@ -1002,10 +1057,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type GetProviderModelOfferingImpactQueryResult = NonNullable<Awaited<ReturnType<typeof getProviderModelOfferingImpact>>>
-export type GetProviderModelOfferingImpactQueryError = HTTPValidationError
+export type GetProviderModelOfferingImpactQueryError = ProblemDetail
 
 
-export function useGetProviderModelOfferingImpact<TData = Awaited<ReturnType<typeof getProviderModelOfferingImpact>>, TError = HTTPValidationError>(
+export function useGetProviderModelOfferingImpact<TData = Awaited<ReturnType<typeof getProviderModelOfferingImpact>>, TError = ProblemDetail>(
  providerId: string,
     modelOfferingId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderModelOfferingImpact>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
@@ -1016,7 +1071,7 @@ export function useGetProviderModelOfferingImpact<TData = Awaited<ReturnType<typ
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetProviderModelOfferingImpact<TData = Awaited<ReturnType<typeof getProviderModelOfferingImpact>>, TError = HTTPValidationError>(
+export function useGetProviderModelOfferingImpact<TData = Awaited<ReturnType<typeof getProviderModelOfferingImpact>>, TError = ProblemDetail>(
  providerId: string,
     modelOfferingId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderModelOfferingImpact>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
@@ -1027,7 +1082,7 @@ export function useGetProviderModelOfferingImpact<TData = Awaited<ReturnType<typ
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetProviderModelOfferingImpact<TData = Awaited<ReturnType<typeof getProviderModelOfferingImpact>>, TError = HTTPValidationError>(
+export function useGetProviderModelOfferingImpact<TData = Awaited<ReturnType<typeof getProviderModelOfferingImpact>>, TError = ProblemDetail>(
  providerId: string,
     modelOfferingId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderModelOfferingImpact>>, TError, TData>>, }
  , queryClient?: QueryClient
@@ -1036,7 +1091,7 @@ export function useGetProviderModelOfferingImpact<TData = Awaited<ReturnType<typ
  * @summary Get Model Offering Impact
  */
 
-export function useGetProviderModelOfferingImpact<TData = Awaited<ReturnType<typeof getProviderModelOfferingImpact>>, TError = HTTPValidationError>(
+export function useGetProviderModelOfferingImpact<TData = Awaited<ReturnType<typeof getProviderModelOfferingImpact>>, TError = ProblemDetail>(
  providerId: string,
     modelOfferingId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderModelOfferingImpact>>, TError, TData>>, }
  , queryClient?: QueryClient
@@ -1060,14 +1115,19 @@ export type listCredentialPoolsApiV1ProvidersProviderIdPoolsGetResponse200 = {
 }
 
 export type listCredentialPoolsApiV1ProvidersProviderIdPoolsGetResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type listCredentialPoolsApiV1ProvidersProviderIdPoolsGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type listCredentialPoolsApiV1ProvidersProviderIdPoolsGetResponseSuccess = (listCredentialPoolsApiV1ProvidersProviderIdPoolsGetResponse200) & {
   headers: Headers;
 };
-export type listCredentialPoolsApiV1ProvidersProviderIdPoolsGetResponseError = (listCredentialPoolsApiV1ProvidersProviderIdPoolsGetResponse422) & {
+export type listCredentialPoolsApiV1ProvidersProviderIdPoolsGetResponseError = (listCredentialPoolsApiV1ProvidersProviderIdPoolsGetResponse422 | listCredentialPoolsApiV1ProvidersProviderIdPoolsGetResponseDefault) & {
   headers: Headers;
 };
 
@@ -1106,7 +1166,7 @@ export const getListCredentialPoolsApiV1ProvidersProviderIdPoolsGetQueryKey = (p
     }
 
 
-export const getListCredentialPoolsApiV1ProvidersProviderIdPoolsGetQueryOptions = <TData = Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>, TError = HTTPValidationError>(providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>, TError, TData>>, }
+export const getListCredentialPoolsApiV1ProvidersProviderIdPoolsGetQueryOptions = <TData = Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>, TError = ProblemDetail>(providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -1125,10 +1185,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type ListCredentialPoolsApiV1ProvidersProviderIdPoolsGetQueryResult = NonNullable<Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>>
-export type ListCredentialPoolsApiV1ProvidersProviderIdPoolsGetQueryError = HTTPValidationError
+export type ListCredentialPoolsApiV1ProvidersProviderIdPoolsGetQueryError = ProblemDetail
 
 
-export function useListCredentialPoolsApiV1ProvidersProviderIdPoolsGet<TData = Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>, TError = HTTPValidationError>(
+export function useListCredentialPoolsApiV1ProvidersProviderIdPoolsGet<TData = Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>, TError = ProblemDetail>(
  providerId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>,
@@ -1138,7 +1198,7 @@ export function useListCredentialPoolsApiV1ProvidersProviderIdPoolsGet<TData = A
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListCredentialPoolsApiV1ProvidersProviderIdPoolsGet<TData = Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>, TError = HTTPValidationError>(
+export function useListCredentialPoolsApiV1ProvidersProviderIdPoolsGet<TData = Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>, TError = ProblemDetail>(
  providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>,
@@ -1148,7 +1208,7 @@ export function useListCredentialPoolsApiV1ProvidersProviderIdPoolsGet<TData = A
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListCredentialPoolsApiV1ProvidersProviderIdPoolsGet<TData = Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>, TError = HTTPValidationError>(
+export function useListCredentialPoolsApiV1ProvidersProviderIdPoolsGet<TData = Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>, TError = ProblemDetail>(
  providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -1156,7 +1216,7 @@ export function useListCredentialPoolsApiV1ProvidersProviderIdPoolsGet<TData = A
  * @summary List Credential Pools
  */
 
-export function useListCredentialPoolsApiV1ProvidersProviderIdPoolsGet<TData = Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>, TError = HTTPValidationError>(
+export function useListCredentialPoolsApiV1ProvidersProviderIdPoolsGet<TData = Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>, TError = ProblemDetail>(
  providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCredentialPoolsApiV1ProvidersProviderIdPoolsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -1179,14 +1239,19 @@ export type createCredentialPoolApiV1ProvidersProviderIdPoolsPostResponse201 = {
 }
 
 export type createCredentialPoolApiV1ProvidersProviderIdPoolsPostResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type createCredentialPoolApiV1ProvidersProviderIdPoolsPostResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 201 | 422>
 }
 
 export type createCredentialPoolApiV1ProvidersProviderIdPoolsPostResponseSuccess = (createCredentialPoolApiV1ProvidersProviderIdPoolsPostResponse201) & {
   headers: Headers;
 };
-export type createCredentialPoolApiV1ProvidersProviderIdPoolsPostResponseError = (createCredentialPoolApiV1ProvidersProviderIdPoolsPostResponse422) & {
+export type createCredentialPoolApiV1ProvidersProviderIdPoolsPostResponseError = (createCredentialPoolApiV1ProvidersProviderIdPoolsPostResponse422 | createCredentialPoolApiV1ProvidersProviderIdPoolsPostResponseDefault) & {
   headers: Headers;
 };
 
@@ -1219,7 +1284,7 @@ export const createCredentialPoolApiV1ProvidersProviderIdPoolsPost = async (prov
 
 
 
-export const getCreateCredentialPoolApiV1ProvidersProviderIdPoolsPostMutationOptions = <TError = HTTPValidationError,
+export const getCreateCredentialPoolApiV1ProvidersProviderIdPoolsPostMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCredentialPoolApiV1ProvidersProviderIdPoolsPost>>, TError,{providerId: string;data: CreateCredentialPoolRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof createCredentialPoolApiV1ProvidersProviderIdPoolsPost>>, TError,{providerId: string;data: CreateCredentialPoolRequest}, TContext> => {
 
@@ -1248,12 +1313,12 @@ const {mutation: mutationOptions} = options ?
 
     export type CreateCredentialPoolApiV1ProvidersProviderIdPoolsPostMutationResult = NonNullable<Awaited<ReturnType<typeof createCredentialPoolApiV1ProvidersProviderIdPoolsPost>>>
     export type CreateCredentialPoolApiV1ProvidersProviderIdPoolsPostMutationBody = CreateCredentialPoolRequest
-    export type CreateCredentialPoolApiV1ProvidersProviderIdPoolsPostMutationError = HTTPValidationError
+    export type CreateCredentialPoolApiV1ProvidersProviderIdPoolsPostMutationError = ProblemDetail
 
     /**
  * @summary Create Credential Pool
  */
-export const useCreateCredentialPoolApiV1ProvidersProviderIdPoolsPost = <TError = HTTPValidationError,
+export const useCreateCredentialPoolApiV1ProvidersProviderIdPoolsPost = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCredentialPoolApiV1ProvidersProviderIdPoolsPost>>, TError,{providerId: string;data: CreateCredentialPoolRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof createCredentialPoolApiV1ProvidersProviderIdPoolsPost>>,
@@ -1269,14 +1334,19 @@ export const useCreateCredentialPoolApiV1ProvidersProviderIdPoolsPost = <TError 
 }
 
 export type updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchResponseSuccess = (updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchResponse200) & {
   headers: Headers;
 };
-export type updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchResponseError = (updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchResponse422) & {
+export type updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchResponseError = (updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchResponse422 | updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchResponseDefault) & {
   headers: Headers;
 };
 
@@ -1311,7 +1381,7 @@ export const updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatch = asyn
 
 
 
-export const getUpdateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchMutationOptions = <TError = HTTPValidationError,
+export const getUpdateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatch>>, TError,{providerId: string;poolId: string;data: UpdateCredentialPoolRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatch>>, TError,{providerId: string;poolId: string;data: UpdateCredentialPoolRequest}, TContext> => {
 
@@ -1340,12 +1410,12 @@ const {mutation: mutationOptions} = options ?
 
     export type UpdateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchMutationResult = NonNullable<Awaited<ReturnType<typeof updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatch>>>
     export type UpdateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchMutationBody = UpdateCredentialPoolRequest
-    export type UpdateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchMutationError = HTTPValidationError
+    export type UpdateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatchMutationError = ProblemDetail
 
     /**
  * @summary Update Credential Pool
  */
-export const useUpdateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatch = <TError = HTTPValidationError,
+export const useUpdateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatch = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatch>>, TError,{providerId: string;poolId: string;data: UpdateCredentialPoolRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof updateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatch>>,
@@ -1361,14 +1431,19 @@ export const useUpdateCredentialPoolApiV1ProvidersProviderIdPoolsPoolIdPatch = <
 }
 
 export type listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetResponseSuccess = (listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetResponse200) & {
   headers: Headers;
 };
-export type listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetResponseError = (listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetResponse422) & {
+export type listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetResponseError = (listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetResponse422 | listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetResponseDefault) & {
   headers: Headers;
 };
 
@@ -1410,7 +1485,7 @@ export const getListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolId
     }
 
 
-export const getListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetQueryOptions = <TData = Awaited<ReturnType<typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet>>, TError = HTTPValidationError>(providerId: string,
+export const getListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetQueryOptions = <TData = Awaited<ReturnType<typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet>>, TError = ProblemDetail>(providerId: string,
     poolId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet>>, TError, TData>>, }
 ) => {
 
@@ -1430,10 +1505,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type ListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetQueryResult = NonNullable<Awaited<ReturnType<typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet>>>
-export type ListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetQueryError = HTTPValidationError
+export type ListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGetQueryError = ProblemDetail
 
 
-export function useListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet<TData = Awaited<ReturnType<typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet>>, TError = HTTPValidationError>(
+export function useListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet<TData = Awaited<ReturnType<typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet>>, TError = ProblemDetail>(
  providerId: string,
     poolId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
@@ -1444,7 +1519,7 @@ export function useListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoo
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet<TData = Awaited<ReturnType<typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet>>, TError = HTTPValidationError>(
+export function useListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet<TData = Awaited<ReturnType<typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet>>, TError = ProblemDetail>(
  providerId: string,
     poolId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
@@ -1455,7 +1530,7 @@ export function useListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoo
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet<TData = Awaited<ReturnType<typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet>>, TError = HTTPValidationError>(
+export function useListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet<TData = Awaited<ReturnType<typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet>>, TError = ProblemDetail>(
  providerId: string,
     poolId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
@@ -1464,7 +1539,7 @@ export function useListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoo
  * @summary List Credential Pool Credentials
  */
 
-export function useListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet<TData = Awaited<ReturnType<typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet>>, TError = HTTPValidationError>(
+export function useListCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet<TData = Awaited<ReturnType<typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet>>, TError = ProblemDetail>(
  providerId: string,
     poolId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCredentialPoolCredentialsApiV1ProvidersProviderIdPoolsPoolIdCredentialsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
@@ -1488,14 +1563,19 @@ export type addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCreden
 }
 
 export type addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 201 | 422>
 }
 
 export type addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostResponseSuccess = (addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostResponse201) & {
   headers: Headers;
 };
-export type addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostResponseError = (addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostResponse422) & {
+export type addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostResponseError = (addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostResponse422 | addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostResponseDefault) & {
   headers: Headers;
 };
 
@@ -1530,7 +1610,7 @@ export const addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCrede
 
 
 
-export const getAddCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostMutationOptions = <TError = HTTPValidationError,
+export const getAddCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPost>>, TError,{providerId: string;poolId: string;data: AddCredentialPoolCredentialRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPost>>, TError,{providerId: string;poolId: string;data: AddCredentialPoolCredentialRequest}, TContext> => {
 
@@ -1559,12 +1639,12 @@ const {mutation: mutationOptions} = options ?
 
     export type AddCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostMutationResult = NonNullable<Awaited<ReturnType<typeof addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPost>>>
     export type AddCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostMutationBody = AddCredentialPoolCredentialRequest
-    export type AddCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostMutationError = HTTPValidationError
+    export type AddCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPostMutationError = ProblemDetail
 
     /**
  * @summary Add Credential Pool Credential
  */
-export const useAddCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPost = <TError = HTTPValidationError,
+export const useAddCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPost = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPost>>, TError,{providerId: string;poolId: string;data: AddCredentialPoolCredentialRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof addCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPost>>,
@@ -1580,14 +1660,19 @@ export const useAddCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCr
 }
 
 export type updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchResponseSuccess = (updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchResponse200) & {
   headers: Headers;
 };
-export type updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchResponseError = (updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchResponse422) & {
+export type updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchResponseError = (updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchResponse422 | updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchResponseDefault) & {
   headers: Headers;
 };
 
@@ -1624,7 +1709,7 @@ export const updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCr
 
 
 
-export const getUpdateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchMutationOptions = <TError = HTTPValidationError,
+export const getUpdateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatch>>, TError,{providerId: string;poolId: string;poolCredentialId: string;data: UpdateCredentialPoolCredentialRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatch>>, TError,{providerId: string;poolId: string;poolCredentialId: string;data: UpdateCredentialPoolCredentialRequest}, TContext> => {
 
@@ -1653,12 +1738,12 @@ const {mutation: mutationOptions} = options ?
 
     export type UpdateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchMutationResult = NonNullable<Awaited<ReturnType<typeof updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatch>>>
     export type UpdateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchMutationBody = UpdateCredentialPoolCredentialRequest
-    export type UpdateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchMutationError = HTTPValidationError
+    export type UpdateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatchMutationError = ProblemDetail
 
     /**
  * @summary Update Credential Pool Credential
  */
-export const useUpdateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatch = <TError = HTTPValidationError,
+export const useUpdateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatch = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatch>>, TError,{providerId: string;poolId: string;poolCredentialId: string;data: UpdateCredentialPoolCredentialRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof updateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdPatch>>,
@@ -1674,14 +1759,19 @@ export const useUpdateCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolI
 }
 
 export type deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 204 | 422>
 }
 
 export type deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteResponseSuccess = (deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteResponse204) & {
   headers: Headers;
 };
-export type deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteResponseError = (deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteResponse422) & {
+export type deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteResponseError = (deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteResponse422 | deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteResponseDefault) & {
   headers: Headers;
 };
 
@@ -1716,7 +1806,7 @@ export const deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCr
 
 
 
-export const getDeleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteMutationOptions = <TError = HTTPValidationError,
+export const getDeleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDelete>>, TError,{providerId: string;poolId: string;poolCredentialId: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDelete>>, TError,{providerId: string;poolId: string;poolCredentialId: string}, TContext> => {
 
@@ -1745,12 +1835,12 @@ const {mutation: mutationOptions} = options ?
 
     export type DeleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDelete>>>
 
-    export type DeleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteMutationError = HTTPValidationError
+    export type DeleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDeleteMutationError = ProblemDetail
 
     /**
  * @summary Delete Credential Pool Credential
  */
-export const useDeleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDelete = <TError = HTTPValidationError,
+export const useDeleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDelete = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDelete>>, TError,{providerId: string;poolId: string;poolCredentialId: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof deleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolIdCredentialsPoolCredentialIdDelete>>,
@@ -1766,14 +1856,19 @@ export const useDeleteCredentialPoolCredentialApiV1ProvidersProviderIdPoolsPoolI
 }
 
 export type listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponseSuccess = (listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponse200) & {
   headers: Headers;
 };
-export type listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponseError = (listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponse422) & {
+export type listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponseError = (listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponse422 | listProviderCredentialsApiV1ProvidersProviderIdCredentialsGetResponseDefault) & {
   headers: Headers;
 };
 
@@ -1812,7 +1907,7 @@ export const getListProviderCredentialsApiV1ProvidersProviderIdCredentialsGetQue
     }
 
 
-export const getListProviderCredentialsApiV1ProvidersProviderIdCredentialsGetQueryOptions = <TData = Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>, TError = HTTPValidationError>(providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>, TError, TData>>, }
+export const getListProviderCredentialsApiV1ProvidersProviderIdCredentialsGetQueryOptions = <TData = Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>, TError = ProblemDetail>(providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -1831,10 +1926,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type ListProviderCredentialsApiV1ProvidersProviderIdCredentialsGetQueryResult = NonNullable<Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>>
-export type ListProviderCredentialsApiV1ProvidersProviderIdCredentialsGetQueryError = HTTPValidationError
+export type ListProviderCredentialsApiV1ProvidersProviderIdCredentialsGetQueryError = ProblemDetail
 
 
-export function useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet<TData = Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>, TError = HTTPValidationError>(
+export function useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet<TData = Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>, TError = ProblemDetail>(
  providerId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>,
@@ -1844,7 +1939,7 @@ export function useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet<TData = Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>, TError = HTTPValidationError>(
+export function useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet<TData = Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>, TError = ProblemDetail>(
  providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>,
@@ -1854,7 +1949,7 @@ export function useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet<TData = Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>, TError = HTTPValidationError>(
+export function useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet<TData = Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>, TError = ProblemDetail>(
  providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -1862,7 +1957,7 @@ export function useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet
  * @summary List Provider Credentials
  */
 
-export function useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet<TData = Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>, TError = HTTPValidationError>(
+export function useListProviderCredentialsApiV1ProvidersProviderIdCredentialsGet<TData = Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>, TError = ProblemDetail>(
  providerId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProviderCredentialsApiV1ProvidersProviderIdCredentialsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -1885,14 +1980,19 @@ export type createProviderCredentialApiV1ProvidersProviderIdCredentialsPostRespo
 }
 
 export type createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 201 | 422>
 }
 
 export type createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponseSuccess = (createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponse201) & {
   headers: Headers;
 };
-export type createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponseError = (createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponse422) & {
+export type createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponseError = (createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponse422 | createProviderCredentialApiV1ProvidersProviderIdCredentialsPostResponseDefault) & {
   headers: Headers;
 };
 
@@ -1925,7 +2025,7 @@ export const createProviderCredentialApiV1ProvidersProviderIdCredentialsPost = a
 
 
 
-export const getCreateProviderCredentialApiV1ProvidersProviderIdCredentialsPostMutationOptions = <TError = HTTPValidationError,
+export const getCreateProviderCredentialApiV1ProvidersProviderIdCredentialsPostMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProviderCredentialApiV1ProvidersProviderIdCredentialsPost>>, TError,{providerId: string;data: CreateProviderCredentialRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof createProviderCredentialApiV1ProvidersProviderIdCredentialsPost>>, TError,{providerId: string;data: CreateProviderCredentialRequest}, TContext> => {
 
@@ -1954,12 +2054,12 @@ const {mutation: mutationOptions} = options ?
 
     export type CreateProviderCredentialApiV1ProvidersProviderIdCredentialsPostMutationResult = NonNullable<Awaited<ReturnType<typeof createProviderCredentialApiV1ProvidersProviderIdCredentialsPost>>>
     export type CreateProviderCredentialApiV1ProvidersProviderIdCredentialsPostMutationBody = CreateProviderCredentialRequest
-    export type CreateProviderCredentialApiV1ProvidersProviderIdCredentialsPostMutationError = HTTPValidationError
+    export type CreateProviderCredentialApiV1ProvidersProviderIdCredentialsPostMutationError = ProblemDetail
 
     /**
  * @summary Create Provider Credential
  */
-export const useCreateProviderCredentialApiV1ProvidersProviderIdCredentialsPost = <TError = HTTPValidationError,
+export const useCreateProviderCredentialApiV1ProvidersProviderIdCredentialsPost = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProviderCredentialApiV1ProvidersProviderIdCredentialsPost>>, TError,{providerId: string;data: CreateProviderCredentialRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof createProviderCredentialApiV1ProvidersProviderIdCredentialsPost>>,
@@ -1975,14 +2075,19 @@ export const useCreateProviderCredentialApiV1ProvidersProviderIdCredentialsPost 
 }
 
 export type updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponseSuccess = (updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponse200) & {
   headers: Headers;
 };
-export type updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponseError = (updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponse422) & {
+export type updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponseError = (updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponse422 | updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchResponseDefault) & {
   headers: Headers;
 };
 
@@ -2017,7 +2122,7 @@ export const updateProviderCredentialApiV1ProvidersProviderIdCredentialsProvider
 
 
 
-export const getUpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchMutationOptions = <TError = HTTPValidationError,
+export const getUpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch>>, TError,{providerId: string;providerCredentialId: string;data: UpdateProviderCredentialRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch>>, TError,{providerId: string;providerCredentialId: string;data: UpdateProviderCredentialRequest}, TContext> => {
 
@@ -2046,12 +2151,12 @@ const {mutation: mutationOptions} = options ?
 
     export type UpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchMutationResult = NonNullable<Awaited<ReturnType<typeof updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch>>>
     export type UpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchMutationBody = UpdateProviderCredentialRequest
-    export type UpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchMutationError = HTTPValidationError
+    export type UpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatchMutationError = ProblemDetail
 
     /**
  * @summary Update Provider Credential
  */
-export const useUpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch = <TError = HTTPValidationError,
+export const useUpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch>>, TError,{providerId: string;providerCredentialId: string;data: UpdateProviderCredentialRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof updateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdPatch>>,
@@ -2067,14 +2172,19 @@ export const useUpdateProviderCredentialApiV1ProvidersProviderIdCredentialsProvi
 }
 
 export type deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 204 | 422>
 }
 
 export type deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponseSuccess = (deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponse204) & {
   headers: Headers;
 };
-export type deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponseError = (deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponse422) & {
+export type deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponseError = (deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponse422 | deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteResponseDefault) & {
   headers: Headers;
 };
 
@@ -2107,7 +2217,7 @@ export const deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProv
 
 
 
-export const getDeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteMutationOptions = <TError = HTTPValidationError,
+export const getDeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete>>, TError,{providerId: string;providerCredentialId: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete>>, TError,{providerId: string;providerCredentialId: string}, TContext> => {
 
@@ -2136,12 +2246,12 @@ const {mutation: mutationOptions} = options ?
 
     export type DeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete>>>
 
-    export type DeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteMutationError = HTTPValidationError
+    export type DeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDeleteMutationError = ProblemDetail
 
     /**
  * @summary Deactivate Provider Credential
  */
-export const useDeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete = <TError = HTTPValidationError,
+export const useDeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete>>, TError,{providerId: string;providerCredentialId: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof deactivateProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdDelete>>,
@@ -2157,14 +2267,19 @@ export const useDeactivateProviderCredentialApiV1ProvidersProviderIdCredentialsP
 }
 
 export type testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponseSuccess = (testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponse200) & {
   headers: Headers;
 };
-export type testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponseError = (testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponse422) & {
+export type testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponseError = (testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponse422 | testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostResponseDefault) & {
   headers: Headers;
 };
 
@@ -2197,7 +2312,7 @@ export const testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCr
 
 
 
-export const getTestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostMutationOptions = <TError = HTTPValidationError,
+export const getTestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost>>, TError,{providerId: string;providerCredentialId: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost>>, TError,{providerId: string;providerCredentialId: string}, TContext> => {
 
@@ -2226,12 +2341,12 @@ const {mutation: mutationOptions} = options ?
 
     export type TestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostMutationResult = NonNullable<Awaited<ReturnType<typeof testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost>>>
 
-    export type TestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostMutationError = HTTPValidationError
+    export type TestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPostMutationError = ProblemDetail
 
     /**
  * @summary Test Provider Credential
  */
-export const useTestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost = <TError = HTTPValidationError,
+export const useTestProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost>>, TError,{providerId: string;providerCredentialId: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof testProviderCredentialApiV1ProvidersProviderIdCredentialsProviderCredentialIdTestPost>>,
@@ -2247,14 +2362,19 @@ export const useTestProviderCredentialApiV1ProvidersProviderIdCredentialsProvide
 }
 
 export type listProviderModelOfferingsResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type listProviderModelOfferingsResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type listProviderModelOfferingsResponseSuccess = (listProviderModelOfferingsResponse200) & {
   headers: Headers;
 };
-export type listProviderModelOfferingsResponseError = (listProviderModelOfferingsResponse422) & {
+export type listProviderModelOfferingsResponseError = (listProviderModelOfferingsResponse422 | listProviderModelOfferingsResponseDefault) & {
   headers: Headers;
 };
 
@@ -2303,7 +2423,7 @@ export const getListProviderModelOfferingsQueryKey = (providerId: string,
     }
 
 
-export const getListProviderModelOfferingsQueryOptions = <TData = Awaited<ReturnType<typeof listProviderModelOfferings>>, TError = HTTPValidationError>(providerId: string,
+export const getListProviderModelOfferingsQueryOptions = <TData = Awaited<ReturnType<typeof listProviderModelOfferings>>, TError = ProblemDetail>(providerId: string,
     params?: ListProviderModelOfferingsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProviderModelOfferings>>, TError, TData>>, }
 ) => {
 
@@ -2323,10 +2443,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type ListProviderModelOfferingsQueryResult = NonNullable<Awaited<ReturnType<typeof listProviderModelOfferings>>>
-export type ListProviderModelOfferingsQueryError = HTTPValidationError
+export type ListProviderModelOfferingsQueryError = ProblemDetail
 
 
-export function useListProviderModelOfferings<TData = Awaited<ReturnType<typeof listProviderModelOfferings>>, TError = HTTPValidationError>(
+export function useListProviderModelOfferings<TData = Awaited<ReturnType<typeof listProviderModelOfferings>>, TError = ProblemDetail>(
  providerId: string,
     params: undefined |  ListProviderModelOfferingsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProviderModelOfferings>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
@@ -2337,7 +2457,7 @@ export function useListProviderModelOfferings<TData = Awaited<ReturnType<typeof 
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListProviderModelOfferings<TData = Awaited<ReturnType<typeof listProviderModelOfferings>>, TError = HTTPValidationError>(
+export function useListProviderModelOfferings<TData = Awaited<ReturnType<typeof listProviderModelOfferings>>, TError = ProblemDetail>(
  providerId: string,
     params?: ListProviderModelOfferingsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProviderModelOfferings>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
@@ -2348,7 +2468,7 @@ export function useListProviderModelOfferings<TData = Awaited<ReturnType<typeof 
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListProviderModelOfferings<TData = Awaited<ReturnType<typeof listProviderModelOfferings>>, TError = HTTPValidationError>(
+export function useListProviderModelOfferings<TData = Awaited<ReturnType<typeof listProviderModelOfferings>>, TError = ProblemDetail>(
  providerId: string,
     params?: ListProviderModelOfferingsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProviderModelOfferings>>, TError, TData>>, }
  , queryClient?: QueryClient
@@ -2357,7 +2477,7 @@ export function useListProviderModelOfferings<TData = Awaited<ReturnType<typeof 
  * @summary List Model Offerings
  */
 
-export function useListProviderModelOfferings<TData = Awaited<ReturnType<typeof listProviderModelOfferings>>, TError = HTTPValidationError>(
+export function useListProviderModelOfferings<TData = Awaited<ReturnType<typeof listProviderModelOfferings>>, TError = ProblemDetail>(
  providerId: string,
     params?: ListProviderModelOfferingsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProviderModelOfferings>>, TError, TData>>, }
  , queryClient?: QueryClient
@@ -2381,14 +2501,19 @@ export type createProviderModelOfferingResponse201 = {
 }
 
 export type createProviderModelOfferingResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type createProviderModelOfferingResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 201 | 422>
 }
 
 export type createProviderModelOfferingResponseSuccess = (createProviderModelOfferingResponse201) & {
   headers: Headers;
 };
-export type createProviderModelOfferingResponseError = (createProviderModelOfferingResponse422) & {
+export type createProviderModelOfferingResponseError = (createProviderModelOfferingResponse422 | createProviderModelOfferingResponseDefault) & {
   headers: Headers;
 };
 
@@ -2421,7 +2546,7 @@ export const createProviderModelOffering = async (providerId: string,
 
 
 
-export const getCreateProviderModelOfferingMutationOptions = <TError = HTTPValidationError,
+export const getCreateProviderModelOfferingMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProviderModelOffering>>, TError,{providerId: string;data: CreateProviderModelOfferingRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof createProviderModelOffering>>, TError,{providerId: string;data: CreateProviderModelOfferingRequest}, TContext> => {
 
@@ -2450,12 +2575,12 @@ const {mutation: mutationOptions} = options ?
 
     export type CreateProviderModelOfferingMutationResult = NonNullable<Awaited<ReturnType<typeof createProviderModelOffering>>>
     export type CreateProviderModelOfferingMutationBody = CreateProviderModelOfferingRequest
-    export type CreateProviderModelOfferingMutationError = HTTPValidationError
+    export type CreateProviderModelOfferingMutationError = ProblemDetail
 
     /**
  * @summary Create Model Offering
  */
-export const useCreateProviderModelOffering = <TError = HTTPValidationError,
+export const useCreateProviderModelOffering = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProviderModelOffering>>, TError,{providerId: string;data: CreateProviderModelOfferingRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof createProviderModelOffering>>,
@@ -2471,14 +2596,19 @@ export const useCreateProviderModelOffering = <TError = HTTPValidationError,
 }
 
 export type updateProviderModelOfferingResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type updateProviderModelOfferingResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type updateProviderModelOfferingResponseSuccess = (updateProviderModelOfferingResponse200) & {
   headers: Headers;
 };
-export type updateProviderModelOfferingResponseError = (updateProviderModelOfferingResponse422) & {
+export type updateProviderModelOfferingResponseError = (updateProviderModelOfferingResponse422 | updateProviderModelOfferingResponseDefault) & {
   headers: Headers;
 };
 
@@ -2513,7 +2643,7 @@ export const updateProviderModelOffering = async (providerId: string,
 
 
 
-export const getUpdateProviderModelOfferingMutationOptions = <TError = HTTPValidationError,
+export const getUpdateProviderModelOfferingMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProviderModelOffering>>, TError,{providerId: string;modelOfferingId: string;data: UpdateProviderModelOfferingRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof updateProviderModelOffering>>, TError,{providerId: string;modelOfferingId: string;data: UpdateProviderModelOfferingRequest}, TContext> => {
 
@@ -2542,12 +2672,12 @@ const {mutation: mutationOptions} = options ?
 
     export type UpdateProviderModelOfferingMutationResult = NonNullable<Awaited<ReturnType<typeof updateProviderModelOffering>>>
     export type UpdateProviderModelOfferingMutationBody = UpdateProviderModelOfferingRequest
-    export type UpdateProviderModelOfferingMutationError = HTTPValidationError
+    export type UpdateProviderModelOfferingMutationError = ProblemDetail
 
     /**
  * @summary Update Model Offering
  */
-export const useUpdateProviderModelOffering = <TError = HTTPValidationError,
+export const useUpdateProviderModelOffering = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProviderModelOffering>>, TError,{providerId: string;modelOfferingId: string;data: UpdateProviderModelOfferingRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof updateProviderModelOffering>>,
@@ -2563,14 +2693,19 @@ export const useUpdateProviderModelOffering = <TError = HTTPValidationError,
 }
 
 export type deactivateProviderModelOfferingResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type deactivateProviderModelOfferingResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 204 | 422>
 }
 
 export type deactivateProviderModelOfferingResponseSuccess = (deactivateProviderModelOfferingResponse204) & {
   headers: Headers;
 };
-export type deactivateProviderModelOfferingResponseError = (deactivateProviderModelOfferingResponse422) & {
+export type deactivateProviderModelOfferingResponseError = (deactivateProviderModelOfferingResponse422 | deactivateProviderModelOfferingResponseDefault) & {
   headers: Headers;
 };
 
@@ -2603,7 +2738,7 @@ export const deactivateProviderModelOffering = async (providerId: string,
 
 
 
-export const getDeactivateProviderModelOfferingMutationOptions = <TError = HTTPValidationError,
+export const getDeactivateProviderModelOfferingMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deactivateProviderModelOffering>>, TError,{providerId: string;modelOfferingId: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof deactivateProviderModelOffering>>, TError,{providerId: string;modelOfferingId: string}, TContext> => {
 
@@ -2632,12 +2767,12 @@ const {mutation: mutationOptions} = options ?
 
     export type DeactivateProviderModelOfferingMutationResult = NonNullable<Awaited<ReturnType<typeof deactivateProviderModelOffering>>>
 
-    export type DeactivateProviderModelOfferingMutationError = HTTPValidationError
+    export type DeactivateProviderModelOfferingMutationError = ProblemDetail
 
     /**
  * @summary Deactivate Model Offering
  */
-export const useDeactivateProviderModelOffering = <TError = HTTPValidationError,
+export const useDeactivateProviderModelOffering = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deactivateProviderModelOffering>>, TError,{providerId: string;modelOfferingId: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof deactivateProviderModelOffering>>,
@@ -2653,14 +2788,19 @@ export const useDeactivateProviderModelOffering = <TError = HTTPValidationError,
 }
 
 export type testProviderModelOfferingResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type testProviderModelOfferingResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type testProviderModelOfferingResponseSuccess = (testProviderModelOfferingResponse200) & {
   headers: Headers;
 };
-export type testProviderModelOfferingResponseError = (testProviderModelOfferingResponse422) & {
+export type testProviderModelOfferingResponseError = (testProviderModelOfferingResponse422 | testProviderModelOfferingResponseDefault) & {
   headers: Headers;
 };
 
@@ -2695,7 +2835,7 @@ export const testProviderModelOffering = async (providerId: string,
 
 
 
-export const getTestProviderModelOfferingMutationOptions = <TError = HTTPValidationError,
+export const getTestProviderModelOfferingMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof testProviderModelOffering>>, TError,{providerId: string;modelOfferingId: string;data?: TestProviderModelOfferingRequest | null}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof testProviderModelOffering>>, TError,{providerId: string;modelOfferingId: string;data?: TestProviderModelOfferingRequest | null}, TContext> => {
 
@@ -2724,12 +2864,12 @@ const {mutation: mutationOptions} = options ?
 
     export type TestProviderModelOfferingMutationResult = NonNullable<Awaited<ReturnType<typeof testProviderModelOffering>>>
     export type TestProviderModelOfferingMutationBody = TestProviderModelOfferingRequest | null | undefined
-    export type TestProviderModelOfferingMutationError = HTTPValidationError
+    export type TestProviderModelOfferingMutationError = ProblemDetail
 
     /**
  * @summary Test Model Offering
  */
-export const useTestProviderModelOffering = <TError = HTTPValidationError,
+export const useTestProviderModelOffering = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof testProviderModelOffering>>, TError,{providerId: string;modelOfferingId: string;data?: TestProviderModelOfferingRequest | null}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof testProviderModelOffering>>,
@@ -2745,14 +2885,19 @@ export const useTestProviderModelOffering = <TError = HTTPValidationError,
 }
 
 export type syncProviderModelOfferingsResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type syncProviderModelOfferingsResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type syncProviderModelOfferingsResponseSuccess = (syncProviderModelOfferingsResponse200) & {
   headers: Headers;
 };
-export type syncProviderModelOfferingsResponseError = (syncProviderModelOfferingsResponse422) & {
+export type syncProviderModelOfferingsResponseError = (syncProviderModelOfferingsResponse422 | syncProviderModelOfferingsResponseDefault) & {
   headers: Headers;
 };
 
@@ -2785,7 +2930,7 @@ export const syncProviderModelOfferings = async (providerId: string,
 
 
 
-export const getSyncProviderModelOfferingsMutationOptions = <TError = HTTPValidationError,
+export const getSyncProviderModelOfferingsMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof syncProviderModelOfferings>>, TError,{providerId: string;data?: SyncProviderModelOfferingsRequest | null}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof syncProviderModelOfferings>>, TError,{providerId: string;data?: SyncProviderModelOfferingsRequest | null}, TContext> => {
 
@@ -2814,12 +2959,12 @@ const {mutation: mutationOptions} = options ?
 
     export type SyncProviderModelOfferingsMutationResult = NonNullable<Awaited<ReturnType<typeof syncProviderModelOfferings>>>
     export type SyncProviderModelOfferingsMutationBody = SyncProviderModelOfferingsRequest | null | undefined
-    export type SyncProviderModelOfferingsMutationError = HTTPValidationError
+    export type SyncProviderModelOfferingsMutationError = ProblemDetail
 
     /**
  * @summary Sync Model Offerings
  */
-export const useSyncProviderModelOfferings = <TError = HTTPValidationError,
+export const useSyncProviderModelOfferings = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof syncProviderModelOfferings>>, TError,{providerId: string;data?: SyncProviderModelOfferingsRequest | null}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof syncProviderModelOfferings>>,

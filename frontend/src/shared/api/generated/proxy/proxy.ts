@@ -24,13 +24,21 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
-  HTTPValidationError,
-  ListModelsV1ModelsGet200
+  ListModelsV1ModelsGet200,
+  ProblemDetail
 } from '../schemas';
 
 import { apiMutator } from '../../orval-mutator';
 
 
+
+
+export type HTTPStatusCode1xx = 100 | 101 | 102 | 103;
+export type HTTPStatusCode2xx = 200 | 201 | 202 | 203 | 204 | 205 | 206 | 207;
+export type HTTPStatusCode3xx = 300 | 301 | 302 | 303 | 304 | 305 | 307 | 308;
+export type HTTPStatusCode4xx = 400 | 401 | 402 | 403 | 404 | 405 | 406 | 407 | 408 | 409 | 410 | 411 | 412 | 413 | 414 | 415 | 416 | 417 | 418 | 419 | 420 | 421 | 422 | 423 | 424 | 426 | 428 | 429 | 431 | 451;
+export type HTTPStatusCode5xx = 500 | 501 | 502 | 503 | 504 | 505 | 507 | 511;
+export type HTTPStatusCodes = HTTPStatusCode1xx | HTTPStatusCode2xx | HTTPStatusCode3xx | HTTPStatusCode4xx | HTTPStatusCode5xx;
 
 
 export type listModelsV1ModelsGetResponse200 = {
@@ -39,14 +47,19 @@ export type listModelsV1ModelsGetResponse200 = {
 }
 
 export type listModelsV1ModelsGetResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type listModelsV1ModelsGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type listModelsV1ModelsGetResponseSuccess = (listModelsV1ModelsGetResponse200) & {
   headers: Headers;
 };
-export type listModelsV1ModelsGetResponseError = (listModelsV1ModelsGetResponse422) & {
+export type listModelsV1ModelsGetResponseError = (listModelsV1ModelsGetResponse422 | listModelsV1ModelsGetResponseDefault) & {
   headers: Headers;
 };
 
@@ -85,7 +98,7 @@ export const getListModelsV1ModelsGetQueryKey = () => {
     }
 
 
-export const getListModelsV1ModelsGetQueryOptions = <TData = Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError = HTTPValidationError>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError, TData>>, }
+export const getListModelsV1ModelsGetQueryOptions = <TData = Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError = ProblemDetail>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -104,10 +117,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type ListModelsV1ModelsGetQueryResult = NonNullable<Awaited<ReturnType<typeof listModelsV1ModelsGet>>>
-export type ListModelsV1ModelsGetQueryError = HTTPValidationError
+export type ListModelsV1ModelsGetQueryError = ProblemDetail
 
 
-export function useListModelsV1ModelsGet<TData = Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError = HTTPValidationError>(
+export function useListModelsV1ModelsGet<TData = Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError = ProblemDetail>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listModelsV1ModelsGet>>,
@@ -117,7 +130,7 @@ export function useListModelsV1ModelsGet<TData = Awaited<ReturnType<typeof listM
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListModelsV1ModelsGet<TData = Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError = HTTPValidationError>(
+export function useListModelsV1ModelsGet<TData = Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listModelsV1ModelsGet>>,
@@ -127,7 +140,7 @@ export function useListModelsV1ModelsGet<TData = Awaited<ReturnType<typeof listM
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListModelsV1ModelsGet<TData = Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError = HTTPValidationError>(
+export function useListModelsV1ModelsGet<TData = Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -135,7 +148,7 @@ export function useListModelsV1ModelsGet<TData = Awaited<ReturnType<typeof listM
  * @summary List Models
  */
 
-export function useListModelsV1ModelsGet<TData = Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError = HTTPValidationError>(
+export function useListModelsV1ModelsGet<TData = Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listModelsV1ModelsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -158,14 +171,19 @@ export type createCompletionV1CompletionsPostResponse200 = {
 }
 
 export type createCompletionV1CompletionsPostResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type createCompletionV1CompletionsPostResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type createCompletionV1CompletionsPostResponseSuccess = (createCompletionV1CompletionsPostResponse200) & {
   headers: Headers;
 };
-export type createCompletionV1CompletionsPostResponseError = (createCompletionV1CompletionsPostResponse422) & {
+export type createCompletionV1CompletionsPostResponseError = (createCompletionV1CompletionsPostResponse422 | createCompletionV1CompletionsPostResponseDefault) & {
   headers: Headers;
 };
 
@@ -196,7 +214,7 @@ export const createCompletionV1CompletionsPost = async ( options?: RequestInit):
 
 
 
-export const getCreateCompletionV1CompletionsPostMutationOptions = <TError = HTTPValidationError,
+export const getCreateCompletionV1CompletionsPostMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCompletionV1CompletionsPost>>, TError,void, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof createCompletionV1CompletionsPost>>, TError,void, TContext> => {
 
@@ -225,12 +243,12 @@ const {mutation: mutationOptions} = options ?
 
     export type CreateCompletionV1CompletionsPostMutationResult = NonNullable<Awaited<ReturnType<typeof createCompletionV1CompletionsPost>>>
 
-    export type CreateCompletionV1CompletionsPostMutationError = HTTPValidationError
+    export type CreateCompletionV1CompletionsPostMutationError = ProblemDetail
 
     /**
  * @summary Create Completion
  */
-export const useCreateCompletionV1CompletionsPost = <TError = HTTPValidationError,
+export const useCreateCompletionV1CompletionsPost = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCompletionV1CompletionsPost>>, TError,void, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof createCompletionV1CompletionsPost>>,
@@ -246,14 +264,19 @@ export const useCreateCompletionV1CompletionsPost = <TError = HTTPValidationErro
 }
 
 export type createResponseV1ResponsesPostResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type createResponseV1ResponsesPostResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type createResponseV1ResponsesPostResponseSuccess = (createResponseV1ResponsesPostResponse200) & {
   headers: Headers;
 };
-export type createResponseV1ResponsesPostResponseError = (createResponseV1ResponsesPostResponse422) & {
+export type createResponseV1ResponsesPostResponseError = (createResponseV1ResponsesPostResponse422 | createResponseV1ResponsesPostResponseDefault) & {
   headers: Headers;
 };
 
@@ -284,7 +307,7 @@ export const createResponseV1ResponsesPost = async ( options?: RequestInit): Pro
 
 
 
-export const getCreateResponseV1ResponsesPostMutationOptions = <TError = HTTPValidationError,
+export const getCreateResponseV1ResponsesPostMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createResponseV1ResponsesPost>>, TError,void, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof createResponseV1ResponsesPost>>, TError,void, TContext> => {
 
@@ -313,12 +336,12 @@ const {mutation: mutationOptions} = options ?
 
     export type CreateResponseV1ResponsesPostMutationResult = NonNullable<Awaited<ReturnType<typeof createResponseV1ResponsesPost>>>
 
-    export type CreateResponseV1ResponsesPostMutationError = HTTPValidationError
+    export type CreateResponseV1ResponsesPostMutationError = ProblemDetail
 
     /**
  * @summary Create Response
  */
-export const useCreateResponseV1ResponsesPost = <TError = HTTPValidationError,
+export const useCreateResponseV1ResponsesPost = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createResponseV1ResponsesPost>>, TError,void, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof createResponseV1ResponsesPost>>,
@@ -334,14 +357,19 @@ export const useCreateResponseV1ResponsesPost = <TError = HTTPValidationError,
 }
 
 export type createChatCompletionV1ChatCompletionsPostResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type createChatCompletionV1ChatCompletionsPostResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type createChatCompletionV1ChatCompletionsPostResponseSuccess = (createChatCompletionV1ChatCompletionsPostResponse200) & {
   headers: Headers;
 };
-export type createChatCompletionV1ChatCompletionsPostResponseError = (createChatCompletionV1ChatCompletionsPostResponse422) & {
+export type createChatCompletionV1ChatCompletionsPostResponseError = (createChatCompletionV1ChatCompletionsPostResponse422 | createChatCompletionV1ChatCompletionsPostResponseDefault) & {
   headers: Headers;
 };
 
@@ -372,7 +400,7 @@ export const createChatCompletionV1ChatCompletionsPost = async ( options?: Reque
 
 
 
-export const getCreateChatCompletionV1ChatCompletionsPostMutationOptions = <TError = HTTPValidationError,
+export const getCreateChatCompletionV1ChatCompletionsPostMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>, TError,void, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>, TError,void, TContext> => {
 
@@ -401,12 +429,12 @@ const {mutation: mutationOptions} = options ?
 
     export type CreateChatCompletionV1ChatCompletionsPostMutationResult = NonNullable<Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>>
 
-    export type CreateChatCompletionV1ChatCompletionsPostMutationError = HTTPValidationError
+    export type CreateChatCompletionV1ChatCompletionsPostMutationError = ProblemDetail
 
     /**
  * @summary Create Chat Completion
  */
-export const useCreateChatCompletionV1ChatCompletionsPost = <TError = HTTPValidationError,
+export const useCreateChatCompletionV1ChatCompletionsPost = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>, TError,void, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof createChatCompletionV1ChatCompletionsPost>>,
@@ -422,14 +450,19 @@ export const useCreateChatCompletionV1ChatCompletionsPost = <TError = HTTPValida
 }
 
 export type createAnthropicMessageV1MessagesPostResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type createAnthropicMessageV1MessagesPostResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type createAnthropicMessageV1MessagesPostResponseSuccess = (createAnthropicMessageV1MessagesPostResponse200) & {
   headers: Headers;
 };
-export type createAnthropicMessageV1MessagesPostResponseError = (createAnthropicMessageV1MessagesPostResponse422) & {
+export type createAnthropicMessageV1MessagesPostResponseError = (createAnthropicMessageV1MessagesPostResponse422 | createAnthropicMessageV1MessagesPostResponseDefault) & {
   headers: Headers;
 };
 
@@ -460,7 +493,7 @@ export const createAnthropicMessageV1MessagesPost = async ( options?: RequestIni
 
 
 
-export const getCreateAnthropicMessageV1MessagesPostMutationOptions = <TError = HTTPValidationError,
+export const getCreateAnthropicMessageV1MessagesPostMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAnthropicMessageV1MessagesPost>>, TError,void, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof createAnthropicMessageV1MessagesPost>>, TError,void, TContext> => {
 
@@ -489,12 +522,12 @@ const {mutation: mutationOptions} = options ?
 
     export type CreateAnthropicMessageV1MessagesPostMutationResult = NonNullable<Awaited<ReturnType<typeof createAnthropicMessageV1MessagesPost>>>
 
-    export type CreateAnthropicMessageV1MessagesPostMutationError = HTTPValidationError
+    export type CreateAnthropicMessageV1MessagesPostMutationError = ProblemDetail
 
     /**
  * @summary Create Anthropic Message
  */
-export const useCreateAnthropicMessageV1MessagesPost = <TError = HTTPValidationError,
+export const useCreateAnthropicMessageV1MessagesPost = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAnthropicMessageV1MessagesPost>>, TError,void, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof createAnthropicMessageV1MessagesPost>>,
@@ -509,12 +542,19 @@ export const useCreateAnthropicMessageV1MessagesPost = <TError = HTTPValidationE
   status: 200
 }
 
+export type createEmbeddingsV1EmbeddingsPostResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
 export type createEmbeddingsV1EmbeddingsPostResponseSuccess = (createEmbeddingsV1EmbeddingsPostResponse200) & {
   headers: Headers;
 };
-;
+export type createEmbeddingsV1EmbeddingsPostResponseError = (createEmbeddingsV1EmbeddingsPostResponseDefault) & {
+  headers: Headers;
+};
 
-export type createEmbeddingsV1EmbeddingsPostResponse = (createEmbeddingsV1EmbeddingsPostResponseSuccess)
+export type createEmbeddingsV1EmbeddingsPostResponse = (createEmbeddingsV1EmbeddingsPostResponseSuccess | createEmbeddingsV1EmbeddingsPostResponseError)
 
 export const getCreateEmbeddingsV1EmbeddingsPostUrl = () => {
 
@@ -541,7 +581,7 @@ export const createEmbeddingsV1EmbeddingsPost = async ( options?: RequestInit): 
 
 
 
-export const getCreateEmbeddingsV1EmbeddingsPostMutationOptions = <TError = unknown,
+export const getCreateEmbeddingsV1EmbeddingsPostMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmbeddingsV1EmbeddingsPost>>, TError,void, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof createEmbeddingsV1EmbeddingsPost>>, TError,void, TContext> => {
 
@@ -570,12 +610,12 @@ const {mutation: mutationOptions} = options ?
 
     export type CreateEmbeddingsV1EmbeddingsPostMutationResult = NonNullable<Awaited<ReturnType<typeof createEmbeddingsV1EmbeddingsPost>>>
 
-    export type CreateEmbeddingsV1EmbeddingsPostMutationError = unknown
+    export type CreateEmbeddingsV1EmbeddingsPostMutationError = ProblemDetail
 
     /**
  * @summary Create Embeddings
  */
-export const useCreateEmbeddingsV1EmbeddingsPost = <TError = unknown,
+export const useCreateEmbeddingsV1EmbeddingsPost = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmbeddingsV1EmbeddingsPost>>, TError,void, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof createEmbeddingsV1EmbeddingsPost>>,

@@ -1,10 +1,11 @@
 from http import HTTPStatus
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
 type ProblemExtra = dict[str, Any]
@@ -28,6 +29,13 @@ DEFAULT_PROBLEM_TYPES: dict[int, tuple[str, str]] = {
         "urn:bab:error:internal-server-error",
         "Internal Server Error",
     ),
+    status.HTTP_501_NOT_IMPLEMENTED: ("urn:bab:error:not-implemented", "Not Implemented"),
+    status.HTTP_502_BAD_GATEWAY: ("urn:bab:error:bad-gateway", "Bad Gateway"),
+    status.HTTP_503_SERVICE_UNAVAILABLE: (
+        "urn:bab:error:service-unavailable",
+        "Service Unavailable",
+    ),
+    status.HTTP_504_GATEWAY_TIMEOUT: ("urn:bab:error:gateway-timeout", "Gateway Timeout"),
 }
 
 
@@ -60,9 +68,45 @@ class ProblemException(Exception):
 
 def install_problem_handlers(app: FastAPI) -> None:
     app.add_exception_handler(ProblemException, problem_exception_handler)
-    app.add_exception_handler(HTTPException, http_exception_handler)
+    app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(Exception, unhandled_exception_handler)
+
+
+def install_problem_openapi(app: FastAPI) -> None:
+    original_openapi = app.openapi
+
+    def problem_openapi() -> dict[str, Any]:
+        schema = original_openapi()
+        components = schema.setdefault("components", {}).setdefault("schemas", {})
+        components["ProblemDetail"] = ProblemDetail.model_json_schema()
+
+        problem_content = {
+            PROBLEM_MEDIA_TYPE: {
+                "schema": {"$ref": "#/components/schemas/ProblemDetail"},
+            }
+        }
+        for path_item in schema.get("paths", {}).values():
+            for operation in path_item.values():
+                if not isinstance(operation, dict) or "responses" not in operation:
+                    continue
+                responses = operation["responses"]
+                for status_code, response in responses.items():
+                    if status_code.startswith(("4", "5")):
+                        response["content"] = problem_content
+                responses.setdefault(
+                    "default",
+                    {
+                        "description": "Problem Details error response",
+                        "content": problem_content,
+                    },
+                )
+
+        components.pop("HTTPValidationError", None)
+        components.pop("ValidationError", None)
+        return schema
+
+    app.openapi = problem_openapi
 
 
 async def problem_exception_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -80,7 +124,7 @@ async def problem_exception_handler(request: Request, exc: Exception) -> JSONRes
 
 
 async def http_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    if not isinstance(exc, HTTPException):
+    if not isinstance(exc, StarletteHTTPException):
         return await unhandled_exception_handler(request, exc)
 
     problem_type, title = _default_problem_type(exc.status_code)

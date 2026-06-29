@@ -21,7 +21,7 @@ from app.modules.keys.schemas import (
     RotateVirtualKeyRequest,
     UpdateVirtualKeyRequest,
     VirtualKeyIdentity,
-    VirtualKeyInventoryPage,
+    VirtualKeyInventoryPageResponse,
     VirtualKeyOption,
     VirtualKeyResponse,
     VirtualKeyRevokeImpactResponse,
@@ -71,7 +71,7 @@ async def list_virtual_key_inventory(
     limit: int,
     offset: int,
     db: AsyncSession,
-) -> VirtualKeyInventoryPage:
+) -> VirtualKeyInventoryPageResponse:
     return await virtual_keys.list_virtual_key_inventory(
         scope=scope,
         visible_team_ids=visible_team_ids,

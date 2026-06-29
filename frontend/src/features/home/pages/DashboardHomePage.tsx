@@ -27,7 +27,7 @@ import { useListProvidersApiV1ProvidersGet } from "@/shared/api/generated/provid
 import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
 import { useGetOrganizationUsageSummaryApiV1UsageSummaryGet } from "@/shared/api/generated/usage/usage";
 import { useListVirtualKeyInventoryApiV1VirtualKeysGet } from "@/shared/api/generated/virtual-keys/virtual-keys";
-import type { ActivityEventResponse } from "@/shared/api/generated/schemas";
+import type { ActivityEventPageResponse, ActivityEventResponse } from "@/shared/api/generated/schemas";
 import { httpClient } from "@/shared/api/http-client";
 import {
   canViewActivity,
@@ -61,7 +61,7 @@ export function DashboardHomePage() {
     queryKey: ["home-recent-activity"],
     enabled: showActivity,
     queryFn: async () => {
-      const response = await httpClient.get<ActivityEventResponse[]>("/api/v1/activity", {
+      const response = await httpClient.get<ActivityEventPageResponse>("/api/v1/activity", {
         params: { limit: 6 },
       });
       return response.data;
@@ -73,7 +73,7 @@ export function DashboardHomePage() {
   const projects = projectsQuery.data?.status === 200 ? projectsQuery.data.data : [];
   const keysPage = keysQuery.data?.status === 200 ? keysQuery.data.data : null;
   const usage = usageQuery.data?.status === 200 ? usageQuery.data.data : null;
-  const recentActivity = activityQuery.data ?? [];
+  const recentActivity = activityQuery.data?.items ?? [];
 
   const activeProviders = providers.filter((provider) => provider.is_active);
   const readyProviders = providers.filter((provider) => provider.readiness?.is_ready);

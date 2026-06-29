@@ -27,14 +27,14 @@ import type {
   CreateGuardrailAssignmentRequest,
   CreateGuardrailPolicyRequest,
   GuardrailAssignmentResponse,
-  GuardrailEventResponse,
+  GuardrailEventPageResponse,
   GuardrailImpactResponse,
   GuardrailPolicyOptionResponse,
   GuardrailPolicyResponse,
   GuardrailSimulationRequest,
   GuardrailSimulationResponse,
-  HTTPValidationError,
   ListEventsApiV1GuardrailsEventsGetParams,
+  ProblemDetail,
   UpdateGuardrailAssignmentRequest,
   UpdateGuardrailPolicyRequest
 } from '../schemas';
@@ -44,17 +44,32 @@ import { apiMutator } from '../../orval-mutator';
 
 
 
+export type HTTPStatusCode1xx = 100 | 101 | 102 | 103;
+export type HTTPStatusCode2xx = 200 | 201 | 202 | 203 | 204 | 205 | 206 | 207;
+export type HTTPStatusCode3xx = 300 | 301 | 302 | 303 | 304 | 305 | 307 | 308;
+export type HTTPStatusCode4xx = 400 | 401 | 402 | 403 | 404 | 405 | 406 | 407 | 408 | 409 | 410 | 411 | 412 | 413 | 414 | 415 | 416 | 417 | 418 | 419 | 420 | 421 | 422 | 423 | 424 | 426 | 428 | 429 | 431 | 451;
+export type HTTPStatusCode5xx = 500 | 501 | 502 | 503 | 504 | 505 | 507 | 511;
+export type HTTPStatusCodes = HTTPStatusCode1xx | HTTPStatusCode2xx | HTTPStatusCode3xx | HTTPStatusCode4xx | HTTPStatusCode5xx;
+
+
 export type listPoliciesApiV1GuardrailsPoliciesGetResponse200 = {
   data: GuardrailPolicyResponse[]
   status: 200
 }
 
+export type listPoliciesApiV1GuardrailsPoliciesGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
 export type listPoliciesApiV1GuardrailsPoliciesGetResponseSuccess = (listPoliciesApiV1GuardrailsPoliciesGetResponse200) & {
   headers: Headers;
 };
-;
+export type listPoliciesApiV1GuardrailsPoliciesGetResponseError = (listPoliciesApiV1GuardrailsPoliciesGetResponseDefault) & {
+  headers: Headers;
+};
 
-export type listPoliciesApiV1GuardrailsPoliciesGetResponse = (listPoliciesApiV1GuardrailsPoliciesGetResponseSuccess)
+export type listPoliciesApiV1GuardrailsPoliciesGetResponse = (listPoliciesApiV1GuardrailsPoliciesGetResponseSuccess | listPoliciesApiV1GuardrailsPoliciesGetResponseError)
 
 export const getListPoliciesApiV1GuardrailsPoliciesGetUrl = () => {
 
@@ -89,7 +104,7 @@ export const getListPoliciesApiV1GuardrailsPoliciesGetQueryKey = () => {
     }
 
 
-export const getListPoliciesApiV1GuardrailsPoliciesGetQueryOptions = <TData = Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>, TError, TData>>, }
+export const getListPoliciesApiV1GuardrailsPoliciesGetQueryOptions = <TData = Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>, TError = ProblemDetail>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -108,10 +123,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type ListPoliciesApiV1GuardrailsPoliciesGetQueryResult = NonNullable<Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>>
-export type ListPoliciesApiV1GuardrailsPoliciesGetQueryError = unknown
+export type ListPoliciesApiV1GuardrailsPoliciesGetQueryError = ProblemDetail
 
 
-export function useListPoliciesApiV1GuardrailsPoliciesGet<TData = Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>, TError = unknown>(
+export function useListPoliciesApiV1GuardrailsPoliciesGet<TData = Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>, TError = ProblemDetail>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>,
@@ -121,7 +136,7 @@ export function useListPoliciesApiV1GuardrailsPoliciesGet<TData = Awaited<Return
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListPoliciesApiV1GuardrailsPoliciesGet<TData = Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>, TError = unknown>(
+export function useListPoliciesApiV1GuardrailsPoliciesGet<TData = Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>,
@@ -131,7 +146,7 @@ export function useListPoliciesApiV1GuardrailsPoliciesGet<TData = Awaited<Return
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListPoliciesApiV1GuardrailsPoliciesGet<TData = Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>, TError = unknown>(
+export function useListPoliciesApiV1GuardrailsPoliciesGet<TData = Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -139,7 +154,7 @@ export function useListPoliciesApiV1GuardrailsPoliciesGet<TData = Awaited<Return
  * @summary List Policies
  */
 
-export function useListPoliciesApiV1GuardrailsPoliciesGet<TData = Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>, TError = unknown>(
+export function useListPoliciesApiV1GuardrailsPoliciesGet<TData = Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPoliciesApiV1GuardrailsPoliciesGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -162,14 +177,19 @@ export type createPolicyApiV1GuardrailsPoliciesPostResponse201 = {
 }
 
 export type createPolicyApiV1GuardrailsPoliciesPostResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type createPolicyApiV1GuardrailsPoliciesPostResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 201 | 422>
 }
 
 export type createPolicyApiV1GuardrailsPoliciesPostResponseSuccess = (createPolicyApiV1GuardrailsPoliciesPostResponse201) & {
   headers: Headers;
 };
-export type createPolicyApiV1GuardrailsPoliciesPostResponseError = (createPolicyApiV1GuardrailsPoliciesPostResponse422) & {
+export type createPolicyApiV1GuardrailsPoliciesPostResponseError = (createPolicyApiV1GuardrailsPoliciesPostResponse422 | createPolicyApiV1GuardrailsPoliciesPostResponseDefault) & {
   headers: Headers;
 };
 
@@ -201,7 +221,7 @@ export const createPolicyApiV1GuardrailsPoliciesPost = async (createGuardrailPol
 
 
 
-export const getCreatePolicyApiV1GuardrailsPoliciesPostMutationOptions = <TError = HTTPValidationError,
+export const getCreatePolicyApiV1GuardrailsPoliciesPostMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPolicyApiV1GuardrailsPoliciesPost>>, TError,{data: CreateGuardrailPolicyRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof createPolicyApiV1GuardrailsPoliciesPost>>, TError,{data: CreateGuardrailPolicyRequest}, TContext> => {
 
@@ -230,12 +250,12 @@ const {mutation: mutationOptions} = options ?
 
     export type CreatePolicyApiV1GuardrailsPoliciesPostMutationResult = NonNullable<Awaited<ReturnType<typeof createPolicyApiV1GuardrailsPoliciesPost>>>
     export type CreatePolicyApiV1GuardrailsPoliciesPostMutationBody = CreateGuardrailPolicyRequest
-    export type CreatePolicyApiV1GuardrailsPoliciesPostMutationError = HTTPValidationError
+    export type CreatePolicyApiV1GuardrailsPoliciesPostMutationError = ProblemDetail
 
     /**
  * @summary Create Policy
  */
-export const useCreatePolicyApiV1GuardrailsPoliciesPost = <TError = HTTPValidationError,
+export const useCreatePolicyApiV1GuardrailsPoliciesPost = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPolicyApiV1GuardrailsPoliciesPost>>, TError,{data: CreateGuardrailPolicyRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof createPolicyApiV1GuardrailsPoliciesPost>>,
@@ -250,12 +270,19 @@ export const useCreatePolicyApiV1GuardrailsPoliciesPost = <TError = HTTPValidati
   status: 200
 }
 
+export type listPolicyOptionsApiV1GuardrailsPolicyOptionsGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
 export type listPolicyOptionsApiV1GuardrailsPolicyOptionsGetResponseSuccess = (listPolicyOptionsApiV1GuardrailsPolicyOptionsGetResponse200) & {
   headers: Headers;
 };
-;
+export type listPolicyOptionsApiV1GuardrailsPolicyOptionsGetResponseError = (listPolicyOptionsApiV1GuardrailsPolicyOptionsGetResponseDefault) & {
+  headers: Headers;
+};
 
-export type listPolicyOptionsApiV1GuardrailsPolicyOptionsGetResponse = (listPolicyOptionsApiV1GuardrailsPolicyOptionsGetResponseSuccess)
+export type listPolicyOptionsApiV1GuardrailsPolicyOptionsGetResponse = (listPolicyOptionsApiV1GuardrailsPolicyOptionsGetResponseSuccess | listPolicyOptionsApiV1GuardrailsPolicyOptionsGetResponseError)
 
 export const getListPolicyOptionsApiV1GuardrailsPolicyOptionsGetUrl = () => {
 
@@ -290,7 +317,7 @@ export const getListPolicyOptionsApiV1GuardrailsPolicyOptionsGetQueryKey = () =>
     }
 
 
-export const getListPolicyOptionsApiV1GuardrailsPolicyOptionsGetQueryOptions = <TData = Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>, TError, TData>>, }
+export const getListPolicyOptionsApiV1GuardrailsPolicyOptionsGetQueryOptions = <TData = Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>, TError = ProblemDetail>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -309,10 +336,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type ListPolicyOptionsApiV1GuardrailsPolicyOptionsGetQueryResult = NonNullable<Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>>
-export type ListPolicyOptionsApiV1GuardrailsPolicyOptionsGetQueryError = unknown
+export type ListPolicyOptionsApiV1GuardrailsPolicyOptionsGetQueryError = ProblemDetail
 
 
-export function useListPolicyOptionsApiV1GuardrailsPolicyOptionsGet<TData = Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>, TError = unknown>(
+export function useListPolicyOptionsApiV1GuardrailsPolicyOptionsGet<TData = Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>, TError = ProblemDetail>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>,
@@ -322,7 +349,7 @@ export function useListPolicyOptionsApiV1GuardrailsPolicyOptionsGet<TData = Awai
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListPolicyOptionsApiV1GuardrailsPolicyOptionsGet<TData = Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>, TError = unknown>(
+export function useListPolicyOptionsApiV1GuardrailsPolicyOptionsGet<TData = Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>,
@@ -332,7 +359,7 @@ export function useListPolicyOptionsApiV1GuardrailsPolicyOptionsGet<TData = Awai
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListPolicyOptionsApiV1GuardrailsPolicyOptionsGet<TData = Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>, TError = unknown>(
+export function useListPolicyOptionsApiV1GuardrailsPolicyOptionsGet<TData = Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -340,7 +367,7 @@ export function useListPolicyOptionsApiV1GuardrailsPolicyOptionsGet<TData = Awai
  * @summary List Policy Options
  */
 
-export function useListPolicyOptionsApiV1GuardrailsPolicyOptionsGet<TData = Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>, TError = unknown>(
+export function useListPolicyOptionsApiV1GuardrailsPolicyOptionsGet<TData = Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPolicyOptionsApiV1GuardrailsPolicyOptionsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -363,14 +390,19 @@ export type updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponse200 = {
 }
 
 export type updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponseSuccess = (updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponse200) & {
   headers: Headers;
 };
-export type updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponseError = (updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponse422) & {
+export type updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponseError = (updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponse422 | updatePolicyApiV1GuardrailsPoliciesPolicyIdPatchResponseDefault) & {
   headers: Headers;
 };
 
@@ -403,7 +435,7 @@ export const updatePolicyApiV1GuardrailsPoliciesPolicyIdPatch = async (policyId:
 
 
 
-export const getUpdatePolicyApiV1GuardrailsPoliciesPolicyIdPatchMutationOptions = <TError = HTTPValidationError,
+export const getUpdatePolicyApiV1GuardrailsPoliciesPolicyIdPatchMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePolicyApiV1GuardrailsPoliciesPolicyIdPatch>>, TError,{policyId: string;data: UpdateGuardrailPolicyRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof updatePolicyApiV1GuardrailsPoliciesPolicyIdPatch>>, TError,{policyId: string;data: UpdateGuardrailPolicyRequest}, TContext> => {
 
@@ -432,12 +464,12 @@ const {mutation: mutationOptions} = options ?
 
     export type UpdatePolicyApiV1GuardrailsPoliciesPolicyIdPatchMutationResult = NonNullable<Awaited<ReturnType<typeof updatePolicyApiV1GuardrailsPoliciesPolicyIdPatch>>>
     export type UpdatePolicyApiV1GuardrailsPoliciesPolicyIdPatchMutationBody = UpdateGuardrailPolicyRequest
-    export type UpdatePolicyApiV1GuardrailsPoliciesPolicyIdPatchMutationError = HTTPValidationError
+    export type UpdatePolicyApiV1GuardrailsPoliciesPolicyIdPatchMutationError = ProblemDetail
 
     /**
  * @summary Update Policy
  */
-export const useUpdatePolicyApiV1GuardrailsPoliciesPolicyIdPatch = <TError = HTTPValidationError,
+export const useUpdatePolicyApiV1GuardrailsPoliciesPolicyIdPatch = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePolicyApiV1GuardrailsPoliciesPolicyIdPatch>>, TError,{policyId: string;data: UpdateGuardrailPolicyRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof updatePolicyApiV1GuardrailsPoliciesPolicyIdPatch>>,
@@ -453,14 +485,19 @@ export const useUpdatePolicyApiV1GuardrailsPoliciesPolicyIdPatch = <TError = HTT
 }
 
 export type deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 204 | 422>
 }
 
 export type deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponseSuccess = (deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponse204) & {
   headers: Headers;
 };
-export type deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponseError = (deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponse422) & {
+export type deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponseError = (deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponse422 | deletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteResponseDefault) & {
   headers: Headers;
 };
 
@@ -491,7 +528,7 @@ export const deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete = async (policyId
 
 
 
-export const getDeletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteMutationOptions = <TError = HTTPValidationError,
+export const getDeletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete>>, TError,{policyId: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete>>, TError,{policyId: string}, TContext> => {
 
@@ -520,12 +557,12 @@ const {mutation: mutationOptions} = options ?
 
     export type DeletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete>>>
 
-    export type DeletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteMutationError = HTTPValidationError
+    export type DeletePolicyApiV1GuardrailsPoliciesPolicyIdDeleteMutationError = ProblemDetail
 
     /**
  * @summary Delete Policy
  */
-export const useDeletePolicyApiV1GuardrailsPoliciesPolicyIdDelete = <TError = HTTPValidationError,
+export const useDeletePolicyApiV1GuardrailsPoliciesPolicyIdDelete = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete>>, TError,{policyId: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof deletePolicyApiV1GuardrailsPoliciesPolicyIdDelete>>,
@@ -541,14 +578,19 @@ export const useDeletePolicyApiV1GuardrailsPoliciesPolicyIdDelete = <TError = HT
 }
 
 export type getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetResponseSuccess = (getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetResponse200) & {
   headers: Headers;
 };
-export type getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetResponseError = (getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetResponse422) & {
+export type getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetResponseError = (getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetResponse422 | getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetResponseDefault) & {
   headers: Headers;
 };
 
@@ -587,7 +629,7 @@ export const getGetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetQueryKey 
     }
 
 
-export const getGetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>, TError = HTTPValidationError>(policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>, TError, TData>>, }
+export const getGetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>, TError = ProblemDetail>(policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -606,10 +648,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type GetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetQueryResult = NonNullable<Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>>
-export type GetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetQueryError = HTTPValidationError
+export type GetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGetQueryError = ProblemDetail
 
 
-export function useGetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>, TError = ProblemDetail>(
  policyId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>,
@@ -619,7 +661,7 @@ export function useGetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet<TData
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>, TError = ProblemDetail>(
  policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>,
@@ -629,7 +671,7 @@ export function useGetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet<TData
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>, TError = ProblemDetail>(
  policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -637,7 +679,7 @@ export function useGetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet<TData
  * @summary Get Policy Impact
  */
 
-export function useGetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet<TData = Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>, TError = ProblemDetail>(
  policyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPolicyImpactApiV1GuardrailsPoliciesPolicyIdImpactGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -659,12 +701,19 @@ export type listAssignmentsApiV1GuardrailsAssignmentsGetResponse200 = {
   status: 200
 }
 
+export type listAssignmentsApiV1GuardrailsAssignmentsGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
 export type listAssignmentsApiV1GuardrailsAssignmentsGetResponseSuccess = (listAssignmentsApiV1GuardrailsAssignmentsGetResponse200) & {
   headers: Headers;
 };
-;
+export type listAssignmentsApiV1GuardrailsAssignmentsGetResponseError = (listAssignmentsApiV1GuardrailsAssignmentsGetResponseDefault) & {
+  headers: Headers;
+};
 
-export type listAssignmentsApiV1GuardrailsAssignmentsGetResponse = (listAssignmentsApiV1GuardrailsAssignmentsGetResponseSuccess)
+export type listAssignmentsApiV1GuardrailsAssignmentsGetResponse = (listAssignmentsApiV1GuardrailsAssignmentsGetResponseSuccess | listAssignmentsApiV1GuardrailsAssignmentsGetResponseError)
 
 export const getListAssignmentsApiV1GuardrailsAssignmentsGetUrl = () => {
 
@@ -699,7 +748,7 @@ export const getListAssignmentsApiV1GuardrailsAssignmentsGetQueryKey = () => {
     }
 
 
-export const getListAssignmentsApiV1GuardrailsAssignmentsGetQueryOptions = <TData = Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>, TError, TData>>, }
+export const getListAssignmentsApiV1GuardrailsAssignmentsGetQueryOptions = <TData = Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>, TError = ProblemDetail>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -718,10 +767,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type ListAssignmentsApiV1GuardrailsAssignmentsGetQueryResult = NonNullable<Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>>
-export type ListAssignmentsApiV1GuardrailsAssignmentsGetQueryError = unknown
+export type ListAssignmentsApiV1GuardrailsAssignmentsGetQueryError = ProblemDetail
 
 
-export function useListAssignmentsApiV1GuardrailsAssignmentsGet<TData = Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>, TError = unknown>(
+export function useListAssignmentsApiV1GuardrailsAssignmentsGet<TData = Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>, TError = ProblemDetail>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>,
@@ -731,7 +780,7 @@ export function useListAssignmentsApiV1GuardrailsAssignmentsGet<TData = Awaited<
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListAssignmentsApiV1GuardrailsAssignmentsGet<TData = Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>, TError = unknown>(
+export function useListAssignmentsApiV1GuardrailsAssignmentsGet<TData = Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>,
@@ -741,7 +790,7 @@ export function useListAssignmentsApiV1GuardrailsAssignmentsGet<TData = Awaited<
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListAssignmentsApiV1GuardrailsAssignmentsGet<TData = Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>, TError = unknown>(
+export function useListAssignmentsApiV1GuardrailsAssignmentsGet<TData = Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -749,7 +798,7 @@ export function useListAssignmentsApiV1GuardrailsAssignmentsGet<TData = Awaited<
  * @summary List Assignments
  */
 
-export function useListAssignmentsApiV1GuardrailsAssignmentsGet<TData = Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>, TError = unknown>(
+export function useListAssignmentsApiV1GuardrailsAssignmentsGet<TData = Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>, TError = ProblemDetail>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAssignmentsApiV1GuardrailsAssignmentsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -772,14 +821,19 @@ export type createAssignmentApiV1GuardrailsAssignmentsPostResponse201 = {
 }
 
 export type createAssignmentApiV1GuardrailsAssignmentsPostResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type createAssignmentApiV1GuardrailsAssignmentsPostResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 201 | 422>
 }
 
 export type createAssignmentApiV1GuardrailsAssignmentsPostResponseSuccess = (createAssignmentApiV1GuardrailsAssignmentsPostResponse201) & {
   headers: Headers;
 };
-export type createAssignmentApiV1GuardrailsAssignmentsPostResponseError = (createAssignmentApiV1GuardrailsAssignmentsPostResponse422) & {
+export type createAssignmentApiV1GuardrailsAssignmentsPostResponseError = (createAssignmentApiV1GuardrailsAssignmentsPostResponse422 | createAssignmentApiV1GuardrailsAssignmentsPostResponseDefault) & {
   headers: Headers;
 };
 
@@ -811,7 +865,7 @@ export const createAssignmentApiV1GuardrailsAssignmentsPost = async (createGuard
 
 
 
-export const getCreateAssignmentApiV1GuardrailsAssignmentsPostMutationOptions = <TError = HTTPValidationError,
+export const getCreateAssignmentApiV1GuardrailsAssignmentsPostMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAssignmentApiV1GuardrailsAssignmentsPost>>, TError,{data: CreateGuardrailAssignmentRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof createAssignmentApiV1GuardrailsAssignmentsPost>>, TError,{data: CreateGuardrailAssignmentRequest}, TContext> => {
 
@@ -840,12 +894,12 @@ const {mutation: mutationOptions} = options ?
 
     export type CreateAssignmentApiV1GuardrailsAssignmentsPostMutationResult = NonNullable<Awaited<ReturnType<typeof createAssignmentApiV1GuardrailsAssignmentsPost>>>
     export type CreateAssignmentApiV1GuardrailsAssignmentsPostMutationBody = CreateGuardrailAssignmentRequest
-    export type CreateAssignmentApiV1GuardrailsAssignmentsPostMutationError = HTTPValidationError
+    export type CreateAssignmentApiV1GuardrailsAssignmentsPostMutationError = ProblemDetail
 
     /**
  * @summary Create Assignment
  */
-export const useCreateAssignmentApiV1GuardrailsAssignmentsPost = <TError = HTTPValidationError,
+export const useCreateAssignmentApiV1GuardrailsAssignmentsPost = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAssignmentApiV1GuardrailsAssignmentsPost>>, TError,{data: CreateGuardrailAssignmentRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof createAssignmentApiV1GuardrailsAssignmentsPost>>,
@@ -861,14 +915,19 @@ export const useCreateAssignmentApiV1GuardrailsAssignmentsPost = <TError = HTTPV
 }
 
 export type updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponseSuccess = (updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponse200) & {
   headers: Headers;
 };
-export type updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponseError = (updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponse422) & {
+export type updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponseError = (updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponse422 | updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchResponseDefault) & {
   headers: Headers;
 };
 
@@ -901,7 +960,7 @@ export const updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch = async
 
 
 
-export const getUpdateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchMutationOptions = <TError = HTTPValidationError,
+export const getUpdateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch>>, TError,{assignmentId: string;data: UpdateGuardrailAssignmentRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch>>, TError,{assignmentId: string;data: UpdateGuardrailAssignmentRequest}, TContext> => {
 
@@ -930,12 +989,12 @@ const {mutation: mutationOptions} = options ?
 
     export type UpdateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchMutationResult = NonNullable<Awaited<ReturnType<typeof updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch>>>
     export type UpdateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchMutationBody = UpdateGuardrailAssignmentRequest
-    export type UpdateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchMutationError = HTTPValidationError
+    export type UpdateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatchMutationError = ProblemDetail
 
     /**
  * @summary Update Assignment
  */
-export const useUpdateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch = <TError = HTTPValidationError,
+export const useUpdateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch>>, TError,{assignmentId: string;data: UpdateGuardrailAssignmentRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof updateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch>>,
@@ -951,14 +1010,19 @@ export const useUpdateAssignmentApiV1GuardrailsAssignmentsAssignmentIdPatch = <T
 }
 
 export type deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 204 | 422>
 }
 
 export type deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponseSuccess = (deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponse204) & {
   headers: Headers;
 };
-export type deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponseError = (deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponse422) & {
+export type deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponseError = (deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponse422 | deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteResponseDefault) & {
   headers: Headers;
 };
 
@@ -989,7 +1053,7 @@ export const deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete = asyn
 
 
 
-export const getDeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteMutationOptions = <TError = HTTPValidationError,
+export const getDeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete>>, TError,{assignmentId: string}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete>>, TError,{assignmentId: string}, TContext> => {
 
@@ -1018,12 +1082,12 @@ const {mutation: mutationOptions} = options ?
 
     export type DeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete>>>
 
-    export type DeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteMutationError = HTTPValidationError
+    export type DeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDeleteMutationError = ProblemDetail
 
     /**
  * @summary Delete Assignment
  */
-export const useDeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete = <TError = HTTPValidationError,
+export const useDeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete>>, TError,{assignmentId: string}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof deleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete>>,
@@ -1039,14 +1103,19 @@ export const useDeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete = <
 }
 
 export type getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetResponseSuccess = (getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetResponse200) & {
   headers: Headers;
 };
-export type getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetResponseError = (getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetResponse422) & {
+export type getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetResponseError = (getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetResponse422 | getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetResponseDefault) & {
   headers: Headers;
 };
 
@@ -1085,7 +1154,7 @@ export const getGetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactG
     }
 
 
-export const getGetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>, TError = HTTPValidationError>(assignmentId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>, TError, TData>>, }
+export const getGetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>, TError = ProblemDetail>(assignmentId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -1104,10 +1173,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type GetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetQueryResult = NonNullable<Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>>
-export type GetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetQueryError = HTTPValidationError
+export type GetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGetQueryError = ProblemDetail
 
 
-export function useGetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet<TData = Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet<TData = Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>, TError = ProblemDetail>(
  assignmentId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>,
@@ -1117,7 +1186,7 @@ export function useGetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpa
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet<TData = Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet<TData = Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>, TError = ProblemDetail>(
  assignmentId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>,
@@ -1127,7 +1196,7 @@ export function useGetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpa
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet<TData = Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet<TData = Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>, TError = ProblemDetail>(
  assignmentId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -1135,7 +1204,7 @@ export function useGetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpa
  * @summary Get Assignment Impact
  */
 
-export function useGetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet<TData = Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>, TError = HTTPValidationError>(
+export function useGetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet<TData = Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>, TError = ProblemDetail>(
  assignmentId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpactGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -1153,19 +1222,24 @@ export function useGetAssignmentImpactApiV1GuardrailsAssignmentsAssignmentIdImpa
 
 
 export type listEventsApiV1GuardrailsEventsGetResponse200 = {
-  data: GuardrailEventResponse[]
+  data: GuardrailEventPageResponse
   status: 200
 }
 
 export type listEventsApiV1GuardrailsEventsGetResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type listEventsApiV1GuardrailsEventsGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type listEventsApiV1GuardrailsEventsGetResponseSuccess = (listEventsApiV1GuardrailsEventsGetResponse200) & {
   headers: Headers;
 };
-export type listEventsApiV1GuardrailsEventsGetResponseError = (listEventsApiV1GuardrailsEventsGetResponse422) & {
+export type listEventsApiV1GuardrailsEventsGetResponseError = (listEventsApiV1GuardrailsEventsGetResponse422 | listEventsApiV1GuardrailsEventsGetResponseDefault) & {
   headers: Headers;
 };
 
@@ -1211,7 +1285,7 @@ export const getListEventsApiV1GuardrailsEventsGetQueryKey = (params?: ListEvent
     }
 
 
-export const getListEventsApiV1GuardrailsEventsGetQueryOptions = <TData = Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError = HTTPValidationError>(params?: ListEventsApiV1GuardrailsEventsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError, TData>>, }
+export const getListEventsApiV1GuardrailsEventsGetQueryOptions = <TData = Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError = ProblemDetail>(params?: ListEventsApiV1GuardrailsEventsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
@@ -1230,10 +1304,10 @@ const {query: queryOptions} = options ?? {};
 }
 
 export type ListEventsApiV1GuardrailsEventsGetQueryResult = NonNullable<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>>
-export type ListEventsApiV1GuardrailsEventsGetQueryError = HTTPValidationError
+export type ListEventsApiV1GuardrailsEventsGetQueryError = ProblemDetail
 
 
-export function useListEventsApiV1GuardrailsEventsGet<TData = Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError = HTTPValidationError>(
+export function useListEventsApiV1GuardrailsEventsGet<TData = Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError = ProblemDetail>(
  params: undefined |  ListEventsApiV1GuardrailsEventsGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>,
@@ -1243,7 +1317,7 @@ export function useListEventsApiV1GuardrailsEventsGet<TData = Awaited<ReturnType
       >, }
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListEventsApiV1GuardrailsEventsGet<TData = Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError = HTTPValidationError>(
+export function useListEventsApiV1GuardrailsEventsGet<TData = Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError = ProblemDetail>(
  params?: ListEventsApiV1GuardrailsEventsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>,
@@ -1253,7 +1327,7 @@ export function useListEventsApiV1GuardrailsEventsGet<TData = Awaited<ReturnType
       >, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListEventsApiV1GuardrailsEventsGet<TData = Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError = HTTPValidationError>(
+export function useListEventsApiV1GuardrailsEventsGet<TData = Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError = ProblemDetail>(
  params?: ListEventsApiV1GuardrailsEventsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -1261,7 +1335,7 @@ export function useListEventsApiV1GuardrailsEventsGet<TData = Awaited<ReturnType
  * @summary List Events
  */
 
-export function useListEventsApiV1GuardrailsEventsGet<TData = Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError = HTTPValidationError>(
+export function useListEventsApiV1GuardrailsEventsGet<TData = Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError = ProblemDetail>(
  params?: ListEventsApiV1GuardrailsEventsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listEventsApiV1GuardrailsEventsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -1284,14 +1358,19 @@ export type simulateGuardrailsApiV1GuardrailsSimulatePostResponse200 = {
 }
 
 export type simulateGuardrailsApiV1GuardrailsSimulatePostResponse422 = {
-  data: HTTPValidationError
+  data: ProblemDetail
   status: 422
+}
+
+export type simulateGuardrailsApiV1GuardrailsSimulatePostResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200 | 422>
 }
 
 export type simulateGuardrailsApiV1GuardrailsSimulatePostResponseSuccess = (simulateGuardrailsApiV1GuardrailsSimulatePostResponse200) & {
   headers: Headers;
 };
-export type simulateGuardrailsApiV1GuardrailsSimulatePostResponseError = (simulateGuardrailsApiV1GuardrailsSimulatePostResponse422) & {
+export type simulateGuardrailsApiV1GuardrailsSimulatePostResponseError = (simulateGuardrailsApiV1GuardrailsSimulatePostResponse422 | simulateGuardrailsApiV1GuardrailsSimulatePostResponseDefault) & {
   headers: Headers;
 };
 
@@ -1323,7 +1402,7 @@ export const simulateGuardrailsApiV1GuardrailsSimulatePost = async (guardrailSim
 
 
 
-export const getSimulateGuardrailsApiV1GuardrailsSimulatePostMutationOptions = <TError = HTTPValidationError,
+export const getSimulateGuardrailsApiV1GuardrailsSimulatePostMutationOptions = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof simulateGuardrailsApiV1GuardrailsSimulatePost>>, TError,{data: GuardrailSimulationRequest}, TContext>, }
 ): UseMutationOptions<Awaited<ReturnType<typeof simulateGuardrailsApiV1GuardrailsSimulatePost>>, TError,{data: GuardrailSimulationRequest}, TContext> => {
 
@@ -1352,12 +1431,12 @@ const {mutation: mutationOptions} = options ?
 
     export type SimulateGuardrailsApiV1GuardrailsSimulatePostMutationResult = NonNullable<Awaited<ReturnType<typeof simulateGuardrailsApiV1GuardrailsSimulatePost>>>
     export type SimulateGuardrailsApiV1GuardrailsSimulatePostMutationBody = GuardrailSimulationRequest
-    export type SimulateGuardrailsApiV1GuardrailsSimulatePostMutationError = HTTPValidationError
+    export type SimulateGuardrailsApiV1GuardrailsSimulatePostMutationError = ProblemDetail
 
     /**
  * @summary Simulate Guardrails
  */
-export const useSimulateGuardrailsApiV1GuardrailsSimulatePost = <TError = HTTPValidationError,
+export const useSimulateGuardrailsApiV1GuardrailsSimulatePost = <TError = ProblemDetail,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof simulateGuardrailsApiV1GuardrailsSimulatePost>>, TError,{data: GuardrailSimulationRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof simulateGuardrailsApiV1GuardrailsSimulatePost>>,

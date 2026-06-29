@@ -27,6 +27,7 @@ import {
 } from "@/features/playground/lib/validation";
 import { useListProjectsApiV1ProjectsGet } from "@/shared/api/generated/projects/projects";
 import { useListVirtualKeyInventoryApiV1VirtualKeysGet } from "@/shared/api/generated/virtual-keys/virtual-keys";
+import type { UsageRecordPageResponse } from "@/shared/api/generated/schemas";
 import { apiMutator } from "@/shared/api/orval-mutator";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
@@ -50,17 +51,8 @@ type GatewayModel = {
     provider_model: string;
   }[];
 };
-type UsageRecord = {
-  http_status: number;
-  requested_model: string;
-  total_tokens?: number | null;
-  cost_cents?: number | null;
-  request_id?: string | null;
-  gateway_request_id?: string | null;
-  created_at: string;
-};
 type UsageRecordsResponse = {
-  data: UsageRecord[];
+  data: UsageRecordPageResponse;
   status: number;
   headers: Headers;
 };
@@ -111,14 +103,16 @@ export function PlaygroundPage() {
     refetchInterval: (query) => {
       if (query.state.status === "error") return false;
       if (query.state.dataUpdateCount >= 20) return false;
-      return query.state.data?.status === 200 && query.state.data.data.length > 0 ? false : 500;
+      return query.state.data?.status === 200 && query.state.data.data.items.length > 0
+        ? false
+        : 500;
     },
   });
   const projects = projectsQuery.data?.status === 200 ? projectsQuery.data.data : [];
   const keysPage = keysQuery.data?.status === 200 ? keysQuery.data.data : null;
   const projectKeys = keysPage?.items ?? [];
   const selectedKey = projectKeys.find((key) => key.id === selectedKeyId) ?? null;
-  const latestUsage = usageQuery.data?.status === 200 ? usageQuery.data.data[0] : null;
+  const latestUsage = usageQuery.data?.status === 200 ? usageQuery.data.data.items[0] : null;
   const temperatureError = validateTemperature(temperature, mode);
   const maxTokensError = validateMaxTokens(maxTokens, mode);
   const canLoadModels = virtualKey.trim().length > 0;

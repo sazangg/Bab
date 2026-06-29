@@ -44,3 +44,11 @@ class ActivityEventResponse(BaseModel):
     gateway_request_id: UUID | None
     metadata: dict
     created_at: datetime
+
+
+class ActivityEventPageResponse(BaseModel):
+    items: list[ActivityEventResponse]
+    limit: int
+    has_more: bool
+    next_before_at: datetime | None
+    next_before_id: UUID | None
