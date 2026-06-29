@@ -7,8 +7,8 @@ from app.modules.providers.internal.model_metadata import (
 from app.modules.providers.internal.models import Provider
 from app.modules.providers.internal.service import (
     _provider_catalog_type,
-    _provider_integration_capabilities,
 )
+from app.modules.providers.read_models import provider_integration_capabilities
 
 
 def test_openai_model_metadata_adapter_enriches_known_models() -> None:
@@ -100,8 +100,8 @@ def test_provider_integration_capabilities_are_honest() -> None:
     openai = Provider(supported_integration="openai_compatible_default")
     anthropic = Provider(supported_integration="anthropic_messages")
 
-    openai_capabilities = _provider_integration_capabilities(openai)
-    anthropic_capabilities = _provider_integration_capabilities(anthropic)
+    openai_capabilities = provider_integration_capabilities(openai)
+    anthropic_capabilities = provider_integration_capabilities(anthropic)
 
     assert openai_capabilities["openai_compatible_chat"] is True
     assert openai_capabilities["openai_compatible_responses"] is True
@@ -113,5 +113,5 @@ def test_provider_integration_capabilities_are_honest() -> None:
     assert _provider_catalog_type(anthropic) == "default"
 
     renamed_custom = Provider(slug="anthropic", supported_integration="openai_compatible")
-    assert _provider_integration_capabilities(renamed_custom)["native_anthropic_messages"] is False
+    assert provider_integration_capabilities(renamed_custom)["native_anthropic_messages"] is False
     assert _provider_catalog_type(renamed_custom) == "custom"

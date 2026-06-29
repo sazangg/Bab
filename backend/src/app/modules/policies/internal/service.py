@@ -1290,17 +1290,6 @@ async def _get_limit_policy_rule_or_raise(
     return rule
 
 
-async def _active_limit_policy_revision(
-    *, policy: LimitPolicy, scope: Scope, db: AsyncSession
-) -> UUID | None:
-    revision = await policy_kernel_repository.get_active_policy_revision(
-        org_id=scope.org_id,
-        policy_id=policy.policy_id,
-        db=db,
-    )
-    return revision.id if revision else None
-
-
 async def _create_next_limit_policy_revision(
     *,
     policy: LimitPolicy,

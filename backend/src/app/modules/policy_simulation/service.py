@@ -150,6 +150,22 @@ class _AccessResolution:
     fallback_disabled_reason: str | None
 
 
+@dataclass(frozen=True)
+class _AccessRouteResources:
+    provider: Any | None
+    pool: Any | None
+    model: Any | None
+
+
+@dataclass
+class _AccessAttemptState:
+    matched_public_model_name: str | None = None
+    selected_public_model: _AccessPublicModelRef | None = None
+    selected_attempt: PolicySimulationRouteAttempt | None = None
+    attempted_count: int = 0
+    fallback_disabled_reason: str | None = None
+
+
 async def simulate_active_policies(
     *,
     org_id,
@@ -433,7 +449,6 @@ async def _validate_replacement_drafts(
                 actor=actor,
                 target=target,
                 policy=policy,
-                kind="access",
                 db=db,
             ):
                 raise PolicyPermissionError
@@ -456,7 +471,6 @@ async def _validate_replacement_drafts(
                 actor=actor,
                 target=target,
                 policy=policy,
-                kind="limit",
                 db=db,
             ):
                 raise PolicyPermissionError
@@ -545,7 +559,6 @@ async def _can_replace_policy(
     actor: AuthenticatedUser | None,
     target: _SimulationTarget,
     policy,
-    kind: str,
     db: AsyncSession,
 ) -> bool:
     if actor is None:
@@ -554,20 +567,11 @@ async def _can_replace_policy(
         return True
     if await _policy_owned_in_actor_scope(actor=actor, policy=policy, target=target, db=db):
         return True
-    assignments = (
-        await policy_kernel_repository.list_policy_assignments_for_policy(
-            org_id=target.org_id,
-            policy_id=policy.policy_id,
-            active_only=True,
-            db=db,
-        )
-        if kind == "access"
-        else await policy_kernel_repository.list_policy_assignments_for_policy(
-            org_id=target.org_id,
-            policy_id=policy.policy_id,
-            active_only=True,
-            db=db,
-        )
+    assignments = await policy_kernel_repository.list_policy_assignments_for_policy(
+        org_id=target.org_id,
+        policy_id=policy.policy_id,
+        active_only=True,
+        db=db,
     )
     for assignment in assignments:
         if await _assignment_visible_to_actor(
@@ -675,106 +679,31 @@ async def _simulate_access_resolution(
         replacement_index=replacement_index,
         db=db,
     )
-    candidates.sort(
-        key=lambda item: (
-            item.priority,
-            -item.weight,
-            item.created_at is None,
-            _sort_datetime(item.created_at),
-        )
-    )
+    _sort_access_candidates(candidates)
     route_attempts: list[PolicySimulationRouteAttempt] = []
     decisions: list[PolicySimulationDecision] = []
     resolved_attempts: list[tuple[UUID | None, _SimulationRouteContext, bool]] = []
-    matched_public_model_name: str | None = None
-    selected_attempt: PolicySimulationRouteAttempt | None = None
-    attempted_count = 0
-    fallback_disabled_reason = None
-    selected_public_model: _AccessPublicModelRef | None = None
+    state = _AccessAttemptState()
     for candidate_index, candidate in enumerate(candidates):
-        provider = pool = model = None
-        try:
-            provider = await providers_facade.get_provider(
-                provider_id=candidate.provider_id,
-                scope=Scope(org_id=target.org_id),
-                db=db,
-            )
-            pool = await providers_facade.get_credential_pool(
-                pool_id=candidate.credential_pool_id,
-                scope=Scope(org_id=target.org_id),
-                db=db,
-            )
-            model = await providers_facade.get_model_offering(
-                model_offering_id=candidate.model_offering_id,
-                scope=Scope(org_id=target.org_id),
-                db=db,
-            )
-        except ProviderNotFoundError:
-            pass
-        skipped_reason, skipped_message = _access_candidate_skip_reason(
+        resources = await _route_resources_for_candidate(
+            candidate=candidate,
+            target=target,
+            db=db,
+        )
+        would_attempt, skipped_reason, skipped_message = _access_attempt_decision(
             payload=payload,
             candidate=candidate,
-            provider=provider,
-            pool=pool,
-            model=model,
-            matched_public_model_name=matched_public_model_name,
+            resources=resources,
+            state=state,
         )
-        would_attempt = skipped_reason is None
-        if would_attempt and matched_public_model_name is None:
-            matched_public_model_name = candidate.public_model.public_model_name
-            selected_public_model = candidate.public_model
-        if would_attempt and matched_public_model_name != candidate.public_model.public_model_name:
-            would_attempt = False
-            skipped_reason = "routing_mode_disables_fallback"
-            skipped_message = "The selected routing mode did not attempt this route."
-        if would_attempt and selected_public_model is not None:
-            if selected_public_model.routing_mode == "single_route" and attempted_count > 0:
-                would_attempt = False
-            if payload.streaming and attempted_count > 0:
-                would_attempt = False
-                fallback_disabled_reason = "streaming_fallback_phase_2"
-            if payload.provider_id is not None and attempted_count > 0:
-                would_attempt = False
-                fallback_disabled_reason = "provider_pinned"
-            if (
-                selected_public_model.max_route_attempts is not None
-                and attempted_count >= selected_public_model.max_route_attempts
-            ):
-                would_attempt = False
-            if not would_attempt and skipped_reason is None:
-                skipped_reason = "routing_mode_disables_fallback"
-                skipped_message = "The selected routing mode did not attempt this route."
-        attempt_index = attempted_count if would_attempt else None
-        selected = would_attempt and selected_attempt is None
-        if would_attempt:
-            attempted_count += 1
-        attempt = PolicySimulationRouteAttempt(
+        attempt = _simulation_route_attempt_from_candidate(
             candidate_index=candidate_index,
-            attempt_index=attempt_index,
-            selected=selected,
+            candidate=candidate,
+            resources=resources,
             would_attempt=would_attempt,
             skipped_reason=skipped_reason,
             skipped_message=skipped_message,
-            access_policy_id=candidate.public_model.access_policy_id,
-            access_policy_revision_id=candidate.public_model.access_policy_revision_id,
-            access_policy_assignment_id=candidate.assignment.assignment_id,
-            public_model_id=candidate.public_model.public_model_id,
-            route_candidate_id=candidate.route_candidate_id,
-            public_model_name=candidate.public_model.public_model_name,
-            routing_mode=candidate.public_model.routing_mode,
-            provider_id=candidate.provider_id,
-            provider_name=provider.name if provider else None,
-            credential_pool_id=candidate.credential_pool_id,
-            credential_pool_name=pool.name if pool else None,
-            provider_model_offering_id=model.id if model else candidate.model_offering_id,
-            provider_model=model.provider_model_name if model else None,
-            input_price_per_million_tokens=(
-                model.effective_input_price_per_million_tokens if model else None
-            ),
-            output_price_per_million_tokens=(
-                model.effective_output_price_per_million_tokens if model else None
-            ),
-            draft_ref=candidate.draft_ref,
+            state=state,
         )
         route_attempts.append(attempt)
         decisions.append(_routing_decision_from_attempt(attempt))
@@ -783,13 +712,174 @@ async def _simulate_access_resolution(
                 target=target,
                 payload=payload,
                 attempt=attempt,
-                fallback_disabled_reason=fallback_disabled_reason,
+                fallback_disabled_reason=state.fallback_disabled_reason,
                 db=db,
             )
-            resolved_attempts.append((attempt.route_candidate_id, context, selected))
-        if selected:
-            selected_attempt = attempt
-    if selected_attempt is None:
+            resolved_attempts.append((attempt.route_candidate_id, context, attempt.selected))
+        if attempt.selected:
+            state.selected_attempt = attempt
+    return _access_resolution_from_attempts(
+        payload=payload,
+        route_attempts=route_attempts,
+        decisions=decisions,
+        resolved_attempts=resolved_attempts,
+        state=state,
+    )
+
+
+def _sort_access_candidates(candidates: list[_AccessCandidateRef]) -> None:
+    candidates.sort(
+        key=lambda item: (
+            item.priority,
+            -item.weight,
+            item.created_at is None,
+            _sort_datetime(item.created_at),
+        )
+    )
+
+
+async def _route_resources_for_candidate(
+    *,
+    candidate: _AccessCandidateRef,
+    target: _SimulationTarget,
+    db: AsyncSession,
+) -> _AccessRouteResources:
+    provider = pool = model = None
+    try:
+        provider = await providers_facade.get_provider(
+            provider_id=candidate.provider_id,
+            scope=Scope(org_id=target.org_id),
+            db=db,
+        )
+        pool = await providers_facade.get_credential_pool(
+            pool_id=candidate.credential_pool_id,
+            scope=Scope(org_id=target.org_id),
+            db=db,
+        )
+        model = await providers_facade.get_model_offering(
+            model_offering_id=candidate.model_offering_id,
+            scope=Scope(org_id=target.org_id),
+            db=db,
+        )
+    except ProviderNotFoundError:
+        pass
+    return _AccessRouteResources(provider=provider, pool=pool, model=model)
+
+
+def _access_attempt_decision(
+    *,
+    payload: PolicySimulationRequest,
+    candidate: _AccessCandidateRef,
+    resources: _AccessRouteResources,
+    state: _AccessAttemptState,
+) -> tuple[bool, str | None, str | None]:
+    skipped_reason, skipped_message = _access_candidate_skip_reason(
+        payload=payload,
+        candidate=candidate,
+        provider=resources.provider,
+        pool=resources.pool,
+        model=resources.model,
+        matched_public_model_name=state.matched_public_model_name,
+    )
+    would_attempt = skipped_reason is None
+    if would_attempt and state.matched_public_model_name is None:
+        state.matched_public_model_name = candidate.public_model.public_model_name
+        state.selected_public_model = candidate.public_model
+    if (
+        would_attempt
+        and state.matched_public_model_name != candidate.public_model.public_model_name
+    ):
+        return False, "routing_mode_disables_fallback", _routing_disabled_message()
+    if would_attempt and state.selected_public_model is not None:
+        would_attempt = _update_access_attempt_state(
+            payload=payload,
+            selected_public_model=state.selected_public_model,
+            state=state,
+        )
+        if not would_attempt and skipped_reason is None:
+            skipped_reason = "routing_mode_disables_fallback"
+            skipped_message = _routing_disabled_message()
+    return would_attempt, skipped_reason, skipped_message
+
+
+def _update_access_attempt_state(
+    *,
+    payload: PolicySimulationRequest,
+    selected_public_model: _AccessPublicModelRef,
+    state: _AccessAttemptState,
+) -> bool:
+    if selected_public_model.routing_mode == "single_route" and state.attempted_count > 0:
+        return False
+    if payload.streaming and state.attempted_count > 0:
+        state.fallback_disabled_reason = "streaming_fallback_phase_2"
+        return False
+    if payload.provider_id is not None and state.attempted_count > 0:
+        state.fallback_disabled_reason = "provider_pinned"
+        return False
+    return not (
+        selected_public_model.max_route_attempts is not None
+        and state.attempted_count >= selected_public_model.max_route_attempts
+    )
+
+
+def _routing_disabled_message() -> str:
+    return "The selected routing mode did not attempt this route."
+
+
+def _simulation_route_attempt_from_candidate(
+    *,
+    candidate_index: int,
+    candidate: _AccessCandidateRef,
+    resources: _AccessRouteResources,
+    would_attempt: bool,
+    skipped_reason: str | None,
+    skipped_message: str | None,
+    state: _AccessAttemptState,
+) -> PolicySimulationRouteAttempt:
+    attempt_index = state.attempted_count if would_attempt else None
+    selected = would_attempt and state.selected_attempt is None
+    if would_attempt:
+        state.attempted_count += 1
+    model = resources.model
+    return PolicySimulationRouteAttempt(
+        candidate_index=candidate_index,
+        attempt_index=attempt_index,
+        selected=selected,
+        would_attempt=would_attempt,
+        skipped_reason=skipped_reason,
+        skipped_message=skipped_message,
+        access_policy_id=candidate.public_model.access_policy_id,
+        access_policy_revision_id=candidate.public_model.access_policy_revision_id,
+        access_policy_assignment_id=candidate.assignment.assignment_id,
+        public_model_id=candidate.public_model.public_model_id,
+        route_candidate_id=candidate.route_candidate_id,
+        public_model_name=candidate.public_model.public_model_name,
+        routing_mode=candidate.public_model.routing_mode,
+        provider_id=candidate.provider_id,
+        provider_name=resources.provider.name if resources.provider else None,
+        credential_pool_id=candidate.credential_pool_id,
+        credential_pool_name=resources.pool.name if resources.pool else None,
+        provider_model_offering_id=model.id if model else candidate.model_offering_id,
+        provider_model=model.provider_model_name if model else None,
+        input_price_per_million_tokens=(
+            model.effective_input_price_per_million_tokens if model else None
+        ),
+        output_price_per_million_tokens=(
+            model.effective_output_price_per_million_tokens if model else None
+        ),
+        draft_ref=candidate.draft_ref,
+    )
+
+
+def _access_resolution_from_attempts(
+    *,
+    payload: PolicySimulationRequest,
+    route_attempts: list[PolicySimulationRouteAttempt],
+    decisions: list[PolicySimulationDecision],
+    resolved_attempts: list[tuple[UUID | None, _SimulationRouteContext, bool]],
+    state: _AccessAttemptState,
+) -> _AccessResolution:
+    if state.selected_attempt is None:
         return _AccessResolution(
             route_attempts=route_attempts,
             decisions=decisions,
@@ -799,7 +889,7 @@ async def _simulate_access_resolution(
             routing_mode=None,
             fallback_on=[],
             provider_pinned=payload.provider_id is not None,
-            fallback_disabled_reason=fallback_disabled_reason,
+            fallback_disabled_reason=state.fallback_disabled_reason,
         )
     attempts_to_evaluate = (
         resolved_attempts if payload.evaluate_all_route_candidates else resolved_attempts[:1]
@@ -809,11 +899,11 @@ async def _simulate_access_resolution(
         decisions=decisions,
         resolved_attempts=attempts_to_evaluate,
         access_denied_reason=None,
-        public_model_name=selected_attempt.public_model_name,
-        routing_mode=selected_attempt.routing_mode,
-        fallback_on=selected_public_model.fallback_on if selected_public_model else [],
+        public_model_name=state.selected_attempt.public_model_name,
+        routing_mode=state.selected_attempt.routing_mode,
+        fallback_on=state.selected_public_model.fallback_on if state.selected_public_model else [],
         provider_pinned=payload.provider_id is not None,
-        fallback_disabled_reason=fallback_disabled_reason,
+        fallback_disabled_reason=state.fallback_disabled_reason,
     )
 
 

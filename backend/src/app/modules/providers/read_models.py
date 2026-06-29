@@ -332,7 +332,7 @@ def _route_resource_from_rows(
         provider_name=provider.name if provider else None,
         provider_is_active=provider.is_active if provider else False,
         provider_integration_capabilities=(
-            _provider_integration_capabilities(provider) if provider else {}
+            provider_integration_capabilities(provider) if provider else {}
         ),
         credential_pool_id=key.credential_pool_id,
         credential_pool_name=pool.name if pool else None,
@@ -368,7 +368,7 @@ def _route_resource_from_rows(
     )
 
 
-def _provider_integration_capabilities(provider: Provider) -> dict[str, bool]:
+def provider_integration_capabilities(provider: Provider) -> dict[str, bool]:
     openai_compatible = provider.supported_integration in {
         "openai_compatible",
         "openai_compatible_default",

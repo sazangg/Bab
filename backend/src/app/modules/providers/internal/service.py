@@ -20,6 +20,9 @@ from app.modules.providers.internal.models import (
     Provider,
     ProviderCredential,
 )
+from app.modules.providers.read_models import (
+    provider_integration_capabilities,
+)
 from app.modules.providers.schemas import (
     CreateProviderRequest,
     ProviderCredentialSummary,
@@ -191,28 +194,10 @@ def _to_response(
     response.credential_summary = credential_summary or ProviderCredentialSummary()
     response.catalog_type = _provider_catalog_type(provider)
     response.capabilities = _aggregate_provider_capabilities(provider)
-    response.integration_capabilities = _provider_integration_capabilities(provider)
+    response.integration_capabilities = provider_integration_capabilities(provider)
     response.readiness = _provider_readiness(provider, response.credential_summary)
     response.operational_state = execution.provider_operational_state(provider)
     return response
-
-
-def _provider_integration_capabilities(provider: Provider) -> dict[str, bool]:
-    openai_compatible = provider.supported_integration in {
-        "openai_compatible",
-        "openai_compatible_default",
-    }
-    anthropic_messages = provider.supported_integration == "anthropic_messages"
-    return {
-        "openai_compatible_chat": openai_compatible,
-        "openai_compatible_models_list": openai_compatible,
-        "openai_compatible_responses": openai_compatible,
-        "openai_compatible_completions": openai_compatible,
-        "streaming": openai_compatible,
-        "embeddings": False,
-        "native_anthropic_messages": anthropic_messages,
-        "native_anthropic_models_list": anthropic_messages,
-    }
 
 
 async def _attach_provider_readiness_data(

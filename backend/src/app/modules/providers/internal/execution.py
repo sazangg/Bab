@@ -1,6 +1,7 @@
 import asyncio
 from collections import defaultdict, deque
 from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -37,6 +38,14 @@ from app.modules.settings import facade as settings_facade
 _provider_semaphores: dict[UUID, tuple[int, asyncio.Semaphore]] = {}
 _provider_circuit_events: dict[UUID, deque[tuple[datetime, bool]]] = defaultdict(deque)
 _provider_circuit_open_until: dict[UUID, datetime] = {}
+
+
+@dataclass(frozen=True)
+class _StreamExecutionContext:
+    provider: Provider
+    request_timeout_seconds: int
+    adapter: Any
+    routed_credentials: list[ProviderCredential | None]
 
 
 async def create_chat_completion(
@@ -222,15 +231,47 @@ async def stream_chat_completion(
     http_client: httpx.AsyncClient,
     secret_registry: ProviderSecretBackendRegistry | None = None,
 ) -> ProviderChatCompletionStream:
+    context = await _stream_execution_context(
+        provider_id=provider_id,
+        pool_id=pool_id,
+        provider_credential_id=provider_credential_id,
+        scope=scope,
+        db=db,
+    )
+    provider = context.provider
+    _raise_if_circuit_open(provider)
+    concurrency_slot = _provider_concurrency_slot(provider)
+    await concurrency_slot.__aenter__()
+    stream_returned = False
+    try:
+        stream = await _stream_chat_completion_with_routed_credentials(
+            context=context,
+            provider_credential_id=provider_credential_id,
+            payload=payload,
+            db=db,
+            http_client=http_client,
+            secret_registry=secret_registry,
+            concurrency_slot=concurrency_slot,
+        )
+        stream_returned = True
+        return stream
+    finally:
+        if not stream_returned:
+            await concurrency_slot.__aexit__(None, None, None)
+
+
+async def _stream_execution_context(
+    *,
+    provider_id: UUID,
+    pool_id: UUID | None,
+    provider_credential_id: UUID | None,
+    scope: Scope,
+    db: AsyncSession,
+) -> _StreamExecutionContext:
     provider = await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
     if not provider.is_active:
         raise ProviderInactiveError
     org_settings = await settings_facade.get_organization_settings(scope=scope, db=db)
-    request_timeout_seconds = (
-        provider.request_timeout_seconds or org_settings.default_request_timeout_seconds
-    )
-
-    adapter = default_adapter_registry.get(provider.adapter_type)
     routed_credentials = await credential_routing.resolve_provider_credential_route(
         provider=provider,
         pool_id=pool_id,
@@ -238,131 +279,191 @@ async def stream_chat_completion(
         scope=scope,
         db=db,
     )
+    return _StreamExecutionContext(
+        provider=provider,
+        request_timeout_seconds=(
+            provider.request_timeout_seconds or org_settings.default_request_timeout_seconds
+        ),
+        adapter=default_adapter_registry.get(provider.adapter_type),
+        routed_credentials=routed_credentials,
+    )
+
+
+async def _stream_chat_completion_with_routed_credentials(
+    *,
+    context: _StreamExecutionContext,
+    provider_credential_id: UUID | None,
+    payload: ProviderChatCompletionRequest,
+    db: AsyncSession,
+    http_client: httpx.AsyncClient,
+    secret_registry: ProviderSecretBackendRegistry | None,
+    concurrency_slot,
+) -> ProviderChatCompletionStream:
     last_error: ProviderUpstreamError | None = None
-    _raise_if_circuit_open(provider)
-    concurrency_slot = _provider_concurrency_slot(provider)
-    await concurrency_slot.__aenter__()
-    stream_returned = False
-    try:
-        for credential in routed_credentials:
-            try:
-                async with asyncio.timeout(request_timeout_seconds):
-                    stream = await adapter.stream_chat_completion(
-                        provider=AdapterProvider(
-                            base_url=provider.base_url,
-                            api_key=await credential_routing.api_key_for_routed_credential(
-                                provider=provider,
-                                credential=credential,
-                                secret_registry=secret_registry,
-                            ),
-                        ),
-                        payload=payload,
-                        http_client=http_client,
-                    )
-                if credential is not None:
-                    await repository.mark_provider_credential_used(
-                        provider_credential=credential,
-                        db=db,
-                    )
-                    stream.provider_credential_id = credential.id
-                original_chunks = stream.chunks
-                original_close = stream.close
-                released = False
+    for credential in context.routed_credentials:
+        try:
+            stream = await _open_stream_for_credential(
+                context=context,
+                credential=credential,
+                payload=payload,
+                http_client=http_client,
+                secret_registry=secret_registry,
+                db=db,
+            )
+            return _managed_provider_stream(
+                provider=context.provider,
+                stream=stream,
+                credential=credential,
+                db=db,
+                concurrency_slot=concurrency_slot,
+            )
+        except TimeoutError as exc:
+            last_error = ProviderUpstreamError(
+                status_code=504,
+                body={"error": "provider request timed out"},
+                failure_reason="timeout",
+            )
+            await _mark_stream_failure(
+                provider=context.provider,
+                credential=credential,
+                error=last_error,
+                db=db,
+            )
+            if provider_credential_id is not None:
+                raise last_error from exc
+        except httpx.RequestError as exc:
+            last_error = ProviderUpstreamError(
+                status_code=502,
+                body={"error": "provider upstream connection failed"},
+                failure_reason="connection_failed",
+            )
+            await _mark_stream_failure(
+                provider=context.provider,
+                credential=credential,
+                error=last_error,
+                db=db,
+            )
+            if provider_credential_id is not None:
+                raise last_error from exc
+        except ProviderUpstreamError as exc:
+            last_error = exc
+            await _mark_stream_failure(
+                provider=context.provider,
+                credential=credential,
+                error=exc,
+                db=db,
+            )
+            should_stop = (
+                provider_credential_id is not None
+                or not credential_routing.should_try_next_credential(exc)
+            )
+            if should_stop:
+                raise
+    if last_error is not None:
+        raise last_error
+    raise ProviderCredentialRequiredError
 
-                async def release_stream(
-                    close_stream: Callable[[], Awaitable[None]] = original_close,
-                ) -> None:
-                    nonlocal released
-                    if released:
-                        return
-                    released = True
-                    await close_stream()
-                    await concurrency_slot.__aexit__(None, None, None)
 
-                async def managed_chunks(
-                    chunks: AsyncIterator[bytes] = original_chunks,
-                    routed_credential=credential,
-                ) -> AsyncIterator[bytes]:
-                    try:
-                        async for chunk in chunks:
-                            yield chunk
-                    except Exception as exc:
-                        error = (
-                            exc
-                            if isinstance(exc, ProviderUpstreamError)
-                            else ProviderUpstreamError(
-                                status_code=502,
-                                body={"error": "provider stream failed"},
-                                failure_reason="stream_failed",
-                            )
-                        )
-                        _record_circuit_failure(provider)
-                        if routed_credential is not None:
-                            await credential_routing.mark_provider_credential_failed(
-                                provider_credential=routed_credential,
-                                error=error,
-                                db=db,
-                            )
-                        raise
-                    else:
-                        _record_circuit_success(provider)
-                    finally:
-                        await release_stream()
+async def _open_stream_for_credential(
+    *,
+    context: _StreamExecutionContext,
+    credential: ProviderCredential | None,
+    payload: ProviderChatCompletionRequest,
+    http_client: httpx.AsyncClient,
+    secret_registry: ProviderSecretBackendRegistry | None,
+    db: AsyncSession,
+) -> ProviderChatCompletionStream:
+    async with asyncio.timeout(context.request_timeout_seconds):
+        stream = await context.adapter.stream_chat_completion(
+            provider=AdapterProvider(
+                base_url=context.provider.base_url,
+                api_key=await credential_routing.api_key_for_routed_credential(
+                    provider=context.provider,
+                    credential=credential,
+                    secret_registry=secret_registry,
+                ),
+            ),
+            payload=payload,
+            http_client=http_client,
+        )
+    if credential is not None:
+        await repository.mark_provider_credential_used(
+            provider_credential=credential,
+            db=db,
+        )
+        stream.provider_credential_id = credential.id
+    return stream
 
-                stream.chunks = managed_chunks()
-                stream.close = release_stream
-                stream_returned = True
-                return stream
-            except TimeoutError as exc:
-                last_error = ProviderUpstreamError(
-                    status_code=504,
-                    body={"error": "provider request timed out"},
-                    failure_reason="timeout",
-                )
-                _record_circuit_failure(provider)
-                if credential is not None:
-                    await credential_routing.mark_provider_credential_failed(
-                        provider_credential=credential,
-                        error=last_error,
-                        db=db,
-                    )
-                if provider_credential_id is not None:
-                    raise last_error from exc
-            except httpx.RequestError as exc:
-                last_error = ProviderUpstreamError(
+
+def _managed_provider_stream(
+    *,
+    provider: Provider,
+    stream: ProviderChatCompletionStream,
+    credential: ProviderCredential | None,
+    db: AsyncSession,
+    concurrency_slot,
+) -> ProviderChatCompletionStream:
+    original_chunks = stream.chunks
+    original_close = stream.close
+    released = False
+
+    async def release_stream(
+        close_stream: Callable[[], Awaitable[None]] = original_close,
+    ) -> None:
+        nonlocal released
+        if released:
+            return
+        released = True
+        await close_stream()
+        await concurrency_slot.__aexit__(None, None, None)
+
+    async def managed_chunks(
+        chunks: AsyncIterator[bytes] = original_chunks,
+    ) -> AsyncIterator[bytes]:
+        try:
+            async for chunk in chunks:
+                yield chunk
+        except Exception as exc:
+            error = (
+                exc
+                if isinstance(exc, ProviderUpstreamError)
+                else ProviderUpstreamError(
                     status_code=502,
-                    body={"error": "provider upstream connection failed"},
-                    failure_reason="connection_failed",
+                    body={"error": "provider stream failed"},
+                    failure_reason="stream_failed",
                 )
-                _record_circuit_failure(provider)
-                if credential is not None:
-                    await credential_routing.mark_provider_credential_failed(
-                        provider_credential=credential,
-                        error=last_error,
-                        db=db,
-                    )
-                if provider_credential_id is not None:
-                    raise last_error from exc
-            except ProviderUpstreamError as exc:
-                last_error = exc
-                _record_circuit_failure(provider)
-                if credential is not None:
-                    await credential_routing.mark_provider_credential_failed(
-                        provider_credential=credential,
-                        error=exc,
-                        db=db,
-                    )
-                if (
-                    provider_credential_id is not None
-                    or not credential_routing.should_try_next_credential(exc)
-                ):
-                    raise
-        if last_error is not None:
-            raise last_error
-        raise ProviderCredentialRequiredError
-    finally:
-        if not stream_returned:
-            await concurrency_slot.__aexit__(None, None, None)
+            )
+            await _mark_stream_failure(
+                provider=provider,
+                credential=credential,
+                error=error,
+                db=db,
+            )
+            raise
+        else:
+            _record_circuit_success(provider)
+        finally:
+            await release_stream()
+
+    stream.chunks = managed_chunks()
+    stream.close = release_stream
+    return stream
+
+
+async def _mark_stream_failure(
+    *,
+    provider: Provider,
+    credential: ProviderCredential | None,
+    error: ProviderUpstreamError,
+    db: AsyncSession,
+) -> None:
+    _record_circuit_failure(provider)
+    if credential is not None:
+        await credential_routing.mark_provider_credential_failed(
+            provider_credential=credential,
+            error=error,
+            db=db,
+        )
 
 
 def provider_operational_state(provider: Provider) -> ProviderOperationalState:

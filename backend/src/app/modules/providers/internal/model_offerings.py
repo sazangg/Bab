@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -51,6 +52,12 @@ from app.modules.providers.schemas import (
 )
 
 logger = structlog.get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class _SyncedModelOffering:
+    model_offering: ModelOffering
+    metadata: ModelMetadata | None
 
 
 async def _get_provider_or_raise(*, provider_id: UUID, scope: Scope, db: AsyncSession) -> Provider:
@@ -160,165 +167,55 @@ async def sync_model_offerings(
         )
     async with transaction(db):
         provider = await _get_provider_or_raise(provider_id=provider_id, scope=scope, db=db)
-        provider_credentials = await repository.list_provider_credentials(
-            org_id=scope.org_id,
+        active_credential = await _active_sync_credential(
             provider_id=provider_id,
+            scope=scope,
             db=db,
         )
-        active_credential = next(
-            (credential for credential in provider_credentials if credential.is_active),
-            None,
+        model_names = await _provider_model_names(
+            provider=provider,
+            active_credential=active_credential,
+            http_client=http_client,
+            secret_registry=secret_registry,
         )
-        if active_credential is None:
-            raise ProviderCredentialRequiredError
         await repository.mark_provider_credential_used(
             provider_credential=active_credential,
             db=db,
         )
-
-        adapter = default_integration_adapter_registry.get(provider.supported_integration)
-        model_names = await adapter.list_models(
-            provider=AdapterProvider(
-                base_url=provider.base_url,
-                api_key=await (secret_registry or get_default_secret_backend_registry()).resolve(
-                    credential=active_credential
-                ),
-            ),
-            http_client=http_client,
-        )
         synced_names = set(model_names)
         summary = ModelSyncSummary()
         if sync_mode == "replace":
-            existing_models, _ = await repository.list_model_offerings(
+            await _deactivate_missing_models_for_replace_sync(
                 org_id=scope.org_id,
                 provider_id=provider_id,
-                search=None,
-                modalities=None,
-                is_active=None,
-                limit=10_000,
-                offset=0,
+                synced_names=synced_names,
+                summary=summary,
                 db=db,
             )
-            for existing_model in existing_models:
-                if existing_model.provider_model_name not in synced_names:
-                    if existing_model.is_active:
-                        existing_model.is_active = False
-                        summary.disabled += 1
         synced_models = []
         synced_at = datetime.now(UTC)
         for model_name in sorted(set(model_names)):
-            metadata = default_model_metadata_registry.get(
-                provider=provider,
-                provider_model_name=model_name,
-            )
-            model_offering = await repository.get_model_offering_by_name(
+            synced_model = await _sync_single_model_offering(
                 org_id=scope.org_id,
+                provider=provider,
                 provider_id=provider_id,
                 provider_model_name=model_name,
+                metadata_mode=metadata_mode,
+                synced_at=synced_at,
+                summary=summary,
                 db=db,
             )
-            if model_offering is None:
-                model_offering = await repository.create_model_offering(
+            if synced_model.metadata is not None:
+                await _sync_model_catalog_metadata(
                     org_id=scope.org_id,
+                    provider=provider,
                     provider_id=provider_id,
-                    provider_model_name=model_name,
-                    version=metadata.version if metadata else None,
-                    modality=(
-                        _combined_modality(metadata.input_modalities, metadata.output_modalities)
-                        if metadata
-                        else "text"
-                    ),
-                    input_modalities=metadata.input_modalities if metadata else ["text"],
-                    output_modalities=metadata.output_modalities if metadata else ["text"],
-                    capabilities=(
-                        metadata.capabilities if metadata else _default_model_capabilities()
-                    ),
-                    context_window=metadata.context_window if metadata else None,
-                    input_price_per_million_tokens=None,
-                    output_price_per_million_tokens=None,
-                    cached_input_price_per_million_tokens=None,
-                    rate_limit_hints=metadata.rate_limit_hints if metadata else {},
-                    metadata_source="catalog" if metadata else "provider",
+                    model_offering=synced_model.model_offering,
+                    metadata=synced_model.metadata,
+                    synced_at=synced_at,
                     db=db,
                 )
-                model_offering.metadata_last_synced_at = synced_at
-                summary.added += 1
-            else:
-                was_active = model_offering.is_active
-                before = _model_sync_snapshot(model_offering)
-                model_offering.is_active = True
-                model_offering.metadata_last_synced_at = synced_at
-                if metadata is not None:
-                    if metadata_mode == ModelMetadataSyncMode.overwrite_catalog:
-                        _overwrite_model_offering_from_metadata(
-                            model_offering=model_offering,
-                            metadata=metadata,
-                            refreshed_at=synced_at,
-                        )
-                    else:
-                        _enrich_model_offering_from_metadata(
-                            model_offering=model_offering,
-                            metadata=metadata,
-                            refreshed_at=synced_at,
-                        )
-                await db.flush()
-                if not was_active:
-                    summary.reactivated += 1
-                elif _model_sync_snapshot(model_offering) != before:
-                    summary.updated += 1
-                else:
-                    summary.unchanged += 1
-            if metadata is not None:
-                catalog_entry = await repository.upsert_model_catalog_entry(
-                    canonical_name=metadata.provider_model_name,
-                    provider_family=_provider_family(provider),
-                    version=metadata.version,
-                    input_modalities=metadata.input_modalities,
-                    output_modalities=metadata.output_modalities,
-                    capabilities=metadata.capabilities,
-                    context_window=metadata.context_window,
-                    input_price_per_million_tokens=metadata.pricing.input_price_per_million_tokens,
-                    output_price_per_million_tokens=(
-                        metadata.pricing.output_price_per_million_tokens
-                    ),
-                    cached_input_price_per_million_tokens=(
-                        metadata.pricing.cached_input_price_per_million_tokens
-                    ),
-                    metadata_source="static",
-                    catalog_version=metadata.pricing.catalog_version
-                    or metadata.metadata_version
-                    or "unversioned",
-                    refreshed_at=synced_at,
-                    db=db,
-                )
-                await repository.upsert_provider_model_catalog_mapping(
-                    org_id=scope.org_id,
-                    provider_id=provider_id,
-                    model_offering_id=model_offering.id,
-                    catalog_entry_id=catalog_entry.id,
-                    match_source="static_metadata",
-                    confidence="exact",
-                    input_price_per_million_tokens=metadata.pricing.input_price_per_million_tokens,
-                    output_price_per_million_tokens=(
-                        metadata.pricing.output_price_per_million_tokens
-                    ),
-                    cached_input_price_per_million_tokens=(
-                        metadata.pricing.cached_input_price_per_million_tokens
-                    ),
-                    pricing_source="static"
-                    if any(
-                        value is not None
-                        for value in (
-                            metadata.pricing.input_price_per_million_tokens,
-                            metadata.pricing.output_price_per_million_tokens,
-                            metadata.pricing.cached_input_price_per_million_tokens,
-                        )
-                    )
-                    else None,
-                    refreshed_at=synced_at,
-                    db=db,
-                )
-            synced_models.append(model_offering)
+            synced_models.append(synced_model.model_offering)
         await activity_facade.record_admin_event(
             actor=actor,
             category="provider",
@@ -351,6 +248,237 @@ async def sync_model_offerings(
             )
             for model_offering in synced_models
         ],
+    )
+
+
+async def _active_sync_credential(
+    *,
+    provider_id: UUID,
+    scope: Scope,
+    db: AsyncSession,
+):
+    provider_credentials = await repository.list_provider_credentials(
+        org_id=scope.org_id,
+        provider_id=provider_id,
+        db=db,
+    )
+    active_credential = next(
+        (credential for credential in provider_credentials if credential.is_active),
+        None,
+    )
+    if active_credential is None:
+        raise ProviderCredentialRequiredError
+    return active_credential
+
+
+async def _provider_model_names(
+    *,
+    provider: Provider,
+    active_credential,
+    http_client: httpx.AsyncClient,
+    secret_registry: ProviderSecretBackendRegistry | None,
+) -> list[str]:
+    adapter = default_integration_adapter_registry.get(provider.supported_integration)
+    return await adapter.list_models(
+        provider=AdapterProvider(
+            base_url=provider.base_url,
+            api_key=await (secret_registry or get_default_secret_backend_registry()).resolve(
+                credential=active_credential
+            ),
+        ),
+        http_client=http_client,
+    )
+
+
+async def _deactivate_missing_models_for_replace_sync(
+    *,
+    org_id: UUID,
+    provider_id: UUID,
+    synced_names: set[str],
+    summary: ModelSyncSummary,
+    db: AsyncSession,
+) -> None:
+    existing_models, _ = await repository.list_model_offerings(
+        org_id=org_id,
+        provider_id=provider_id,
+        search=None,
+        modalities=None,
+        is_active=None,
+        limit=10_000,
+        offset=0,
+        db=db,
+    )
+    for existing_model in existing_models:
+        if existing_model.provider_model_name not in synced_names and existing_model.is_active:
+            existing_model.is_active = False
+            summary.disabled += 1
+
+
+async def _sync_single_model_offering(
+    *,
+    org_id: UUID,
+    provider: Provider,
+    provider_id: UUID,
+    provider_model_name: str,
+    metadata_mode: ModelMetadataSyncMode,
+    synced_at: datetime,
+    summary: ModelSyncSummary,
+    db: AsyncSession,
+) -> _SyncedModelOffering:
+    metadata = default_model_metadata_registry.get(
+        provider=provider,
+        provider_model_name=provider_model_name,
+    )
+    model_offering = await repository.get_model_offering_by_name(
+        org_id=org_id,
+        provider_id=provider_id,
+        provider_model_name=provider_model_name,
+        db=db,
+    )
+    if model_offering is None:
+        model_offering = await _create_synced_model_offering(
+            org_id=org_id,
+            provider_id=provider_id,
+            provider_model_name=provider_model_name,
+            metadata=metadata,
+            synced_at=synced_at,
+            db=db,
+        )
+        summary.added += 1
+        return _SyncedModelOffering(model_offering=model_offering, metadata=metadata)
+
+    was_active = model_offering.is_active
+    before = _model_sync_snapshot(model_offering)
+    model_offering.is_active = True
+    model_offering.metadata_last_synced_at = synced_at
+    if metadata is not None:
+        _apply_synced_model_metadata(
+            model_offering=model_offering,
+            metadata=metadata,
+            metadata_mode=metadata_mode,
+            synced_at=synced_at,
+        )
+    await db.flush()
+    if not was_active:
+        summary.reactivated += 1
+    elif _model_sync_snapshot(model_offering) != before:
+        summary.updated += 1
+    else:
+        summary.unchanged += 1
+    return _SyncedModelOffering(model_offering=model_offering, metadata=metadata)
+
+
+async def _create_synced_model_offering(
+    *,
+    org_id: UUID,
+    provider_id: UUID,
+    provider_model_name: str,
+    metadata: ModelMetadata | None,
+    synced_at: datetime,
+    db: AsyncSession,
+) -> ModelOffering:
+    model_offering = await repository.create_model_offering(
+        org_id=org_id,
+        provider_id=provider_id,
+        provider_model_name=provider_model_name,
+        version=metadata.version if metadata else None,
+        modality=(
+            _combined_modality(metadata.input_modalities, metadata.output_modalities)
+            if metadata
+            else "text"
+        ),
+        input_modalities=metadata.input_modalities if metadata else ["text"],
+        output_modalities=metadata.output_modalities if metadata else ["text"],
+        capabilities=metadata.capabilities if metadata else _default_model_capabilities(),
+        context_window=metadata.context_window if metadata else None,
+        input_price_per_million_tokens=None,
+        output_price_per_million_tokens=None,
+        cached_input_price_per_million_tokens=None,
+        rate_limit_hints=metadata.rate_limit_hints if metadata else {},
+        metadata_source="catalog" if metadata else "provider",
+        db=db,
+    )
+    model_offering.metadata_last_synced_at = synced_at
+    return model_offering
+
+
+def _apply_synced_model_metadata(
+    *,
+    model_offering: ModelOffering,
+    metadata: ModelMetadata,
+    metadata_mode: ModelMetadataSyncMode,
+    synced_at: datetime,
+) -> None:
+    if metadata_mode == ModelMetadataSyncMode.overwrite_catalog:
+        _overwrite_model_offering_from_metadata(
+            model_offering=model_offering,
+            metadata=metadata,
+            refreshed_at=synced_at,
+        )
+        return
+    _enrich_model_offering_from_metadata(
+        model_offering=model_offering,
+        metadata=metadata,
+        refreshed_at=synced_at,
+    )
+
+
+async def _sync_model_catalog_metadata(
+    *,
+    org_id: UUID,
+    provider: Provider,
+    provider_id: UUID,
+    model_offering: ModelOffering,
+    metadata: ModelMetadata,
+    synced_at: datetime,
+    db: AsyncSession,
+) -> None:
+    catalog_entry = await repository.upsert_model_catalog_entry(
+        canonical_name=metadata.provider_model_name,
+        provider_family=_provider_family(provider),
+        version=metadata.version,
+        input_modalities=metadata.input_modalities,
+        output_modalities=metadata.output_modalities,
+        capabilities=metadata.capabilities,
+        context_window=metadata.context_window,
+        input_price_per_million_tokens=metadata.pricing.input_price_per_million_tokens,
+        output_price_per_million_tokens=metadata.pricing.output_price_per_million_tokens,
+        cached_input_price_per_million_tokens=(
+            metadata.pricing.cached_input_price_per_million_tokens
+        ),
+        metadata_source="static",
+        catalog_version=metadata.pricing.catalog_version
+        or metadata.metadata_version
+        or "unversioned",
+        refreshed_at=synced_at,
+        db=db,
+    )
+    await repository.upsert_provider_model_catalog_mapping(
+        org_id=org_id,
+        provider_id=provider_id,
+        model_offering_id=model_offering.id,
+        catalog_entry_id=catalog_entry.id,
+        match_source="static_metadata",
+        confidence="exact",
+        input_price_per_million_tokens=metadata.pricing.input_price_per_million_tokens,
+        output_price_per_million_tokens=metadata.pricing.output_price_per_million_tokens,
+        cached_input_price_per_million_tokens=(
+            metadata.pricing.cached_input_price_per_million_tokens
+        ),
+        pricing_source="static" if _metadata_has_pricing(metadata) else None,
+        refreshed_at=synced_at,
+        db=db,
+    )
+
+
+def _metadata_has_pricing(metadata: ModelMetadata) -> bool:
+    return any(
+        value is not None
+        for value in (
+            metadata.pricing.input_price_per_million_tokens,
+            metadata.pricing.output_price_per_million_tokens,
+            metadata.pricing.cached_input_price_per_million_tokens,
+        )
     )
 
 

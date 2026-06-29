@@ -115,22 +115,6 @@ async def get_access_policy_revision_public_model_by_name(
     )
 
 
-async def get_access_policy_public_model_by_name(
-    *,
-    org_id: UUID,
-    access_policy_id: UUID,
-    public_model_name: str,
-    db: AsyncSession,
-) -> AccessPolicyPublicModel | None:
-    return await db.scalar(
-        select(AccessPolicyPublicModel).where(
-            AccessPolicyPublicModel.org_id == org_id,
-            AccessPolicyPublicModel.access_policy_id == access_policy_id,
-            AccessPolicyPublicModel.public_model_name == public_model_name,
-        )
-    )
-
-
 async def list_access_policy_public_models(
     *, org_id: UUID, access_policy_id: UUID, db: AsyncSession
 ) -> list[AccessPolicyPublicModel]:
