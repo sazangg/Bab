@@ -1,0 +1,25 @@
+services:
+  provider-stub:
+    image: python:3.13.5-slim
+    command: ["python", "/app/provider_stub.py"]
+    environment:
+      PROVIDER_STUB_HOST: "0.0.0.0"
+      PROVIDER_STUB_PORT: "8080"
+      PROVIDER_STUB_DELAY_MS: "${PROVIDER_STUB_DELAY_MS:-20}"
+      PROVIDER_STUB_FAIL_EVERY: "${PROVIDER_STUB_FAIL_EVERY:-0}"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./provider_stub.py:/app/provider_stub.py:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')",
+        ]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+

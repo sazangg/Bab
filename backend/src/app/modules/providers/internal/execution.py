@@ -9,7 +9,7 @@ from uuid import UUID
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import Scope
+from app.core.database import Scope, sqlite_write_coordinator
 from app.modules.providers.errors import (
     ProviderAdapterNotFoundError,
     ProviderCredentialRequiredError,
@@ -46,6 +46,32 @@ class _StreamExecutionContext:
     request_timeout_seconds: int
     adapter: Any
     routed_credentials: list[ProviderCredential | None]
+
+
+async def _mark_provider_credential_used(
+    *, provider_credential: ProviderCredential, db: AsyncSession
+) -> None:
+    async with sqlite_write_coordinator(db):
+        await repository.mark_provider_credential_used(
+            provider_credential=provider_credential,
+            db=db,
+        )
+        await db.commit()
+
+
+async def _mark_provider_credential_failed(
+    *,
+    provider_credential: ProviderCredential,
+    error: ProviderUpstreamError,
+    db: AsyncSession,
+) -> None:
+    async with sqlite_write_coordinator(db):
+        await credential_routing.mark_provider_credential_failed(
+            provider_credential=provider_credential,
+            error=error,
+            db=db,
+        )
+        await db.commit()
 
 
 async def create_chat_completion(
@@ -108,9 +134,8 @@ async def create_chat_completion(
                 )
                 _record_circuit_success(provider)
                 if credential is not None:
-                    await repository.mark_provider_credential_used(
-                        provider_credential=credential,
-                        db=db,
+                    await _mark_provider_credential_used(
+                        provider_credential=credential, db=db
                     )
                     response.provider_credential_id = credential.id
                 return response
@@ -118,7 +143,7 @@ async def create_chat_completion(
                 last_error = exc
                 _record_circuit_failure(provider)
                 if credential is not None:
-                    await credential_routing.mark_provider_credential_failed(
+                    await _mark_provider_credential_failed(
                         provider_credential=credential,
                         error=exc,
                         db=db,
@@ -194,9 +219,8 @@ async def create_anthropic_message(
                 )
                 _record_circuit_success(provider)
                 if credential is not None:
-                    await repository.mark_provider_credential_used(
-                        provider_credential=credential,
-                        db=db,
+                    await _mark_provider_credential_used(
+                        provider_credential=credential, db=db
                     )
                     response.provider_credential_id = credential.id
                 return response
@@ -204,7 +228,7 @@ async def create_anthropic_message(
                 last_error = exc
                 _record_circuit_failure(provider)
                 if credential is not None:
-                    await credential_routing.mark_provider_credential_failed(
+                    await _mark_provider_credential_failed(
                         provider_credential=credential,
                         error=exc,
                         db=db,
@@ -387,10 +411,7 @@ async def _open_stream_for_credential(
             http_client=http_client,
         )
     if credential is not None:
-        await repository.mark_provider_credential_used(
-            provider_credential=credential,
-            db=db,
-        )
+        await _mark_provider_credential_used(provider_credential=credential, db=db)
         stream.provider_credential_id = credential.id
     return stream
 
@@ -459,7 +480,7 @@ async def _mark_stream_failure(
 ) -> None:
     _record_circuit_failure(provider)
     if credential is not None:
-        await credential_routing.mark_provider_credential_failed(
+        await _mark_provider_credential_failed(
             provider_credential=credential,
             error=error,
             db=db,

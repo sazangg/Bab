@@ -2341,7 +2341,13 @@ async def test_resolve_access_plan_orders_candidates_and_handles_streaming_and_p
                     name="Primary requests",
                     limit_type="requests",
                     limit_value=10,
-                    provider_id=provider.id,
+                    matchers=[
+                        LimitPolicyRuleMatcherInput(
+                            dimension="provider_id",
+                            operator="eq",
+                            value_json=str(provider.id),
+                        )
+                    ],
                 )
             ],
         ),
@@ -2356,7 +2362,13 @@ async def test_resolve_access_plan_orders_candidates_and_handles_streaming_and_p
                     name="Fallback requests",
                     limit_type="requests",
                     limit_value=10,
-                    provider_id=fallback_provider.id,
+                    matchers=[
+                        LimitPolicyRuleMatcherInput(
+                            dimension="provider_id",
+                            operator="eq",
+                            value_json=str(fallback_provider.id),
+                        )
+                    ],
                 )
             ],
         ),
@@ -4577,7 +4589,13 @@ async def test_policy_simulation_limit_draft_route_filters_must_match(
                                 "limit_type": "tokens_per_request",
                                 "limit_value": 1,
                                 "interval_unit": "lifetime",
-                                "model_offering_id": str(large_model.id),
+                                "matchers": [
+                                    {
+                                        "dimension": "provider_model_offering_id",
+                                        "operator": "eq",
+                                        "value_json": str(large_model.id),
+                                    }
+                                ],
                             }
                         ],
                     },
@@ -7542,49 +7560,6 @@ async def test_limit_policy_rule_delete_targets_copied_rule_by_source_id(
         remaining_partitions.append(partitions[0].dimension)
 
     assert remaining_partitions == ["project_id"]
-
-
-async def test_limit_policy_legacy_filters_materialize_as_matchers(
-    db_session: AsyncSession,
-) -> None:
-    (
-        _actor,
-        scope,
-        _team,
-        _project,
-        provider,
-        pool,
-        fast_model,
-        _,
-    ) = await _create_project_pool_and_models(db_session)
-
-    policy = await policies_facade.create_limit_policy(
-        payload=CreateLimitPolicyRequest(
-            name="Legacy filtered limits",
-            rules=[
-                LimitPolicyRuleInput(
-                    name="Provider cap",
-                    limit_type="requests",
-                    limit_value=1,
-                    interval_unit="day",
-                    provider_id=provider.id,
-                    credential_pool_id=pool.id,
-                    model_offering_id=fast_model.id,
-                )
-            ],
-        ),
-        scope=scope,
-        db=db_session,
-    )
-
-    assert [
-        (matcher.dimension, matcher.operator, matcher.value_json)
-        for matcher in policy.rules[0].matchers
-    ] == [
-        ("provider_id", "eq", str(provider.id)),
-        ("credential_pool_id", "eq", str(pool.id)),
-        ("provider_model_offering_id", "eq", str(fast_model.id)),
-    ]
 
 
 async def test_limit_policy_rule_matcher_validation_uses_dimension_registry(

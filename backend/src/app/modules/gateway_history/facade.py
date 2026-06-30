@@ -5,7 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import Scope
+from app.core.database import Scope, sqlite_write_coordinator
 from app.modules.gateway_history.internal import repository
 from app.modules.gateway_history.internal.models import GatewayRouteAttempt
 from app.modules.gateway_history.redaction import redact_trace_value
@@ -47,8 +47,9 @@ async def create_gateway_request(
     payload: CreateGatewayRequest,
     db: AsyncSession,
 ) -> UUID:
-    gateway_request = await repository.create_gateway_request(payload=payload, db=db)
-    await db.commit()
+    async with sqlite_write_coordinator(db):
+        gateway_request = await repository.create_gateway_request(payload=payload, db=db)
+        await db.commit()
     return gateway_request.id
 
 
@@ -58,12 +59,13 @@ async def finalize_gateway_request(
     payload: FinalizeGatewayRequest,
     db: AsyncSession,
 ) -> None:
-    await repository.finalize_gateway_request(
-        gateway_request_id=gateway_request_id,
-        payload=payload,
-        db=db,
-    )
-    await db.commit()
+    async with sqlite_write_coordinator(db):
+        await repository.finalize_gateway_request(
+            gateway_request_id=gateway_request_id,
+            payload=payload,
+            db=db,
+        )
+        await db.commit()
 
 
 async def attach_gateway_request_subject(
@@ -74,12 +76,13 @@ async def attach_gateway_request_subject(
 ) -> None:
     if gateway_request_id is None:
         return
-    await repository.attach_gateway_request_subject(
-        gateway_request_id=gateway_request_id,
-        subject=subject,
-        db=db,
-    )
-    await db.commit()
+    async with sqlite_write_coordinator(db):
+        await repository.attach_gateway_request_subject(
+            gateway_request_id=gateway_request_id,
+            subject=subject,
+            db=db,
+        )
+        await db.commit()
 
 
 async def attach_gateway_request_resolution(
@@ -90,25 +93,27 @@ async def attach_gateway_request_resolution(
 ) -> None:
     if gateway_request_id is None:
         return
-    await repository.attach_gateway_request_resolution(
-        gateway_request_id=gateway_request_id,
-        values={
-            "org_id": resolved.org_id,
-            "team_id": resolved.team_id,
-            "project_id": resolved.project_id,
-            "virtual_key_id": resolved.virtual_key_id,
-            "public_model_id": resolved.public_model_id,
-            "public_model_name": resolved.public_model_name,
-            "routing_mode": resolved.routing_mode,
-        },
-        db=db,
-    )
-    await db.commit()
+    async with sqlite_write_coordinator(db):
+        await repository.attach_gateway_request_resolution(
+            gateway_request_id=gateway_request_id,
+            values={
+                "org_id": resolved.org_id,
+                "team_id": resolved.team_id,
+                "project_id": resolved.project_id,
+                "virtual_key_id": resolved.virtual_key_id,
+                "public_model_id": resolved.public_model_id,
+                "public_model_name": resolved.public_model_name,
+                "routing_mode": resolved.routing_mode,
+            },
+            db=db,
+        )
+        await db.commit()
 
 
 async def create_gateway_route_attempt(*, values: dict, db: AsyncSession) -> UUID:
-    route_attempt = await repository.create_gateway_route_attempt(values=values, db=db)
-    await db.commit()
+    async with sqlite_write_coordinator(db):
+        route_attempt = await repository.create_gateway_route_attempt(values=values, db=db)
+        await db.commit()
     return route_attempt.id
 
 
@@ -118,17 +123,19 @@ async def update_gateway_route_attempt(
     values: dict,
     db: AsyncSession,
 ) -> None:
-    await repository.update_gateway_route_attempt(
-        route_attempt_id=route_attempt_id,
-        values=values,
-        db=db,
-    )
-    await db.commit()
+    async with sqlite_write_coordinator(db):
+        await repository.update_gateway_route_attempt(
+            route_attempt_id=route_attempt_id,
+            values=values,
+            db=db,
+        )
+        await db.commit()
 
 
 async def create_gateway_policy_decision(*, values: dict, db: AsyncSession) -> UUID:
-    decision = await repository.create_gateway_policy_decision(values=values, db=db)
-    await db.commit()
+    async with sqlite_write_coordinator(db):
+        decision = await repository.create_gateway_policy_decision(values=values, db=db)
+        await db.commit()
     return decision.id
 
 

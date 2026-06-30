@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import Scope, transaction
+from app.core.database import Scope, sqlite_write_unit, transaction
 from app.modules.activity import facade as activity_facade
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.authorization import facade as authorization_facade
@@ -1251,6 +1251,7 @@ def _runtime_rule_values(
     return []
 
 
+@sqlite_write_unit
 async def _record_event(
     *,
     context: GuardrailEvaluationContext,

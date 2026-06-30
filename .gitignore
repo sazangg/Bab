@@ -8,6 +8,8 @@ __pycache__/
 .ruff_cache/
 .venv/
 *.db
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite3
 
@@ -24,6 +26,8 @@ coverage/
 # Runtime data and uploaded assets
 /var/
 backend/var/
+tools/performance/.runtime/
+tools/performance/results/
 
 # OS/editor
 .DS_Store

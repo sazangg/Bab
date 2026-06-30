@@ -5,7 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import Scope
+from app.core.database import Scope, sqlite_write_coordinator
 from app.core.security import hash_token
 from app.modules.keys.errors import (
     AccessDeniedError,
@@ -666,8 +666,9 @@ async def _resolve_key_project(*, raw_key: str, db: AsyncSession) -> ResolvedKey
         )
     except (TeamInactiveError, TeamNotFoundError) as exc:
         raise InvalidVirtualKeyError from exc
-    virtual_key.last_used_at = datetime.now(UTC)
-    await db.flush()
+    async with sqlite_write_coordinator(db):
+        virtual_key.last_used_at = datetime.now(UTC)
+        await db.commit()
     return virtual_key, project
 
 

@@ -4,19 +4,46 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+ROUTING_MODES = ("single_route", "ordered_fallback")
+DEFAULT_ROUTING_MODE = "single_route"
+FALLBACK_REASONS = (
+    "timeout",
+    "connection_failed",
+    "circuit_open",
+    "rate_limited",
+    "provider_5xx",
+)
+DEFAULT_ROUTE_PRIORITY = 100
+DEFAULT_ROUTE_WEIGHT = 100
+LIMIT_TYPES = (
+    "budget_cents",
+    "requests",
+    "input_tokens",
+    "output_tokens",
+    "total_tokens",
+    "tokens_per_request",
+)
+INTERVAL_UNITS = ("minute", "hour", "day", "week", "month", "lifetime")
+DEFAULT_INTERVAL_UNIT = "month"
+DEFAULT_INTERVAL_COUNT = 1
+
+ROUTING_MODE_PATTERN = f"^({'|'.join(ROUTING_MODES)})$"
+LIMIT_TYPE_PATTERN = f"^({'|'.join(LIMIT_TYPES)})$"
+INTERVAL_UNIT_PATTERN = f"^({'|'.join(INTERVAL_UNITS)})$"
+
 
 class AccessPolicyRouteCandidateInput(BaseModel):
     provider_id: UUID
     credential_pool_id: UUID
     model_offering_id: UUID
-    priority: int = Field(default=100, ge=1)
-    weight: int = Field(default=100, ge=1)
+    priority: int = Field(default=DEFAULT_ROUTE_PRIORITY, ge=1)
+    weight: int = Field(default=DEFAULT_ROUTE_WEIGHT, ge=1)
     is_active: bool = True
 
 
 class AccessPolicyPublicModelInput(BaseModel):
     public_model_name: str = Field(min_length=1, max_length=255)
-    routing_mode: str = Field(default="single_route", pattern="^(single_route|ordered_fallback)$")
+    routing_mode: str = Field(default=DEFAULT_ROUTING_MODE, pattern=ROUTING_MODE_PATTERN)
     fallback_on: list[str] = Field(default_factory=list)
     max_route_attempts: int | None = Field(default=None, ge=1)
     is_active: bool = True
@@ -127,17 +154,13 @@ class LimitPolicyRulePartitionInput(BaseModel):
 
 
 class LimitPolicyRuleInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(min_length=1, max_length=255)
-    limit_type: str = Field(
-        pattern="^(budget_cents|requests|input_tokens|output_tokens|total_tokens|tokens_per_request)$"
-    )
+    limit_type: str = Field(pattern=LIMIT_TYPE_PATTERN)
     limit_value: int = Field(ge=1)
-    interval_unit: str = Field(default="month", pattern="^(minute|hour|day|week|month|lifetime)$")
-    interval_count: int = Field(default=1, ge=1)
-    provider_id: UUID | None = None
-    credential_pool_id: UUID | None = None
-    model_offering_id: UUID | None = None
-    access_policy_id: UUID | None = None
+    interval_unit: str = Field(default=DEFAULT_INTERVAL_UNIT, pattern=INTERVAL_UNIT_PATTERN)
+    interval_count: int = Field(default=DEFAULT_INTERVAL_COUNT, ge=1)
     matchers: list[LimitPolicyRuleMatcherInput] = Field(default_factory=list)
     partitions: list[LimitPolicyRulePartitionInput] = Field(default_factory=list)
     is_active: bool = True
@@ -154,20 +177,13 @@ class CreateLimitPolicyRuleRequest(LimitPolicyRuleInput):
 
 
 class UpdateLimitPolicyRuleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str | None = Field(default=None, min_length=1, max_length=255)
-    limit_type: str | None = Field(
-        default=None,
-        pattern="^(budget_cents|requests|input_tokens|output_tokens|total_tokens|tokens_per_request)$",
-    )
+    limit_type: str | None = Field(default=None, pattern=LIMIT_TYPE_PATTERN)
     limit_value: int | None = Field(default=None, ge=1)
-    interval_unit: str | None = Field(
-        default=None, pattern="^(minute|hour|day|week|month|lifetime)$"
-    )
+    interval_unit: str | None = Field(default=None, pattern=INTERVAL_UNIT_PATTERN)
     interval_count: int | None = Field(default=None, ge=1)
-    provider_id: UUID | None = None
-    credential_pool_id: UUID | None = None
-    model_offering_id: UUID | None = None
-    access_policy_id: UUID | None = None
     matchers: list[LimitPolicyRuleMatcherInput] | None = None
     partitions: list[LimitPolicyRulePartitionInput] | None = None
     is_active: bool | None = None
@@ -208,10 +224,6 @@ class LimitPolicyRuleResponse(BaseModel):
     limit_value: int
     interval_unit: str
     interval_count: int
-    provider_id: UUID | None
-    credential_pool_id: UUID | None
-    model_offering_id: UUID | None
-    access_policy_id: UUID | None
     matchers: list[LimitPolicyRuleMatcherResponse] = Field(default_factory=list)
     partitions: list[LimitPolicyRulePartitionResponse] = Field(default_factory=list)
     is_active: bool
@@ -334,5 +346,17 @@ class PolicyImpactResponse(BaseModel):
     affected_virtual_key_count: int = 0
     virtual_keys_would_become_unusable: list[PolicyImpactVirtualKey] = Field(default_factory=list)
     virtual_keys_would_become_unusable_count: int = 0
+
+
+class PolicyMetadataResponse(BaseModel):
+    routing_modes: list[str]
+    default_routing_mode: str
+    fallback_reasons: list[str]
+    default_route_priority: int
+    default_route_weight: int
+    limit_types: list[str]
+    interval_units: list[str]
+    default_interval_unit: str
+    default_interval_count: int
 
 

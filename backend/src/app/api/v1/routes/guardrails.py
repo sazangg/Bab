@@ -25,11 +25,23 @@ from app.modules.guardrails.errors import (
     GuardrailPolicyNotFoundError,
 )
 from app.modules.guardrails.schemas import (
+    ASSIGNMENT_ENFORCEMENT_MODES,
+    DEFAULT_ASSIGNMENT_ENFORCEMENT_MODE,
+    DEFAULT_GUARDRAIL_RULE_EFFECT,
+    DEFAULT_GUARDRAIL_RULE_PHASE,
+    DEFAULT_GUARDRAIL_RULE_PRIORITY,
+    DEFAULT_POLICY_ENFORCEMENT_MODE,
+    GUARDRAIL_EFFECTS,
+    GUARDRAIL_PHASES,
+    GUARDRAIL_RULE_TYPES,
+    PII_RULE_VALUES,
+    POLICY_ENFORCEMENT_MODES,
     CreateGuardrailAssignmentRequest,
     CreateGuardrailPolicyRequest,
     GuardrailAssignmentResponse,
     GuardrailEventPageResponse,
     GuardrailImpactResponse,
+    GuardrailMetadataResponse,
     GuardrailPolicyOptionResponse,
     GuardrailPolicyResponse,
     GuardrailSimulationRequest,
@@ -50,6 +62,23 @@ GuardrailAdmin = Annotated[
     Depends(require_permission(Permissions.GUARDRAILS_MANAGE)),
 ]
 AssignmentActor = Annotated[AuthenticatedUser, Depends(get_current_user)]
+
+
+@router.get("/metadata")
+async def get_guardrail_metadata(_: GuardrailViewer) -> GuardrailMetadataResponse:
+    return GuardrailMetadataResponse(
+        rule_types=list(GUARDRAIL_RULE_TYPES),
+        pii_values=sorted(PII_RULE_VALUES),
+        phases=list(GUARDRAIL_PHASES),
+        effects=list(GUARDRAIL_EFFECTS),
+        policy_enforcement_modes=list(POLICY_ENFORCEMENT_MODES),
+        assignment_enforcement_modes=list(ASSIGNMENT_ENFORCEMENT_MODES),
+        default_rule_effect=DEFAULT_GUARDRAIL_RULE_EFFECT,
+        default_rule_phase=DEFAULT_GUARDRAIL_RULE_PHASE,
+        default_rule_priority=DEFAULT_GUARDRAIL_RULE_PRIORITY,
+        default_policy_enforcement_mode=DEFAULT_POLICY_ENFORCEMENT_MODE,
+        default_assignment_enforcement_mode=DEFAULT_ASSIGNMENT_ENFORCEMENT_MODE,
+    )
 
 
 @router.get("/policies")

@@ -3,6 +3,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import sqlite_write_unit
 from app.core.request_ids import current_request_id
 from app.modules.activity import facade as activity_facade
 from app.modules.activity.schemas import RecordActivityEvent
@@ -38,6 +39,7 @@ class AccountingResolvedAccess(Protocol):
     output_price_per_million_tokens: int | None
 
 
+@sqlite_write_unit
 async def record_proxy_request(
     *,
     resolved: AccountingResolvedAccess,
@@ -161,6 +163,7 @@ async def record_limit_denial_side_effects(
     )
 
 
+@sqlite_write_unit
 async def record_proxy_activity(
     *,
     resolved: AccountingResolvedAccess,

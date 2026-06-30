@@ -302,7 +302,7 @@ async def create_limit_policy(
     actor: AuthenticatedUser | None = None,
 ) -> LimitPolicyResponse:
     for rule in payload.rules:
-        await _validate_limit_rule_filters(payload=rule, scope=scope, db=db)
+        _validate_limit_rule_filters(payload=rule)
     async with transaction(db):
         shared_policy = await policy_kernel_repository.create_policy(
             org_id=scope.org_id,
@@ -333,7 +333,6 @@ async def create_limit_policy(
                 db=db,
             )
             await _replace_limit_rule_matchers_and_partitions(
-                payload=rule,
                 rule_id=created_rule.id,
                 matchers=rule.matchers,
                 partitions=rule.partitions,
@@ -401,7 +400,7 @@ async def create_limit_policy_rule(
     db: AsyncSession,
     actor: AuthenticatedUser | None = None,
 ) -> LimitPolicyRuleResponse:
-    await _validate_limit_rule_filters(payload=payload, scope=scope, db=db)
+    _validate_limit_rule_filters(payload=payload)
     async with transaction(db):
         policy = await _get_limit_policy_or_raise(policy_id=policy_id, scope=scope, db=db)
         if not await _can_manage_policy_definition(policy=policy, actor=actor, scope=scope, db=db):
@@ -420,7 +419,6 @@ async def create_limit_policy_rule(
             db=db,
         )
         await _replace_limit_rule_matchers_and_partitions(
-            payload=payload,
             rule_id=rule.id,
             matchers=payload.matchers,
             partitions=payload.partitions,
@@ -463,10 +461,6 @@ async def update_limit_policy_rule(
             limit_value=values.get("limit_value", rule.limit_value),
             interval_unit=values.get("interval_unit", rule.interval_unit),
             interval_count=values.get("interval_count", rule.interval_count),
-            provider_id=values.get("provider_id", rule.provider_id),
-            credential_pool_id=values.get("credential_pool_id", rule.credential_pool_id),
-            model_offering_id=values.get("model_offering_id", rule.model_offering_id),
-            access_policy_id=values.get("access_policy_id", rule.access_policy_id),
             matchers=(
                 payload.matchers
                 if payload.matchers is not None
@@ -479,7 +473,7 @@ async def update_limit_policy_rule(
             ),
             is_active=values.get("is_active", rule.is_active),
         )
-        await _validate_limit_rule_filters(payload=candidate, scope=scope, db=db)
+        _validate_limit_rule_filters(payload=candidate)
         revision, copied_rules_by_source_id = await _create_next_limit_policy_revision(
             policy=policy,
             scope=scope,
@@ -492,7 +486,6 @@ async def update_limit_policy_rule(
         for field, value in candidate.model_dump(exclude={"matchers", "partitions"}).items():
             setattr(updated_rule, field, value)
         await _replace_limit_rule_matchers_and_partitions(
-            payload=candidate,
             rule_id=updated_rule.id,
             matchers=candidate.matchers,
             partitions=candidate.partitions,
@@ -740,7 +733,7 @@ async def create_scoped_policy_assignment(
     else:
         assert payload.limit_policy is not None
         for rule in payload.limit_policy.rules:
-            await _validate_limit_rule_filters(payload=rule, scope=scope, db=db)
+            _validate_limit_rule_filters(payload=rule)
     async with transaction(db):
         if payload.policy_type == "access":
             assert payload.access_policy is not None
@@ -828,7 +821,6 @@ async def create_scoped_policy_assignment(
                     db=db,
                 )
                 await _replace_limit_rule_matchers_and_partitions(
-                    payload=rule,
                     rule_id=created_rule.id,
                     matchers=rule.matchers,
                     partitions=rule.partitions,
@@ -1194,7 +1186,6 @@ async def _limit_rule_partition_inputs(
 
 async def _replace_limit_rule_matchers_and_partitions(
     *,
-    payload: LimitPolicyRuleInput,
     rule_id: UUID,
     matchers: list[LimitPolicyRuleMatcherInput],
     partitions: list[LimitPolicyRulePartitionInput],
@@ -1211,7 +1202,7 @@ async def _replace_limit_rule_matchers_and_partitions(
         rule_id=rule_id,
         db=db,
     )
-    for matcher in _legacy_limit_filter_matchers(payload=payload, matchers=matchers):
+    for matcher in matchers:
         await repository.create_limit_policy_rule_matcher(
             org_id=scope.org_id,
             rule_id=rule_id,
@@ -1228,40 +1219,6 @@ async def _replace_limit_rule_matchers_and_partitions(
             position=partition.position,
             db=db,
         )
-
-
-def _legacy_limit_filter_matchers(
-    *,
-    payload: LimitPolicyRuleInput,
-    matchers: list[LimitPolicyRuleMatcherInput],
-) -> list[LimitPolicyRuleMatcherInput]:
-    legacy_filters = (
-        ("provider_id", payload.provider_id),
-        ("credential_pool_id", payload.credential_pool_id),
-        ("provider_model_offering_id", payload.model_offering_id),
-        ("access_policy_id", payload.access_policy_id),
-    )
-    legacy_dimensions = {dimension for dimension, value in legacy_filters if value is not None}
-    merged = [matcher for matcher in matchers if matcher.dimension not in legacy_dimensions]
-    existing = {
-        (matcher.dimension, matcher.operator, str(matcher.value_json)) for matcher in merged
-    }
-    for dimension, value in legacy_filters:
-        if value is None:
-            continue
-        key = (dimension, "eq", str(value))
-        if key in existing:
-            continue
-        merged.append(
-            LimitPolicyRuleMatcherInput(
-                dimension=dimension,
-                operator="eq",
-                value_json=str(value),
-            )
-        )
-        existing.add(key)
-    return merged
-
 
 async def _get_access_policy_or_raise(
     *, policy_id: UUID, scope: Scope, db: AsyncSession
@@ -1338,10 +1295,6 @@ async def _create_next_limit_policy_revision(
                 "limit_value": old_rule.limit_value,
                 "interval_unit": old_rule.interval_unit,
                 "interval_count": old_rule.interval_count,
-                "provider_id": old_rule.provider_id,
-                "credential_pool_id": old_rule.credential_pool_id,
-                "model_offering_id": old_rule.model_offering_id,
-                "access_policy_id": old_rule.access_policy_id,
                 "is_active": old_rule.is_active,
             },
             policy_revision_id=revision.id,
@@ -1849,27 +1802,8 @@ _EffectivePublicModelCandidate = EffectiveAccessPolicyCandidate
 _EffectivePublicModel = EffectiveAccessPolicyPublicModel
 
 
-async def _validate_limit_rule_filters(
-    *, payload: LimitPolicyRuleInput, scope: Scope, db: AsyncSession
-) -> None:
+def _validate_limit_rule_filters(*, payload: LimitPolicyRuleInput) -> None:
     validate_limit_rule_payload(payload)
-    try:
-        if payload.provider_id is not None:
-            await providers_facade.get_provider(provider_id=payload.provider_id, scope=scope, db=db)
-        if payload.credential_pool_id is not None:
-            await providers_facade.get_credential_pool(
-                pool_id=payload.credential_pool_id, scope=scope, db=db
-            )
-        if payload.model_offering_id is not None:
-            await providers_facade.get_model_offering(
-                model_offering_id=payload.model_offering_id, scope=scope, db=db
-            )
-        if payload.access_policy_id is not None:
-            await _get_access_policy_or_raise(
-                policy_id=payload.access_policy_id, scope=scope, db=db
-            )
-    except (ProviderNotFoundError, PolicyNotFoundError) as exc:
-        raise PolicyValidationError from exc
 
 
 async def _validate_assignment_policy(

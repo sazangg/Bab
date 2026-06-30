@@ -12,6 +12,7 @@ from app.modules.policies.internal.models import (
     AccessPolicyRouteCandidate,
     LimitPolicy,
     LimitPolicyRule,
+    LimitPolicyRuleMatcher,
 )
 from app.modules.policy_kernel import repository as policy_kernel_repository
 from app.modules.providers import facade as providers_facade
@@ -154,8 +155,32 @@ async def test_provider_impact_detects_policy_routes_and_recent_usage(
         name="Provider requests",
         limit_type="requests",
         limit_value=100,
-        provider_id=provider.id,
     )
+    db_session.add(rule)
+    await db_session.flush()
+    matchers = [
+        LimitPolicyRuleMatcher(
+            org_id=org.id,
+            rule_id=rule.id,
+            dimension="provider_id",
+            operator="eq",
+            value_json=str(provider.id),
+        ),
+        LimitPolicyRuleMatcher(
+            org_id=org.id,
+            rule_id=rule.id,
+            dimension="credential_pool_id",
+            operator="eq",
+            value_json=str(pool.id),
+        ),
+        LimitPolicyRuleMatcher(
+            org_id=org.id,
+            rule_id=rule.id,
+            dimension="provider_model_offering_id",
+            operator="eq",
+            value_json=str(model.id),
+        ),
+    ]
     usage = UsageRecord(
         org_id=org.id,
         team_id=team.id,
@@ -171,7 +196,7 @@ async def test_provider_impact_detects_policy_routes_and_recent_usage(
         created_at=datetime.now(UTC),
     )
     usage.provider_credential_id = credential.id
-    db_session.add_all([membership, candidate, rule, usage])
+    db_session.add_all([membership, candidate, *matchers, usage])
     await db_session.commit()
 
     impact = await providers_facade.get_provider_impact(

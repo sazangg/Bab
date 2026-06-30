@@ -29,6 +29,15 @@ from app.modules.policies.errors import (
     PolicyValidationError,
 )
 from app.modules.policies.schemas import (
+    DEFAULT_INTERVAL_COUNT,
+    DEFAULT_INTERVAL_UNIT,
+    DEFAULT_ROUTE_PRIORITY,
+    DEFAULT_ROUTE_WEIGHT,
+    DEFAULT_ROUTING_MODE,
+    FALLBACK_REASONS,
+    INTERVAL_UNITS,
+    LIMIT_TYPES,
+    ROUTING_MODES,
     AccessPolicyOptionsResponse,
     AccessPolicyResponse,
     CreateAccessPolicyRequest,
@@ -40,6 +49,7 @@ from app.modules.policies.schemas import (
     LimitPolicyRuleResponse,
     PolicyAssignmentResponse,
     PolicyImpactResponse,
+    PolicyMetadataResponse,
     ScopedPolicyAssignmentResponse,
     UpdateAccessPolicyRequest,
     UpdateLimitPolicyRequest,
@@ -64,6 +74,21 @@ ScopedPolicyViewer = Annotated[
 ]
 PolicyAdmin = Annotated[AuthenticatedUser, Depends(require_permission(Permissions.POLICIES_MANAGE))]
 AssignmentActor = Annotated[AuthenticatedUser, Depends(get_current_user)]
+
+
+@router.get("/metadata")
+async def get_policy_metadata(_: ScopedPolicyViewer) -> PolicyMetadataResponse:
+    return PolicyMetadataResponse(
+        routing_modes=list(ROUTING_MODES),
+        default_routing_mode=DEFAULT_ROUTING_MODE,
+        fallback_reasons=sorted(FALLBACK_REASONS),
+        default_route_priority=DEFAULT_ROUTE_PRIORITY,
+        default_route_weight=DEFAULT_ROUTE_WEIGHT,
+        limit_types=list(LIMIT_TYPES),
+        interval_units=list(INTERVAL_UNITS),
+        default_interval_unit=DEFAULT_INTERVAL_UNIT,
+        default_interval_count=DEFAULT_INTERVAL_COUNT,
+    )
 
 
 @router.get("/access")

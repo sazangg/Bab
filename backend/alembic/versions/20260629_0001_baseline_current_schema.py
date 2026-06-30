@@ -1173,50 +1173,20 @@ def upgrade() -> None:
         sa.Column("limit_value", sa.Integer(), nullable=False),
         sa.Column("interval_unit", sa.String(length=50), nullable=False),
         sa.Column("interval_count", sa.Integer(), nullable=False),
-        sa.Column("provider_id", sa.Uuid(), nullable=True),
-        sa.Column("credential_pool_id", sa.Uuid(), nullable=True),
-        sa.Column("model_offering_id", sa.Uuid(), nullable=True),
-        sa.Column("access_policy_id", sa.Uuid(), nullable=True),
         sa.Column("is_active", sa.Boolean(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["access_policy_id"], ["access_policies.id"], ondelete="RESTRICT"),
-        sa.ForeignKeyConstraint(
-            ["credential_pool_id"], ["credential_pools.id"], ondelete="RESTRICT"
-        ),
         sa.ForeignKeyConstraint(["limit_policy_id"], ["limit_policies.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(
-            ["model_offering_id"], ["provider_model_offerings.id"], ondelete="RESTRICT"
-        ),
         sa.ForeignKeyConstraint(["org_id"], ["organizations.id"], ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(
             ["policy_revision_id"], ["policy_revisions.id"], ondelete="CASCADE"
         ),
-        sa.ForeignKeyConstraint(["provider_id"], ["providers.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(
-        op.f("ix_limit_policy_rules_access_policy_id"),
-        "limit_policy_rules",
-        ["access_policy_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_limit_policy_rules_credential_pool_id"),
-        "limit_policy_rules",
-        ["credential_pool_id"],
-        unique=False,
     )
     op.create_index(
         op.f("ix_limit_policy_rules_limit_policy_id"),
         "limit_policy_rules",
         ["limit_policy_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_limit_policy_rules_model_offering_id"),
-        "limit_policy_rules",
-        ["model_offering_id"],
         unique=False,
     )
     op.create_index(
@@ -1226,12 +1196,6 @@ def upgrade() -> None:
         op.f("ix_limit_policy_rules_policy_revision_id"),
         "limit_policy_rules",
         ["policy_revision_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_limit_policy_rules_provider_id"),
-        "limit_policy_rules",
-        ["provider_id"],
         unique=False,
     )
     op.create_table(
@@ -2557,13 +2521,9 @@ def downgrade() -> None:
         table_name="access_policy_route_candidates",
     )
     op.drop_table("access_policy_route_candidates")
-    op.drop_index(op.f("ix_limit_policy_rules_provider_id"), table_name="limit_policy_rules")
     op.drop_index(op.f("ix_limit_policy_rules_policy_revision_id"), table_name="limit_policy_rules")
     op.drop_index(op.f("ix_limit_policy_rules_org_id"), table_name="limit_policy_rules")
-    op.drop_index(op.f("ix_limit_policy_rules_model_offering_id"), table_name="limit_policy_rules")
     op.drop_index(op.f("ix_limit_policy_rules_limit_policy_id"), table_name="limit_policy_rules")
-    op.drop_index(op.f("ix_limit_policy_rules_credential_pool_id"), table_name="limit_policy_rules")
-    op.drop_index(op.f("ix_limit_policy_rules_access_policy_id"), table_name="limit_policy_rules")
     op.drop_table("limit_policy_rules")
     op.drop_index(
         op.f("ix_access_policy_public_models_public_model_name"),

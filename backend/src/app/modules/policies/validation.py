@@ -8,17 +8,12 @@ from app.modules.policies.dimensions import (
 )
 from app.modules.policies.errors import PolicyValidationError
 from app.modules.policies.schemas import (
+    FALLBACK_REASONS,
     AccessPolicyPublicModelInput,
     LimitPolicyRuleInput,
 )
 
-FALLBACKABLE_PROVIDER_REASONS = {
-    "timeout",
-    "connection_failed",
-    "circuit_open",
-    "rate_limited",
-    "provider_5xx",
-}
+FALLBACKABLE_PROVIDER_REASONS = set(FALLBACK_REASONS)
 
 
 @dataclass(frozen=True, slots=True)

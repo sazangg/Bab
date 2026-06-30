@@ -5,6 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import sqlite_write_unit
 from app.core.request_ids import current_request_id
 from app.modules.gateway import costing as gateway_costing
 from app.modules.gateway_history import facade as gateway_history_facade
@@ -99,6 +100,7 @@ def persisted_limit_reference(limit: Any) -> PersistedLimitReference:
     )
 
 
+@sqlite_write_unit
 async def enforce_limit_policies(
     *,
     resolved: LimitResolvedAccess,
@@ -237,6 +239,7 @@ async def enforce_limit_policies(
     return reservation_ids
 
 
+@sqlite_write_unit
 async def commit_reservations(
     *,
     reservation_ids: list[UUID],
@@ -255,6 +258,7 @@ async def commit_reservations(
     await db.commit()
 
 
+@sqlite_write_unit
 async def release_reservations(*, reservation_ids: list[UUID], db: AsyncSession) -> None:
     await usage_facade.release_limit_policy_reservations(reservation_ids=reservation_ids, db=db)
     await db.commit()

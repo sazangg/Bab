@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from pydantic import BaseModel
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.policies.internal.models import (
@@ -12,6 +12,7 @@ from app.modules.policies.internal.models import (
     AccessPolicyRouteCandidate,
     LimitPolicy,
     LimitPolicyRule,
+    LimitPolicyRuleMatcher,
 )
 from app.modules.policy_kernel.models import Policy, PolicyAssignment, PolicyRevision
 
@@ -215,9 +216,17 @@ async def list_limit_runtime_rules_for_targets(
     )
     for policy_id, policy, revision, rule in rows:
         rows_by_policy_id[policy_id].append((policy, revision, rule))
+    matchers_by_rule_id = await _limit_rule_matchers_by_rule_id(
+        org_id=org_id,
+        rule_ids={rule.id for rules in rows_by_policy_id.values() for _, _, rule in rules},
+        db=db,
+    )
     rules: list[LimitRuntimeRule] = []
     for assignment in assignments:
         for policy, revision, rule in rows_by_policy_id.get(assignment.policy_id, []):
+            matcher_values = _limit_rule_exact_match_values(
+                matchers_by_rule_id.get(rule.id, [])
+            )
             rules.append(
                 LimitRuntimeRule(
                     assignment_id=assignment.id,
@@ -232,13 +241,55 @@ async def list_limit_runtime_rules_for_targets(
                     limit_value=rule.limit_value,
                     interval_unit=rule.interval_unit,
                     interval_count=rule.interval_count,
-                    provider_id=rule.provider_id,
-                    credential_pool_id=rule.credential_pool_id,
-                    model_offering_id=rule.model_offering_id,
-                    access_policy_id=rule.access_policy_id,
+                    provider_id=matcher_values.get("provider_id"),
+                    credential_pool_id=matcher_values.get("credential_pool_id"),
+                    model_offering_id=matcher_values.get("provider_model_offering_id"),
+                    access_policy_id=matcher_values.get("access_policy_id"),
                 )
             )
     return rules
+
+
+async def _limit_rule_matchers_by_rule_id(
+    *,
+    org_id: UUID,
+    rule_ids: set[UUID],
+    db: AsyncSession,
+) -> dict[UUID, list[LimitPolicyRuleMatcher]]:
+    if not rule_ids:
+        return {}
+    result = await db.scalars(
+        select(LimitPolicyRuleMatcher)
+        .where(
+            LimitPolicyRuleMatcher.org_id == org_id,
+            LimitPolicyRuleMatcher.rule_id.in_(rule_ids),
+        )
+        .order_by(
+            LimitPolicyRuleMatcher.rule_id.asc(),
+            LimitPolicyRuleMatcher.created_at.asc(),
+            LimitPolicyRuleMatcher.id.asc(),
+        )
+    )
+    matchers_by_rule_id: dict[UUID, list[LimitPolicyRuleMatcher]] = defaultdict(list)
+    for matcher in result:
+        matchers_by_rule_id[matcher.rule_id].append(matcher)
+    return matchers_by_rule_id
+
+
+def _limit_rule_exact_match_values(
+    matchers: list[LimitPolicyRuleMatcher],
+) -> dict[str, UUID]:
+    values: dict[str, UUID] = {}
+    for matcher in matchers:
+        if matcher.operator != "eq" or matcher.value_json is None:
+            continue
+        if matcher.dimension in values:
+            continue
+        try:
+            values[matcher.dimension] = UUID(str(matcher.value_json))
+        except ValueError:
+            continue
+    return values
 
 
 async def list_limit_runtime_policy_references_for_targets(
@@ -401,17 +452,51 @@ async def count_provider_limit_rules(
     credential_pool_id: UUID | None = None,
     model_offering_id: UUID | None = None,
 ) -> int:
-    filters = [
-        LimitPolicyRule.org_id == org_id,
-        LimitPolicyRule.is_active.is_(True),
-    ]
-    if provider_id is not None:
-        filters.append(LimitPolicyRule.provider_id == provider_id)
-    if credential_pool_id is not None:
-        filters.append(LimitPolicyRule.credential_pool_id == credential_pool_id)
-    if model_offering_id is not None:
-        filters.append(LimitPolicyRule.model_offering_id == model_offering_id)
-    return int(await db.scalar(select(func.count(LimitPolicyRule.id)).where(*filters)) or 0)
+    rules = list(
+        await db.scalars(
+            select(LimitPolicyRule).where(
+                LimitPolicyRule.org_id == org_id,
+                LimitPolicyRule.is_active.is_(True),
+            )
+        )
+    )
+    if provider_id is None and credential_pool_id is None and model_offering_id is None:
+        return len(rules)
+    matchers_by_rule_id = await _limit_rule_matchers_by_rule_id(
+        org_id=org_id,
+        rule_ids={rule.id for rule in rules},
+        db=db,
+    )
+    return sum(
+        1
+        for rule in rules
+        if _limit_rule_matches_provider_filters(
+            _limit_rule_exact_match_values(matchers_by_rule_id.get(rule.id, [])),
+            provider_id=provider_id,
+            credential_pool_id=credential_pool_id,
+            model_offering_id=model_offering_id,
+        )
+    )
+
+
+def _limit_rule_matches_provider_filters(
+    matcher_values: dict[str, UUID],
+    *,
+    provider_id: UUID | None,
+    credential_pool_id: UUID | None,
+    model_offering_id: UUID | None,
+) -> bool:
+    return (
+        (provider_id is None or matcher_values.get("provider_id") == provider_id)
+        and (
+            credential_pool_id is None
+            or matcher_values.get("credential_pool_id") == credential_pool_id
+        )
+        and (
+            model_offering_id is None
+            or matcher_values.get("provider_model_offering_id") == model_offering_id
+        )
+    )
 
 
 def _route_filters(

@@ -10,7 +10,21 @@ GUARDRAIL_RULE_TYPES = (
     "prompt_regex",
     "pii",
 )
+GUARDRAIL_PHASES = ("request", "response", "both")
+GUARDRAIL_EFFECTS = ("allow", "deny")
+POLICY_ENFORCEMENT_MODES = ("enforce", "monitor")
+ASSIGNMENT_ENFORCEMENT_MODES = ("enforce", "dry_run")
+DEFAULT_GUARDRAIL_RULE_EFFECT = "allow"
+DEFAULT_GUARDRAIL_RULE_PHASE = "both"
+DEFAULT_GUARDRAIL_RULE_PRIORITY = 100
+DEFAULT_POLICY_ENFORCEMENT_MODE = "enforce"
+DEFAULT_ASSIGNMENT_ENFORCEMENT_MODE = "enforce"
+
 GUARDRAIL_RULE_TYPE_PATTERN = f"^({'|'.join(GUARDRAIL_RULE_TYPES)})$"
+GUARDRAIL_PHASE_PATTERN = f"^({'|'.join(GUARDRAIL_PHASES)})$"
+GUARDRAIL_EFFECT_PATTERN = f"^({'|'.join(GUARDRAIL_EFFECTS)})$"
+POLICY_ENFORCEMENT_MODE_PATTERN = f"^({'|'.join(POLICY_ENFORCEMENT_MODES)})$"
+ASSIGNMENT_ENFORCEMENT_MODE_PATTERN = f"^({'|'.join(ASSIGNMENT_ENFORCEMENT_MODES)})$"
 PII_RULE_VALUES = {"email", "phone", "credit_card"}
 # Bounds on author-supplied regex rules to limit the ReDoS attack surface.
 MAX_REGEX_VALUES_PER_RULE = 25
@@ -19,12 +33,12 @@ MAX_REGEX_PATTERN_LENGTH = 512
 
 class GuardrailRuleInput(BaseModel):
     rule_type: str = Field(pattern=GUARDRAIL_RULE_TYPE_PATTERN)
-    effect: str = Field(default="allow", pattern="^(allow|deny)$")
-    phase: str = Field(default="both", pattern="^(request|response|both)$")
+    effect: str = Field(default=DEFAULT_GUARDRAIL_RULE_EFFECT, pattern=GUARDRAIL_EFFECT_PATTERN)
+    phase: str = Field(default=DEFAULT_GUARDRAIL_RULE_PHASE, pattern=GUARDRAIL_PHASE_PATTERN)
     values: list[str] = Field(min_length=1)
     config: dict[str, Any] = Field(default_factory=dict)
     matchers: list["GuardrailRuleMatcherInput"] = Field(default_factory=list)
-    priority: int = Field(default=100, ge=1)
+    priority: int = Field(default=DEFAULT_GUARDRAIL_RULE_PRIORITY, ge=1)
     is_active: bool = True
 
     @field_validator("values")
@@ -96,7 +110,10 @@ class GuardrailRuleResponse(BaseModel):
 class CreateGuardrailPolicyRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=1000)
-    enforcement_mode: str = Field(default="enforce", pattern="^(enforce|monitor)$")
+    enforcement_mode: str = Field(
+        default=DEFAULT_POLICY_ENFORCEMENT_MODE,
+        pattern=POLICY_ENFORCEMENT_MODE_PATTERN,
+    )
     is_active: bool = True
     rules: list[GuardrailRuleInput] = Field(default_factory=list)
 
@@ -104,7 +121,7 @@ class CreateGuardrailPolicyRequest(BaseModel):
 class UpdateGuardrailPolicyRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=1000)
-    enforcement_mode: str | None = Field(default=None, pattern="^(enforce|monitor)$")
+    enforcement_mode: str | None = Field(default=None, pattern=POLICY_ENFORCEMENT_MODE_PATTERN)
     is_active: bool | None = None
     rules: list[GuardrailRuleInput] | None = None
 
@@ -136,7 +153,10 @@ class CreateGuardrailAssignmentRequest(BaseModel):
     team_id: UUID | None = None
     project_id: UUID | None = None
     virtual_key_id: UUID | None = None
-    enforcement_mode: str = Field(default="enforce", pattern="^(enforce|dry_run)$")
+    enforcement_mode: str = Field(
+        default=DEFAULT_ASSIGNMENT_ENFORCEMENT_MODE,
+        pattern=ASSIGNMENT_ENFORCEMENT_MODE_PATTERN,
+    )
     is_active: bool = True
 
     @model_validator(mode="after")
@@ -161,7 +181,10 @@ class UpdateGuardrailAssignmentRequest(BaseModel):
     team_id: UUID | None = None
     project_id: UUID | None = None
     virtual_key_id: UUID | None = None
-    enforcement_mode: str | None = Field(default=None, pattern="^(enforce|dry_run)$")
+    enforcement_mode: str | None = Field(
+        default=None,
+        pattern=ASSIGNMENT_ENFORCEMENT_MODE_PATTERN,
+    )
     is_active: bool | None = None
 
     @model_validator(mode="after")
@@ -277,7 +300,10 @@ class GuardrailEvaluationContext(BaseModel):
 class GuardrailSimulationRequest(BaseModel):
     policy_id: UUID | None = None
     rules: list[GuardrailRuleInput] | None = None
-    enforcement_mode: str = Field(default="enforce", pattern="^(enforce|monitor)$")
+    enforcement_mode: str = Field(
+        default=DEFAULT_POLICY_ENFORCEMENT_MODE,
+        pattern=POLICY_ENFORCEMENT_MODE_PATTERN,
+    )
     requested_model: str
     provider_model: str | None = None
     provider_id: UUID | None = None
@@ -311,3 +337,17 @@ class GuardrailSimulationResponse(BaseModel):
     decision: str
     enforcement_mode: str
     matches: list[GuardrailSimulationMatch]
+
+
+class GuardrailMetadataResponse(BaseModel):
+    rule_types: list[str]
+    pii_values: list[str]
+    phases: list[str]
+    effects: list[str]
+    policy_enforcement_modes: list[str]
+    assignment_enforcement_modes: list[str]
+    default_rule_effect: str
+    default_rule_phase: str
+    default_rule_priority: int
+    default_policy_enforcement_mode: str
+    default_assignment_enforcement_mode: str
