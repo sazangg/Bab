@@ -19,6 +19,7 @@ import {
   useCreatePolicyApiV1GuardrailsPoliciesPost,
   useDeleteAssignmentApiV1GuardrailsAssignmentsAssignmentIdDelete,
   useDeletePolicyApiV1GuardrailsPoliciesPolicyIdDelete,
+  useGetGuardrailMetadataApiV1GuardrailsMetadataGet,
   useListAssignmentsApiV1GuardrailsAssignmentsGet,
   useListEventsApiV1GuardrailsEventsGet,
   useListPoliciesApiV1GuardrailsPoliciesGet,
@@ -55,7 +56,10 @@ import {
   emptyAssignmentForm,
   emptyPolicyForm,
   firstAssignableScope,
+  guardrailMetadata,
   newMatcherForm,
+  newAssignmentForm,
+  newPolicyForm,
   newRuleForm,
   normalizeRulePhase,
   parseRuleValues,
@@ -101,6 +105,10 @@ export function GuardrailsPage() {
     hasAnyProjectAdminMembership(currentUser);
 
   const policiesQuery = useListPoliciesApiV1GuardrailsPoliciesGet();
+  const metadataQuery = useGetGuardrailMetadataApiV1GuardrailsMetadataGet();
+  const metadata = guardrailMetadata(
+    metadataQuery.data?.status === 200 ? metadataQuery.data.data : undefined,
+  );
   const policyOptionsQuery = useQuery({
     queryKey: ["guardrail-policy-options"],
     queryFn: async () => {
@@ -276,8 +284,8 @@ export function GuardrailsPage() {
 
   const openCreatePolicy = () => {
     setEditingPolicy(null);
-    setPolicyForm(emptyPolicyForm);
-    setAssignmentForm({ ...emptyAssignmentForm, scope_type: "none" });
+    setPolicyForm(newPolicyForm(metadata));
+    setAssignmentForm({ ...newAssignmentForm(metadata), scope_type: "none" });
     setPolicySheetOpen(true);
   };
   const openEditPolicy = (policy: GuardrailPolicyResponse) => {
@@ -290,36 +298,39 @@ export function GuardrailsPage() {
       rules:
         policy.rules.length > 0
           ? policy.rules.map((rule) =>
-              newRuleForm({
-                rule_type: rule.rule_type,
-                effect: rule.effect,
-                phase: normalizeRulePhase(rule.rule_type, rule.phase ?? "both"),
-                values: rule.values.join("\n"),
-                detector: readRuleDetector(rule.config),
-                matchers:
-                  rule.matchers?.map((matcher) =>
-                    newMatcherForm({
-                      dimension: matcher.dimension,
-                      operator: matcher.operator,
-                      value: Array.isArray(matcher.value_json)
-                        ? matcher.value_json.join("\n")
-                        : matcher.value_json == null
-                          ? ""
-                          : String(matcher.value_json),
-                    }),
-                  ) ?? [],
-                priority: rule.priority,
-                is_active: rule.is_active,
-              }),
+              newRuleForm(
+                {
+                  rule_type: rule.rule_type,
+                  effect: rule.effect,
+                  phase: normalizeRulePhase(rule.rule_type, rule.phase ?? "both", metadata),
+                  values: rule.values.join("\n"),
+                  detector: readRuleDetector(rule.config),
+                  matchers:
+                    rule.matchers?.map((matcher) =>
+                      newMatcherForm({
+                        dimension: matcher.dimension,
+                        operator: matcher.operator,
+                        value: Array.isArray(matcher.value_json)
+                          ? matcher.value_json.join("\n")
+                          : matcher.value_json == null
+                            ? ""
+                            : String(matcher.value_json),
+                      }),
+                    ) ?? [],
+                  priority: rule.priority,
+                  is_active: rule.is_active,
+                },
+                metadata,
+              ),
             )
-          : [newRuleForm()],
+          : [newRuleForm({}, metadata)],
     });
     setPolicySheetOpen(true);
   };
   const openCreateAssignment = () => {
     setEditingAssignment(null);
     setAssignmentForm({
-      ...emptyAssignmentForm,
+      ...newAssignmentForm(metadata),
       scope_type: canManageGuardrails ? "org" : firstAssignableScope(assignmentScopeOptions),
     });
     setAssignmentSheetOpen(true);
@@ -343,7 +354,7 @@ export function GuardrailsPage() {
     const rules: GuardrailRuleInput[] = [];
     for (const [index, rule] of policyForm.rules.entries()) {
       const values = parseRuleValues(rule.values);
-      const validationError = validateRuleForm(rule, index, values);
+      const validationError = validateRuleForm(rule, index, values, metadata);
       if (validationError) {
         toast.error(validationError);
         return null;
@@ -351,7 +362,7 @@ export function GuardrailsPage() {
       rules.push({
         rule_type: rule.rule_type,
         effect: rule.effect,
-        phase: normalizeRulePhase(rule.rule_type, rule.phase),
+        phase: normalizeRulePhase(rule.rule_type, rule.phase, metadata),
         values,
         config: buildRuleConfig(rule),
         matchers: rule.matchers.map((matcher) => ({
@@ -586,6 +597,7 @@ export function GuardrailsPage() {
         assignmentForm={assignmentForm}
         setAssignmentForm={setAssignmentForm}
         assignmentScopeOptions={assignmentScopeOptions}
+        metadata={metadata}
         onSubmit={submitPolicy}
         onPreview={previewPolicy}
         isPending={createPolicy.isPending || updatePolicy.isPending}
@@ -605,6 +617,7 @@ export function GuardrailsPage() {
         policyLabels={policyLabels}
         assignmentScopeOptions={assignmentScopeOptions}
         scopeLabels={scopeLabels}
+        metadata={metadata}
         onSubmit={submitAssignment}
         isPending={createAssignment.isPending || updateAssignment.isPending}
       />

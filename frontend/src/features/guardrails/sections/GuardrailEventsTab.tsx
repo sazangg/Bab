@@ -19,7 +19,7 @@ import type {
 } from "@/shared/api/generated/schemas";
 import { FilterToolbar, type FilterChip } from "@/shared/components/FilterToolbar";
 import { StatusBadge } from "@/shared/components/StatusBadge";
-import { RequestTraceSheet } from "@/features/usage/components/RequestTraceSheet";
+import { RequestTraceSheet } from "@/features/gateway-history/components/RequestTraceSheet";
 
 import {
   guardrailDecisionStatus,

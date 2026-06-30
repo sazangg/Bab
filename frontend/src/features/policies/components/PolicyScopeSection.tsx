@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -40,6 +40,7 @@ import {
   useCreateScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPost,
   useDeletePolicyAssignmentApiV1PoliciesAssignmentsAssignmentIdDelete,
   useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet,
+  useGetPolicyMetadataApiV1PoliciesMetadataGet,
   useListAccessPoliciesApiV1PoliciesAccessGet,
   useListLimitPoliciesApiV1PoliciesLimitsGet,
   useListPolicyAssignmentsApiV1PoliciesAssignmentsGet,
@@ -47,15 +48,18 @@ import {
 } from "@/shared/api/generated/policies/policies";
 import { ConfirmationDialog } from "@/features/policies/components/ConfirmationDialog";
 import {
-  LimitRuleFilterFields,
-  type LimitRuleFilterValue,
-} from "@/features/policies/components/LimitRuleFilterFields";
+  formatLimitInterval,
+  formatLimitType,
+  limitRuleIntervalDefaults,
+  policyMetadata,
+  toLimitRuleInput,
+  type DraftLimitRule,
+} from "@/features/policies/lib/policy-metadata";
 import type {
   AccessPolicyResponse,
   AccessPolicyPublicModelInput,
   AccessPolicyProviderOption,
   LimitPolicyResponse,
-  LimitPolicyRuleInput,
 } from "@/shared/api/generated/schemas";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { StatusBadge } from "@/shared/components/StatusBadge";
@@ -67,14 +71,6 @@ type ScopeTarget =
 
 type SheetKind = "access" | "limit" | null;
 type AssignKind = "access" | "limit" | null;
-type DraftLimitRule = {
-  name: string;
-  limitType: string;
-  limitValue: string;
-  intervalUnit: string;
-  intervalCount: string;
-  filters: LimitRuleFilterValue;
-};
 type DraftAccessModel = {
   offeringId: string;
   publicModelName: string;
@@ -87,31 +83,6 @@ type DraftAccessRoute = {
   poolLabel: string;
   models: DraftAccessModel[];
 };
-
-const limitTypeOptions = [
-  { value: "budget_cents", label: "Spend budget" },
-  { value: "requests", label: "Request count" },
-  { value: "input_tokens", label: "Input tokens" },
-  { value: "output_tokens", label: "Output tokens" },
-  { value: "total_tokens", label: "Total tokens" },
-  { value: "tokens_per_request", label: "Tokens per request" },
-];
-
-const emptyLimitRuleFilters = (): LimitRuleFilterValue => ({
-  providerId: "",
-  poolId: "",
-  modelId: "",
-  accessPolicyId: "",
-});
-
-function limitRuleFiltersPayload(filters: LimitRuleFilterValue) {
-  return {
-    provider_id: filters.providerId || null,
-    credential_pool_id: filters.poolId || null,
-    model_offering_id: filters.modelId || null,
-    access_policy_id: filters.accessPolicyId || null,
-  };
-}
 
 export function PolicyScopeSection({
   target,
@@ -433,6 +404,13 @@ function ScopedPolicySheet({
   onOpenChange: (open: boolean) => void;
 }) {
   const queryClient = useQueryClient();
+  const metadataQuery = useGetPolicyMetadataApiV1PoliciesMetadataGet();
+  const metadataResponse =
+    metadataQuery.data?.status === 200 ? metadataQuery.data.data : undefined;
+  const metadata = policyMetadata(metadataResponse);
+  const intervalDefaults = limitRuleIntervalDefaults(metadataResponse);
+  const wasOpenRef = useRef(false);
+  const intervalTouchedRef = useRef(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [providerId, setProviderId] = useState("");
@@ -443,9 +421,10 @@ function ScopedPolicySheet({
   const [ruleName, setRuleName] = useState("Rule");
   const [limitType, setLimitType] = useState("requests");
   const [limitValue, setLimitValue] = useState("");
-  const [intervalUnit, setIntervalUnit] = useState("day");
-  const [intervalCount, setIntervalCount] = useState("1");
-  const [ruleFilters, setRuleFilters] = useState<LimitRuleFilterValue>(emptyLimitRuleFilters);
+  const [intervalUnit, setIntervalUnit] = useState(() => limitRuleIntervalDefaults().intervalUnit);
+  const [intervalCount, setIntervalCount] = useState(
+    () => limitRuleIntervalDefaults().intervalCount,
+  );
   const isAccess = kind === "access";
   const accessOptionsQuery = useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet(
     accessOptionsParams(target),
@@ -456,6 +435,7 @@ function ScopedPolicySheet({
   const createScopedPolicy =
     useCreateScopedPolicyAssignmentApiV1PoliciesAssignmentsScopedPolicyPost();
   const reset = () => {
+    intervalTouchedRef.current = false;
     setName("");
     setDescription("");
     setProviderId("");
@@ -466,9 +446,8 @@ function ScopedPolicySheet({
     setRuleName("Rule");
     setLimitType("requests");
     setLimitValue("");
-    setIntervalUnit("day");
-    setIntervalCount("1");
-    setRuleFilters(emptyLimitRuleFilters());
+    setIntervalUnit(intervalDefaults.intervalUnit);
+    setIntervalCount(intervalDefaults.intervalCount);
   };
   const assignTarget =
     target.type === "team"
@@ -482,7 +461,6 @@ function ScopedPolicySheet({
     limitValue,
     intervalUnit,
     intervalCount,
-    filters: ruleFilters,
   });
   const currentLimitRuleHasLimits = hasLimitRuleValues(currentLimitRule());
   const pools = accessOptions.find((provider) => provider.id === providerId)?.pools ?? [];
@@ -525,7 +503,7 @@ function ScopedPolicySheet({
             limit_policy: {
               name,
               description: description || null,
-              rules: rules.map(toLimitRuleInput),
+          rules: rules.map((rule) => toLimitRuleInput(rule)),
             },
             ...assignTarget,
           },
@@ -565,7 +543,6 @@ function ScopedPolicySheet({
     setDraftRules((current) => [...current, currentLimitRule()]);
     setRuleName(`Rule ${draftRules.length + 2}`);
     setLimitValue("");
-    setRuleFilters(emptyLimitRuleFilters());
   };
   const addDraftRoute = () => {
     const route = currentAccessRoute();
@@ -575,6 +552,20 @@ function ScopedPolicySheet({
     setPoolId("");
     setSelectedModels([]);
   };
+  useEffect(() => {
+    const isOpen = Boolean(kind);
+    if (isOpen && !wasOpenRef.current && kind === "limit") {
+      intervalTouchedRef.current = false;
+      setIntervalUnit(intervalDefaults.intervalUnit);
+      setIntervalCount(intervalDefaults.intervalCount);
+    }
+    wasOpenRef.current = isOpen;
+  }, [intervalDefaults.intervalCount, intervalDefaults.intervalUnit, kind]);
+  useEffect(() => {
+    if (kind !== "limit" || !metadataResponse || intervalTouchedRef.current) return;
+    setIntervalUnit(intervalDefaults.intervalUnit);
+    setIntervalCount(intervalDefaults.intervalCount);
+  }, [intervalDefaults.intervalCount, intervalDefaults.intervalUnit, kind, metadataResponse]);
 
   return (
     <Sheet
@@ -646,21 +637,29 @@ function ScopedPolicySheet({
                     min={1}
                     value={intervalCount}
                     disabled={intervalUnit === "lifetime"}
-                    onChange={(event) => setIntervalCount(event.target.value)}
+                    onChange={(event) => {
+                      intervalTouchedRef.current = true;
+                      setIntervalCount(event.target.value);
+                    }}
                   />
                 </Field>
                 <Field label="Interval">
-                  <Select value={intervalUnit} onValueChange={setIntervalUnit}>
+                  <Select
+                    value={intervalUnit}
+                    onValueChange={(value) => {
+                      intervalTouchedRef.current = true;
+                      setIntervalUnit(value);
+                    }}
+                  >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="minute">Minute</SelectItem>
-                      <SelectItem value="hour">Hour</SelectItem>
-                      <SelectItem value="day">Day</SelectItem>
-                      <SelectItem value="week">Week</SelectItem>
-                      <SelectItem value="month">Month</SelectItem>
-                      <SelectItem value="lifetime">Lifetime</SelectItem>
+                      {metadata.intervalUnits.map((option) => (
+                        <SelectItem key={option} value={option}>
+                          {metadata.intervalUnitLabels[option]}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </Field>
@@ -671,9 +670,9 @@ function ScopedPolicySheet({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {limitTypeOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
+                    {metadata.limitTypes.map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {metadata.limitTypeLabels[option]}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -687,7 +686,6 @@ function ScopedPolicySheet({
                   onChange={(event) => setLimitValue(event.target.value)}
                 />
               </Field>
-              <LimitRuleFilterFields value={ruleFilters} onChange={setRuleFilters} />
               <Button
                 type="button"
                 variant="outline"
@@ -776,21 +774,6 @@ function hasLimitRuleValues(rule: DraftLimitRule) {
   return Boolean(rule.limitValue.trim());
 }
 
-function toLimitRuleInput(rule: DraftLimitRule): LimitPolicyRuleInput {
-  return {
-    name: rule.name,
-    limit_type: rule.limitType,
-    limit_value:
-      rule.limitType === "budget_cents"
-        ? Math.round(Number(rule.limitValue) * 100)
-        : Number(rule.limitValue),
-    interval_unit: rule.intervalUnit,
-    interval_count: rule.intervalUnit === "lifetime" ? 1 : Number(rule.intervalCount || 1),
-    is_active: true,
-    ...limitRuleFiltersPayload(rule.filters),
-  };
-}
-
 function toPublicModelInputs(route: DraftAccessRoute): AccessPolicyPublicModelInput[] {
   return route.models.map((model, index) => ({
     public_model_name: model.publicModelName,
@@ -812,25 +795,12 @@ function toPublicModelInputs(route: DraftAccessRoute): AccessPolicyPublicModelIn
 }
 
 function formatDraftLimitRule(rule: DraftLimitRule) {
-  const typeLabel =
-    limitTypeOptions.find((option) => option.value === rule.limitType)?.label ?? rule.limitType;
+  const typeLabel = formatLimitType(rule.limitType);
   const value =
     rule.limitType === "budget_cents"
       ? `$${Number(rule.limitValue).toLocaleString()}`
       : Number(rule.limitValue).toLocaleString();
-  const filters = [
-    rule.filters.providerId ? "provider" : null,
-    rule.filters.poolId ? "pool" : null,
-    rule.filters.modelId ? "model" : null,
-    rule.filters.accessPolicyId ? "access policy" : null,
-  ].filter(Boolean);
-  return `${rule.name}: ${typeLabel} ${value} ${formatInterval(rule.intervalUnit, rule.intervalCount)}${filters.length ? ` · filtered by ${filters.join(", ")}` : ""}`;
-}
-
-function formatInterval(intervalUnit: string, intervalCount: string | number) {
-  if (intervalUnit === "lifetime") return "over lifetime";
-  const count = Number(intervalCount) || 1;
-  return `every ${count} ${intervalUnit}${count === 1 ? "" : "s"}`;
+  return `${rule.name}: ${typeLabel} ${value} ${formatLimitInterval(rule.intervalUnit, rule.intervalCount)}`;
 }
 
 function summarizeAccessPolicy(policy: AccessPolicyResponse | LimitPolicyResponse) {
@@ -849,14 +819,12 @@ function summarizeLimitPolicy(policy: AccessPolicyResponse | LimitPolicyResponse
   if (rules.length === 0) return "No rules configured";
   return rules
     .map((rule) => {
-      const typeLabel =
-        limitTypeOptions.find((option) => option.value === rule.limit_type)?.label ??
-        rule.limit_type;
+      const typeLabel = formatLimitType(rule.limit_type);
       const value =
         rule.limit_type === "budget_cents"
           ? `$${(rule.limit_value / 100).toLocaleString()}`
           : rule.limit_value.toLocaleString();
-      return `${typeLabel}: ${value} ${formatInterval(rule.interval_unit, rule.interval_count)}`;
+      return `${typeLabel}: ${value} ${formatLimitInterval(rule.interval_unit, rule.interval_count)}`;
     })
     .join(" · ");
 }

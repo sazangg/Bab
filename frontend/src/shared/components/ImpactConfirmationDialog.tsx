@@ -14,8 +14,8 @@ import {
 /**
  * The one destructive-confirm dialog for the app: shows an impact preview (loading /
  * error+retry / content) and gates the confirm button until the impact has loaded.
- * Canonicalizes the pattern implemented 3+ ways today (and replaces `window.confirm`
- * in Guardrails). The caller renders the resolved impact via `children`.
+ * Canonicalizes the pattern implemented 3+ ways today for Guardrails. The caller
+ * renders the resolved impact via `children`.
  */
 export function ImpactConfirmationDialog({
   open,

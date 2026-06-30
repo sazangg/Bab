@@ -85,4 +85,22 @@ describe("AppRoutes", () => {
       undefined,
     );
   });
+
+  it("guards Gateway history with gateway-history scope access", () => {
+    renderRoute("/gateway-history");
+
+    expect(protectedRouteMock).toHaveBeenCalledWith(
+      expect.objectContaining({ allowGatewayHistoryScope: true }),
+      undefined,
+    );
+  });
+
+  it("guards Setup with organization-admin access", () => {
+    renderRoute("/setup");
+
+    expect(protectedRouteMock).toHaveBeenCalledWith(
+      expect.objectContaining({ requireOrgAdminSurface: true }),
+      undefined,
+    );
+  });
 });

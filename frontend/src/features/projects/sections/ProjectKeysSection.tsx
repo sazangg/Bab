@@ -58,6 +58,7 @@ import { formatCents } from "@/shared/lib/format-currency";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { EffectiveAccessSummaryCard } from "@/features/projects/components/EffectiveAccessSummaryCard";
 import { keyStatusPresentation } from "@/features/projects/lib/key-status";
+import { projectKeyCreationBlocker } from "@/features/projects/lib/key-creation-blocker";
 
 const STALE_KEY_DAYS = 30;
 
@@ -112,6 +113,12 @@ export function ProjectKeysSection({
   const canCreateKey = Boolean(
     project.is_active && preflight?.is_usable && !secretDeliveryDisabled,
   );
+  const creationBlocker = projectKeyCreationBlocker({
+    projectIsActive: project.is_active,
+    secretDeliveryDisabled,
+    effectiveAccessUsable: preflight?.is_usable,
+  });
+  const newKeyButtonTitle = !project.is_active ? "This project is archived." : creationBlocker;
   const revokeImpactQuery =
     useGetVirtualKeyRevokeImpactApiV1ProjectsProjectIdKeysKeyIdRevokeImpactGet(
       projectId,
@@ -171,7 +178,11 @@ export function ProjectKeysSection({
             <CardAction>
               <Sheet open={createOpen} onOpenChange={setCreateOpen}>
                 <SheetTrigger asChild>
-                  <Button size="sm" disabled={!project.is_active || secretDeliveryDisabled}>
+                  <Button
+                    size="sm"
+                    disabled={!project.is_active || secretDeliveryDisabled}
+                    title={newKeyButtonTitle ?? undefined}
+                  >
                     <Plus />
                     New key
                   </Button>
@@ -222,7 +233,10 @@ export function ProjectKeysSection({
                         {...form.register("expires_at")}
                       />
                       <p className="text-xs text-muted-foreground">
-                        Optional. Blank uses the organization default if configured.
+                        Optional override.{" "}
+                        {metadata?.default_virtual_key_expiration_days
+                          ? `Blank expires after ${metadata.default_virtual_key_expiration_days} days by organization default.`
+                          : "Blank has no organization expiration default."}
                       </p>
                     </div>
                   </form>
@@ -244,13 +258,30 @@ export function ProjectKeysSection({
           ) : null}
         </CardHeader>
         <CardContent>
+          {canManage && creationBlocker ? (
+            <div className="mb-4 rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+              {creationBlocker}
+            </div>
+          ) : null}
           {isLoading ? (
             <p className="text-sm text-muted-foreground">Loading keys...</p>
           ) : keys.length === 0 ? (
             <EmptyState
               icon={KeyRound}
               title="No virtual keys yet"
-              description="Create a key to issue this project's first credential."
+              description={
+                canCreateKey
+                  ? "Create a key to issue this project's first credential."
+                  : creationBlocker ?? "Virtual keys will appear here after they are created."
+              }
+              action={
+                canManage && canCreateKey ? (
+                  <Button type="button" onClick={() => setCreateOpen(true)}>
+                    <Plus />
+                    Create key
+                  </Button>
+                ) : undefined
+              }
             />
           ) : (
             <>
@@ -521,6 +552,7 @@ function KeyCard({
   return (
     <div
       role="button"
+      aria-label={`Open virtual key ${virtualKey.name}`}
       tabIndex={0}
       className="rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-muted/30"
       onClick={onOpen}

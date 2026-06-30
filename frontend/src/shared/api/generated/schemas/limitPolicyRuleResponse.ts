@@ -17,10 +17,6 @@ export interface LimitPolicyRuleResponse {
   limit_value: number;
   interval_unit: string;
   interval_count: number;
-  provider_id: string | null;
-  credential_pool_id: string | null;
-  model_offering_id: string | null;
-  access_policy_id: string | null;
   matchers?: LimitPolicyRuleMatcherResponse[];
   partitions?: LimitPolicyRulePartitionResponse[];
   is_active: boolean;

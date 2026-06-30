@@ -43,8 +43,9 @@ import { StatusBadge } from "@/shared/components/StatusBadge";
 import { formatDateTime, formatRelativeFromNow } from "@/features/providers/lib/format";
 import { getProblemDetail } from "@/shared/api/problem-detail";
 import { keyStatusPresentation } from "@/features/projects/lib/key-status";
-import { canViewTeam } from "@/features/auth/lib/permissions";
+import { canManageKeys, canViewOrgAdminSurface, canViewTeam } from "@/features/auth/lib/permissions";
 import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
+import { virtualKeyInventoryEmptyState } from "@/features/virtual-keys/lib/inventory-empty-state";
 
 const PAGE_SIZE = 25;
 const STALE_KEY_DAYS = 30;
@@ -115,6 +116,26 @@ export function VirtualKeysPage() {
   };
   const hasPrevious = offset > 0;
   const hasNext = Boolean(page && offset + page.items.length < page.total);
+  const hasActiveFilters =
+    Boolean(deferredSearch) ||
+    status !== "all" ||
+    teamId !== "all" ||
+    projectId !== "all" ||
+    usage !== "all";
+  const canManageKeyInventory = canManageKeys(currentUser);
+  const emptyState = virtualKeyInventoryEmptyState({
+    hasActiveFilters,
+    canManageKeys: canManageKeyInventory,
+    canViewSetup: canViewOrgAdminSurface(currentUser),
+  });
+  const clearFilters = () => {
+    setSearch("");
+    setStatus("all");
+    setTeamId("all");
+    setProjectId("all");
+    setUsage("all");
+    setOffset(0);
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -134,6 +155,7 @@ export function VirtualKeysPage() {
             <div className="relative xl:col-span-2">
               <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
+                aria-label="Search virtual keys"
                 className="pl-9"
                 value={search}
                 onChange={(event) => resetOffset(() => setSearch(event.target.value))}
@@ -193,7 +215,29 @@ export function VirtualKeysPage() {
           {inventoryQuery.isPending ? (
             <p className="text-sm text-muted-foreground">Loading virtual keys...</p>
           ) : !page?.items.length ? (
-            <EmptyState icon={KeyRound} title="No keys match" description="Try another filter." />
+            <EmptyState
+              icon={KeyRound}
+              title={emptyState.title}
+              description={emptyState.description}
+              action={
+                emptyState.showClearFilters ? (
+                  <Button type="button" variant="outline" onClick={clearFilters}>
+                    Clear filters
+                  </Button>
+                ) : emptyState.showOpenProjects ? (
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <Button asChild>
+                      <Link to="/projects">Open projects</Link>
+                    </Button>
+                    {emptyState.showOpenSetup ? (
+                      <Button asChild variant="outline">
+                        <Link to="/setup">Open setup</Link>
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : undefined
+              }
+            />
           ) : (
             <>
               {isMobile ? (
@@ -418,6 +462,7 @@ function InventoryKeyCard({
   return (
     <div
       role="button"
+      aria-label={`Open virtual key ${virtualKey.name}`}
       tabIndex={0}
       className="rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-muted/30"
       onClick={onOpen}

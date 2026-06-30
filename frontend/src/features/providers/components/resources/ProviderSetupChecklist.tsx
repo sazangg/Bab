@@ -8,26 +8,31 @@ import type {
   CredentialPoolResponse,
   ProviderCredentialResponse,
 } from "@/shared/api/generated/schemas";
+import {
+  getProviderReadiness,
+  providerReadinessActionLabel,
+  type ProviderReadinessAction,
+} from "../../lib/provider-readiness";
 
 export function ProviderSetupChecklist({
-  providerReady,
+  providerEnabled,
   canManage,
   credentials,
   pools,
-  hasActiveCredential,
   activeModelCount,
+  onEnableProvider,
   onAddCredential,
   onTestAllCredentials,
   onCreatePool,
   onOpenPools,
   onOpenModels,
 }: {
-  providerReady: boolean;
+  providerEnabled: boolean;
   canManage: boolean;
   credentials: ProviderCredentialResponse[];
   pools: CredentialPoolResponse[];
-  hasActiveCredential: boolean;
   activeModelCount: number;
+  onEnableProvider: () => void;
   onAddCredential: () => void;
   onTestAllCredentials: () => void;
   onCreatePool: () => void;
@@ -35,6 +40,26 @@ export function ProviderSetupChecklist({
   onOpenModels: () => void;
 }) {
   const [showCompletedChecklist, setShowCompletedChecklist] = useState(false);
+  const readiness = getProviderReadiness({
+    providerEnabled,
+    credentialCount: credentials.filter((item) => item.is_active).length,
+    validatedCredentialCount: credentials.filter(
+      (item) => item.is_active && item.health_status === "valid",
+    ).length,
+    poolCount: pools.filter((item) => item.is_active).length,
+    poolsWithCredentialsCount: pools.filter((item) => (item.active_credential_count ?? 0) > 0)
+      .length,
+    modelCount: activeModelCount,
+  });
+  const providerReady = readiness.isReady;
+  const actionHandlers: Partial<Record<Exclude<ProviderReadinessAction, null>, () => void>> = {
+    enable_provider: onEnableProvider,
+    add_credential: onAddCredential,
+    test_credentials: onTestAllCredentials,
+    create_pool: onCreatePool,
+    attach_credential: onOpenPools,
+    sync_or_add_models: onOpenModels,
+  };
 
   return (
     <div className="rounded-md border bg-muted/15">
@@ -69,36 +94,15 @@ export function ProviderSetupChecklist({
       </div>
       {!providerReady || showCompletedChecklist ? (
         <div className="grid gap-3 border-t p-4 md:grid-cols-2 xl:grid-cols-3">
-          <SetupStep
-            label="Add credential"
-            complete={credentials.length > 0}
-            action={canManage ? "Add" : undefined}
-            onAction={onAddCredential}
-          />
-          <SetupStep
-            label="Validate credential"
-            complete={credentials.some((item) => item.is_active && item.health_status === "valid")}
-            action={hasActiveCredential ? "Test all" : undefined}
-            onAction={onTestAllCredentials}
-          />
-          <SetupStep
-            label="Create active pool"
-            complete={pools.some((item) => item.is_active)}
-            action={canManage ? "Create" : undefined}
-            onAction={onCreatePool}
-          />
-          <SetupStep
-            label="Attach credential"
-            complete={pools.some((item) => (item.active_credential_count ?? 0) > 0)}
-            action={pools.length > 0 ? "Open pools" : undefined}
-            onAction={onOpenPools}
-          />
-          <SetupStep
-            label="Sync or add models"
-            complete={activeModelCount > 0}
-            action="Open models"
-            onAction={onOpenModels}
-          />
+          {readiness.steps.map((step) => (
+            <SetupStep
+              key={step.id}
+              label={step.label}
+              complete={step.complete}
+              action={canManage ? providerReadinessActionLabel(step.action) ?? undefined : undefined}
+              onAction={step.action ? actionHandlers[step.action] : undefined}
+            />
+          ))}
           <SetupStep
             label="Test request"
             complete={providerReady}

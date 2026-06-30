@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,12 +9,14 @@ import { LimitRulesSheet } from "./PoliciesPage";
 const createRuleHook = vi.hoisted(() => vi.fn());
 const updateRuleHook = vi.hoisted(() => vi.fn());
 const deleteRuleHook = vi.hoisted(() => vi.fn());
+const metadataHook = vi.hoisted(() => vi.fn());
 
 vi.mock("@/shared/api/generated/policies/policies", () => ({
   getLimitPolicyRuleImpactApiV1PoliciesLimitsRulesRuleIdImpactGet: vi.fn(),
   useCreateLimitPolicyRuleApiV1PoliciesLimitsPolicyIdRulesPost: createRuleHook,
   useUpdateLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdPatch: updateRuleHook,
   useDeleteLimitPolicyRuleApiV1PoliciesLimitsRulesRuleIdDelete: deleteRuleHook,
+  useGetPolicyMetadataApiV1PoliciesMetadataGet: metadataHook,
   useListAccessPoliciesApiV1PoliciesAccessGet: () => ({
     data: { status: 200, data: [] },
   }),
@@ -46,6 +48,7 @@ describe("LimitRulesSheet", () => {
     createRuleHook.mockReturnValue({ mutate: vi.fn(), isPending: false });
     updateRuleHook.mockReturnValue({ mutate: vi.fn(), isPending: false });
     deleteRuleHook.mockReturnValue({ mutate: vi.fn(), isPending: false });
+    metadataHook.mockReturnValue({ data: undefined });
   });
 
   it("passes a replace_policy draft to onPreview when previewing a rule add", async () => {
@@ -79,6 +82,91 @@ describe("LimitRulesSheet", () => {
       }),
     ]);
   });
+
+  it("initializes a newly opened rule from loaded metadata defaults", async () => {
+    metadataHook.mockReturnValue({
+      data: {
+        status: 200,
+        data: {
+          limit_types: ["requests"],
+          interval_units: ["day", "month"],
+          default_interval_unit: "month",
+          default_interval_count: 3,
+        },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <LimitRulesSheet
+          state={{ policy: limitPolicy() }}
+          onOpenChange={vi.fn()}
+          onChanged={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("Month")).toBeInTheDocument();
+    expect(screen.getAllByRole("spinbutton")[0]).toHaveValue(3);
+  });
+
+  it("applies metadata defaults after open only while the interval is untouched", async () => {
+    const user = userEvent.setup();
+    const client = new QueryClient();
+    const state = { policy: limitPolicy() };
+
+    const { rerender } = render(
+      <QueryClientProvider client={client}>
+        <LimitRulesSheet state={state} onOpenChange={vi.fn()} onChanged={vi.fn()} />
+      </QueryClientProvider>,
+    );
+
+    const intervalCount = screen.getAllByRole("spinbutton")[0];
+    expect(intervalCount).toHaveValue(1);
+
+    metadataHook.mockReturnValue({
+      data: {
+        status: 200,
+        data: {
+          limit_types: ["requests"],
+          interval_units: ["day", "month"],
+          default_interval_unit: "month",
+          default_interval_count: 4,
+        },
+      },
+    });
+
+    rerender(
+      <QueryClientProvider client={client}>
+        <LimitRulesSheet state={state} onOpenChange={vi.fn()} onChanged={vi.fn()} />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(screen.getAllByRole("spinbutton")[0]).toHaveValue(4));
+
+    await user.clear(screen.getAllByRole("spinbutton")[0]);
+    await user.type(screen.getAllByRole("spinbutton")[0], "9");
+
+    metadataHook.mockReturnValue({
+      data: {
+        status: 200,
+        data: {
+          limit_types: ["requests"],
+          interval_units: ["day", "week"],
+          default_interval_unit: "week",
+          default_interval_count: 2,
+        },
+      },
+    });
+
+    rerender(
+      <QueryClientProvider client={client}>
+        <LimitRulesSheet state={state} onOpenChange={vi.fn()} onChanged={vi.fn()} />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getAllByRole("spinbutton")[0]).toHaveValue(9);
+  });
 });
 
 function limitPolicy(): LimitPolicyResponse {
@@ -103,10 +191,6 @@ function limitPolicy(): LimitPolicyResponse {
         limit_value: 10,
         interval_unit: "day",
         interval_count: 1,
-        provider_id: null,
-        credential_pool_id: null,
-        model_offering_id: null,
-        access_policy_id: null,
         matchers: [],
         partitions: [],
         is_active: true,

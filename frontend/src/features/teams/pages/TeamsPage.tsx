@@ -218,6 +218,10 @@ export function TeamsPage() {
       rowClassName={(team) => (!team.is_active ? "opacity-60" : undefined)}
       noMatchTitle="No teams match"
       noMatchDescription="Try a different search or status."
+      onClearFilters={() => {
+        setSearch("");
+        setSegment("active");
+      }}
       editSheet={
         <EditTeamSheet
           team={editingTeam}
@@ -249,6 +253,7 @@ function TeamCard({
   return (
     <div
       role="button"
+      aria-label={`Open team ${team.name}`}
       tabIndex={0}
       className={cn(
         "rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-muted/30",

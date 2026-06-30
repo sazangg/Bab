@@ -13,7 +13,7 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": process.env.VITE_API_PROXY_TARGET ?? "http://localhost:8000",
+      "/api/v1": process.env.VITE_API_PROXY_TARGET ?? "http://localhost:8000",
       "/assets": process.env.VITE_API_PROXY_TARGET ?? "http://localhost:8000",
       "/v1": process.env.VITE_API_PROXY_TARGET ?? "http://localhost:8000",
     },

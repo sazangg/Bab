@@ -4,12 +4,10 @@ import {
   ChartNoAxesCombined,
   Clock,
   Download,
-  Eye,
   Timer,
   WalletCards,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Area, AreaChart, CartesianGrid, Tooltip, XAxis, YAxis } from "recharts";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -35,13 +33,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  useGetUsageFilterOptionsApiV1UsageFilterOptionsGet,
   useGetOrganizationUsageSummaryApiV1UsageSummaryGet,
   useGetOrganizationUsageTimeseriesApiV1UsageTimeseriesGet,
   useGetSpendInsightsApiV1UsageSpendInsightsGet,
+  useListUsageRecordsApiV1UsageRecordsGet,
 } from "@/shared/api/generated/usage/usage";
-import { useListGatewayRequestsApiV1GatewayHistoryRequestsGet } from "@/shared/api/generated/gateway-history/gateway-history";
 import { useMeApiV1AuthMeGet } from "@/shared/api/generated/auth/auth";
 import { useListProjectsApiV1ProjectsGet } from "@/shared/api/generated/projects/projects";
 import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
@@ -51,11 +49,9 @@ import { canViewUsage, hasPermission } from "@/features/auth/lib/permissions";
 import type {
   ActivityEventResponse,
   AuthenticatedUser,
-  GatewayRequestTraceListItem,
   LimitPolicyBudgetBurnRow,
   ProjectResponse,
   TeamResponse,
-  UsageRecordPageResponse,
   UsageRecordResponse,
   UsageBreakdownRow,
   UsageTimeSeriesPoint,
@@ -64,22 +60,12 @@ import { EmptyState } from "@/shared/components/EmptyState";
 import { formatCents } from "@/shared/lib/format-currency";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { HttpStatusBadge } from "@/shared/components/StatusBadge";
-import { RequestTraceSheet } from "@/features/usage/components/RequestTraceSheet";
 
 type UsageWindow = "24h" | "7d" | "30d" | "90d" | "lifetime";
 type UsageGrain = "hour" | "day" | "week";
 type UsageChartMetric = "requests" | "spend" | "tokens";
 type UsageScopeValue = "authorized" | `team:${string}` | `project:${string}`;
-type UsageFilterOptions = {
-  by_provider: UsageBreakdownRow[];
-  by_model: UsageBreakdownRow[];
-  by_team: UsageBreakdownRow[];
-  by_project: UsageBreakdownRow[];
-  by_virtual_key: UsageBreakdownRow[];
-};
-
 const RECORDS_PAGE_SIZE = 25;
-const REQUESTS_PAGE_SIZE = 25;
 
 export function UsagePage() {
   const currentUserQuery = useMeApiV1AuthMeGet();
@@ -95,13 +81,9 @@ export function UsagePage() {
   const [model, setModel] = useState("all");
   const [virtualKeyId, setVirtualKeyId] = useState("all");
   const [scopeValue, setScopeValue] = useState<UsageScopeValue>("authorized");
-  const [activeTraceTab, setActiveTraceTab] = useState("requests");
-  const [requestSearch, setRequestSearch] = useState("");
-  const [requestPage, setRequestPage] = useState(0);
   const [recordSearch, setRecordSearch] = useState("");
   const [recordPage, setRecordPage] = useState(0);
   const [chartMetric, setChartMetric] = useState<UsageChartMetric>("spend");
-  const [traceRequestId, setTraceRequestId] = useState<string | null>(null);
   const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
   const canViewOrgUsage = hasPermission(currentUser, "usage.view");
   const teams = teamsQuery.data?.status === 200 ? teamsQuery.data.data : [];
@@ -161,46 +143,18 @@ export function UsagePage() {
   const spendInsightsQuery = useGetSpendInsightsApiV1UsageSpendInsightsGet({
     ...usageParams,
   });
-  const resetTracePages = () => {
-    setRequestPage(0);
+  const resetRecordPage = () => {
     setRecordPage(0);
   };
-  const trimmedRequestSearch = requestSearch.trim();
   const trimmedRecordSearch = recordSearch.trim();
-  const requestParams = useMemo(() => {
-    const { model: publicModelName, ...baseParams } = usageParams;
-    return {
-      ...baseParams,
-      public_model_name: publicModelName,
-      search: trimmedRequestSearch || undefined,
-      limit: REQUESTS_PAGE_SIZE,
-      offset: requestPage * REQUESTS_PAGE_SIZE,
-    };
-  }, [requestPage, trimmedRequestSearch, usageParams]);
-  const requestsQuery = useListGatewayRequestsApiV1GatewayHistoryRequestsGet(requestParams);
-  const recordsQuery = useQuery({
-    queryKey: ["usage-records", usageParams, trimmedRecordSearch, recordPage],
-    queryFn: async () => {
-      const response = await httpClient.get<UsageRecordPageResponse>("/api/v1/usage/records", {
-        params: {
-          ...usageParams,
-          search: trimmedRecordSearch || undefined,
-          limit: RECORDS_PAGE_SIZE,
-          offset: recordPage * RECORDS_PAGE_SIZE,
-        },
-      });
-      return response.data;
-    },
+  const recordsQuery = useListUsageRecordsApiV1UsageRecordsGet({
+    ...usageParams,
+    search: trimmedRecordSearch || undefined,
+    limit: RECORDS_PAGE_SIZE,
+    offset: recordPage * RECORDS_PAGE_SIZE,
   });
-  const filterOptionsQuery = useQuery({
-    queryKey: ["usage-filter-options", filterOptionParams],
-    queryFn: async () => {
-      const response = await httpClient.get<UsageFilterOptions>("/api/v1/usage/filter-options", {
-        params: filterOptionParams,
-      });
-      return response.data;
-    },
-  });
+  const filterOptionsQuery =
+    useGetUsageFilterOptionsApiV1UsageFilterOptionsGet(filterOptionParams);
   const summary = usageQuery.data?.status === 200 ? usageQuery.data.data : null;
   const spendInsights =
     spendInsightsQuery.data?.status === 200 ? spendInsightsQuery.data.data : null;
@@ -213,17 +167,16 @@ export function UsagePage() {
     startDate,
     endDate,
   );
-  const visibleRecords = recordsQuery.data?.items ?? [];
-  const hasNextRecordsPage = recordsQuery.data?.has_more ?? false;
-  const requestList =
-    requestsQuery.data?.status === 200
-      ? requestsQuery.data.data
-      : { items: [], has_more: false, limit: REQUESTS_PAGE_SIZE, offset: requestPage * REQUESTS_PAGE_SIZE };
+  const recordsPageData =
+    recordsQuery.data?.status === 200 ? recordsQuery.data.data : null;
+  const visibleRecords = recordsPageData?.items ?? [];
+  const hasNextRecordsPage = recordsPageData?.has_more ?? false;
   const totals = summary?.totals;
   const requests = totals?.requests ?? 0;
   const failed = totals?.failed_requests ?? 0;
   const errorRate = requests > 0 ? `${Math.round((failed / requests) * 1000) / 10}%` : "0%";
-  const filterOptions = filterOptionsQuery.data;
+  const filterOptions =
+    filterOptionsQuery.data?.status === 200 ? filterOptionsQuery.data.data : null;
   const providerOptions = filterOptions?.by_provider ?? summary?.by_provider ?? [];
   const teamOptions = filterOptions?.by_team ?? summary?.by_team ?? [];
   const projectOptions = filterOptions?.by_project ?? summary?.by_project ?? [];
@@ -258,7 +211,7 @@ export function UsagePage() {
               onValueChange={(value) => {
                 setWindow(value as UsageWindow);
                 setCustomRangeEnabled(false);
-                resetTracePages();
+                resetRecordPage();
               }}
             >
               <SelectTrigger className="w-36">
@@ -280,13 +233,13 @@ export function UsagePage() {
               onEndDateChange={setEndDate}
               onApply={() => {
                 setCustomRangeEnabled(Boolean(startDate || endDate));
-                resetTracePages();
+                resetRecordPage();
               }}
               onClear={() => {
                 setStartDate("");
                 setEndDate("");
                 setCustomRangeEnabled(false);
-                resetTracePages();
+                resetRecordPage();
               }}
             />
             <Button
@@ -299,9 +252,8 @@ export function UsagePage() {
                 setModel("all");
                 setVirtualKeyId("all");
                 setScopeValue("authorized");
-                setRequestSearch("");
                 setRecordSearch("");
-                resetTracePages();
+                resetRecordPage();
               }}
             >
               Clear filters
@@ -323,7 +275,7 @@ export function UsagePage() {
                 setProjectId("all");
                 setModel("all");
                 setVirtualKeyId("all");
-                resetTracePages();
+                resetRecordPage();
               }}
             />
           ) : null}
@@ -334,7 +286,7 @@ export function UsagePage() {
             options={providerOptions}
             onChange={(value) => {
               setProviderId(value);
-              resetTracePages();
+              resetRecordPage();
             }}
           />
           {canViewOrgUsage ? (
@@ -348,7 +300,7 @@ export function UsagePage() {
                   setTeamId(value);
                   setProjectId("all");
                   setVirtualKeyId("all");
-                  resetTracePages();
+                  resetRecordPage();
                 }}
               />
               <UsageSelect
@@ -363,7 +315,7 @@ export function UsagePage() {
                   if (value !== "all" && project) {
                     setTeamId(project.team_id);
                   }
-                  resetTracePages();
+                  resetRecordPage();
                 }}
               />
             </>
@@ -375,7 +327,7 @@ export function UsagePage() {
             options={modelOptions}
             onChange={(value) => {
               setModel(value);
-              resetTracePages();
+              resetRecordPage();
             }}
           />
           <UsageSelect
@@ -385,7 +337,7 @@ export function UsagePage() {
             options={virtualKeyOptions}
             onChange={(value) => {
               setVirtualKeyId(value);
-              resetTracePages();
+              resetRecordPage();
             }}
           />
         </CardContent>
@@ -504,23 +456,7 @@ export function UsagePage() {
       ) : null}
 
       {summary ? (
-        <GatewayTraceCard
-          activeTab={activeTraceTab}
-          onActiveTabChange={setActiveTraceTab}
-          requests={requestList.items}
-          requestsHasNext={requestList.has_more}
-          requestsPage={requestPage}
-          requestsPageSize={REQUESTS_PAGE_SIZE}
-          requestsLoading={requestsQuery.isPending}
-          requestsError={requestsQuery.error}
-          requestFilter={requestSearch}
-          onRequestFilterChange={(value) => {
-            setRequestSearch(value);
-            setRequestPage(0);
-          }}
-          onPreviousRequestPage={() => setRequestPage((page) => Math.max(0, page - 1))}
-          onNextRequestPage={() => setRequestPage((page) => page + 1)}
-          onRetryRequests={() => requestsQuery.refetch()}
+        <UsageRecordsPanel
           records={visibleRecords}
           recordsLoading={recordsQuery.isPending}
           recordsError={recordsQuery.error}
@@ -539,17 +475,8 @@ export function UsagePage() {
           onPreviousRecordPage={() => setRecordPage((page) => Math.max(0, page - 1))}
           onNextRecordPage={() => setRecordPage((page) => page + 1)}
           onRetryRecords={() => recordsQuery.refetch()}
-          onOpenRequestTrace={(request) => setTraceRequestId(request.id)}
-          onOpenRecordTrace={(record) => setTraceRequestId(record.gateway_request_id ?? null)}
         />
       ) : null}
-      <RequestTraceSheet
-        gatewayRequestId={traceRequestId}
-        open={Boolean(traceRequestId)}
-        onOpenChange={(open) => {
-          if (!open) setTraceRequestId(null);
-        }}
-      />
     </div>
   );
 }
@@ -857,20 +784,7 @@ function SpendCell({
   );
 }
 
-function GatewayTraceCard({
-  activeTab,
-  onActiveTabChange,
-  requests,
-  requestsHasNext,
-  requestsPage,
-  requestsPageSize,
-  requestsLoading,
-  requestsError,
-  requestFilter,
-  onRequestFilterChange,
-  onPreviousRequestPage,
-  onNextRequestPage,
-  onRetryRequests,
+function UsageRecordsPanel({
   records,
   recordsLoading,
   recordsError,
@@ -883,22 +797,7 @@ function GatewayTraceCard({
   onPreviousRecordPage,
   onNextRecordPage,
   onRetryRecords,
-  onOpenRequestTrace,
-  onOpenRecordTrace,
 }: {
-  activeTab: string;
-  onActiveTabChange: (value: string) => void;
-  requests: GatewayRequestTraceListItem[];
-  requestsHasNext: boolean;
-  requestsPage: number;
-  requestsPageSize: number;
-  requestsLoading: boolean;
-  requestsError: unknown;
-  requestFilter: string;
-  onRequestFilterChange: (value: string) => void;
-  onPreviousRequestPage: () => void;
-  onNextRequestPage: () => void;
-  onRetryRequests: () => void;
   records: UsageRecordResponse[];
   recordsLoading: boolean;
   recordsError: unknown;
@@ -911,234 +810,29 @@ function GatewayTraceCard({
   onPreviousRecordPage: () => void;
   onNextRecordPage: () => void;
   onRetryRecords: () => void;
-  onOpenRequestTrace: (request: GatewayRequestTraceListItem) => void;
-  onOpenRecordTrace: (record: UsageRecordResponse) => void;
 }) {
   return (
     <Card>
       <CardHeader className="border-b">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <CardTitle>Request traces</CardTitle>
-          <Tabs value={activeTab} onValueChange={onActiveTabChange}>
-            <TabsList>
-              <TabsTrigger value="requests">Requests</TabsTrigger>
-              <TabsTrigger value="attempts">Attempts</TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </div>
+        <CardTitle>Usage records</CardTitle>
       </CardHeader>
       <CardContent>
-        <Tabs value={activeTab} onValueChange={onActiveTabChange}>
-          <TabsContent value="requests" className="mt-0">
-            <GatewayRequestsTable
-              requests={requests}
-              isLoading={requestsLoading}
-              error={requestsError}
-              filter={requestFilter}
-              onFilterChange={onRequestFilterChange}
-              page={requestsPage}
-              pageSize={requestsPageSize}
-              hasNext={requestsHasNext}
-              onPreviousPage={onPreviousRequestPage}
-              onNextPage={onNextRequestPage}
-              onRetry={onRetryRequests}
-              onOpenTrace={onOpenRequestTrace}
-            />
-          </TabsContent>
-          <TabsContent value="attempts" className="mt-0">
-            <UsageRecordsTable
-              records={records}
-              isLoading={recordsLoading}
-              error={recordsError}
-              filter={recordFilter}
-              onFilterChange={onRecordFilterChange}
-              exportParams={exportParams}
-              page={recordsPage}
-              pageSize={recordsPageSize}
-              hasNext={recordsHasNext}
-              onPreviousPage={onPreviousRecordPage}
-              onNextPage={onNextRecordPage}
-              onRetry={onRetryRecords}
-              onOpenTrace={onOpenRecordTrace}
-            />
-          </TabsContent>
-        </Tabs>
+        <UsageRecordsTable
+          records={records}
+          isLoading={recordsLoading}
+          error={recordsError}
+          filter={recordFilter}
+          onFilterChange={onRecordFilterChange}
+          exportParams={exportParams}
+          page={recordsPage}
+          pageSize={recordsPageSize}
+          hasNext={recordsHasNext}
+          onPreviousPage={onPreviousRecordPage}
+          onNextPage={onNextRecordPage}
+          onRetry={onRetryRecords}
+        />
       </CardContent>
     </Card>
-  );
-}
-
-function GatewayRequestsTable({
-  requests,
-  isLoading,
-  error,
-  filter,
-  onFilterChange,
-  page,
-  pageSize,
-  hasNext,
-  onPreviousPage,
-  onNextPage,
-  onRetry,
-  onOpenTrace,
-}: {
-  requests: GatewayRequestTraceListItem[];
-  isLoading: boolean;
-  error: unknown;
-  filter: string;
-  onFilterChange: (value: string) => void;
-  page: number;
-  pageSize: number;
-  hasNext: boolean;
-  onPreviousPage: () => void;
-  onNextPage: () => void;
-  onRetry: () => void;
-  onOpenTrace: (request: GatewayRequestTraceListItem) => void;
-}) {
-  const startRequest = page * pageSize + 1;
-  const endRequest = page * pageSize + requests.length;
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <div className="font-medium">Requests</div>
-          <div className="text-xs text-muted-foreground">
-            One row per gateway request, including fallback outcomes.
-          </div>
-        </div>
-        <Input
-          className="h-9 w-72"
-          value={filter}
-          onChange={(event) => onFilterChange(event.target.value)}
-          placeholder="Search request, model, provider..."
-        />
-      </div>
-      <DataTable<GatewayRequestTraceListItem>
-        data={requests}
-        loading={isLoading}
-        error={error ? "Unable to load gateway requests." : undefined}
-        onRetry={onRetry}
-        getRowKey={(request) => request.id}
-        empty={{
-          icon: ChartNoAxesCombined,
-          title: "No matching requests",
-          description: "Gateway requests appear here as soon as proxy traffic is recorded.",
-        }}
-        columns={[
-          {
-            key: "time",
-            header: "Time",
-            className: "whitespace-nowrap text-muted-foreground",
-            cell: (request) => new Date(request.started_at).toLocaleString(),
-          },
-          {
-            key: "model",
-            header: "Model",
-            cell: (request) => (
-              <>
-                <div className="font-medium">{request.public_model_name ?? request.requested_model}</div>
-                <div className="text-xs text-muted-foreground">
-                  {request.final_provider_model ?? request.requested_model}
-                </div>
-              </>
-            ),
-          },
-          {
-            key: "provider",
-            header: "Provider",
-            cell: (request) => (
-              <>
-                <div className="font-medium">{request.final_provider_name ?? "Unresolved"}</div>
-                <div className="text-xs text-muted-foreground">
-                  {formatInvolvedProviders(request)}
-                </div>
-              </>
-            ),
-          },
-          {
-            key: "scope",
-            header: "Scope",
-            cell: (request) => (
-              <>
-                <div className="font-medium">{request.project_name ?? "No project"}</div>
-                <div className="text-xs text-muted-foreground">{request.team_name ?? "No team"}</div>
-              </>
-            ),
-          },
-          {
-            key: "status",
-            header: "Status",
-            cell: (request) => (
-              <>
-                {request.final_http_status == null ? (
-                  <Badge variant="outline">Pending</Badge>
-                ) : (
-                  <HttpStatusBadge status={request.final_http_status} />
-                )}
-                <div className="mt-1 text-xs text-muted-foreground">{formatOutcome(request)}</div>
-              </>
-            ),
-          },
-          {
-            key: "attempts",
-            header: "Attempts",
-            align: "right",
-            cell: (request) => (
-              <div>
-                <div>{request.attempt_count.toLocaleString()}</div>
-                {request.fallback_attempted ? (
-                  <div className="text-xs text-muted-foreground">fallback</div>
-                ) : null}
-              </div>
-            ),
-          },
-          {
-            key: "duration",
-            header: "Duration",
-            align: "right",
-            cell: (request) =>
-              request.duration_ms == null ? (
-                <span className="text-muted-foreground">Pending</span>
-              ) : (
-                `${request.duration_ms}ms`
-              ),
-          },
-          {
-            key: "trace",
-            header: "Trace",
-            align: "right",
-            cell: (request) => (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Open request trace"
-                onClick={() => onOpenTrace(request)}
-              >
-                <Eye />
-              </Button>
-            ),
-          },
-        ]}
-        footer={
-          requests.length > 0 ? (
-            <>
-              <span>
-                Showing {startRequest.toLocaleString()}-{endRequest.toLocaleString()}
-                {hasNext ? " of more requests" : ""}
-              </span>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" disabled={page === 0} onClick={onPreviousPage}>
-                  Previous
-                </Button>
-                <Button variant="outline" size="sm" disabled={!hasNext} onClick={onNextPage}>
-                  Next
-                </Button>
-              </div>
-            </>
-          ) : undefined
-        }
-      />
-    </div>
   );
 }
 
@@ -1155,7 +849,6 @@ function UsageRecordsTable({
   onPreviousPage,
   onNextPage,
   onRetry,
-  onOpenTrace,
 }: {
   records: UsageRecordResponse[];
   isLoading: boolean;
@@ -1169,7 +862,6 @@ function UsageRecordsTable({
   onPreviousPage: () => void;
   onNextPage: () => void;
   onRetry: () => void;
-  onOpenTrace: (record: UsageRecordResponse) => void;
 }) {
   const startRecord = page * pageSize + 1;
   const endRecord = page * pageSize + records.length;
@@ -1184,6 +876,7 @@ function UsageRecordsTable({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Input
+            aria-label="Search usage records"
             className="h-9 w-72"
             value={filter}
             onChange={(event) => onFilterChange(event.target.value)}
@@ -1239,21 +932,9 @@ function UsageRecordsTable({
             key: "request",
             header: "Request",
             cell: (record) => (
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-xs text-muted-foreground">
-                  {shortId(record.request_id)}
-                </span>
-                {record.gateway_request_id ? (
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Open request trace"
-                    onClick={() => onOpenTrace(record)}
-                  >
-                    <Eye />
-                  </Button>
-                ) : null}
-              </div>
+              <span className="font-mono text-xs text-muted-foreground">
+                {shortId(record.request_id)}
+              </span>
             ),
           },
           {
@@ -1314,21 +995,6 @@ function UsageRecordsTable({
       />
     </div>
   );
-}
-
-function formatOutcome(request: GatewayRequestTraceListItem) {
-  if (request.final_error_code) return request.final_error_code;
-  if (request.outcome === "succeeded") return "Succeeded";
-  if (request.outcome === "failed") return "Failed";
-  if (request.outcome === "denied") return "Denied";
-  return "Pending";
-}
-
-function formatInvolvedProviders(request: GatewayRequestTraceListItem) {
-  const providers = request.involved_provider_names ?? [];
-  if (providers.length === 0) return "No attempts";
-  if (providers.length === 1) return providers[0];
-  return `${providers[0]} +${providers.length - 1}`;
 }
 
 function SpendDriversCard({ rows }: { rows: UsageBreakdownRow[] }) {

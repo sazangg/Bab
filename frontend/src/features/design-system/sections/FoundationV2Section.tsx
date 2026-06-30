@@ -130,7 +130,7 @@ export function FoundationV2Section() {
 
       <Example
         label="ImpactConfirmationDialog"
-        description="Impact-gated destructive confirm; replaces window.confirm and 3 bespoke dialogs."
+        description="Impact-gated destructive confirm; replaces raw browser confirms and bespoke dialogs."
       >
         <ImpactDemo />
       </Example>

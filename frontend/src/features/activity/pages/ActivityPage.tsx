@@ -44,7 +44,7 @@ import { EmptyState } from "@/shared/components/EmptyState";
 import { EventDetailSheet, type EventDetailRow } from "@/shared/components/EventDetailSheet";
 import { FilterToolbar, type FilterChip } from "@/shared/components/FilterToolbar";
 import { PageHeader } from "@/shared/components/PageHeader";
-import { RequestTraceSheet } from "@/features/usage/components/RequestTraceSheet";
+import { RequestTraceSheet } from "@/features/gateway-history/components/RequestTraceSheet";
 import { buildDateRange, type DateRange } from "@/shared/lib/date-range";
 import { downloadBlob } from "@/shared/lib/download";
 import { shortId } from "@/shared/lib/short-id";

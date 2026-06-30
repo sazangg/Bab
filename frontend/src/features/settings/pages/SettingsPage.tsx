@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
-import { ImageIcon, Save, Settings, Upload } from "lucide-react";
+import { ImageIcon, RotateCcw, Save, Settings, Upload } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useRef } from "react";
 import { useForm, useWatch } from "react-hook-form";
@@ -81,8 +81,21 @@ export function SettingsPage() {
     settings?.deployment_max_body_bytes ?? settings?.default_max_body_bytes ?? 0;
   const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
   const canManageSettings = hasPermission(currentUser, "settings.manage");
+  const resolvedSettingsSchema = settingsSchema.superRefine((values, context) => {
+    if (
+      deploymentMaxBodyBytes > 0 &&
+      values.default_max_body_bytes > deploymentMaxBodyBytes
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["default_max_body_bytes"],
+        message: `Must not exceed the deployment ceiling of ${deploymentMaxBodyBytes.toLocaleString()} bytes.`,
+      });
+    }
+  });
   const form = useForm<SettingsInput, unknown, SettingsValues>({
-    resolver: zodResolver(settingsSchema),
+    resolver: zodResolver(resolvedSettingsSchema),
+    mode: "onChange",
     defaultValues: {
       organization_name: "",
       public_app_url: "",
@@ -135,6 +148,13 @@ export function SettingsPage() {
 
   const submit = form.handleSubmit((values) => {
     if (!canManageSettings) return;
+    if (values.default_max_body_bytes > deploymentMaxBodyBytes) {
+      form.setError("default_max_body_bytes", {
+        type: "max",
+        message: `Must not exceed the deployment ceiling of ${deploymentMaxBodyBytes.toLocaleString()} bytes.`,
+      });
+      return;
+    }
     const payload: UpdateOrganizationSettingsRequest = {
       ...values,
       public_app_url: values.public_app_url?.trim() ? values.public_app_url : null,
@@ -161,19 +181,40 @@ export function SettingsPage() {
         description="Organization identity, gateway defaults, and security defaults."
         actions={
           canManageSettings ? (
-            <Button
-              type="submit"
-              form="settings-form"
-              disabled={
-                updateSettings.isPending || settingsQuery.isPending || !form.formState.isDirty
-              }
-            >
-              <Save data-icon="inline-start" />
-              {updateSettings.isPending ? "Saving..." : "Save settings"}
-            </Button>
+            <>
+              {form.formState.isDirty && settings ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => form.reset(toFormValues(settings))}
+                  disabled={updateSettings.isPending}
+                >
+                  <RotateCcw data-icon="inline-start" />
+                  Discard changes
+                </Button>
+              ) : null}
+              <Button
+                type="submit"
+                form="settings-form"
+                disabled={
+                  updateSettings.isPending ||
+                  settingsQuery.isPending ||
+                  !form.formState.isDirty ||
+                  !form.formState.isValid
+                }
+              >
+                <Save data-icon="inline-start" />
+                {updateSettings.isPending ? "Saving..." : "Save settings"}
+              </Button>
+            </>
           ) : null
         }
       />
+      {!canManageSettings && settings ? (
+        <div className="rounded-md border bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+          Read-only. Organization administrators manage these settings.
+        </div>
+      ) : null}
       {settingsQuery.isPending ? (
         <p className="text-sm text-muted-foreground">Loading settings...</p>
       ) : !settings ? (
@@ -297,7 +338,6 @@ export function SettingsPage() {
                 name="default_max_body_bytes"
                 form={form}
                 disabled={!canManageSettings}
-                max={deploymentMaxBodyBytes}
               />
               <p className="text-xs text-muted-foreground md:col-span-2">
                 The deployment ceiling is {deploymentMaxBodyBytes.toLocaleString()} bytes. Provider
@@ -384,6 +424,7 @@ export function SettingsPage() {
                 </div>
                 <Switch
                   id="settings-secret-copy"
+                  aria-label="Allow key issuance and rotation"
                   checked={allowSecretCopy}
                   disabled={!canManageSettings}
                   onCheckedChange={(checked) =>

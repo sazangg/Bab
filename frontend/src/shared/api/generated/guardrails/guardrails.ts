@@ -29,6 +29,7 @@ import type {
   GuardrailAssignmentResponse,
   GuardrailEventPageResponse,
   GuardrailImpactResponse,
+  GuardrailMetadataResponse,
   GuardrailPolicyOptionResponse,
   GuardrailPolicyResponse,
   GuardrailSimulationRequest,
@@ -50,6 +51,125 @@ export type HTTPStatusCode3xx = 300 | 301 | 302 | 303 | 304 | 305 | 307 | 308;
 export type HTTPStatusCode4xx = 400 | 401 | 402 | 403 | 404 | 405 | 406 | 407 | 408 | 409 | 410 | 411 | 412 | 413 | 414 | 415 | 416 | 417 | 418 | 419 | 420 | 421 | 422 | 423 | 424 | 426 | 428 | 429 | 431 | 451;
 export type HTTPStatusCode5xx = 500 | 501 | 502 | 503 | 504 | 505 | 507 | 511;
 export type HTTPStatusCodes = HTTPStatusCode1xx | HTTPStatusCode2xx | HTTPStatusCode3xx | HTTPStatusCode4xx | HTTPStatusCode5xx;
+
+
+export type getGuardrailMetadataApiV1GuardrailsMetadataGetResponse200 = {
+  data: GuardrailMetadataResponse
+  status: 200
+}
+
+export type getGuardrailMetadataApiV1GuardrailsMetadataGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getGuardrailMetadataApiV1GuardrailsMetadataGetResponseSuccess = (getGuardrailMetadataApiV1GuardrailsMetadataGetResponse200) & {
+  headers: Headers;
+};
+export type getGuardrailMetadataApiV1GuardrailsMetadataGetResponseError = (getGuardrailMetadataApiV1GuardrailsMetadataGetResponseDefault) & {
+  headers: Headers;
+};
+
+export type getGuardrailMetadataApiV1GuardrailsMetadataGetResponse = (getGuardrailMetadataApiV1GuardrailsMetadataGetResponseSuccess | getGuardrailMetadataApiV1GuardrailsMetadataGetResponseError)
+
+export const getGetGuardrailMetadataApiV1GuardrailsMetadataGetUrl = () => {
+
+
+
+
+  return `/api/v1/guardrails/metadata`
+}
+
+/**
+ * @summary Get Guardrail Metadata
+ */
+export const getGuardrailMetadataApiV1GuardrailsMetadataGet = async ( options?: RequestInit): Promise<getGuardrailMetadataApiV1GuardrailsMetadataGetResponse> => {
+
+  return apiMutator<getGuardrailMetadataApiV1GuardrailsMetadataGetResponse>(getGetGuardrailMetadataApiV1GuardrailsMetadataGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetGuardrailMetadataApiV1GuardrailsMetadataGetQueryKey = () => {
+    return [
+    `/api/v1/guardrails/metadata`
+    ] as const;
+    }
+
+
+export const getGetGuardrailMetadataApiV1GuardrailsMetadataGetQueryOptions = <TData = Awaited<ReturnType<typeof getGuardrailMetadataApiV1GuardrailsMetadataGet>>, TError = ProblemDetail>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGuardrailMetadataApiV1GuardrailsMetadataGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetGuardrailMetadataApiV1GuardrailsMetadataGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getGuardrailMetadataApiV1GuardrailsMetadataGet>>> = ({ signal }) => getGuardrailMetadataApiV1GuardrailsMetadataGet({ signal });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGuardrailMetadataApiV1GuardrailsMetadataGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetGuardrailMetadataApiV1GuardrailsMetadataGetQueryResult = NonNullable<Awaited<ReturnType<typeof getGuardrailMetadataApiV1GuardrailsMetadataGet>>>
+export type GetGuardrailMetadataApiV1GuardrailsMetadataGetQueryError = ProblemDetail
+
+
+export function useGetGuardrailMetadataApiV1GuardrailsMetadataGet<TData = Awaited<ReturnType<typeof getGuardrailMetadataApiV1GuardrailsMetadataGet>>, TError = ProblemDetail>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGuardrailMetadataApiV1GuardrailsMetadataGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGuardrailMetadataApiV1GuardrailsMetadataGet>>,
+          TError,
+          Awaited<ReturnType<typeof getGuardrailMetadataApiV1GuardrailsMetadataGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetGuardrailMetadataApiV1GuardrailsMetadataGet<TData = Awaited<ReturnType<typeof getGuardrailMetadataApiV1GuardrailsMetadataGet>>, TError = ProblemDetail>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGuardrailMetadataApiV1GuardrailsMetadataGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGuardrailMetadataApiV1GuardrailsMetadataGet>>,
+          TError,
+          Awaited<ReturnType<typeof getGuardrailMetadataApiV1GuardrailsMetadataGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetGuardrailMetadataApiV1GuardrailsMetadataGet<TData = Awaited<ReturnType<typeof getGuardrailMetadataApiV1GuardrailsMetadataGet>>, TError = ProblemDetail>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGuardrailMetadataApiV1GuardrailsMetadataGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get Guardrail Metadata
+ */
+
+export function useGetGuardrailMetadataApiV1GuardrailsMetadataGet<TData = Awaited<ReturnType<typeof getGuardrailMetadataApiV1GuardrailsMetadataGet>>, TError = ProblemDetail>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getGuardrailMetadataApiV1GuardrailsMetadataGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetGuardrailMetadataApiV1GuardrailsMetadataGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
 
 
 export type listPoliciesApiV1GuardrailsPoliciesGetResponse200 = {

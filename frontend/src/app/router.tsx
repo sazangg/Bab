@@ -45,6 +45,11 @@ const GuardrailsPage = lazy(() =>
     default: module.GuardrailsPage,
   })),
 );
+const GatewayHistoryPage = lazy(() =>
+  import("@/features/gateway-history/pages/GatewayHistoryPage").then((module) => ({
+    default: module.GatewayHistoryPage,
+  })),
+);
 const KeyDetailPage = lazy(() =>
   import("@/features/projects/pages/KeyDetailPage").then((module) => ({
     default: module.KeyDetailPage,
@@ -93,6 +98,11 @@ const ProvidersPage = lazy(() =>
 const SettingsPage = lazy(() =>
   import("@/features/settings/pages/SettingsPage").then((module) => ({
     default: module.SettingsPage,
+  })),
+);
+const SetupPage = lazy(() =>
+  import("@/features/setup/pages/SetupPage").then((module) => ({
+    default: module.SetupPage,
   })),
 );
 const TeamDetailPage = lazy(() =>
@@ -162,6 +172,9 @@ export function AppRoutes() {
           <Route element={<ProtectedRoute allowDashboardHome />}>
             <Route path="/" element={<DashboardHomePage />} />
           </Route>
+          <Route element={<ProtectedRoute requireOrgAdminSurface />}>
+            <Route path="/setup" element={<SetupPage />} />
+          </Route>
           <Route element={<ProtectedRoute allowTeamScope />}>
             <Route path="/teams" element={<TeamsPage />} />
             <Route path="/teams/:teamId" element={<TeamDetailPage />} />
@@ -188,6 +201,9 @@ export function AppRoutes() {
           </Route>
           <Route element={<ProtectedRoute allowUsageScope />}>
             <Route path="/usage" element={<UsagePage />} />
+          </Route>
+          <Route element={<ProtectedRoute allowGatewayHistoryScope />}>
+            <Route path="/gateway-history" element={<GatewayHistoryPage />} />
           </Route>
           <Route element={<ProtectedRoute allowActivityScope />}>
             <Route path="/activity" element={<ActivityPage />} />

@@ -1,5 +1,4 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { isAxiosError } from "axios";
 import { Copy, RotateCcw, Search, Trash2, UserPlus, UserX, Users } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -18,6 +17,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   hasAnyProjectAdminMembership,
   hasAnyTeamAdminMembership,
@@ -48,6 +55,7 @@ import { useListTeamsApiV1TeamsGet } from "@/shared/api/generated/teams/teams";
 import { EventDetailSheet, type EventDetailRow } from "@/shared/components/EventDetailSheet";
 import { FilterToolbar, type FilterChip } from "@/shared/components/FilterToolbar";
 import { PageHeader } from "@/shared/components/PageHeader";
+import { getProblemDetail } from "@/shared/api/problem-detail";
 
 const NO_SCOPE = "__none__";
 const ALL_STATUSES = "__all_statuses__";
@@ -82,6 +90,8 @@ export function UsersPage() {
   const [memberRoleFilter, setMemberRoleFilter] = useState(ALL_ROLES);
   const [memberStatusFilter, setMemberStatusFilter] = useState(ALL_STATUSES);
   const [inviteStatusFilter, setInviteStatusFilter] = useState("pending");
+  const [memberToDeactivate, setMemberToDeactivate] = useState<MemberResponse | null>(null);
+  const [inviteToRevoke, setInviteToRevoke] = useState<InviteResponse | null>(null);
 
   const membersQuery = useListMembersApiV1AuthMembersGet({
     query: { enabled: canManageOrgMembers },
@@ -158,6 +168,12 @@ export function UsersPage() {
     mutation: {
       onSuccess: async (response) => {
         await queryClient.invalidateQueries();
+        setEmail("");
+        setRole("org_member");
+        setTeamId(NO_SCOPE);
+        setTeamRole(NO_SCOPE);
+        setProjectId(NO_SCOPE);
+        setProjectRole(NO_SCOPE);
         if (response.status === 201 && response.data.invite_url) {
           const inviteUrl = resolveInviteUrl(response.data.invite_url);
           setLatestInviteUrl(inviteUrl);
@@ -167,7 +183,8 @@ export function UsersPage() {
           toast.success("Invite created.");
         }
       },
-      onError: () => toast.error("Invite could not be created."),
+      onError: (error) =>
+        toast.error(getProblemDetail(error, "Invite could not be created.")),
     },
   });
   const createMemberMutation = useCreateMemberApiV1AuthMembersPost({
@@ -186,13 +203,8 @@ export function UsersPage() {
           toast.success("User created.");
         }
       },
-      onError: (error) => {
-        if (isAxiosError(error) && error.response?.status === 409) {
-          toast.error("A user with this email already exists.");
-          return;
-        }
-        toast.error("User could not be created.");
-      },
+      onError: (error) =>
+        toast.error(getProblemDetail(error, "User could not be created.")),
     },
   });
   const updateMemberMutation = useUpdateMemberApiV1AuthMembersUserIdPatch({
@@ -201,27 +213,32 @@ export function UsersPage() {
         await queryClient.invalidateQueries();
         toast.success("Member role updated.");
       },
-      onError: () => toast.error("Member role could not be updated."),
+      onError: (error) =>
+        toast.error(getProblemDetail(error, "Member role could not be updated.")),
     },
   });
   const updateMemberStatusMutation = useUpdateMemberStatusApiV1AuthMembersUserIdStatusPatch({
     mutation: {
       onSuccess: async (_response, variables) => {
+        setMemberToDeactivate(null);
         await queryClient.invalidateQueries();
         toast.success(
           variables.data.status === "active" ? "User reactivated." : "User deactivated.",
         );
       },
-      onError: () => toast.error("Member status could not be updated."),
+      onError: (error) =>
+        toast.error(getProblemDetail(error, "Member status could not be updated.")),
     },
   });
   const revokeInviteMutation = useRevokeInviteApiV1AuthInvitesInviteIdDelete({
     mutation: {
       onSuccess: async () => {
+        setInviteToRevoke(null);
         await queryClient.invalidateQueries();
         toast.success("Invite revoked.");
       },
-      onError: () => toast.error("Invite could not be revoked."),
+      onError: (error) =>
+        toast.error(getProblemDetail(error, "Invite could not be revoked.")),
     },
   });
 
@@ -233,25 +250,32 @@ export function UsersPage() {
     revokeInviteMutation.isPending;
   const scopedInviteHasTarget =
     teamId !== NO_SCOPE || (projectId !== NO_SCOPE && projectRole !== NO_SCOPE);
+  const createScopeError = scopedGrantError(
+    createTeamId,
+    createTeamRole,
+    createProjectId,
+    createProjectRole,
+  );
+  const inviteScopeError = scopedGrantError(teamId, teamRole, projectId, projectRole);
   const createUserDisabled =
     isPending ||
     !canManageOrgMembers ||
     !createEmail.trim() ||
     createPassword.trim().length < 8 ||
     !isWithinBcryptByteLimit(createPassword) ||
-    (createProjectId !== NO_SCOPE && createProjectRole === NO_SCOPE);
+    Boolean(createScopeError);
   const inviteDisabled =
     isPending ||
     !canInvite ||
     !email.trim() ||
     (!canManageOrgMembers && !scopedInviteHasTarget) ||
-    (projectId !== NO_SCOPE && projectRole === NO_SCOPE);
+    Boolean(inviteScopeError);
   const inviteDisabledReason = !email.trim()
     ? "Enter an email address to create an invite."
     : !canManageOrgMembers && !scopedInviteHasTarget
       ? "Choose one of your managed teams or projects before inviting."
-      : projectId !== NO_SCOPE && projectRole === NO_SCOPE
-        ? "Choose a project role before inviting."
+      : inviteScopeError
+        ? inviteScopeError
         : null;
 
   function submitInvite() {
@@ -265,7 +289,6 @@ export function UsersPage() {
         project_role: projectRole === NO_SCOPE ? null : projectRole,
       },
     });
-    setEmail("");
   }
 
   return (
@@ -428,7 +451,8 @@ export function UsersPage() {
                     </Field>
                   </div>
                 </div>
-                <div className="flex justify-end">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm text-muted-foreground">{createScopeError}</p>
                   <Button
                     type="button"
                     disabled={createUserDisabled}
@@ -497,6 +521,8 @@ export function UsersPage() {
           members={filteredMembers}
           allMembers={members}
           isLoading={membersQuery.isPending}
+          error={membersQuery.isError}
+          onRetry={() => membersQuery.refetch()}
           isPending={isPending}
           search={memberSearch}
           roleFilter={memberRoleFilter}
@@ -512,9 +538,13 @@ export function UsersPage() {
           onUpdateRole={(member, nextRole) =>
             updateMemberMutation.mutate({ userId: member.user_id, data: { role: nextRole } })
           }
-          onUpdateStatus={(member, status) =>
-            updateMemberStatusMutation.mutate({ userId: member.user_id, data: { status } })
-          }
+          onUpdateStatus={(member, status) => {
+            if (status === "inactive") {
+              setMemberToDeactivate(member);
+              return;
+            }
+            updateMemberStatusMutation.mutate({ userId: member.user_id, data: { status } });
+          }}
         />
       ) : (
         <ScopedAccessCard teams={manageableTeams} projects={manageableProjects} />
@@ -523,15 +553,55 @@ export function UsersPage() {
       {canManageOrgMembers ? (
         <InvitesCard
           invites={filteredInvites}
+          allInvites={invites}
           isLoading={invitesQuery.isPending}
+          error={invitesQuery.isError}
+          onRetry={() => invitesQuery.refetch()}
           isPending={isPending}
           statusFilter={inviteStatusFilter}
           teamById={teamById}
           projectById={projectById}
           onStatusFilter={setInviteStatusFilter}
-          onRevoke={(invite) => revokeInviteMutation.mutate({ inviteId: invite.id })}
+          onRevoke={setInviteToRevoke}
         />
       ) : null}
+      <DestructiveActionDialog
+        open={Boolean(memberToDeactivate)}
+        title="Deactivate user?"
+        description={
+          memberToDeactivate
+            ? `Deactivating ${memberToDeactivate.email} blocks their access until reactivated.`
+            : ""
+        }
+        confirmLabel="Deactivate user"
+        pending={updateMemberStatusMutation.isPending}
+        onOpenChange={(open) => !open && setMemberToDeactivate(null)}
+        onConfirm={() => {
+          if (memberToDeactivate) {
+            updateMemberStatusMutation.mutate({
+              userId: memberToDeactivate.user_id,
+              data: { status: "inactive" },
+            });
+          }
+        }}
+      />
+      <DestructiveActionDialog
+        open={Boolean(inviteToRevoke)}
+        title="Revoke invite?"
+        description={
+          inviteToRevoke
+            ? `Revoking the invite for ${inviteToRevoke.email} invalidates its pending link.`
+            : ""
+        }
+        confirmLabel="Revoke invite"
+        pending={revokeInviteMutation.isPending}
+        onOpenChange={(open) => !open && setInviteToRevoke(null)}
+        onConfirm={() => {
+          if (inviteToRevoke) {
+            revokeInviteMutation.mutate({ inviteId: inviteToRevoke.id });
+          }
+        }}
+      />
     </div>
   );
 }
@@ -540,6 +610,8 @@ function MembersCard({
   members,
   allMembers,
   isLoading,
+  error,
+  onRetry,
   isPending,
   search,
   roleFilter,
@@ -558,6 +630,8 @@ function MembersCard({
   members: MemberResponse[];
   allMembers: MemberResponse[];
   isLoading: boolean;
+  error: boolean;
+  onRetry: () => void;
   isPending: boolean;
   search: string;
   roleFilter: string;
@@ -807,6 +881,8 @@ function MembersCard({
           columns={columns}
           data={members}
           loading={isLoading}
+          error={error ? "Members could not be loaded." : undefined}
+          onRetry={onRetry}
           getRowKey={(member) => member.user_id}
           onRowClick={setSelected}
           rowClassName={(member) => (member.status !== "active" ? "opacity-60" : undefined)}
@@ -991,7 +1067,10 @@ function InviteUserCard({
 
 function InvitesCard({
   invites,
+  allInvites,
   isLoading,
+  error,
+  onRetry,
   isPending,
   statusFilter,
   teamById,
@@ -1000,7 +1079,10 @@ function InvitesCard({
   onRevoke,
 }: {
   invites: InviteResponse[];
+  allInvites: InviteResponse[];
   isLoading: boolean;
+  error: boolean;
+  onRetry: () => void;
   isPending: boolean;
   statusFilter: string;
   teamById: Record<string, TeamResponse>;
@@ -1094,8 +1176,20 @@ function InvitesCard({
           ]}
           data={invites}
           loading={isLoading}
+          error={error ? "Invites could not be loaded." : undefined}
+          onRetry={onRetry}
           getRowKey={(invite) => invite.id}
-          empty={{ title: "No invites match this filter." }}
+          empty={
+            allInvites.length === 0
+              ? {
+                  title: "No invites yet",
+                  description: "New pending invites will appear here.",
+                }
+              : {
+                  title: "No invites match",
+                  description: "Try a different invite status.",
+                }
+          }
         />
       </CardContent>
     </Card>
@@ -1172,6 +1266,58 @@ function ScopedBadges({
       {badges.length > 3 ? <Badge variant="secondary">+{badges.length - 3}</Badge> : null}
     </div>
   );
+}
+
+function DestructiveActionDialog({
+  open,
+  title,
+  description,
+  confirmLabel,
+  pending,
+  onOpenChange,
+  onConfirm,
+}: {
+  open: boolean;
+  title: string;
+  description: string;
+  confirmLabel: string;
+  pending: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button type="button" variant="destructive" disabled={pending} onClick={onConfirm}>
+            {pending ? "Working..." : confirmLabel}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function scopedGrantError(
+  teamId: string,
+  teamRole: string,
+  projectId: string,
+  projectRole: string,
+) {
+  if (projectId !== NO_SCOPE && projectRole === NO_SCOPE) {
+    return "Choose a project role before submitting.";
+  }
+  if (teamId !== NO_SCOPE && projectId === NO_SCOPE && teamRole === NO_SCOPE) {
+    return "Choose a team role before submitting.";
+  }
+  return null;
 }
 
 function InviteAccess({

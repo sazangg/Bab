@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   canViewActivity,
+  canViewGatewayHistory,
   canManageKeys,
   canViewUsage,
   canViewOrgAdminSurface,
@@ -27,6 +28,7 @@ type ProtectedRouteProps = {
   requireScopedAdmin?: boolean;
   allowUsageScope?: boolean;
   allowActivityScope?: boolean;
+  allowGatewayHistoryScope?: boolean;
   allowDashboardHome?: boolean;
   requireOrgAdminSurface?: boolean;
 };
@@ -40,6 +42,7 @@ export function ProtectedRoute({
   requireScopedAdmin = false,
   allowUsageScope = false,
   allowActivityScope = false,
+  allowGatewayHistoryScope = false,
   allowDashboardHome = false,
   requireOrgAdminSurface = false,
 }: ProtectedRouteProps) {
@@ -93,6 +96,7 @@ export function ProtectedRoute({
       : false) ||
     (allowUsageScope ? canViewUsage(currentUser) : false) ||
     (allowActivityScope ? canViewActivity(currentUser) : false) ||
+    (allowGatewayHistoryScope ? canViewGatewayHistory(currentUser) : false) ||
     (allowDashboardHome ? canViewDashboardHome(currentUser) : false) ||
     (requireOrgAdminSurface ? canViewOrgAdminSurface(currentUser) : false) ||
     (!permission &&
@@ -103,6 +107,7 @@ export function ProtectedRoute({
       !requireScopedAdmin &&
       !allowUsageScope &&
       !allowActivityScope &&
+      !allowGatewayHistoryScope &&
       !allowDashboardHome &&
       !requireOrgAdminSurface);
 

@@ -82,6 +82,7 @@ export function CredentialPoolMembersPanel({
     defaultValues: { provider_credential_id: "", priority: 100, weight: 1 },
   });
   const memberCredentialIds = new Set(members.map((member) => member.provider_credential_id));
+  const activeCredentials = credentials.filter((credential) => credential.is_active);
   const availableCredentials = credentials.filter(
     (credential) => credential.is_active && !memberCredentialIds.has(credential.id),
   );
@@ -217,7 +218,7 @@ export function CredentialPoolMembersPanel({
               onValueChange={(value) => form.setValue("provider_credential_id", value)}
               disabled={!providerId || availableCredentials.length === 0}
             >
-              <SelectTrigger>
+              <SelectTrigger aria-label="Credential to assign">
                 <SelectValue placeholder="Credential" />
               </SelectTrigger>
               <SelectContent>
@@ -264,7 +265,11 @@ export function CredentialPoolMembersPanel({
         empty={{
           title: "This pool is empty.",
           description:
-            "Routing through it will fail until an active credential is assigned.",
+            activeCredentials.length === 0
+              ? "Routing through it will fail because this provider has no active credentials to assign."
+              : availableCredentials.length === 0
+                ? "All active credentials are already attached to this pool."
+                : "Routing through it will fail until an active credential is assigned.",
         }}
       />
 

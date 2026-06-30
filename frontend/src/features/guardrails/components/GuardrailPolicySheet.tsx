@@ -28,9 +28,9 @@ import {
   normalizeRulePhase,
   phaseOptionsForRuleType,
   ruleTypeLabels,
-  ruleTypeOptions,
   ruleValuePlaceholder,
   type AssignmentFormState,
+  type GuardrailFormMetadata,
   type PolicyFormState,
   type PolicyRuleForm,
   type ScopeOptions,
@@ -46,6 +46,7 @@ export function GuardrailPolicySheet({
   assignmentForm,
   setAssignmentForm,
   assignmentScopeOptions,
+  metadata,
   onSubmit,
   onPreview,
   isPending,
@@ -58,6 +59,7 @@ export function GuardrailPolicySheet({
   assignmentForm: AssignmentFormState;
   setAssignmentForm: (form: AssignmentFormState) => void;
   assignmentScopeOptions: ScopeOptions;
+  metadata: GuardrailFormMetadata;
   onSubmit: () => void;
   onPreview: () => void;
   isPending: boolean;
@@ -157,7 +159,7 @@ export function GuardrailPolicySheet({
                     onValueChange={(value) =>
                       setAssignmentForm({ ...assignmentForm, enforcement_mode: value })
                     }
-                    options={["enforce", "dry_run"]}
+                    options={metadata.assignmentEnforcementModes}
                     labels={{ enforce: "Enforce", dry_run: "Dry run / log only" }}
                   />
                 ) : null}
@@ -176,13 +178,14 @@ export function GuardrailPolicySheet({
                 label="Mode"
                 value={form.enforcement_mode}
                 onValueChange={(value) => setForm({ ...form, enforcement_mode: value })}
-                options={["enforce", "monitor"]}
+                options={metadata.policyEnforcementModes}
               />
               <div className="grid gap-3">
                 {form.rules.map((rule, index) => (
                   <RuleEditor
                     key={rule.id}
                     rule={rule}
+                    metadata={metadata}
                     index={index}
                     canRemove={form.rules.length > 1}
                     onChange={(nextRule) =>
@@ -203,7 +206,9 @@ export function GuardrailPolicySheet({
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setForm({ ...form, rules: [...form.rules, newRuleForm()] })}
+                onClick={() =>
+                  setForm({ ...form, rules: [...form.rules, newRuleForm({}, metadata)] })
+                }
               >
                 <Plus data-icon="inline-start" />
                 Add rule
@@ -230,12 +235,14 @@ export function GuardrailPolicySheet({
 
 function RuleEditor({
   rule,
+  metadata,
   index,
   canRemove,
   onChange,
   onRemove,
 }: {
   rule: PolicyRuleForm;
+  metadata: GuardrailFormMetadata;
   index: number;
   canRemove: boolean;
   onChange: (rule: PolicyRuleForm) => void;
@@ -276,23 +283,27 @@ function RuleEditor({
           label="Rule"
           value={rule.rule_type}
           onValueChange={(value) =>
-            onChange({ ...rule, rule_type: value, phase: normalizeRulePhase(value, rule.phase) })
+            onChange({
+              ...rule,
+              rule_type: value,
+              phase: normalizeRulePhase(value, rule.phase, metadata),
+            })
           }
-          options={ruleTypeOptions}
+          options={metadata.ruleTypes}
           labels={ruleTypeLabels}
         />
         <SelectField
           label="Effect"
           value={rule.effect}
           onValueChange={(value) => onChange({ ...rule, effect: value })}
-          options={["allow", "deny"]}
+          options={metadata.effects}
           labels={{ allow: "Allowlist", deny: "Deny" }}
         />
         <SelectField
           label="Phase"
           value={rule.phase}
           onValueChange={(value) => onChange({ ...rule, phase: value })}
-          options={phaseOptionsForRuleType(rule.rule_type)}
+          options={phaseOptionsForRuleType(rule.rule_type, metadata)}
           labels={{ request: "Request", response: "Response", both: "Both" }}
         />
         <Field label="Priority">

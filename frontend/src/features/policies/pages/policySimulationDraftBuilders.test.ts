@@ -85,10 +85,6 @@ describe("policy simulation draft builders", () => {
             limit_value: 10,
             interval_unit: "day",
             interval_count: 1,
-            provider_id: "provider-1",
-            credential_pool_id: "pool-1",
-            model_offering_id: "offering-1",
-            access_policy_id: "access-1",
             matchers: [{ dimension: "request.endpoint", operator: "eq", value_json: "chat" }],
             partitions: [{ dimension: "virtual_key", position: 0 }],
             is_active: true,
@@ -228,10 +224,6 @@ function limitPolicy(id: string): LimitPolicyResponse {
         limit_value: 10,
         interval_unit: "day",
         interval_count: 1,
-        provider_id: "provider-1",
-        credential_pool_id: "pool-1",
-        model_offering_id: "offering-1",
-        access_policy_id: "access-1",
         matchers: [
           {
             id: "matcher-1",

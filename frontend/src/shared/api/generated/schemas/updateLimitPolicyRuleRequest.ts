@@ -13,10 +13,6 @@ export interface UpdateLimitPolicyRuleRequest {
   limit_value?: number | null;
   interval_unit?: string | null;
   interval_count?: number | null;
-  provider_id?: string | null;
-  credential_pool_id?: string | null;
-  model_offering_id?: string | null;
-  access_policy_id?: string | null;
   matchers?: LimitPolicyRuleMatcherInput[] | null;
   partitions?: LimitPolicyRulePartitionInput[] | null;
   is_active?: boolean | null;

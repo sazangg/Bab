@@ -66,19 +66,29 @@ import { ResourceImpactDialog } from "./resources/ResourceImpactDialog";
 export function ProviderResourcesPanel({
   provider,
   canManage,
+  onEnableProvider,
 }: {
   provider: ProviderResponse;
   canManage: boolean;
+  onEnableProvider: () => void;
 }) {
-  return <ProviderResourcesContent provider={provider} canManage={canManage} />;
+  return (
+    <ProviderResourcesContent
+      provider={provider}
+      canManage={canManage}
+      onEnableProvider={onEnableProvider}
+    />
+  );
 }
 
 function ProviderResourcesContent({
   provider,
   canManage,
+  onEnableProvider,
 }: {
   provider: ProviderResponse;
   canManage: boolean;
+  onEnableProvider: () => void;
 }) {
   const queryClient = useQueryClient();
   const providerId = provider.id;
@@ -261,7 +271,6 @@ function ProviderResourcesContent({
   const supportsModelTest =
     provider.integration_capabilities?.openai_compatible_chat === true ||
     provider.integration_capabilities?.native_anthropic_messages === true;
-  const providerReady = provider.readiness?.status === "ready";
 
   async function handleTestAllCredentials() {
     const active = credentials.filter((credential) => credential.is_active);
@@ -385,12 +394,12 @@ function ProviderResourcesContent({
   return (
     <>
       <ProviderSetupChecklist
-        providerReady={providerReady}
+        providerEnabled={provider.is_active}
         canManage={canManage}
         credentials={credentials}
         pools={pools}
-        hasActiveCredential={hasActiveCredential}
         activeModelCount={provider.readiness?.active_model_count ?? 0}
+        onEnableProvider={onEnableProvider}
         onAddCredential={() => {
           void setTab("credentials");
           setCreateCredentialOpen(true);
@@ -476,6 +485,14 @@ function ProviderResourcesContent({
                 }
                 onTest={handleTestCredential}
                 canManage={canManage}
+                emptyAction={
+                  canManage ? (
+                    <Button size="sm" onClick={() => setCreateCredentialOpen(true)}>
+                      <Plus />
+                      Add credential
+                    </Button>
+                  ) : undefined
+                }
               />
             </TabsContent>
 
@@ -516,6 +533,14 @@ function ProviderResourcesContent({
                   updatePool.mutate({ providerId, poolId: pool.id, data: { is_active: true } })
                 }
                 canManage={canManage}
+                emptyAction={
+                  canManage ? (
+                    <Button size="sm" onClick={() => setCreatePoolOpen(true)}>
+                      <Plus />
+                      New pool
+                    </Button>
+                  ) : undefined
+                }
               />
               <CredentialPoolMembersPanel
                 providerId={providerId}
@@ -680,6 +705,32 @@ function ProviderResourcesContent({
                 }
                 onTest={handleTestModel}
                 canManage={canManage}
+                emptyAction={
+                  canManage ? (
+                    <div className="flex flex-wrap justify-center gap-2">
+                      <Button size="sm" variant="outline" onClick={() => setCreateModelOpen(true)}>
+                        <Plus />
+                        Add model
+                      </Button>
+                      {supportsModelSync && hasActiveCredential ? (
+                        <Button
+                          size="sm"
+                          onClick={() =>
+                            providerId &&
+                            syncModels.mutate({
+                              providerId,
+                              data: { metadata_mode: "fill_missing" },
+                            })
+                          }
+                          disabled={syncModels.isPending}
+                        >
+                          <RefreshCw />
+                          Sync models
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : undefined
+                }
               />
             </TabsContent>
           </Tabs>

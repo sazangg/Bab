@@ -11,7 +11,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -62,6 +62,7 @@ import {
   useGetAccessPolicyApiV1PoliciesAccessPolicyIdGet,
   useGetAccessPolicyOptionsApiV1PoliciesAccessOptionsGet,
   useGetLimitPolicyApiV1PoliciesLimitsPolicyIdGet,
+  useGetPolicyMetadataApiV1PoliciesMetadataGet,
   useListAccessPoliciesApiV1PoliciesAccessGet,
   useListLimitPoliciesApiV1PoliciesLimitsGet,
   useListPolicyAssignmentsApiV1PoliciesAssignmentsGet,
@@ -72,10 +73,12 @@ import {
 } from "@/shared/api/generated/policies/policies";
 import { ConfirmationDialog } from "@/features/policies/components/ConfirmationDialog";
 import {
-  LimitRuleFilterFields,
-  LimitRuleFiltersSummary,
-  type LimitRuleFilterValue,
-} from "@/features/policies/components/LimitRuleFilterFields";
+  formatLimitInterval,
+  formatLimitType,
+  limitRuleIntervalDefaults,
+  policyMetadata,
+  toLimitRuleInput,
+} from "@/features/policies/lib/policy-metadata";
 import { PolicySimulationPanel } from "@/features/policies/components/PolicySimulationPanel";
 import { PolicySimulationResult } from "@/features/policies/components/PolicySimulationResult";
 import {
@@ -136,7 +139,6 @@ type DraftLimitRule = {
   limitValue: string;
   intervalUnit: string;
   intervalCount: string;
-  filters: LimitRuleFilterValue;
 };
 type DraftAccessModel = {
   offeringId: string;
@@ -150,31 +152,6 @@ type DraftAccessRoute = {
   poolLabel: string;
   models: DraftAccessModel[];
 };
-
-const limitTypeOptions = [
-  { value: "budget_cents", label: "Spend budget" },
-  { value: "requests", label: "Request count" },
-  { value: "input_tokens", label: "Input tokens" },
-  { value: "output_tokens", label: "Output tokens" },
-  { value: "total_tokens", label: "Total tokens" },
-  { value: "tokens_per_request", label: "Tokens per request" },
-];
-
-const emptyLimitRuleFilters = (): LimitRuleFilterValue => ({
-  providerId: "",
-  poolId: "",
-  modelId: "",
-  accessPolicyId: "",
-});
-
-function limitRuleFiltersPayload(filters: LimitRuleFilterValue) {
-  return {
-    provider_id: filters.providerId || null,
-    credential_pool_id: filters.poolId || null,
-    model_offering_id: filters.modelId || null,
-    access_policy_id: filters.accessPolicyId || null,
-  };
-}
 
 function accessPolicyStatus(policy: AccessPolicyResponse, assignments: number) {
   if (!policy.is_active) return { label: "Inactive", variant: "inactive" as const };
@@ -982,7 +959,7 @@ function LimitRulesDetailTable({ rules }: { rules: LimitPolicyRuleResponse[] }) 
     {
       key: "interval",
       header: "Interval",
-      cell: (rule) => formatInterval(rule.interval_unit, rule.interval_count),
+      cell: (rule) => formatLimitInterval(rule.interval_unit, rule.interval_count),
     },
     {
       key: "limit",
@@ -994,7 +971,7 @@ function LimitRulesDetailTable({ rules }: { rules: LimitPolicyRuleResponse[] }) 
       key: "filters",
       header: "Filters",
       className: "text-xs text-muted-foreground",
-      cell: (rule) => <LimitRuleFiltersSummary rule={rule} />,
+      cell: () => "All matching traffic",
     },
     {
       key: "status",
@@ -1802,14 +1779,19 @@ function CreatePolicySheet({
   onCreated: () => Promise<void>;
   onPreview: (drafts: PolicySimulationDraft[]) => void;
 }) {
+  const metadataQuery = useGetPolicyMetadataApiV1PoliciesMetadataGet();
+  const metadataResponse =
+    metadataQuery.data?.status === 200 ? metadataQuery.data.data : undefined;
+  const intervalDefaults = limitRuleIntervalDefaults(metadataResponse);
+  const wasOpenRef = useRef(false);
+  const intervalTouchedRef = useRef(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [limitType, setLimitType] = useState("requests");
   const [limitValue, setLimitValue] = useState("");
-  const [intervalUnit, setIntervalUnit] = useState("day");
-  const [intervalCount, setIntervalCount] = useState("1");
-  const [limitRuleFilters, setLimitRuleFilters] = useState<LimitRuleFilterValue>(
-    emptyLimitRuleFilters,
+  const [intervalUnit, setIntervalUnit] = useState(() => limitRuleIntervalDefaults().intervalUnit);
+  const [intervalCount, setIntervalCount] = useState(
+    () => limitRuleIntervalDefaults().intervalCount,
   );
   const [draftRules, setDraftRules] = useState<DraftLimitRule[]>([]);
   const [assignmentScope, setAssignmentScope] = useState("none");
@@ -1857,13 +1839,13 @@ function CreatePolicySheet({
   const createAssignment = useCreatePolicyAssignmentApiV1PoliciesAssignmentsPost();
   const isLimit = kind === "limit";
   const reset = () => {
+    intervalTouchedRef.current = false;
     setName("");
     setDescription("");
     setLimitType("requests");
     setLimitValue("");
-    setIntervalUnit("day");
-    setIntervalCount("1");
-    setLimitRuleFilters(emptyLimitRuleFilters());
+    setIntervalUnit(intervalDefaults.intervalUnit);
+    setIntervalCount(intervalDefaults.intervalCount);
     setDraftRules([]);
     setAssignmentScope("none");
     setAssignmentTeamId("");
@@ -1874,6 +1856,20 @@ function CreatePolicySheet({
     setSelectedModels([]);
     setDraftRoutes([]);
   };
+  useEffect(() => {
+    const isOpen = Boolean(kind);
+    if (isOpen && !wasOpenRef.current) {
+      intervalTouchedRef.current = false;
+      setIntervalUnit(intervalDefaults.intervalUnit);
+      setIntervalCount(intervalDefaults.intervalCount);
+    }
+    wasOpenRef.current = isOpen;
+  }, [intervalDefaults.intervalCount, intervalDefaults.intervalUnit, kind]);
+  useEffect(() => {
+    if (kind !== "limit" || !metadataResponse || intervalTouchedRef.current) return;
+    setIntervalUnit(intervalDefaults.intervalUnit);
+    setIntervalCount(intervalDefaults.intervalCount);
+  }, [intervalDefaults.intervalCount, intervalDefaults.intervalUnit, kind, metadataResponse]);
   const currentRuleHasLimits = Boolean(limitValue.trim());
   const currentDraftRule = (): DraftLimitRule => ({
     id: crypto.randomUUID(),
@@ -1882,26 +1878,13 @@ function CreatePolicySheet({
     limitValue,
     intervalUnit,
     intervalCount,
-    filters: limitRuleFilters,
   });
   const addDraftRule = () => {
     if (!currentRuleHasLimits) return;
     setDraftRules((current) => [...current, currentDraftRule()]);
     setLimitValue("");
-    setLimitRuleFilters(emptyLimitRuleFilters());
   };
-  const ruleInput = (rule: DraftLimitRule) => ({
-    name: rule.name,
-    limit_type: rule.limitType,
-    limit_value:
-      rule.limitType === "budget_cents"
-        ? Math.round(Number(rule.limitValue) * 100)
-        : Number(rule.limitValue),
-    interval_unit: rule.intervalUnit,
-    interval_count: rule.intervalUnit === "lifetime" ? 1 : Number(rule.intervalCount || 1),
-    is_active: true,
-    ...limitRuleFiltersPayload(rule.filters),
-  });
+  const ruleInput = (rule: DraftLimitRule) => toLimitRuleInput(rule);
   const rulesForSubmit = () => {
     const rules = [...draftRules];
     if (currentRuleHasLimits) rules.push(currentDraftRule());
@@ -2268,11 +2251,15 @@ function CreatePolicySheet({
                 limitValue={limitValue}
                 onLimitValueChange={setLimitValue}
                 intervalUnit={intervalUnit}
-                onIntervalUnitChange={setIntervalUnit}
+                onIntervalUnitChange={(value) => {
+                  intervalTouchedRef.current = true;
+                  setIntervalUnit(value);
+                }}
                 intervalCount={intervalCount}
-                onIntervalCountChange={setIntervalCount}
-                filters={limitRuleFilters}
-                onFiltersChange={setLimitRuleFilters}
+                onIntervalCountChange={(value) => {
+                  intervalTouchedRef.current = true;
+                  setIntervalCount(value);
+                }}
               />
               <Button
                 type="button"
@@ -2322,14 +2309,21 @@ export function LimitRulesSheet({
   onChanged: () => Promise<void>;
   onPreview?: (drafts: PolicySimulationDraft[]) => void;
 }) {
+  const metadataQuery = useGetPolicyMetadataApiV1PoliciesMetadataGet();
+  const metadataResponse =
+    metadataQuery.data?.status === 200 ? metadataQuery.data.data : undefined;
+  const intervalDefaults = limitRuleIntervalDefaults(metadataResponse);
+  const wasOpenRef = useRef(false);
+  const intervalTouchedRef = useRef(false);
   const [editingRule, setEditingRule] = useState<LimitPolicyRuleResponse | null>(null);
   const [name, setName] = useState("Rule");
   const [limitType, setLimitType] = useState("requests");
   const [limitValue, setLimitValue] = useState("");
-  const [intervalUnit, setIntervalUnit] = useState("day");
-  const [intervalCount, setIntervalCount] = useState("1");
+  const [intervalUnit, setIntervalUnit] = useState(() => limitRuleIntervalDefaults().intervalUnit);
+  const [intervalCount, setIntervalCount] = useState(
+    () => limitRuleIntervalDefaults().intervalCount,
+  );
   const [ruleIsActive, setRuleIsActive] = useState(true);
-  const [ruleFilters, setRuleFilters] = useState<LimitRuleFilterValue>(emptyLimitRuleFilters);
   const {
     requestImpactConfirmation,
     isLoadingImpact,
@@ -2365,16 +2359,37 @@ export function LimitRulesSheet({
     },
   });
   const resetForm = () => {
+    intervalTouchedRef.current = false;
     setEditingRule(null);
     setName("Rule");
     setLimitType("requests");
     setLimitValue("");
-    setIntervalUnit("day");
-    setIntervalCount("1");
+    setIntervalUnit(intervalDefaults.intervalUnit);
+    setIntervalCount(intervalDefaults.intervalCount);
     setRuleIsActive(true);
-    setRuleFilters(emptyLimitRuleFilters());
   };
+  useEffect(() => {
+    const isOpen = Boolean(state);
+    if (isOpen && !wasOpenRef.current && !editingRule) {
+      intervalTouchedRef.current = false;
+      setIntervalUnit(intervalDefaults.intervalUnit);
+      setIntervalCount(intervalDefaults.intervalCount);
+    }
+    wasOpenRef.current = isOpen;
+  }, [editingRule, intervalDefaults.intervalCount, intervalDefaults.intervalUnit, state]);
+  useEffect(() => {
+    if (!state || editingRule || !metadataResponse || intervalTouchedRef.current) return;
+    setIntervalUnit(intervalDefaults.intervalUnit);
+    setIntervalCount(intervalDefaults.intervalCount);
+  }, [
+    editingRule,
+    intervalDefaults.intervalCount,
+    intervalDefaults.intervalUnit,
+    metadataResponse,
+    state,
+  ]);
   const startEdit = (rule: LimitPolicyRuleResponse) => {
+    intervalTouchedRef.current = true;
     setEditingRule(rule);
     setName(rule.name);
     setLimitType(rule.limit_type);
@@ -2386,12 +2401,6 @@ export function LimitRulesSheet({
     setIntervalUnit(rule.interval_unit);
     setIntervalCount(String(rule.interval_count));
     setRuleIsActive(rule.is_active);
-    setRuleFilters({
-      providerId: rule.provider_id ?? "",
-      poolId: rule.credential_pool_id ?? "",
-      modelId: rule.model_offering_id ?? "",
-      accessPolicyId: rule.access_policy_id ?? "",
-    });
   };
   const handleDeleteRule = async (rule: LimitPolicyRuleResponse) => {
     await requestImpactConfirmation(
@@ -2400,16 +2409,10 @@ export function LimitRulesSheet({
       () => deleteRule.mutate({ ruleId: rule.id }),
     );
   };
-  const rulePayload = {
-    name,
-    limit_type: limitType,
-    limit_value:
-      limitType === "budget_cents" ? Math.round(Number(limitValue) * 100) : Number(limitValue),
-    interval_unit: intervalUnit,
-    interval_count: intervalUnit === "lifetime" ? 1 : Number(intervalCount || 1),
-    is_active: ruleIsActive,
-    ...limitRuleFiltersPayload(ruleFilters),
-  };
+  const rulePayload = toLimitRuleInput(
+    { name, limitType, limitValue, intervalUnit, intervalCount },
+    ruleIsActive,
+  );
   const hasAnyLimit = Boolean(limitValue.trim());
   const submit = () => {
     if (!state || !name.trim() || !hasAnyLimit) return;
@@ -2467,13 +2470,13 @@ export function LimitRulesSheet({
                       <TableRow key={rule.id}>
                         <TableCell className="font-medium">{rule.name}</TableCell>
                         <TableCell>
-                          {formatInterval(rule.interval_unit, rule.interval_count)}
+                          {formatLimitInterval(rule.interval_unit, rule.interval_count)}
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
                           {formatRuleSummary(rule)}
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
-                          <LimitRuleFiltersSummary rule={rule} />
+                          All matching traffic
                         </TableCell>
                         <TableCell>
                           <StatusBadge variant={rule.is_active ? "active" : "inactive"}>
@@ -2532,11 +2535,15 @@ export function LimitRulesSheet({
                   limitValue={limitValue}
                   onLimitValueChange={setLimitValue}
                   intervalUnit={intervalUnit}
-                  onIntervalUnitChange={setIntervalUnit}
+                  onIntervalUnitChange={(value) => {
+                    intervalTouchedRef.current = true;
+                    setIntervalUnit(value);
+                  }}
                   intervalCount={intervalCount}
-                  onIntervalCountChange={setIntervalCount}
-                  filters={ruleFilters}
-                  onFiltersChange={setRuleFilters}
+                  onIntervalCountChange={(value) => {
+                    intervalTouchedRef.current = true;
+                    setIntervalCount(value);
+                  }}
                 />
                 <div className="flex items-center justify-between gap-3 rounded-md border bg-background p-3">
                   <div>
@@ -2776,8 +2783,6 @@ function LimitRuleFields({
   onIntervalUnitChange,
   intervalCount,
   onIntervalCountChange,
-  filters,
-  onFiltersChange,
 }: {
   limitType: string;
   onLimitTypeChange: (value: string) => void;
@@ -2787,9 +2792,11 @@ function LimitRuleFields({
   onIntervalUnitChange: (value: string) => void;
   intervalCount: string;
   onIntervalCountChange: (value: string) => void;
-  filters: LimitRuleFilterValue;
-  onFiltersChange: (value: LimitRuleFilterValue) => void;
 }) {
+  const metadataQuery = useGetPolicyMetadataApiV1PoliciesMetadataGet();
+  const metadata = policyMetadata(
+    metadataQuery.data?.status === 200 ? metadataQuery.data.data : undefined,
+  );
   return (
     <>
       <div className="grid gap-3 sm:grid-cols-[8rem_minmax(0,1fr)]">
@@ -2806,23 +2813,16 @@ function LimitRuleFields({
           label="Interval"
           value={intervalUnit}
           onValueChange={onIntervalUnitChange}
-          options={["minute", "hour", "day", "week", "month", "lifetime"]}
-          labels={{
-            minute: "Minute",
-            hour: "Hour",
-            day: "Day",
-            week: "Week",
-            month: "Month",
-            lifetime: "Lifetime",
-          }}
+          options={metadata.intervalUnits}
+          labels={metadata.intervalUnitLabels}
         />
       </div>
       <SelectField
         label="Limit type"
         value={limitType}
         onValueChange={onLimitTypeChange}
-        options={limitTypeOptions.map((option) => option.value)}
-        labels={Object.fromEntries(limitTypeOptions.map((option) => [option.value, option.label]))}
+        options={metadata.limitTypes}
+        labels={metadata.limitTypeLabels}
       />
       <Field label={limitType === "budget_cents" ? "Amount ($)" : "Value"}>
         <Input
@@ -2832,14 +2832,12 @@ function LimitRuleFields({
           onChange={(event) => onLimitValueChange(event.target.value)}
         />
       </Field>
-      <LimitRuleFilterFields value={filters} onChange={onFiltersChange} />
     </>
   );
 }
 
 function formatRuleSummary(rule: LimitPolicyRuleResponse) {
-  const typeLabel =
-    limitTypeOptions.find((option) => option.value === rule.limit_type)?.label ?? rule.limit_type;
+  const typeLabel = formatLimitType(rule.limit_type);
   const value =
     rule.limit_type === "budget_cents"
       ? `$${(rule.limit_value / 100).toLocaleString()}`
@@ -2848,14 +2846,12 @@ function formatRuleSummary(rule: LimitPolicyRuleResponse) {
 }
 
 function formatDraftRuleSummary(rule: DraftLimitRule) {
-  const typeLabel =
-    limitTypeOptions.find((option) => option.value === rule.limitType)?.label ?? rule.limitType;
+  const typeLabel = formatLimitType(rule.limitType);
   const value =
     rule.limitType === "budget_cents"
       ? `$${Number(rule.limitValue).toLocaleString()}`
       : Number(rule.limitValue).toLocaleString();
-  const filterSummary = formatDraftRuleFilters(rule.filters);
-  return `${typeLabel}: ${value} ${formatInterval(rule.intervalUnit, rule.intervalCount)}${filterSummary ? ` · ${filterSummary}` : ""}`;
+  return `${typeLabel}: ${value} ${formatLimitInterval(rule.intervalUnit, rule.intervalCount)}`;
 }
 
 function toPublicModelInputs(route: DraftAccessRoute): AccessPolicyPublicModelInput[] {
@@ -2960,16 +2956,6 @@ function addCandidatesToPublicModels({
   return next;
 }
 
-function formatDraftRuleFilters(filters: LimitRuleFilterValue) {
-  const activeFilters = [
-    filters.providerId ? "provider" : null,
-    filters.poolId ? "pool" : null,
-    filters.modelId ? "model" : null,
-    filters.accessPolicyId ? "access policy" : null,
-  ].filter(Boolean);
-  return activeFilters.length ? `filtered by ${activeFilters.join(", ")}` : "";
-}
-
 function countPublicModels(policy: AccessPolicyResponse) {
   return (policy.public_models ?? []).length;
 }
@@ -3047,10 +3033,4 @@ function createAccessOptionsParams(
     };
   }
   return { scope_type: "org" };
-}
-
-function formatInterval(intervalUnit: string, intervalCount: string | number) {
-  if (intervalUnit === "lifetime") return "over lifetime";
-  const count = Number(intervalCount) || 1;
-  return `every ${count} ${intervalUnit}${count === 1 ? "" : "s"}`;
 }

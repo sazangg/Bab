@@ -32,7 +32,7 @@ import { apiMutator } from "@/shared/api/orval-mutator";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { HttpStatusBadge, StatusBadge } from "@/shared/components/StatusBadge";
-import { RequestTraceSheet } from "@/features/usage/components/RequestTraceSheet";
+import { RequestTraceSheet } from "@/features/gateway-history/components/RequestTraceSheet";
 
 type PlaygroundResult = {
   status: number;
@@ -563,6 +563,7 @@ function PlaygroundSettings({
         </div>
         <Switch
           id="playground-stream"
+          aria-label="Stream response"
           checked={supportsStream && stream}
           disabled={!supportsStream}
           onCheckedChange={onStreamChange}

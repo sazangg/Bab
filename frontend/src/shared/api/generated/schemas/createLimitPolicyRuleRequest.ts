@@ -21,10 +21,6 @@ export interface CreateLimitPolicyRuleRequest {
   interval_unit?: string;
   /** @minimum 1 */
   interval_count?: number;
-  provider_id?: string | null;
-  credential_pool_id?: string | null;
-  model_offering_id?: string | null;
-  access_policy_id?: string | null;
   matchers?: LimitPolicyRuleMatcherInput[];
   partitions?: LimitPolicyRulePartitionInput[];
   is_active?: boolean;

@@ -1,24 +1,4 @@
-import {
-  Activity,
-  Building2,
-  ChartNoAxesCombined,
-  ClipboardList,
-  FolderKanban,
-  Gauge,
-  KeyRound,
-  LoaderCircle,
-  LogOut,
-  Moon,
-  Palette,
-  Plug,
-  RefreshCw,
-  Route,
-  Settings,
-  ShieldCheck,
-  Sun,
-  TerminalSquare,
-  Users,
-} from "lucide-react";
+import { LoaderCircle, LogOut, Moon, RefreshCw, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, forwardRef, type ComponentProps } from "react";
@@ -65,18 +45,12 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
-  canViewActivity,
   canManageKeys,
   canViewDashboardHome,
-  canViewUsage,
-  hasAnyDirectTeamMembership,
-  hasAnyProjectAdminMembership,
-  hasAnyTeamMembership,
-  hasAnyTeamAdminMembership,
-  hasPermission,
 } from "@/features/auth/lib/permissions";
 import { useAuthStore } from "@/features/auth/model/auth-store";
 import { useBreadcrumbs } from "@/app/shell/breadcrumbs";
+import { visibleNavigationGroups } from "@/app/shell/navigation";
 import {
   formatMigrationStatus,
   resolveGatewayStatus,
@@ -87,49 +61,6 @@ import { httpClient } from "@/shared/api/http-client";
 import type { AuthenticatedUser } from "@/shared/api/generated/schemas";
 import { resolveAssetUrl } from "@/shared/lib/asset-url";
 
-const organizationNav = [
-  { to: "/", label: "Home", icon: Gauge, end: true },
-  { to: "/providers", label: "Providers", icon: Plug, permission: "providers.view" },
-  { to: "/usage", label: "Usage", icon: ChartNoAxesCombined, permission: "usage.view" },
-  { to: "/activity", label: "Activity", icon: Activity, permission: "activity.view" },
-  { to: "/audit", label: "Audit", icon: ClipboardList, permission: "audit.view" },
-  { to: "/users", label: "Users", icon: Users, permission: "members.manage", scopedAdmin: true },
-  { to: "/settings", label: "Settings", icon: Settings, permission: "settings.view" },
-];
-
-const workspaceNav = [
-  { to: "/teams", label: "Teams", icon: Building2, permission: "teams.view", teamScoped: true },
-  {
-    to: "/projects",
-    label: "Projects",
-    icon: FolderKanban,
-    permission: "projects.view",
-    scoped: true,
-  },
-  {
-    to: "/policies",
-    label: "Policies",
-    icon: Route,
-    permission: "policies.view",
-    scopedAdmin: true,
-  },
-  {
-    to: "/virtual-keys",
-    label: "Virtual keys",
-    icon: KeyRound,
-    keyManager: true,
-  },
-  { to: "/playground", label: "Playground", icon: TerminalSquare, keyManager: true },
-  {
-    to: "/guardrails",
-    label: "Guardrails",
-    icon: ShieldCheck,
-    permission: "guardrails.view",
-    scopedAdmin: true,
-  },
-];
-
-const internalNav = [{ to: "/design-system", label: "Design system", icon: Palette }];
 const fallbackOrganizationName =
   import.meta.env.VITE_BAB_ORGANIZATION_NAME ?? "Default organization";
 const isProductionBuild = import.meta.env.PROD;
@@ -192,40 +123,8 @@ export function DashboardLayout() {
   });
   const metadata = metadataQuery.data?.status === 200 ? metadataQuery.data.data : undefined;
   const currentUser = currentUserQuery.data?.status === 200 ? currentUserQuery.data.data : null;
-  const canView = (permission?: string) => !permission || hasPermission(currentUser, permission);
-  const canViewWorkspaceItem = (item: (typeof workspaceNav)[number]) => {
-    if (item.keyManager) return canManageKeys(currentUser);
-    if (item.scopedAdmin) {
-      return (
-        canView(item.permission) ||
-        hasAnyTeamAdminMembership(currentUser) ||
-        hasAnyProjectAdminMembership(currentUser)
-      );
-    }
-    if (item.teamScoped) {
-      return canView(item.permission) || hasAnyDirectTeamMembership(currentUser);
-    }
-    if (item.scoped) return canView(item.permission) || hasAnyTeamMembership(currentUser);
-    return canView(item.permission);
-  };
-  const visibleOrganizationNav = organizationNav.filter((item) => {
-    if (item.to === "/") return canViewDashboardHome(currentUser);
-    if (item.scopedAdmin) {
-      return (
-        canView(item.permission) ||
-        hasAnyTeamAdminMembership(currentUser) ||
-        hasAnyProjectAdminMembership(currentUser)
-      );
-    }
-    if (item.to === "/usage") return canViewUsage(currentUser);
-    if (item.to === "/activity") return canViewActivity(currentUser);
-    return canView(item.permission);
-  });
-  const visibleWorkspaceNav = workspaceNav.filter((item) => {
-    return canViewWorkspaceItem(item);
-  });
   const showApiDocs = canManageKeys(currentUser);
-  const visibleInternalNav = isProductionBuild ? [] : internalNav;
+  const navigationGroups = visibleNavigationGroups(currentUser, { production: isProductionBuild });
   const organizationName = metadata?.organization_name ?? fallbackOrganizationName;
   const clearSession = useAuthStore((state) => state.clearSession);
   const logoutMutation = useLogoutApiV1AuthLogoutPost({
@@ -368,61 +267,47 @@ export function DashboardLayout() {
       <Sidebar collapsible="icon" id="primary-sidebar" aria-label="Primary navigation">
         <SidebarHeader className="h-12" />
         <SidebarContent>
-          {visibleOrganizationNav.length > 0 ? (
-            <SidebarGroup>
-              <SidebarGroupLabel>Organization</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {visibleOrganizationNav.map((item) => (
-                    <SidebarMenuItem key={item.to}>
-                      <SidebarMenuButton
-                        asChild
-                        isActive={isActive(item.to, item.end)}
-                        tooltip={item.label}
-                      >
-                        <SidebarNavigationLink to={item.to}>
-                          <item.icon />
-                          <span>{item.label}</span>
-                        </SidebarNavigationLink>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          ) : null}
-          {visibleWorkspaceNav.length > 0 ? (
-            <SidebarGroup>
-              <SidebarGroupLabel>Workspace</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {visibleWorkspaceNav.map((item) => (
-                    <SidebarMenuItem key={item.to}>
-                      <SidebarMenuButton asChild isActive={isActive(item.to)} tooltip={item.label}>
-                        <SidebarNavigationLink to={item.to}>
-                          <item.icon />
-                          <span>{item.label}</span>
-                        </SidebarNavigationLink>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          ) : null}
+          {navigationGroups
+            .filter((group) => group.id !== "internal")
+            .map((group) => (
+              <SidebarGroup key={group.id}>
+                <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {group.items.map((item) => (
+                      <SidebarMenuItem key={item.to}>
+                        <SidebarMenuButton
+                          asChild
+                          isActive={isActive(item.to, item.end)}
+                          tooltip={item.label}
+                        >
+                          <SidebarNavigationLink to={item.to}>
+                            <item.icon />
+                            <span>{item.label}</span>
+                          </SidebarNavigationLink>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    ))}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            ))}
         </SidebarContent>
         <SidebarFooter className="mb-7 border-t p-2">
           <SidebarMenu>
-            {visibleInternalNav.map((item) => (
-              <SidebarMenuItem key={item.to}>
-                <SidebarMenuButton asChild isActive={isActive(item.to)} tooltip={item.label}>
-                  <SidebarNavigationLink to={item.to}>
-                    <item.icon />
-                    <span>{item.label}</span>
-                  </SidebarNavigationLink>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            ))}
+            {navigationGroups
+              .filter((group) => group.id === "internal")
+              .flatMap((group) => group.items)
+              .map((item) => (
+                <SidebarMenuItem key={item.to}>
+                  <SidebarMenuButton asChild isActive={isActive(item.to)} tooltip={item.label}>
+                    <SidebarNavigationLink to={item.to}>
+                      <item.icon />
+                      <span>{item.label}</span>
+                    </SidebarNavigationLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
           </SidebarMenu>
         </SidebarFooter>
       </Sidebar>

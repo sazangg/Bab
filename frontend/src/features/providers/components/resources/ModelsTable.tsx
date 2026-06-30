@@ -1,5 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Activity, ChevronDown, Pencil, Power, RotateCcw } from "lucide-react";
+import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { Link } from "react-router-dom";
@@ -84,6 +85,7 @@ export function ModelsTable({
   onReactivate,
   onTest,
   canManage,
+  emptyAction,
 }: {
   providerId: string;
   models: ProviderModelOfferingResponse[];
@@ -108,6 +110,7 @@ export function ModelsTable({
   onReactivate: (model: ProviderModelOfferingResponse) => void;
   onTest: (model: ProviderModelOfferingResponse) => void;
   canManage: boolean;
+  emptyAction?: ReactNode;
 }) {
   const [editModel, setEditModel] = useState<ProviderModelOfferingResponse | null>(null);
   const editForm = useForm<ModelOfferingFormInput, unknown, ModelOfferingValues>({
@@ -376,12 +379,13 @@ export function ModelsTable({
         <Input
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
+          aria-label="Search provider models"
           placeholder="Search models..."
           className="w-full sm:w-72"
         />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline">
+            <Button variant="outline" aria-label="Filter models by modality">
               {selectedModalities.length
                 ? `Modalities: ${selectedModalities.join(", ")}`
                 : "All modalities"}
@@ -413,7 +417,7 @@ export function ModelsTable({
           </DropdownMenuContent>
         </DropdownMenu>
         <Select value={status} onValueChange={onStatusChange}>
-          <SelectTrigger className="w-40">
+          <SelectTrigger className="w-40" aria-label="Filter models by status">
             <SelectValue placeholder="Filter by status" />
           </SelectTrigger>
           <SelectContent>
@@ -435,6 +439,12 @@ export function ModelsTable({
         rowClassName={(model) => (!model.is_active ? "opacity-60" : undefined)}
         empty={{
           title: hasFilters ? "No models match these filters." : "No models added yet.",
+          description: hasFilters
+            ? "Clear filters or try a different model name."
+            : hasActiveCredential
+              ? "Add a model manually or sync models from the provider catalog when supported."
+              : "Add an active credential before model sync or model testing is useful.",
+          action: hasFilters ? undefined : emptyAction,
         }}
         footer={pagination}
       />

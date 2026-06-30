@@ -36,6 +36,7 @@ import type {
   LimitPolicyRuleResponse,
   PolicyAssignmentResponse,
   PolicyImpactResponse,
+  PolicyMetadataResponse,
   PolicySimulationRequest,
   PolicySimulationResponse,
   ProblemDetail,
@@ -57,6 +58,125 @@ export type HTTPStatusCode3xx = 300 | 301 | 302 | 303 | 304 | 305 | 307 | 308;
 export type HTTPStatusCode4xx = 400 | 401 | 402 | 403 | 404 | 405 | 406 | 407 | 408 | 409 | 410 | 411 | 412 | 413 | 414 | 415 | 416 | 417 | 418 | 419 | 420 | 421 | 422 | 423 | 424 | 426 | 428 | 429 | 431 | 451;
 export type HTTPStatusCode5xx = 500 | 501 | 502 | 503 | 504 | 505 | 507 | 511;
 export type HTTPStatusCodes = HTTPStatusCode1xx | HTTPStatusCode2xx | HTTPStatusCode3xx | HTTPStatusCode4xx | HTTPStatusCode5xx;
+
+
+export type getPolicyMetadataApiV1PoliciesMetadataGetResponse200 = {
+  data: PolicyMetadataResponse
+  status: 200
+}
+
+export type getPolicyMetadataApiV1PoliciesMetadataGetResponseDefault = {
+  data: ProblemDetail
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getPolicyMetadataApiV1PoliciesMetadataGetResponseSuccess = (getPolicyMetadataApiV1PoliciesMetadataGetResponse200) & {
+  headers: Headers;
+};
+export type getPolicyMetadataApiV1PoliciesMetadataGetResponseError = (getPolicyMetadataApiV1PoliciesMetadataGetResponseDefault) & {
+  headers: Headers;
+};
+
+export type getPolicyMetadataApiV1PoliciesMetadataGetResponse = (getPolicyMetadataApiV1PoliciesMetadataGetResponseSuccess | getPolicyMetadataApiV1PoliciesMetadataGetResponseError)
+
+export const getGetPolicyMetadataApiV1PoliciesMetadataGetUrl = () => {
+
+
+
+
+  return `/api/v1/policies/metadata`
+}
+
+/**
+ * @summary Get Policy Metadata
+ */
+export const getPolicyMetadataApiV1PoliciesMetadataGet = async ( options?: RequestInit): Promise<getPolicyMetadataApiV1PoliciesMetadataGetResponse> => {
+
+  return apiMutator<getPolicyMetadataApiV1PoliciesMetadataGetResponse>(getGetPolicyMetadataApiV1PoliciesMetadataGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPolicyMetadataApiV1PoliciesMetadataGetQueryKey = () => {
+    return [
+    `/api/v1/policies/metadata`
+    ] as const;
+    }
+
+
+export const getGetPolicyMetadataApiV1PoliciesMetadataGetQueryOptions = <TData = Awaited<ReturnType<typeof getPolicyMetadataApiV1PoliciesMetadataGet>>, TError = ProblemDetail>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPolicyMetadataApiV1PoliciesMetadataGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPolicyMetadataApiV1PoliciesMetadataGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPolicyMetadataApiV1PoliciesMetadataGet>>> = ({ signal }) => getPolicyMetadataApiV1PoliciesMetadataGet({ signal });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPolicyMetadataApiV1PoliciesMetadataGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetPolicyMetadataApiV1PoliciesMetadataGetQueryResult = NonNullable<Awaited<ReturnType<typeof getPolicyMetadataApiV1PoliciesMetadataGet>>>
+export type GetPolicyMetadataApiV1PoliciesMetadataGetQueryError = ProblemDetail
+
+
+export function useGetPolicyMetadataApiV1PoliciesMetadataGet<TData = Awaited<ReturnType<typeof getPolicyMetadataApiV1PoliciesMetadataGet>>, TError = ProblemDetail>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPolicyMetadataApiV1PoliciesMetadataGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getPolicyMetadataApiV1PoliciesMetadataGet>>,
+          TError,
+          Awaited<ReturnType<typeof getPolicyMetadataApiV1PoliciesMetadataGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetPolicyMetadataApiV1PoliciesMetadataGet<TData = Awaited<ReturnType<typeof getPolicyMetadataApiV1PoliciesMetadataGet>>, TError = ProblemDetail>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPolicyMetadataApiV1PoliciesMetadataGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getPolicyMetadataApiV1PoliciesMetadataGet>>,
+          TError,
+          Awaited<ReturnType<typeof getPolicyMetadataApiV1PoliciesMetadataGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetPolicyMetadataApiV1PoliciesMetadataGet<TData = Awaited<ReturnType<typeof getPolicyMetadataApiV1PoliciesMetadataGet>>, TError = ProblemDetail>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPolicyMetadataApiV1PoliciesMetadataGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get Policy Metadata
+ */
+
+export function useGetPolicyMetadataApiV1PoliciesMetadataGet<TData = Awaited<ReturnType<typeof getPolicyMetadataApiV1PoliciesMetadataGet>>, TError = ProblemDetail>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPolicyMetadataApiV1PoliciesMetadataGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetPolicyMetadataApiV1PoliciesMetadataGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
 
 
 export type listAccessPoliciesApiV1PoliciesAccessGetResponse200 = {

@@ -64,6 +64,7 @@ import {
   formatRelativeFromNow,
   sanitizeCredentialValidationMessage,
 } from "@/features/providers/lib/format";
+import { getProviderReadiness } from "@/features/providers/lib/provider-readiness";
 import { UsageRecordsDrilldown } from "@/features/usage/components/UsageRecordsDrilldown";
 
 export function ProviderDetailPage() {
@@ -300,6 +301,10 @@ export function ProviderDetailPage() {
         {canManageProviders ? (
           <ProviderNextAction
             provider={provider}
+            credentials={credentials}
+            onEnableProvider={() =>
+              updateProvider.mutate({ providerId: provider.id, data: { is_active: true } })
+            }
             onAddCredential={() =>
               navigate(`/providers/${provider.id}?tab=credentials&action=add-credential`)
             }
@@ -309,7 +314,13 @@ export function ProviderDetailPage() {
         ) : null}
       </div>
 
-      <ProviderResourcesPanel provider={provider} canManage={canManageProviders} />
+      <ProviderResourcesPanel
+        provider={provider}
+        canManage={canManageProviders}
+        onEnableProvider={() =>
+          updateProvider.mutate({ providerId: provider.id, data: { is_active: true } })
+        }
+      />
 
       <Card>
         <CardHeader>
@@ -577,11 +588,14 @@ export function ProviderDetailPage() {
 
 function ProviderNextAction({
   provider,
+  credentials,
+  onEnableProvider,
   onAddCredential,
   onOpenPools,
   onOpenModels,
 }: {
   provider: {
+    is_active: boolean;
     readiness?: {
       status?: string;
       has_active_credential?: boolean;
@@ -590,11 +604,27 @@ function ProviderNextAction({
       has_active_model?: boolean;
     };
   };
+  credentials: Array<{ is_active?: boolean; health_status?: string }>;
+  onEnableProvider: () => void;
   onAddCredential: () => void;
   onOpenPools: () => void;
   onOpenModels: () => void;
 }) {
-  if (!provider.readiness?.has_active_credential) {
+  const readiness = getProviderReadiness({
+    providerEnabled: provider.is_active,
+    credentialCount: credentials.filter((credential) => credential.is_active).length,
+    validatedCredentialCount: credentials.filter(
+      (credential) => credential.is_active && credential.health_status === "valid",
+    ).length,
+    poolCount: provider.readiness?.has_active_pool ? 1 : 0,
+    poolsWithCredentialsCount: provider.readiness?.has_active_pool_credential ? 1 : 0,
+    modelCount: provider.readiness?.has_active_model ? 1 : 0,
+  });
+
+  if (readiness.nextAction === "enable_provider") {
+    return <Button onClick={onEnableProvider}>Enable provider</Button>;
+  }
+  if (readiness.nextAction === "add_credential") {
     return (
       <Button onClick={onAddCredential}>
         <KeyRound />
@@ -602,7 +632,10 @@ function ProviderNextAction({
       </Button>
     );
   }
-  if (!provider.readiness?.has_active_pool || !provider.readiness?.has_active_pool_credential) {
+  if (
+    readiness.nextAction === "create_pool" ||
+    readiness.nextAction === "attach_credential"
+  ) {
     return (
       <Button onClick={onOpenPools}>
         <Layers3 />
@@ -610,7 +643,7 @@ function ProviderNextAction({
       </Button>
     );
   }
-  if (!provider.readiness?.has_active_model) {
+  if (readiness.nextAction === "sync_or_add_models") {
     return (
       <Button onClick={onOpenModels}>
         <Layers3 />

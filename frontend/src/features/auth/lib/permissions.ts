@@ -70,6 +70,14 @@ export function canViewActivity(user: AuthenticatedUser | null | undefined) {
   );
 }
 
+export function canViewGatewayHistory(user: AuthenticatedUser | null | undefined) {
+  return (
+    hasPermission(user, "gateway_history.view") ||
+    hasAnyDirectTeamMembership(user) ||
+    hasAnyProjectMembership(user)
+  );
+}
+
 export function canManageKeys(user: AuthenticatedUser | null | undefined) {
   return (
     hasPermission(user, "keys.manage") ||
@@ -86,11 +94,16 @@ export function canViewOrgAdminSurface(user: AuthenticatedUser | null | undefine
   return user?.role === "org_owner" || user?.role === "org_admin";
 }
 
+export function canViewSetup(user: AuthenticatedUser | null | undefined) {
+  return canViewOrgAdminSurface(user);
+}
+
 export function workspaceLandingPath(user: AuthenticatedUser | null | undefined) {
   if (canViewDashboardHome(user)) return "/";
   if (hasAnyDirectTeamMembership(user)) return "/teams";
   if (hasAnyProjectMembership(user)) return "/projects";
   if (canManageKeys(user)) return "/virtual-keys";
+  if (canViewGatewayHistory(user)) return "/gateway-history";
   if (canViewUsage(user)) return "/usage";
   if (canViewActivity(user)) return "/activity";
   return null;

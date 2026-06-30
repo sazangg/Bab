@@ -1,31 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
+import { useGetGatewayMetadataApiV1SettingsGatewayMetadataGet } from "@/shared/api/generated/settings/settings";
+import type { GatewayMetadataResponse } from "@/shared/api/generated/schemas";
 
-import { apiMutator } from "@/shared/api/orval-mutator";
+export type GatewayMetadata = GatewayMetadataResponse;
 
-export type GatewayMetadata = {
-  organization_name: string;
-  organization_logo_url: string | null;
-  public_base_url: string | null;
-  virtual_key_prefix: string;
-  default_virtual_key_expiration_days: number | null;
-  allow_secret_copy: boolean;
-};
-
-type GatewayMetadataResponse = {
-  data: GatewayMetadata;
-  status: number;
-  headers: Headers;
-};
-
-export function useGatewayMetadata() {
-  return useQuery({
-    queryKey: ["/api/v1/settings/gateway-metadata"],
-    queryFn: () =>
-      apiMutator<GatewayMetadataResponse>("/api/v1/settings/gateway-metadata", {
-        method: "GET",
-      }),
-  });
-}
+export const useGatewayMetadata = useGetGatewayMetadataApiV1SettingsGatewayMetadataGet;
 
 export function resolveGatewayBaseUrl(publicBaseUrl?: string | null) {
   if (publicBaseUrl?.trim()) return publicBaseUrl.replace(/\/+$/, "");

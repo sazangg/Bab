@@ -295,6 +295,11 @@ export function ProjectsPage() {
       rowClassName={(project) => (!project.is_active ? "opacity-60" : undefined)}
       noMatchTitle="No projects match"
       noMatchDescription="Try another search, status, or team."
+      onClearFilters={() => {
+        setSearch("");
+        setSegment("active");
+        setTeamFilter("all");
+      }}
       editSheet={
         <EditProjectSheet
           project={editingProject}
@@ -328,6 +333,7 @@ function ProjectCard({
   return (
     <div
       role="button"
+      aria-label={`Open project ${project.name}`}
       tabIndex={0}
       className={cn(
         "rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-muted/30",

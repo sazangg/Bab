@@ -17,6 +17,7 @@ const settingsHook = vi.hoisted(() => vi.fn());
 const meHook = vi.hoisted(() => vi.fn());
 const updateHook = vi.hoisted(() => vi.fn());
 const uploadHook = vi.hoisted(() => vi.fn());
+const updateMutate = vi.hoisted(() => vi.fn());
 
 vi.mock("@/shared/api/generated/settings/settings", () => ({
   useGetSettingsApiV1SettingsGet: settingsHook,
@@ -55,7 +56,8 @@ describe("SettingsPage", () => {
     meHook.mockReturnValue({
       data: { status: 200, data: { role: "org_owner", permissions: ["settings.manage"] } },
     });
-    updateHook.mockReturnValue({ mutate: vi.fn(), isPending: false });
+    updateMutate.mockReset();
+    updateHook.mockReturnValue({ mutate: updateMutate, isPending: false });
     uploadHook.mockReturnValue({ mutate: vi.fn(), isPending: false });
   });
 
@@ -74,11 +76,44 @@ describe("SettingsPage", () => {
 
     const appUrl = screen.getByLabelText("Public app URL");
     await user.type(appUrl, "not-a-url");
-    expect(save).toBeEnabled();
-    await user.click(save);
-
     expect(
       await screen.findByText("Enter an absolute http:// or https:// app URL."),
     ).toBeInTheDocument();
+    expect(save).toBeDisabled();
+  });
+
+  it("blocks values above the deployment ceiling and discards dirty values", async () => {
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SettingsPage />
+      </QueryClientProvider>,
+    );
+
+    const bodySize = screen.getByLabelText("Max body bytes");
+    await user.clear(bodySize);
+    await user.type(bodySize, "3000000");
+    expect(
+      await screen.findByText("Must not exceed the deployment ceiling of 2,000,000 bytes."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save settings" })).toBeDisabled();
+    expect(updateMutate).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Discard changes" }));
+    expect(bodySize).toHaveValue(1_000_000);
+  });
+
+  it("explains read-only access and hides save actions", () => {
+    meHook.mockReturnValue({
+      data: { status: 200, data: { role: "org_viewer", permissions: [] } },
+    });
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SettingsPage />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByText(/Read-only/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save settings" })).not.toBeInTheDocument();
   });
 });

@@ -133,10 +133,6 @@ function limitRuleResponseToInput(rule: LimitPolicyRuleResponse): LimitPolicyRul
     limit_value: rule.limit_value,
     interval_unit: rule.interval_unit,
     interval_count: rule.interval_count,
-    provider_id: rule.provider_id,
-    credential_pool_id: rule.credential_pool_id,
-    model_offering_id: rule.model_offering_id,
-    access_policy_id: rule.access_policy_id,
     matchers: (rule.matchers ?? []).map((matcher) => ({
       dimension: matcher.dimension,
       operator: matcher.operator,

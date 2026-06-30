@@ -1,5 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Activity, ChevronDown, Pencil, Power, RefreshCw, RotateCcw } from "lucide-react";
+import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -51,6 +52,7 @@ export function CredentialsTable({
   onReactivate,
   onTest,
   canManage,
+  emptyAction,
 }: {
   providerId: string;
   credentials: ProviderCredentialResponse[];
@@ -63,6 +65,7 @@ export function CredentialsTable({
   onReactivate: (credential: ProviderCredentialResponse) => void;
   onTest: (credential: ProviderCredentialResponse) => void;
   canManage: boolean;
+  emptyAction?: ReactNode;
 }) {
   const sortedCredentials = [...credentials].sort(
     (a, b) =>
@@ -194,7 +197,12 @@ export function CredentialsTable({
         loading={isLoading}
         error={isError ? "Credentials could not be loaded." : undefined}
         getRowKey={(credential) => credential.id}
-        empty={{ title: "No credentials added yet." }}
+        empty={{
+          title: "No credentials added yet.",
+          description:
+            "Add a provider credential before validation, credential pools, and model sync are useful.",
+          action: emptyAction,
+        }}
       />
       <EditProviderCredentialSheet
         providerCredential={editCredential}

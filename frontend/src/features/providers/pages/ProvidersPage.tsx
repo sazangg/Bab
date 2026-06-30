@@ -79,6 +79,7 @@ import {
   type CreateProviderValues,
   type ProviderCredentialValues,
 } from "../lib/schemas";
+import { getProviderReadiness } from "../lib/provider-readiness";
 
 type CatalogSegment = "all" | "configured" | "available" | "custom" | "ready";
 
@@ -140,6 +141,11 @@ export function ProvidersPage() {
     (entry) => !entry.is_favorite && !isProviderInitiated(entry),
   );
   const disabledEntries = catalogEntries.filter((entry) => !entry.is_active);
+  const hasProviderFilters = Boolean(search.trim()) || segment !== "all";
+  const clearProviderFilters = () => {
+    setSearch("");
+    setSegment("all");
+  };
 
   const createMutation = useCreateProviderApiV1ProvidersPost({
     mutation: {
@@ -205,6 +211,7 @@ export function ProvidersPage() {
                     className="bg-background pl-9 pr-9"
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
+                    aria-label="Search providers"
                     placeholder="Search by provider, slug, or endpoint..."
                   />
                   {search ? (
@@ -226,6 +233,7 @@ export function ProvidersPage() {
                       key={value}
                       type="button"
                       aria-label={`${formatSegmentLabel(value)} providers (${segmentCounts[value]})`}
+                      aria-pressed={segment === value}
                       onClick={() => setSegment(value)}
                       className={cn(
                         "rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors",
@@ -245,11 +253,18 @@ export function ProvidersPage() {
               <EmptyState
                 icon={Plug}
                 title="No providers match"
-                description="Try another search, or add a custom provider."
+                description="Clear filters or try another search."
                 action={
-                  canManageProviders ? (
-                    <Button onClick={() => setCreateOpen(true)}>Add custom provider</Button>
-                  ) : undefined
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {hasProviderFilters ? (
+                      <Button variant="outline" onClick={clearProviderFilters}>
+                        Clear filters
+                      </Button>
+                    ) : null}
+                    {canManageProviders ? (
+                      <Button onClick={() => setCreateOpen(true)}>Add custom provider</Button>
+                    ) : null}
+                  </div>
                 }
               />
             ) : (
@@ -624,9 +639,19 @@ function isProviderReady(provider: ProviderResponse) {
 }
 
 function providerPrimaryAction(provider: ProviderResponse) {
-  if ((provider.credential_summary?.active ?? 0) === 0) return "credential";
-  if (!isProviderReady(provider)) return "setup";
-  return "open";
+  const readiness = getProviderReadiness({
+    providerEnabled: provider.is_active,
+    credentialCount: provider.credential_summary?.active ?? 0,
+    validatedCredentialCount: provider.credential_summary?.valid ?? 0,
+    poolCount: provider.readiness?.has_active_pool ? 1 : 0,
+    poolsWithCredentialsCount: provider.readiness?.has_active_pool_credential ? 1 : 0,
+    modelCount: provider.readiness?.active_model_count ?? 0,
+  });
+  if (readiness.nextAction === "add_credential" || readiness.nextAction === "test_credentials") {
+    return "credential";
+  }
+  if (readiness.nextAction === "open_playground") return "open";
+  return "setup";
 }
 
 function formatSegmentLabel(segment: CatalogSegment) {

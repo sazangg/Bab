@@ -1,4 +1,5 @@
 import { Pencil, Power, RotateCcw } from "lucide-react";
+import type { ReactNode } from "react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ export function CredentialPoolsTable({
   onDeactivate,
   onReactivate,
   canManage,
+  emptyAction,
 }: {
   pools: CredentialPoolResponse[];
   selectedPoolId: string | null;
@@ -32,6 +34,7 @@ export function CredentialPoolsTable({
   onDeactivate: (pool: CredentialPoolResponse) => void;
   onReactivate: (pool: CredentialPoolResponse) => void;
   canManage: boolean;
+  emptyAction?: ReactNode;
 }) {
   const [editPool, setEditPool] = useState<CredentialPoolResponse | null>(null);
 
@@ -140,7 +143,11 @@ export function CredentialPoolsTable({
         rowClassName={(pool) =>
           cn(!pool.is_active && "opacity-60", pool.id === selectedPoolId && "bg-muted/40")
         }
-        empty={{ title: "No pools added yet." }}
+        empty={{
+          title: "No pools added yet.",
+          description: "Access policy routes point at credential pools. Create a pool before routing traffic to this provider.",
+          action: emptyAction,
+        }}
       />
       <CredentialPoolSheet
         open={Boolean(editPool)}

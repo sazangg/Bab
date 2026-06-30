@@ -15,8 +15,7 @@ type GuardrailImpactRequest = {
 /**
  * Canonical impact-gated confirmation for guardrail mutations. Opens the shared
  * ImpactConfirmationDialog immediately, loads the impact (with its own loading / error /
- * retry states), and runs `onConfirm` only when the operator confirms. Replaces the old
- * `window.confirm`-based `confirmGuardrailImpact`.
+ * retry states), and runs `onConfirm` only when the operator confirms.
  */
 export function useGuardrailImpactConfirmation() {
   const [request, setRequest] = useState<GuardrailImpactRequest | null>(null);

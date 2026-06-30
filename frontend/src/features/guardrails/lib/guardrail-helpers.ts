@@ -2,6 +2,7 @@ import type { StatusVariant } from "@/shared/components/StatusBadge";
 import type {
   GuardrailAssignmentResponse,
   GuardrailEventResponse,
+  GuardrailMetadataResponse,
   GuardrailPolicyResponse,
   ProjectResponse,
   TeamResponse,
@@ -81,16 +82,39 @@ export type AssignmentFormState = {
   enforcement_mode: string;
 };
 
-export function newRuleForm(overrides: Partial<PolicyRuleForm> = {}): PolicyRuleForm {
+export type GuardrailFormMetadata = ReturnType<typeof guardrailMetadata>;
+
+export function guardrailMetadata(metadata?: GuardrailMetadataResponse) {
+  return {
+    ruleTypes: metadata?.rule_types ?? ruleTypeOptions,
+    piiValues: metadata?.pii_values ?? piiRuleValues,
+    phases: metadata?.phases ?? ["request", "response", "both"],
+    effects: metadata?.effects ?? ["allow", "deny"],
+    policyEnforcementModes: metadata?.policy_enforcement_modes ?? ["enforce", "monitor"],
+    assignmentEnforcementModes:
+      metadata?.assignment_enforcement_modes ?? ["enforce", "dry_run"],
+    defaultRuleEffect: metadata?.default_rule_effect ?? "deny",
+    defaultRulePhase: metadata?.default_rule_phase ?? "both",
+    defaultRulePriority: metadata?.default_rule_priority ?? 100,
+    defaultPolicyEnforcementMode: metadata?.default_policy_enforcement_mode ?? "enforce",
+    defaultAssignmentEnforcementMode:
+      metadata?.default_assignment_enforcement_mode ?? "enforce",
+  };
+}
+
+export function newRuleForm(
+  overrides: Partial<PolicyRuleForm> = {},
+  metadata = guardrailMetadata(),
+): PolicyRuleForm {
   return {
     id: crypto.randomUUID(),
-    rule_type: "prompt_contains",
-    effect: "deny",
-    phase: "both",
+    rule_type: metadata.ruleTypes[0] ?? "prompt_contains",
+    effect: metadata.defaultRuleEffect,
+    phase: metadata.defaultRulePhase,
     values: "",
     detector: "local_regex",
     matchers: [],
-    priority: 100,
+    priority: metadata.defaultRulePriority,
     is_active: true,
     ...overrides,
   };
@@ -122,6 +146,21 @@ export const emptyAssignmentForm: AssignmentFormState = {
   scope_id: "",
   enforcement_mode: "enforce",
 };
+
+export function newPolicyForm(metadata = guardrailMetadata()): PolicyFormState {
+  return {
+    ...emptyPolicyForm,
+    enforcement_mode: metadata.defaultPolicyEnforcementMode,
+    rules: [newRuleForm({}, metadata)],
+  };
+}
+
+export function newAssignmentForm(metadata = guardrailMetadata()): AssignmentFormState {
+  return {
+    ...emptyAssignmentForm,
+    enforcement_mode: metadata.defaultAssignmentEnforcementMode,
+  };
+}
 
 export function guardrailPolicyStatus(policy: GuardrailPolicyResponse): {
   label: string;
@@ -195,21 +234,33 @@ export function parseRuleValues(value: string) {
     .filter(Boolean);
 }
 
-export function phaseOptionsForRuleType(ruleType: string) {
-  return responsePhaseRuleTypes.includes(ruleType) ? ["request", "response", "both"] : ["request"];
+export function phaseOptionsForRuleType(
+  ruleType: string,
+  metadata = guardrailMetadata(),
+) {
+  return responsePhaseRuleTypes.includes(ruleType) ? metadata.phases : ["request"];
 }
 
-export function normalizeRulePhase(ruleType: string, phase: string) {
-  const options = phaseOptionsForRuleType(ruleType);
+export function normalizeRulePhase(
+  ruleType: string,
+  phase: string,
+  metadata = guardrailMetadata(),
+) {
+  const options = phaseOptionsForRuleType(ruleType, metadata);
   return options.includes(phase) ? phase : "request";
 }
 
-export function validateRuleForm(rule: PolicyRuleForm, index: number, values: string[]) {
+export function validateRuleForm(
+  rule: PolicyRuleForm,
+  index: number,
+  values: string[],
+  metadata = guardrailMetadata(),
+) {
   const label = `Rule ${index + 1}`;
   if (values.length === 0) {
     return `${label} needs at least one value.`;
   }
-  if (!phaseOptionsForRuleType(rule.rule_type).includes(rule.phase)) {
+  if (!phaseOptionsForRuleType(rule.rule_type, metadata).includes(rule.phase)) {
     return `${label} ${ruleTypeLabels[rule.rule_type] ?? rule.rule_type} rules only support request phase.`;
   }
   if (rule.rule_type === "prompt_regex") {
@@ -222,9 +273,11 @@ export function validateRuleForm(rule: PolicyRuleForm, index: number, values: st
     }
   }
   if (rule.rule_type === "pii") {
-    const unsupported = values.filter((value) => !piiRuleValues.includes(value.toLowerCase()));
+    const unsupported = values.filter(
+      (value) => !metadata.piiValues.includes(value.toLowerCase()),
+    );
     if (unsupported.length > 0) {
-      return `${label} supports only these PII values: ${piiRuleValues.join(", ")}.`;
+      return `${label} supports only these PII values: ${metadata.piiValues.join(", ")}.`;
     }
   }
   for (const [matcherIndex, matcher] of rule.matchers.entries()) {

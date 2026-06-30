@@ -9,6 +9,7 @@ import {
   GitBranch,
   Info,
   KeyRound,
+  ListChecks,
   Plug,
   Settings,
   ShieldCheck,
@@ -39,8 +40,8 @@ import {
 import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatCard } from "@/shared/components/StatCard";
-import { StatusBadge } from "@/shared/components/StatusBadge";
 import { formatCents } from "@/shared/lib/format-currency";
+import { buildSetupStatus } from "@/features/setup/lib/setup-status";
 
 export function DashboardHomePage() {
   const currentUserQuery = useMeApiV1AuthMeGet();
@@ -79,11 +80,21 @@ export function DashboardHomePage() {
   const readyProviders = providers.filter((provider) => provider.readiness?.is_ready);
   const keys = keysPage?.items ?? [];
   const usableKeys = keys.filter((key) => key.is_usable);
-  const infraReady = readyProviders.length > 0 && usableKeys.length > 0;
+  const setupStatus = buildSetupStatus({
+    providersCount: providers.length,
+    readyProvidersCount: readyProviders.length,
+    teamsCount: teams.length,
+    projectsCount: projects.length,
+    usableVirtualKeysCount: usableKeys.length,
+    gatewayRequestsCount: usage?.totals.requests ?? 0,
+    accessPoliciesCount: 0,
+    limitPoliciesCount: 0,
+    guardrailPoliciesCount: 0,
+  });
 
   const primaryAction = isAdmin
-    ? !infraReady
-      ? { label: "Configure providers", to: "/providers", icon: Plug }
+    ? !setupStatus.isComplete
+      ? { label: "Open setup", to: "/setup", icon: ListChecks }
       : { label: "Open Playground", to: "/playground", icon: FlaskConical }
     : showUsage
       ? { label: "View usage", to: "/usage", icon: WalletCards }
@@ -139,13 +150,11 @@ export function DashboardHomePage() {
         />
       </div>
 
-      {isAdmin && !infraReady ? (
-        <GatewaySetupChecklist
-          hasProvider={providers.length > 0}
-          hasReadyProvider={readyProviders.length > 0}
-          hasTeam={teams.length > 0}
-          hasProject={projects.length > 0}
-          hasUsableKey={usableKeys.length > 0}
+      {isAdmin && !setupStatus.isComplete ? (
+        <SetupCallout
+          completed={setupStatus.completedRequiredCount}
+          total={setupStatus.totalRequiredCount}
+          nextLabel={setupStatus.nextRequiredStep?.label}
         />
       ) : null}
 
@@ -175,51 +184,32 @@ export function DashboardHomePage() {
   );
 }
 
-function GatewaySetupChecklist({
-  hasProvider,
-  hasReadyProvider,
-  hasTeam,
-  hasProject,
-  hasUsableKey,
+function SetupCallout({
+  completed,
+  total,
+  nextLabel,
 }: {
-  hasProvider: boolean;
-  hasReadyProvider: boolean;
-  hasTeam: boolean;
-  hasProject: boolean;
-  hasUsableKey: boolean;
+  completed: number;
+  total: number;
+  nextLabel?: string;
 }) {
-  const steps = [
-    { label: "Connect a provider", done: hasProvider, to: "/providers" },
-    { label: "Get a provider routing-ready", done: hasReadyProvider, to: "/providers" },
-    { label: "Create a team", done: hasTeam, to: "/teams" },
-    { label: "Create a project", done: hasProject, to: "/projects" },
-    { label: "Issue a usable virtual key", done: hasUsableKey, to: "/virtual-keys" },
-    { label: "Send a first request", done: hasReadyProvider && hasUsableKey, to: "/playground" },
-  ];
-  const completed = steps.filter((step) => step.done).length;
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Get to your first request</CardTitle>
+      <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
+        <div>
+          <CardTitle>Setup needs attention</CardTitle>
         <CardDescription>
-          {completed} of {steps.length} prerequisites complete. Finish the chain to start routing
-          gateway traffic.
+            {completed} of {total} required steps complete
+            {nextLabel ? `. Next: ${nextLabel}.` : "."}
         </CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-        {steps.map((step) => (
-          <Link
-            key={step.label}
-            to={step.to}
-            className="flex items-center justify-between gap-3 rounded-md border bg-background p-3 transition-colors hover:bg-muted/40"
-          >
-            <span className="text-sm font-medium">{step.label}</span>
-            <StatusBadge variant={step.done ? "active" : "muted"}>
-              {step.done ? "Ready" : "To do"}
-            </StatusBadge>
+        </div>
+        <Button asChild>
+          <Link to="/setup">
+            Open setup
+            <ArrowRight data-icon="inline-end" />
           </Link>
-        ))}
-      </CardContent>
+        </Button>
+      </CardHeader>
     </Card>
   );
 }

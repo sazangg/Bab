@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useListEventsApiV1GuardrailsEventsGet } from "@/shared/api/generated/guardrails/guardrails";
 import type { GuardrailEventResponse } from "@/shared/api/generated/schemas";
 import { EmptyState } from "@/shared/components/EmptyState";
-import { RequestTraceSheet } from "@/features/usage/components/RequestTraceSheet";
+import { RequestTraceSheet } from "@/features/gateway-history/components/RequestTraceSheet";
 
 export function RecentGuardrailEventsCard({
   title = "Guardrail events",

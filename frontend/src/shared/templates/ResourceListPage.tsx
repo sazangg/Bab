@@ -50,6 +50,7 @@ export function ResourceListPage<T>({
   rowClassName,
   noMatchTitle = "No matches",
   noMatchDescription,
+  onClearFilters,
   editSheet,
 }: {
   title: string;
@@ -80,6 +81,7 @@ export function ResourceListPage<T>({
   rowClassName?: (item: T) => string | undefined;
   noMatchTitle?: string;
   noMatchDescription: string;
+  onClearFilters?: () => void;
   editSheet?: React.ReactNode;
 }) {
   const isMobile = useIsMobile();
@@ -123,6 +125,7 @@ export function ResourceListPage<T>({
               <div className="relative max-w-md flex-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
+                  aria-label={searchPlaceholder}
                   className="pl-9"
                   value={search}
                   onChange={(event) => onSearchChange(event.target.value)}
@@ -136,6 +139,8 @@ export function ResourceListPage<T>({
                     <button
                       key={value}
                       type="button"
+                      aria-pressed={segment === value}
+                      aria-label={`Show ${segmentLabel(value)} ${noun}s`}
                       onClick={() => onSegmentChange(value)}
                       className={cn(
                         "rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors",
@@ -156,6 +161,15 @@ export function ResourceListPage<T>({
               <div className="rounded-md border border-dashed p-8 text-center">
                 <p className="text-sm font-medium">{noMatchTitle}</p>
                 <p className="mt-1 text-sm text-muted-foreground">{noMatchDescription}</p>
+                {onClearFilters ? (
+                  <button
+                    type="button"
+                    className="mt-3 text-sm font-medium text-primary underline-offset-4 hover:underline"
+                    onClick={onClearFilters}
+                  >
+                    Clear filters
+                  </button>
+                ) : null}
               </div>
             ) : isMobile ? (
               <div className="grid gap-3">
@@ -178,4 +192,10 @@ export function ResourceListPage<T>({
       {editSheet}
     </div>
   );
+}
+
+function segmentLabel(segment: ResourceSegment) {
+  if (segment === "all") return "all";
+  if (segment === "active") return "active";
+  return "archived";
 }

@@ -17,6 +17,7 @@ export type Breadcrumb = {
 
 export function useBreadcrumbs(): Breadcrumb[] {
   const homeMatch = useMatch("/");
+  const setupMatch = useMatch("/setup");
   const teamsMatch = useMatch("/teams");
   const teamDetailMatch = useMatch("/teams/:teamId");
   const projectsMatch = useMatch("/projects");
@@ -25,6 +26,7 @@ export function useBreadcrumbs(): Breadcrumb[] {
   const providersMatch = useMatch("/providers");
   const providerDetailMatch = useMatch("/providers/:providerId");
   const usageMatch = useMatch("/usage");
+  const gatewayHistoryMatch = useMatch("/gateway-history");
   const activityMatch = useMatch("/activity");
   const auditMatch = useMatch("/audit");
   const usersMatch = useMatch("/users");
@@ -80,7 +82,10 @@ export function useBreadcrumbs(): Breadcrumb[] {
   const canOpenProjectTeam = Boolean(projectTeamId && canViewTeam(currentUser, projectTeamId));
 
   if (homeMatch) {
-    return [{ label: "Home" }];
+    return [{ label: "Overview" }];
+  }
+  if (setupMatch) {
+    return [{ label: "Overview", to: "/" }, { label: "Setup" }];
   }
   if (teamDetailMatch) {
     return [{ label: "Teams", to: "/teams" }, { label: teamName }];
@@ -127,7 +132,10 @@ export function useBreadcrumbs(): Breadcrumb[] {
     return [{ label: "Providers", to: "/providers" }, { label: providerName }];
   }
   if (usageMatch) {
-    return [{ label: "Usage" }];
+    return [{ label: "Usage & cost" }];
+  }
+  if (gatewayHistoryMatch) {
+    return [{ label: "Gateway history" }];
   }
   if (activityMatch) {
     return [{ label: "Activity" }];

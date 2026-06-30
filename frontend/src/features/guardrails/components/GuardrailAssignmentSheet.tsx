@@ -14,6 +14,7 @@ import {
   assignmentScopeTypes,
   type AssignmentFormState,
   type GuardrailPolicyOption,
+  type GuardrailFormMetadata,
   type ScopeOptions,
   type ScopeType,
 } from "../lib/guardrail-helpers";
@@ -29,6 +30,7 @@ export function GuardrailAssignmentSheet({
   policyLabels,
   assignmentScopeOptions,
   scopeLabels,
+  metadata,
   onSubmit,
   isPending,
 }: {
@@ -42,6 +44,7 @@ export function GuardrailAssignmentSheet({
   policyLabels: Record<string, string>;
   assignmentScopeOptions: ScopeOptions;
   scopeLabels: Record<string, string>;
+  metadata: GuardrailFormMetadata;
   onSubmit: () => void;
   isPending: boolean;
 }) {
@@ -109,7 +112,7 @@ export function GuardrailAssignmentSheet({
               label="Mode"
               value={form.enforcement_mode}
               onValueChange={(value) => setForm({ ...form, enforcement_mode: value })}
-              options={["enforce", "dry_run"]}
+              options={metadata.assignmentEnforcementModes}
               labels={{ enforce: "Enforce", dry_run: "Dry run / log only" }}
             />
             <p className="-mt-2 text-xs text-muted-foreground">
