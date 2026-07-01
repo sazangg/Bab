@@ -17,7 +17,6 @@ class OrganizationSettingsResponse(BaseModel):
     public_app_url: str | None
     public_base_url: str | None
     default_request_timeout_seconds: int
-    default_retry_count: int
     default_max_body_bytes: int
     deployment_max_body_bytes: int = 0
     default_model_sync_mode: str
@@ -45,7 +44,6 @@ class UpdateOrganizationSettingsRequest(BaseModel):
     public_app_url: str | None = Field(default=None, max_length=500)
     public_base_url: str | None = Field(default=None, max_length=500)
     default_request_timeout_seconds: int | None = Field(default=None, ge=1, le=300)
-    default_retry_count: int | None = Field(default=None, ge=0, le=10)
     default_max_body_bytes: int | None = Field(default=None, ge=1_024, le=100_000_000)
     default_model_sync_mode: str | None = Field(
         default=None,
@@ -58,7 +56,6 @@ class UpdateOrganizationSettingsRequest(BaseModel):
     @field_validator(
         "organization_name",
         "default_request_timeout_seconds",
-        "default_retry_count",
         "default_max_body_bytes",
         "default_model_sync_mode",
         "virtual_key_prefix",

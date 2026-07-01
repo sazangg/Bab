@@ -654,7 +654,6 @@ async def _patch_chat_execution(monkeypatch, provider, adapter) -> None:
     async def get_settings(**kwargs):
         return SimpleNamespace(
             default_request_timeout_seconds=30,
-            default_retry_count=0,
         )
 
     async def route_credentials(**kwargs):

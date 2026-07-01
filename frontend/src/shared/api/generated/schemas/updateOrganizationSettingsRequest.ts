@@ -11,7 +11,6 @@ export interface UpdateOrganizationSettingsRequest {
   public_app_url?: string | null;
   public_base_url?: string | null;
   default_request_timeout_seconds?: number | null;
-  default_retry_count?: number | null;
   default_max_body_bytes?: number | null;
   default_model_sync_mode?: string | null;
   default_virtual_key_expiration_days?: number | null;

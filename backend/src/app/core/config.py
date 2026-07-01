@@ -55,6 +55,11 @@ class Settings(BaseSettings):
         default="memory",
         validation_alias="BAB_PROVIDER_RUNTIME_STATE_BACKEND",
     )
+    metrics_enabled: bool = Field(default=True, validation_alias="BAB_METRICS_ENABLED")
+    metrics_bearer_token: str | None = Field(
+        default=None,
+        validation_alias="BAB_METRICS_BEARER_TOKEN",
+    )
     public_app_url: str | None = Field(default=None, validation_alias="BAB_PUBLIC_APP_URL")
     assets_dir: str = Field(
         default="./var/assets",
@@ -177,6 +182,14 @@ class Settings(BaseSettings):
             return None
         return value
 
+    @field_validator("metrics_bearer_token")
+    @classmethod
+    def normalize_metrics_bearer_token(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
     @field_validator("public_app_url")
     @classmethod
     def validate_public_app_url(cls, value: str | None) -> str | None:
@@ -244,7 +257,24 @@ class Settings(BaseSettings):
 
 
 def validate_runtime_settings(current_settings: Settings | None = None) -> None:
-    current_settings = current_settings or settings
+    _validate_settings(
+        current_settings or settings,
+        require_default_admin_password=True,
+    )
+
+
+def validate_bootstrap_settings(current_settings: Settings | None = None) -> None:
+    _validate_settings(
+        current_settings or settings,
+        require_default_admin_password=False,
+    )
+
+
+def _validate_settings(
+    current_settings: Settings,
+    *,
+    require_default_admin_password: bool,
+) -> None:
     if current_settings.rate_limit_enabled and not current_settings.redis_url:
         raise RuntimeError(
             "Invalid configuration: BAB_REDIS_URL is required when BAB_RATE_LIMIT_ENABLED=true"
@@ -263,12 +293,31 @@ def validate_runtime_settings(current_settings: Settings | None = None) -> None:
     errors: list[str] = []
     if current_settings.database_url.startswith("sqlite"):
         errors.append("DATABASE_URL must not use SQLite in production")
-    if current_settings.default_admin_password == "admin-password-change-me":
+    if (
+        require_default_admin_password
+        and current_settings.default_admin_password == "admin-password-change-me"
+    ):
         errors.append("BAB_DEFAULT_ADMIN_PASSWORD must be changed in production")
     if current_settings.secret_key == "change-me-to-at-least-32-characters":
         errors.append("BAB_SECRET_KEY must be changed in production")
     if current_settings.encryption_key == INSECURE_PUBLISHED_ENCRYPTION_KEY:
         errors.append("BAB_ENCRYPTION_KEY must not use the repository example key")
+    if current_settings.metrics_enabled and not current_settings.metrics_bearer_token:
+        errors.append(
+            "BAB_METRICS_BEARER_TOKEN is required when metrics are enabled in production"
+        )
+    if not current_settings.public_app_url:
+        errors.append("BAB_PUBLIC_APP_URL is required in production")
+    cookie_secure = (
+        current_settings.refresh_cookie_secure
+        if current_settings.refresh_cookie_secure is not None
+        else True
+    )
+    if current_settings.refresh_cookie_samesite == "none" and not cookie_secure:
+        errors.append(
+            "BAB_REFRESH_COOKIE_SECURE must be true when "
+            "BAB_REFRESH_COOKIE_SAMESITE=none"
+        )
 
     if errors:
         raise RuntimeError("Invalid production configuration: " + "; ".join(errors))

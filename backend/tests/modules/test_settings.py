@@ -48,7 +48,6 @@ async def test_settings_update_syncs_organization_name(db_session: AsyncSession)
     response = await facade.update_organization_settings(
         payload=UpdateOrganizationSettingsRequest(
             organization_name="Bab Labs",
-            default_retry_count=2,
             allow_secret_copy=False,
         ),
         actor=actor,
@@ -58,7 +57,6 @@ async def test_settings_update_syncs_organization_name(db_session: AsyncSession)
     await db_session.refresh(org)
 
     assert response.organization_name == "Bab Labs"
-    assert response.default_retry_count == 2
     assert response.allow_secret_copy is False
     assert org.name == "Bab Labs"
 
@@ -79,7 +77,6 @@ async def test_settings_update_records_changed_fields_metadata(db_session: Async
         payload=UpdateOrganizationSettingsRequest(
             organization_name="Bab Labs",
             public_base_url="https://gateway.example.com/",
-            default_retry_count=2,
         ),
         actor=actor,
         scope=Scope(org_id=org.id),
@@ -95,7 +92,6 @@ async def test_settings_update_records_changed_fields_metadata(db_session: Async
     assert activity is not None
     assert audit is not None
     assert activity.metadata_["changed_fields"] == [
-        "default_retry_count",
         "organization_name",
         "public_base_url",
     ]
@@ -108,7 +104,6 @@ async def test_settings_update_records_changed_fields_metadata(db_session: Async
         "old": None,
         "new": "https://gateway.example.com",
     }
-    assert activity.metadata_["changes"]["default_retry_count"] == {"old": 0, "new": 2}
     assert audit.metadata_["changes"] == activity.metadata_["changes"]
 
 
@@ -164,7 +159,6 @@ def test_non_nullable_settings_reject_explicit_null():
     for field in [
         "organization_name",
         "default_request_timeout_seconds",
-        "default_retry_count",
         "default_max_body_bytes",
         "default_model_sync_mode",
         "virtual_key_prefix",

@@ -57,7 +57,6 @@ const settingsSchema = z.object({
       .optional(),
   ),
   default_request_timeout_seconds: z.coerce.number().int().min(1).max(300),
-  default_retry_count: z.coerce.number().int().min(0).max(10),
   default_max_body_bytes: z.coerce.number().int().min(1024).max(100_000_000),
   default_model_sync_mode: z.enum(["merge", "replace", "disabled"]),
   default_virtual_key_expiration_days: z.preprocess(
@@ -101,7 +100,6 @@ export function SettingsPage() {
       public_app_url: "",
       public_base_url: "",
       default_request_timeout_seconds: 30,
-      default_retry_count: 0,
       default_max_body_bytes: 1_000_000,
       default_model_sync_mode: "merge",
       default_virtual_key_expiration_days: undefined,
@@ -328,12 +326,6 @@ export function SettingsPage() {
                 disabled={!canManageSettings}
               />
               <NumberField
-                label="Retry count"
-                name="default_retry_count"
-                form={form}
-                disabled={!canManageSettings}
-              />
-              <NumberField
                 label="Max body bytes"
                 name="default_max_body_bytes"
                 form={form}
@@ -475,7 +467,6 @@ function NumberField({
   label: string;
   name:
     | "default_request_timeout_seconds"
-    | "default_retry_count"
     | "default_max_body_bytes"
     | "default_virtual_key_expiration_days";
   form: ReturnType<typeof useForm<SettingsInput, unknown, SettingsValues>>;
@@ -515,7 +506,6 @@ function toFormValues(settings: {
   public_app_url: string | null;
   public_base_url: string | null;
   default_request_timeout_seconds: number;
-  default_retry_count: number;
   default_max_body_bytes: number;
   default_model_sync_mode: string;
   default_virtual_key_expiration_days: number | null;
@@ -527,7 +517,6 @@ function toFormValues(settings: {
     public_app_url: settings.public_app_url ?? "",
     public_base_url: settings.public_base_url ?? "",
     default_request_timeout_seconds: settings.default_request_timeout_seconds,
-    default_retry_count: settings.default_retry_count,
     default_max_body_bytes: settings.default_max_body_bytes,
     default_model_sync_mode: toSyncMode(settings.default_model_sync_mode),
     default_virtual_key_expiration_days: settings.default_virtual_key_expiration_days ?? undefined,

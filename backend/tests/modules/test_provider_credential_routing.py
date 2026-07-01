@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
@@ -1284,6 +1285,195 @@ async def test_retry_policy_retries_retryable_upstream_status(
 
     assert attempts == 2
     assert response.body == {"id": "chatcmpl_retry"}
+
+
+async def test_retry_policy_does_not_replay_connection_failure_for_completion_post(
+    db_session: AsyncSession,
+) -> None:
+    actor, scope, provider, pool, *_ = await _create_provider_with_credentials(
+        db_session,
+        routing_policy=ProviderCredentialRoutingPolicy.priority,
+    )
+    await providers_facade.update_provider(
+        provider_id=provider.id,
+        payload=UpdateProviderRequest(
+            retry_policy={
+                "enabled": True,
+                "max_attempts": 3,
+                "backoff": "constant",
+                "initial_delay_ms": 0,
+                "max_delay_ms": 0,
+                "retry_on_status": [502],
+            },
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    attempts = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        raise httpx.ConnectError("connect failed", request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        with pytest.raises(ProviderUpstreamError) as exc_info:
+            await providers_facade.create_chat_completion(
+                provider_id=provider.id,
+                payload=ProviderChatCompletionRequest(
+                    model="gpt-5.4-mini",
+                    messages=[{"role": "user", "content": "Hello"}],
+                ),
+                scope=scope,
+                pool_id=pool.id,
+                db=db_session,
+                http_client=http_client,
+            )
+
+    assert attempts == 1
+    assert exc_info.value.failure_reason == "connection_failed"
+
+
+async def test_retry_policy_does_not_replay_timeout_for_completion_post(
+    db_session: AsyncSession,
+) -> None:
+    actor, scope, provider, pool, *_ = await _create_provider_with_credentials(
+        db_session,
+        routing_policy=ProviderCredentialRoutingPolicy.priority,
+    )
+    await providers_facade.update_provider(
+        provider_id=provider.id,
+        payload=UpdateProviderRequest(
+            request_timeout_seconds=1,
+            retry_policy={
+                "enabled": True,
+                "max_attempts": 3,
+                "backoff": "constant",
+                "initial_delay_ms": 0,
+                "max_delay_ms": 0,
+                "retry_on_status": [504],
+            },
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    attempts = 0
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        await asyncio.sleep(2)
+        return httpx.Response(200, json={"id": "too-late"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        with pytest.raises(ProviderUpstreamError) as exc_info:
+            await providers_facade.create_chat_completion(
+                provider_id=provider.id,
+                payload=ProviderChatCompletionRequest(
+                    model="gpt-5.4-mini",
+                    messages=[{"role": "user", "content": "Hello"}],
+                ),
+                scope=scope,
+                pool_id=pool.id,
+                db=db_session,
+                http_client=http_client,
+            )
+
+    assert attempts == 1
+    assert exc_info.value.failure_reason == "timeout"
+
+
+async def test_anthropic_retry_policy_does_not_replay_connection_failure(
+    db_session: AsyncSession,
+) -> None:
+    actor, scope = await _create_actor_scope(db_session)
+    created = await providers_facade.create_provider(
+        payload=CreateProviderRequest(
+            name="Anthropic Retry Transport",
+            base_url="https://api.anthropic.com/v1",
+            retry_policy={
+                "enabled": True,
+                "max_attempts": 3,
+                "backoff": "constant",
+                "initial_delay_ms": 0,
+                "max_delay_ms": 0,
+                "retry_on_status": [502],
+            },
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    provider = await db_session.get(Provider, created.id)
+    assert provider is not None
+    provider.supported_integration = "anthropic_messages"
+    credential = await providers_facade.create_provider_credential(
+        provider_id=provider.id,
+        payload=CreateProviderCredentialRequest(
+            name="Credential",
+            api_key="anthropic-secret",
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    attempts = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        raise httpx.ConnectError("connect failed", request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        with pytest.raises(ProviderUpstreamError) as exc_info:
+            await providers_facade.create_anthropic_message(
+                provider_id=provider.id,
+                pool_id=None,
+                provider_credential_id=credential.id,
+                payload=ProviderAnthropicMessagesRequest(
+                    model="claude-test",
+                    messages=[{"role": "user", "content": "Hello"}],
+                    extra_body={"max_tokens": 8},
+                ),
+                anthropic_version="2023-06-01",
+                scope=scope,
+                db=db_session,
+                http_client=http_client,
+            )
+
+    assert attempts == 1
+    assert exc_info.value.failure_reason == "connection_failed"
+
+
+def test_credential_fallback_stops_for_ambiguous_local_failures() -> None:
+    assert (
+        credential_routing.should_try_next_credential(
+            ProviderUpstreamError(
+                status_code=502,
+                body=None,
+                failure_reason="connection_failed",
+            )
+        )
+        is False
+    )
+    assert (
+        credential_routing.should_try_next_credential(
+            ProviderUpstreamError(
+                status_code=504,
+                body=None,
+                failure_reason="timeout",
+            )
+        )
+        is False
+    )
+    assert (
+        credential_routing.should_try_next_credential(
+            ProviderUpstreamError(status_code=401, body=None)
+        )
+        is True
+    )
 
 
 async def test_provider_failure_does_not_route_to_another_provider(

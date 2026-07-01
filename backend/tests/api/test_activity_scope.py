@@ -6,6 +6,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user
+from app.api.v1.routes import activity as activity_routes
 from app.core.database import Scope
 from app.modules.activity.internal.models import ActivityEvent
 from app.modules.auth.schemas import (
@@ -334,6 +335,31 @@ async def test_activity_search_cursor_and_export_share_filters(
     assert "matching older event" in exported.text
     assert "matching newer event" in exported.text
     assert "allowed workspace event" not in exported.text
+
+
+@pytest.mark.asyncio
+async def test_activity_export_rejects_more_than_maximum_rows(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    org, *_ = await _workspace(db_session)
+    user = _principal(org_id=org.id, permissions=["activity.view"])
+    captured_limit: int | None = None
+
+    async def list_events(**kwargs):
+        nonlocal captured_limit
+        captured_limit = kwargs["limit"]
+        return [object()] * 10_001
+
+    monkeypatch.setattr(activity_routes.facade, "list_events", list_events)
+
+    response = await _get(app_client, user, "/api/v1/activity/export")
+
+    assert captured_limit == 10_001
+    assert response.status_code == 413
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json()["detail"] == "export exceeds 10000 rows; narrow the filters"
 
 
 @pytest.mark.asyncio

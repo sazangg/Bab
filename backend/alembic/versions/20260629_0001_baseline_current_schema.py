@@ -291,7 +291,6 @@ def upgrade() -> None:
         sa.Column("public_app_url", sa.String(length=500), nullable=True),
         sa.Column("public_base_url", sa.String(length=500), nullable=True),
         sa.Column("default_request_timeout_seconds", sa.Integer(), nullable=False),
-        sa.Column("default_retry_count", sa.Integer(), nullable=False),
         sa.Column("default_max_body_bytes", sa.Integer(), nullable=False),
         sa.Column("default_model_sync_mode", sa.String(length=50), nullable=False),
         sa.Column("default_virtual_key_expiration_days", sa.Integer(), nullable=True),

@@ -8,6 +8,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.routes import audit as audit_routes
 from app.core import bootstrap, rate_limiter
 from app.core.rate_limiter import InMemoryRateLimitBackend, set_rate_limit_backend
 from app.core.security import decode_access_token, hash_token
@@ -183,6 +184,130 @@ async def test_mock_logout_clears_cookie(
     assert audit_event.metadata_["user_id"] == str(refresh_session.user_id)
     assert "token" not in audit_event.metadata_
     assert "token_hash" not in audit_event.metadata_
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("header_name", "header_value"),
+    [
+        ("Origin", "https://app.example.com"),
+        ("Referer", "https://app.example.com/account"),
+    ],
+)
+async def test_cross_site_cookie_refresh_accepts_configured_origin(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+    header_name: str,
+    header_value: str,
+) -> None:
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "admin@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    await bootstrap.sync_default_workspace(db_session)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="https://testserver",
+    ) as client:
+        await client.post(
+            "/api/v1/auth/login",
+            json={"email": "admin@example.com", "password": "correct-password"},
+        )
+        monkeypatch.setattr(bootstrap.settings, "refresh_cookie_samesite", "none")
+        monkeypatch.setattr(
+            bootstrap.settings, "public_app_url", "https://app.example.com"
+        )
+        response = await client.post(
+            "/api/v1/auth/refresh",
+            headers={header_name: header_value},
+        )
+
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("origin", [None, "https://untrusted.example.com"])
+async def test_cross_site_cookie_refresh_rejects_untrusted_origin(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+    origin: str | None,
+) -> None:
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "admin@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    await bootstrap.sync_default_workspace(db_session)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="https://testserver",
+    ) as client:
+        await client.post(
+            "/api/v1/auth/login",
+            json={"email": "admin@example.com", "password": "correct-password"},
+        )
+        monkeypatch.setattr(bootstrap.settings, "refresh_cookie_samesite", "none")
+        monkeypatch.setattr(
+            bootstrap.settings, "public_app_url", "https://app.example.com"
+        )
+        headers = {"Origin": origin} if origin else {}
+        response = await client.post("/api/v1/auth/refresh", headers=headers)
+
+    assert response.status_code == 403
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json()["detail"] == "invalid request origin"
+
+
+@pytest.mark.asyncio
+async def test_cross_site_cookie_logout_guards_before_clearing_cookie(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "admin@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    await bootstrap.sync_default_workspace(db_session)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="https://testserver",
+    ) as client:
+        await client.post(
+            "/api/v1/auth/login",
+            json={"email": "admin@example.com", "password": "correct-password"},
+        )
+        refresh_cookie = client.cookies["bab_refresh_token"]
+        monkeypatch.setattr(bootstrap.settings, "refresh_cookie_domain", "example.com")
+        monkeypatch.setattr(
+            bootstrap.settings, "public_app_url", "https://app.example.com"
+        )
+        missing_origin = await client.post("/api/v1/auth/logout")
+        wrong_origin = await client.post(
+            "/api/v1/auth/logout",
+            headers={"Origin": "https://untrusted.example.com"},
+        )
+        accepted = await client.post(
+            "/api/v1/auth/logout",
+            headers={"Origin": "https://app.example.com"},
+        )
+
+    refresh_session = await db_session.scalar(
+        select(RefreshSession).where(
+            RefreshSession.token_hash == hash_token(refresh_cookie)
+        )
+    )
+    assert missing_origin.status_code == 403
+    assert missing_origin.headers["content-type"].startswith(
+        "application/problem+json"
+    )
+    assert wrong_origin.status_code == 403
+    assert wrong_origin.headers["content-type"].startswith(
+        "application/problem+json"
+    )
+    assert accepted.status_code == 204
+    assert "bab_refresh_token=" in accepted.headers["set-cookie"]
+    assert "Max-Age=0" in accepted.headers["set-cookie"]
+    assert refresh_session is not None
+    assert refresh_session.revoked_at is not None
 
 
 @pytest.mark.asyncio
@@ -519,6 +644,49 @@ async def test_invite_acceptance_and_team_membership_flow(
 
 
 @pytest.mark.asyncio
+async def test_audit_export_rejects_more_than_maximum_rows(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "admin@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    await bootstrap.sync_default_workspace(db_session)
+    captured_limit: int | None = None
+
+    async def list_audit_events(**kwargs):
+        nonlocal captured_limit
+        captured_limit = kwargs["limit"]
+        return [object()] * 10_001
+
+    monkeypatch.setattr(
+        audit_routes.facade,
+        "list_audit_events",
+        list_audit_events,
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        login_response = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "admin@example.com", "password": "correct-password"},
+        )
+        response = await client.get(
+            "/api/v1/audit/export",
+            headers={
+                "Authorization": f"Bearer {login_response.json()['access_token']}"
+            },
+        )
+
+    assert captured_limit == 10_001
+    assert response.status_code == 413
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json()["detail"] == "export exceeds 10000 rows; narrow the filters"
+
+
+@pytest.mark.asyncio
 async def test_invite_url_uses_origin_fallback_and_public_app_url(
     app_client,
     db_session: AsyncSession,
@@ -561,6 +729,43 @@ async def test_invite_url_uses_origin_fallback_and_public_app_url(
     assert settings_response.json()["public_app_url"] == "https://app.example.com"
     assert absolute_response.status_code == 201
     assert absolute_response.json()["invite_url"].startswith(
+        "https://app.example.com/accept-invite?token="
+    )
+
+
+@pytest.mark.asyncio
+async def test_production_invite_url_does_not_use_request_origin(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "admin@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    monkeypatch.setattr(bootstrap.settings, "environment", "production")
+    monkeypatch.setattr(
+        bootstrap.settings, "public_app_url", "https://app.example.com"
+    )
+    await bootstrap.sync_default_workspace(db_session)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="https://testserver",
+    ) as client:
+        login_response = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "admin@example.com", "password": "correct-password"},
+        )
+        response = await client.post(
+            "/api/v1/auth/invites",
+            headers={
+                "Authorization": f"Bearer {login_response.json()['access_token']}",
+                "Origin": "https://untrusted.example.com",
+            },
+            json={"email": "production-invite@example.com", "role": "org_member"},
+        )
+
+    assert response.status_code == 201
+    assert response.json()["invite_url"].startswith(
         "https://app.example.com/accept-invite?token="
     )
 

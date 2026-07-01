@@ -76,7 +76,7 @@ export const editProviderSchema = z
     max_body_bytes_kb: optionalPositiveInt,
     max_concurrent_requests: optionalPositiveInt,
     model_sync_mode: z.enum(["inherit", "merge", "replace", "disabled"]),
-    retry_policy_mode: z.enum(["inherit", "override"]),
+    retry_policy_mode: z.enum(["disabled", "override"]),
     retry_policy: retryPolicySchema,
     circuit_breaker_policy: circuitBreakerPolicySchema,
   })

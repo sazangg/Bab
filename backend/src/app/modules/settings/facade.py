@@ -106,7 +106,6 @@ SAFE_AUDIT_FIELDS = {
     "public_app_url",
     "public_base_url",
     "default_request_timeout_seconds",
-    "default_retry_count",
     "default_max_body_bytes",
     "default_model_sync_mode",
     "default_virtual_key_expiration_days",

@@ -55,7 +55,7 @@ async def test_settings_patch_rejects_null_for_non_nullable_field(
         headers = {"Authorization": f"Bearer {login_response.json()['access_token']}"}
         response = await client.patch(
             "/api/v1/settings",
-            json={"default_retry_count": None},
+            json={"default_request_timeout_seconds": None},
             headers=headers,
         )
 

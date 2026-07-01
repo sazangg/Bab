@@ -30,7 +30,7 @@ def _patch_cli_session(monkeypatch, db_session: AsyncSession) -> None:
         return {"is_current": True}
 
     monkeypatch.setattr(cli, "get_migration_state", current)
-    monkeypatch.setattr(cli, "validate_runtime_settings", lambda: None)
+    monkeypatch.setattr(cli, "validate_bootstrap_settings", lambda: None)
 
 
 @pytest.mark.asyncio
@@ -39,6 +39,13 @@ async def test_bootstrap_empty_database_creates_owner_and_catalog(
     monkeypatch,
 ) -> None:
     _patch_cli_session(monkeypatch, db_session)
+    validator_calls = 0
+
+    def validate_bootstrap_settings() -> None:
+        nonlocal validator_calls
+        validator_calls += 1
+
+    monkeypatch.setattr(cli, "validate_bootstrap_settings", validate_bootstrap_settings)
 
     await cli._bootstrap(
         organization_name="Production Org",
@@ -54,6 +61,7 @@ async def test_bootstrap_empty_database_creates_owner_and_catalog(
     assert membership is not None
     assert membership.role == "org_owner"
     assert await db_session.scalar(select(func.count(Provider.id))) > 0
+    assert validator_calls == 1
 
     token_response, _refresh_token = await auth_facade.login(
         LoginRequest(email="owner@example.com", password="correct-password"),

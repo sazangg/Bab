@@ -5,6 +5,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user
+from app.api.v1.routes import usage as usage_routes
 from app.modules.activity.internal.models import ActivityEvent
 from app.modules.auth.schemas import (
     AuthenticatedProjectMembership,
@@ -318,6 +319,31 @@ async def test_usage_scope_validates_project_team_and_virtual_key_filters(
         f"/api/v1/usage/summary?team_id={other_team.id}",
     )
     assert out_of_scope_team.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_usage_export_rejects_more_than_maximum_rows(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    org, *_ = await _workspace(db_session)
+    user = _principal(org_id=org.id, permissions=["usage.view"])
+    captured_limit: int | None = None
+
+    async def list_usage_records(**kwargs):
+        nonlocal captured_limit
+        captured_limit = kwargs["limit"]
+        return [object()] * 10_001
+
+    monkeypatch.setattr(usage_routes.facade, "list_usage_records", list_usage_records)
+
+    response = await _get(app_client, user, "/api/v1/usage/records/export")
+
+    assert captured_limit == 10_001
+    assert response.status_code == 413
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json()["detail"] == "export exceeds 10000 rows; narrow the filters"
 
 
 @pytest.mark.asyncio

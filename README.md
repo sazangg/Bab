@@ -128,7 +128,10 @@ uv run python -m app.cli bootstrap --organization-name "Example Organization" --
 ```
 
 Run bootstrap once. It refuses databases that already contain any organization or user, and normal
-production web startup never seeds data.
+production web startup never seeds data. The owner password comes from the interactive
+`Admin password` prompt, not `BAB_DEFAULT_ADMIN_PASSWORD`. The default admin email/password
+settings remain for automatic development seeding, while production web startup retains strict
+runtime validation of development defaults.
 
 To rotate `BAB_ENCRYPTION_KEY`, stop backend workers, back up the database, set
 `BAB_NEW_ENCRYPTION_KEY`, run `uv run python -m app.cli rotate-encryption-key`, replace
@@ -210,6 +213,11 @@ Recommended deployment shape:
 - Same-origin reverse proxy routing:
   - `/api/v1/*`, `/v1/*`, `/health`, `/readyz`, `/metrics` to the backend;
   - all other paths to the frontend.
+- For production `/metrics`, set `BAB_METRICS_BEARER_TOKEN` or disable metrics with
+  `BAB_METRICS_ENABLED=false`.
+- Set `BAB_PUBLIC_APP_URL` to the frontend origin in production. Cross-site refresh
+  cookies require `BAB_REFRESH_COOKIE_SAMESITE=none` and
+  `BAB_REFRESH_COOKIE_SECURE=true`; refresh and logout requests are origin-checked.
 - TLS at the reverse proxy.
 - Persistent `BAB_ASSETS_DIR` or shared object storage for uploaded assets.
 - Alembic migrations run before backend startup.

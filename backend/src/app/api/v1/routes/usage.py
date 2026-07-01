@@ -1,19 +1,18 @@
-import csv
 from datetime import datetime
-from io import StringIO
 from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.csv_exports import require_export_within_limit
 from app.api.v1.deps import (
     get_current_user,
     get_scope,
 )
 from app.api.v1.routes.workspace_filters import resolve_workspace_filter_scope
-from app.core.csv_safe import sanitize_csv_cell
+from app.core.csv_safe import CSV_EXPORT_MAX_ROWS, stream_csv_rows
 from app.core.database import Scope, get_db
 from app.modules.activity import facade as activity_facade
 from app.modules.activity.schemas import ActivityEventResponse
@@ -187,75 +186,79 @@ async def export_usage_records(
         search=search,
         allowed_team_ids=usage_scope.allowed_team_ids,
         allowed_project_ids=usage_scope.allowed_project_ids,
-        limit=None,
+        limit=CSV_EXPORT_MAX_ROWS + 1,
         offset=0,
         db=db,
     )
-    return _csv_response(
-        filename="bab-usage-records.csv",
-        header=[
-            "id",
-            "created_at",
-            "request_id",
-            "org_id",
-            "team_id",
-            "project_id",
-            "access_policy_id",
-            "access_policy_route_id",
-            "limit_policy_ids",
-            "virtual_key_id",
-            "pool_id",
-            "provider_id",
-            "provider_credential_id",
-            "provider_credential_name",
-            "provider_credential_prefix",
-            "requested_model",
-            "provider_model",
-            "http_status",
-            "latency_ms",
-            "prompt_tokens",
-            "completion_tokens",
-            "total_tokens",
-            "cost_cents",
-            "confirmed_spend_cents",
-            "estimated_spend_cents",
-            "spend_type",
-            "usage_source",
-            "error_code",
-        ],
-        rows=[
-            [
-                record.id,
-                record.created_at,
-                record.request_id,
-                record.org_id,
-                record.team_id,
-                record.project_id,
-                record.access_policy_id,
-                record.access_policy_route_id,
-                "|".join(record.limit_policy_ids or []),
-                record.virtual_key_id,
-                record.pool_id,
-                record.provider_id,
-                record.provider_credential_id,
-                record.provider_credential_name,
-                record.provider_credential_prefix,
-                record.requested_model,
-                record.provider_model,
-                record.http_status,
-                record.latency_ms,
-                record.prompt_tokens,
-                record.completion_tokens,
-                record.total_tokens,
-                record.cost_cents,
-                record.confirmed_spend_cents,
-                record.estimated_spend_cents,
-                record.spend_type,
-                record.usage_source,
-                record.error_code,
-            ]
-            for record in records
-        ],
+    require_export_within_limit(records)
+    return StreamingResponse(
+        stream_csv_rows(
+            header=[
+                "id",
+                "created_at",
+                "request_id",
+                "org_id",
+                "team_id",
+                "project_id",
+                "access_policy_id",
+                "access_policy_route_id",
+                "limit_policy_ids",
+                "virtual_key_id",
+                "pool_id",
+                "provider_id",
+                "provider_credential_id",
+                "provider_credential_name",
+                "provider_credential_prefix",
+                "requested_model",
+                "provider_model",
+                "http_status",
+                "latency_ms",
+                "prompt_tokens",
+                "completion_tokens",
+                "total_tokens",
+                "cost_cents",
+                "confirmed_spend_cents",
+                "estimated_spend_cents",
+                "spend_type",
+                "usage_source",
+                "error_code",
+            ],
+            rows=(
+                (
+                    record.id,
+                    record.created_at,
+                    record.request_id,
+                    record.org_id,
+                    record.team_id,
+                    record.project_id,
+                    record.access_policy_id,
+                    record.access_policy_route_id,
+                    "|".join(record.limit_policy_ids or []),
+                    record.virtual_key_id,
+                    record.pool_id,
+                    record.provider_id,
+                    record.provider_credential_id,
+                    record.provider_credential_name,
+                    record.provider_credential_prefix,
+                    record.requested_model,
+                    record.provider_model,
+                    record.http_status,
+                    record.latency_ms,
+                    record.prompt_tokens,
+                    record.completion_tokens,
+                    record.total_tokens,
+                    record.cost_cents,
+                    record.confirmed_spend_cents,
+                    record.estimated_spend_cents,
+                    record.spend_type,
+                    record.usage_source,
+                    record.error_code,
+                )
+                for record in records
+            ),
+        ),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="bab-usage-records.csv"'},
     )
 
 
@@ -297,18 +300,6 @@ async def get_organization_usage_timeseries(
         allowed_team_ids=usage_scope.allowed_team_ids,
         allowed_project_ids=usage_scope.allowed_project_ids,
         db=db,
-    )
-
-
-def _csv_response(*, filename: str, header: list[str], rows: list[list[object]]) -> Response:
-    output = StringIO()
-    writer = csv.writer(output)
-    writer.writerow(header)
-    writer.writerows([sanitize_csv_cell(cell) for cell in row] for row in rows)
-    return Response(
-        content=output.getvalue(),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -382,4 +373,3 @@ async def get_spend_insights(
         allowed_project_ids=usage_scope.allowed_project_ids,
         db=db,
     )
-

@@ -69,7 +69,7 @@ export function EditProviderSheet({
       max_body_bytes_kb: undefined,
       max_concurrent_requests: undefined,
       model_sync_mode: "inherit",
-      retry_policy_mode: "inherit",
+      retry_policy_mode: "disabled",
       retry_policy: defaultRetryPolicy,
       circuit_breaker_policy: defaultCircuitBreakerPolicy,
     },
@@ -103,7 +103,7 @@ export function EditProviderSheet({
           : undefined,
       max_concurrent_requests: provider.max_concurrent_requests ?? undefined,
       model_sync_mode: parseModelSyncMode(provider.model_sync_mode),
-      retry_policy_mode: provider.retry_policy == null ? "inherit" : "override",
+      retry_policy_mode: provider.retry_policy == null ? "disabled" : "override",
       retry_policy: mergeRetryPolicy(provider.retry_policy),
       circuit_breaker_policy: mergeCircuitBreakerPolicy(provider.circuit_breaker_policy),
     });
@@ -248,7 +248,6 @@ export function EditProviderSheet({
               onModeChange={(value) =>
                 form.setValue("retry_policy_mode", value, { shouldDirty: true })
               }
-              inheritedLabel={formatInheritedRetry(settings?.default_retry_count ?? 0)}
               enabled={retryPolicy?.enabled ?? false}
               onEnabledChange={(checked) => form.setValue("retry_policy.enabled", checked)}
             >
@@ -471,30 +470,25 @@ function PolicySection({
   description,
   mode,
   onModeChange,
-  inheritedLabel,
   enabled,
   onEnabledChange,
   children,
 }: {
   title: string;
   description: string;
-  mode?: "inherit" | "override";
-  onModeChange?: (value: "inherit" | "override") => void;
-  inheritedLabel?: string;
+  mode?: "disabled" | "override";
+  onModeChange?: (value: "disabled" | "override") => void;
   enabled: boolean;
   onEnabledChange: (checked: boolean) => void;
   children: React.ReactNode;
 }) {
-  const isInherited = mode === "inherit";
+  const isDisabled = mode === "disabled";
   return (
     <section className="space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-0.5">
           <h3 className="text-sm font-medium">{title}</h3>
           <p className="text-xs text-muted-foreground">{description}</p>
-          {isInherited && inheritedLabel ? (
-            <p className="text-xs text-muted-foreground">{inheritedLabel}</p>
-          ) : null}
         </div>
         <div className="flex items-center gap-2">
           {mode && onModeChange ? (
@@ -503,14 +497,14 @@ function PolicySection({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="inherit">Inherit</SelectItem>
-                <SelectItem value="override">Override</SelectItem>
+                <SelectItem value="disabled">Disabled</SelectItem>
+                <SelectItem value="override">Configured</SelectItem>
               </SelectContent>
             </Select>
           ) : null}
           <Switch
             checked={enabled}
-            disabled={isInherited}
+            disabled={isDisabled}
             onCheckedChange={onEnabledChange}
             aria-label={`Enable ${title.toLowerCase()}`}
           />
@@ -519,9 +513,9 @@ function PolicySection({
       <div
         className={cn(
           "space-y-3 transition-opacity",
-          (!enabled || isInherited) && "pointer-events-none opacity-50",
+          (!enabled || isDisabled) && "pointer-events-none opacity-50",
         )}
-        aria-hidden={!enabled || isInherited}
+        aria-hidden={!enabled || isDisabled}
       >
         {children}
       </div>
@@ -619,9 +613,4 @@ function StatusCodeChipInput({
 function parseModelSyncMode(value: string | null | undefined) {
   if (value === "merge" || value === "replace" || value === "disabled") return value;
   return "inherit";
-}
-
-function formatInheritedRetry(defaultRetryCount: number) {
-  if (defaultRetryCount <= 0) return "Using org default: no retries.";
-  return `Using org default: ${defaultRetryCount + 1} total attempts.`;
 }

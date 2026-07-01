@@ -252,10 +252,7 @@ async def create_chat_completion(
     request_timeout_seconds = (
         provider.request_timeout_seconds or org_settings.default_request_timeout_seconds
     )
-    retry_policy = _retry_policy(
-        provider,
-        default_retry_count=org_settings.default_retry_count,
-    )
+    retry_policy = _retry_policy(provider)
 
     adapter = default_adapter_registry.get(provider.adapter_type)
     routed_credentials = await credential_routing.resolve_provider_credential_route(
@@ -347,7 +344,7 @@ async def create_anthropic_message(
     request_timeout_seconds = (
         provider.request_timeout_seconds or org_settings.default_request_timeout_seconds
     )
-    retry_policy = _retry_policy(provider, default_retry_count=org_settings.default_retry_count)
+    retry_policy = _retry_policy(provider)
     routed_credentials = await credential_routing.resolve_provider_credential_route(
         provider=provider,
         pool_id=pool_id,
@@ -693,13 +690,13 @@ async def _call_with_retries(
                 failure_reason="timeout",
             ) from exc
         except httpx.RequestError as exc:
-            last_error = ProviderUpstreamError(
+            # A transport failure after starting a non-idempotent provider POST is
+            # ambiguous: the provider might still have received or processed it.
+            raise ProviderUpstreamError(
                 status_code=502,
                 body={"error": "provider upstream connection failed"},
                 failure_reason="connection_failed",
-            )
-            if attempt >= max_attempts or 502 not in retry_policy["retry_on_status"]:
-                raise last_error from exc
+            ) from exc
         except ProviderUpstreamError as exc:
             last_error = exc
             if attempt >= max_attempts or exc.status_code not in retry_policy["retry_on_status"]:
@@ -720,15 +717,13 @@ def _retry_delay_seconds(policy: dict, attempt: int) -> float:
     return min(initial * (2 ** (attempt - 1)), maximum)
 
 
-def _retry_policy(provider: Provider, *, default_retry_count: int = 0) -> dict:
+def _retry_policy(provider: Provider) -> dict:
     stored = provider.retry_policy if isinstance(provider.retry_policy, dict) else {}
-    inherited_enabled = default_retry_count > 0
-    inherited_attempts = max(1, min(default_retry_count + 1, 10))
     return {
-        "enabled": bool(stored.get("enabled", inherited_enabled)),
+        "enabled": bool(stored.get("enabled", False)),
         "max_attempts": _int_policy_value(
             stored.get("max_attempts"),
-            inherited_attempts,
+            1,
             minimum=1,
             maximum=10,
         ),

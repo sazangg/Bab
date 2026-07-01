@@ -165,6 +165,8 @@ async def mark_provider_credential_validation_failed(
 
 
 def should_try_next_credential(error: ProviderUpstreamError) -> bool:
+    if error.failure_reason in {"connection_failed", "timeout"}:
+        return False
     return error.status_code in {401, 403, 408, 409, 429, 500, 502, 503, 504}
 
 

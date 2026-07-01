@@ -7,7 +7,11 @@ from cryptography.fernet import Fernet
 from sqlalchemy import func, select
 
 from app.core.bootstrap import _provider_catalog_entries, _slugify
-from app.core.config import INSECURE_PUBLISHED_ENCRYPTION_KEY, settings, validate_runtime_settings
+from app.core.config import (
+    INSECURE_PUBLISHED_ENCRYPTION_KEY,
+    settings,
+    validate_bootstrap_settings,
+)
 from app.core.database import AsyncSessionLocal, engine, transaction
 from app.core.migrations import get_migration_state
 from app.core.security import SecurityError, decrypt, encrypt, hash_password
@@ -89,7 +93,7 @@ async def _bootstrap(
     admin_email: str,
     admin_password: str,
 ) -> None:
-    validate_runtime_settings()
+    validate_bootstrap_settings()
     migration_state = await get_migration_state(engine)
     if not migration_state["is_current"]:
         raise SystemExit("database schema is not at the current migration head")

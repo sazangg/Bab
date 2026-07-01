@@ -103,6 +103,7 @@ async def refresh(
     db: DatabaseSession,
     raw_refresh_token: RefreshCookie = None,
 ) -> TokenResponse:
+    _require_cookie_auth_origin(request)
     await enforce_refresh_rate_limit(request=request, refresh_token=raw_refresh_token)
     try:
         token_response, new_raw_refresh_token = await facade.refresh(raw_refresh_token, db)
@@ -119,10 +120,12 @@ async def refresh(
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
+    request: Request,
     response: Response,
     db: DatabaseSession,
     raw_refresh_token: RefreshCookie = None,
 ) -> None:
+    _require_cookie_auth_origin(request)
     await facade.logout(raw_refresh_token, db)
     _clear_refresh_cookie(response)
 
@@ -237,7 +240,10 @@ async def create_invite(
             payload=payload,
             actor=actor,
             scope=scope,
-            public_base_url=org_settings.public_app_url or _request_origin(request),
+            public_base_url=_invite_public_base_url(
+                request,
+                configured_url=org_settings.public_app_url,
+            ),
             db=db,
         )
     except InvalidInviteTargetError as exc:
@@ -275,6 +281,33 @@ def _request_origin(request: Request) -> str | None:
         if parsed.scheme in {"http", "https"} and parsed.netloc:
             return f"{parsed.scheme}://{parsed.netloc}"
     return None
+
+
+def _invite_public_base_url(
+    request: Request,
+    *,
+    configured_url: str | None,
+) -> str | None:
+    if settings.environment == "production":
+        return settings.public_app_url
+    return configured_url or _request_origin(request)
+
+
+def _require_cookie_auth_origin(request: Request) -> None:
+    cross_site_cookie_mode = (
+        settings.refresh_cookie_samesite == "none"
+        or bool(settings.refresh_cookie_domain)
+    )
+    if not cross_site_cookie_mode:
+        return
+    if (
+        not settings.public_app_url
+        or _request_origin(request) != settings.public_app_url
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="invalid request origin",
+        )
 
 
 def _set_refresh_cookie(response: Response, value: str) -> None:

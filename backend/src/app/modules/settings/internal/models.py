@@ -22,7 +22,6 @@ class OrganizationSettings(Base):
     public_app_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     public_base_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     default_request_timeout_seconds: Mapped[int] = mapped_column(Integer, default=30)
-    default_retry_count: Mapped[int] = mapped_column(Integer, default=0)
     default_max_body_bytes: Mapped[int] = mapped_column(Integer)
     default_model_sync_mode: Mapped[str] = mapped_column(String(50), default="merge")
     default_virtual_key_expiration_days: Mapped[int | None] = mapped_column(Integer, nullable=True)

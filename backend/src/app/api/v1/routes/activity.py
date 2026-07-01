@@ -1,16 +1,15 @@
-import csv
 import json
 from datetime import datetime
-from io import StringIO
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.csv_exports import require_export_within_limit
 from app.api.v1.deps import get_current_user, get_scope
-from app.core.csv_safe import sanitize_csv_cell
+from app.core.csv_safe import CSV_EXPORT_MAX_ROWS, stream_csv_rows
 from app.core.database import Scope, get_db
 from app.modules.activity import facade
 from app.modules.activity.schemas import ActivityEventPageResponse
@@ -137,36 +136,32 @@ async def export_activity_events(
         since=start_at,
         end_at=end_at,
         search=q.strip() if q and q.strip() else None,
-        limit=None,
+        limit=CSV_EXPORT_MAX_ROWS + 1,
         db=db,
     )
-    output = StringIO()
-    writer = csv.writer(output)
-    writer.writerow(
-        [
-            "id",
-            "created_at",
-            "request_id",
-            "category",
-            "severity",
-            "action",
-            "message",
-            "actor_user_id",
-            "actor_email",
-            "team_id",
-            "project_id",
-            "virtual_key_id",
-            "provider_id",
-            "pool_id",
-            "model_offering_id",
-            "metadata",
-        ]
-    )
-    for event in events:
-        writer.writerow(
-            [
-                sanitize_csv_cell(cell)
-                for cell in (
+    require_export_within_limit(events)
+    return StreamingResponse(
+        stream_csv_rows(
+            header=[
+                "id",
+                "created_at",
+                "request_id",
+                "category",
+                "severity",
+                "action",
+                "message",
+                "actor_user_id",
+                "actor_email",
+                "team_id",
+                "project_id",
+                "virtual_key_id",
+                "provider_id",
+                "pool_id",
+                "model_offering_id",
+                "metadata",
+            ],
+            rows=(
+                (
                     event.id,
                     event.created_at,
                     event.request_id,
@@ -184,10 +179,9 @@ async def export_activity_events(
                     event.model_offering_id,
                     json.dumps(event.metadata, sort_keys=True, default=str),
                 )
-            ]
-        )
-    return Response(
-        content=output.getvalue(),
+                for event in events
+            ),
+        ),
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": 'attachment; filename="bab-activity-events.csv"'},
     )

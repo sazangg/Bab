@@ -37,7 +37,6 @@ const settings = {
   public_app_url: null,
   public_base_url: null,
   default_request_timeout_seconds: 30,
-  default_retry_count: 0,
   default_max_body_bytes: 1_000_000,
   deployment_max_body_bytes: 2_000_000,
   default_model_sync_mode: "merge",

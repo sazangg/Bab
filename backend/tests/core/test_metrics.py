@@ -1,6 +1,7 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from app.api.v1.routes import metrics as metrics_route
 from app.core.metrics import (
     metrics_response,
     record_gateway_denial,
@@ -178,6 +179,68 @@ async def test_metrics_endpoint_exposes_prometheus_text(app_client) -> None:
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/plain; version=")
     assert "# HELP bab_http_requests_total" in response.text
+
+
+@pytest.mark.asyncio
+async def test_metrics_endpoint_returns_404_when_disabled(app_client, monkeypatch) -> None:
+    monkeypatch.setattr(metrics_route.settings, "metrics_enabled", False)
+    monkeypatch.setattr(metrics_route.settings, "metrics_bearer_token", None)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get("/metrics")
+
+    assert response.status_code == 404
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json()["detail"] == "metrics not found"
+
+
+@pytest.mark.asyncio
+async def test_metrics_endpoint_requires_configured_bearer_token(
+    app_client,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(metrics_route.settings, "metrics_enabled", True)
+    monkeypatch.setattr(metrics_route.settings, "metrics_bearer_token", "test-token")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        missing = await client.get("/metrics")
+        wrong = await client.get(
+            "/metrics",
+            headers={"Authorization": "Bearer wrong-token"},
+        )
+        malformed = await client.get(
+            "/metrics",
+            headers={"Authorization": "Basic test-token"},
+        )
+        correct = await client.get(
+            "/metrics",
+            headers={"Authorization": "Bearer test-token"},
+        )
+
+    for response in (missing, wrong, malformed):
+        assert response.status_code == 401
+        assert response.headers["www-authenticate"] == "Bearer"
+        assert response.headers["content-type"].startswith("application/problem+json")
+    assert correct.status_code == 200
+    assert correct.headers["content-type"].startswith("text/plain; version=")
+
+
+@pytest.mark.asyncio
+async def test_metrics_endpoint_is_excluded_from_openapi(app_client) -> None:
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get("/openapi.json")
+
+    assert response.status_code == 200
+    assert "/metrics" not in response.json()["paths"]
 
 
 @pytest.mark.asyncio

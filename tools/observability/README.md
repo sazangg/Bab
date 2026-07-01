@@ -12,6 +12,9 @@ configuration.
 
 Grafana local credentials are `admin` / `admin`.
 
+`/metrics` is open by default in local development. Production deployments must set
+`BAB_METRICS_BEARER_TOKEN` or disable metrics with `BAB_METRICS_ENABLED=false`.
+
 ## Start The Backend
 
 Run the backend normally:
@@ -41,6 +44,16 @@ docker compose -f tools/observability/compose.yaml up -d
 
 Prometheus scrapes the backend at `host.docker.internal:8000`, which is the Docker
 Desktop host address for the backend server running on Windows.
+
+If you configure a local metrics bearer token, add it to
+`tools/observability/prometheus/prometheus.yml` using Prometheus `authorization`
+configuration:
+
+```yaml
+authorization:
+  type: Bearer
+  credentials: example-metrics-token
+```
 
 Open Grafana at http://localhost:3000 and use the provisioned `Bab Backend Overview`
 dashboard in the `Bab` folder. The Prometheus and Tempo datasources are provisioned

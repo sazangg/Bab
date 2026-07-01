@@ -61,7 +61,11 @@ uv run python -m app.cli bootstrap --organization-name "Example Organization" --
 ```
 
 Bootstrap refuses any database that already contains an organization or user. Production web
-startup does not seed data.
+startup does not seed data. The bootstrap owner password comes from the interactive
+`Admin password` prompt; `BAB_DEFAULT_ADMIN_PASSWORD` is not used by this command.
+Development auto-seeding continues to use `BAB_DEFAULT_ADMIN_EMAIL` and
+`BAB_DEFAULT_ADMIN_PASSWORD`. Normal production web startup still applies strict runtime
+configuration validation, including rejecting unchanged development defaults.
 
 Encryption-key rotation is offline:
 
@@ -107,6 +111,41 @@ handling deliberately; the application does not trust forwarded headers.
 
 Circuit state is ephemeral and uses bounded Redis TTLs. Redis provider concurrency
 uses token-safe expiring permits, so a stopped worker eventually releases capacity.
+
+## Metrics Endpoint
+
+`/metrics` is enabled by default for local development and is excluded from OpenAPI.
+In production, enabled metrics require `BAB_METRICS_BEARER_TOKEN`; alternatively set
+`BAB_METRICS_ENABLED=false` to return 404 from `/metrics`.
+
+Prometheus scrape example when a token is configured:
+
+```yaml
+authorization:
+  type: Bearer
+  credentials: example-metrics-token
+```
+
+Do not use query-string tokens. `BAB_METRICS_BEARER_TOKEN` is a deployment secret.
+
+## Invite URLs And Refresh Cookies
+
+`BAB_PUBLIC_APP_URL` is required in production and must be the frontend origin, such
+as `https://app.example.com`. Production invite links always use this configured
+origin. Local development may leave it blank and derive invite links from the
+request `Origin` or `Referer`.
+
+Cross-site refresh-cookie deployments must set:
+
+```text
+BAB_PUBLIC_APP_URL=https://app.example.com
+BAB_REFRESH_COOKIE_SAMESITE=none
+BAB_REFRESH_COOKIE_SECURE=true
+```
+
+Setting `BAB_REFRESH_COOKIE_DOMAIN` also enables cross-site cookie protection.
+In either cross-site mode, refresh and logout requests must have an `Origin` or
+`Referer` matching `BAB_PUBLIC_APP_URL`.
 
 ## Redis Integration Tests
 

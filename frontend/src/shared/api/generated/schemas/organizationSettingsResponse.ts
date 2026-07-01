@@ -13,7 +13,6 @@ export interface OrganizationSettingsResponse {
   public_app_url: string | null;
   public_base_url: string | null;
   default_request_timeout_seconds: number;
-  default_retry_count: number;
   default_max_body_bytes: number;
   deployment_max_body_bytes?: number;
   default_model_sync_mode: string;
