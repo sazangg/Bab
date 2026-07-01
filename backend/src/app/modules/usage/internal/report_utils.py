@@ -13,6 +13,8 @@ from app.modules.usage.schemas import (
     UsageSummaryTotals,
 )
 
+MICRO_CENTS_PER_CENT = 1_000_000
+
 
 @dataclass(frozen=True)
 class BreakdownSpec:
@@ -50,6 +52,23 @@ def _coerce_report_bucket_value(value) -> datetime:
     return datetime.fromisoformat(str(value))
 
 
+def effective_micro_cents(micro_column, cents_column):
+    return func.coalesce(micro_column, cents_column * MICRO_CENTS_PER_CENT)
+
+
+def aggregate_micro_cents_to_cents(value: int | None) -> int:
+    if value is None or value <= 0:
+        return 0
+    return (int(value) + MICRO_CENTS_PER_CENT - 1) // MICRO_CENTS_PER_CENT
+
+
+def aggregate_cost_cents_expression():
+    return func.coalesce(
+        func.sum(effective_micro_cents(UsageRecord.cost_micro_cents, UsageRecord.cost_cents)),
+        0,
+    )
+
+
 async def _totals(*filters, db: AsyncSession) -> UsageSummaryTotals:
     row = (
         await db.execute(
@@ -84,7 +103,7 @@ async def _totals(*filters, db: AsyncSession) -> UsageSummaryTotals:
                 func.coalesce(func.sum(UsageRecord.prompt_tokens), 0),
                 func.coalesce(func.sum(UsageRecord.completion_tokens), 0),
                 func.coalesce(func.sum(UsageRecord.total_tokens), 0),
-                func.coalesce(func.sum(UsageRecord.cost_cents), 0),
+                aggregate_cost_cents_expression(),
                 *_spend_classification_columns(),
                 func.avg(UsageRecord.latency_ms),
                 func.max(UsageRecord.created_at),
@@ -148,7 +167,7 @@ async def _breakdowns(
                     0,
                 ).label("completion_tokens"),
                 func.coalesce(func.sum(UsageRecord.total_tokens), 0).label("total_tokens"),
-                func.coalesce(func.sum(UsageRecord.cost_cents), 0).label("cost_cents"),
+                aggregate_cost_cents_expression().label("cost_micro_cents"),
                 *_spend_classification_columns(),
                 func.avg(UsageRecord.latency_ms).label("average_latency_ms"),
             )
@@ -172,9 +191,9 @@ def _row_to_totals(row) -> UsageSummaryTotals:
         prompt_tokens=int(row[3]),
         completion_tokens=int(row[4]),
         total_tokens=int(row[5]),
-        cost_cents=int(row[6]),
-        confirmed_spend_cents=int(row[7]),
-        estimated_spend_cents=int(row[8]),
+        cost_cents=aggregate_micro_cents_to_cents(row[6]),
+        confirmed_spend_cents=aggregate_micro_cents_to_cents(row[7]),
+        estimated_spend_cents=aggregate_micro_cents_to_cents(row[8]),
         unknown_usage_count=int(row[9]),
         unknown_total_tokens=int(row[10]),
         average_latency_ms=None if row[11] is None else round(row[11]),
@@ -192,9 +211,9 @@ def _row_to_breakdown(row) -> UsageBreakdownRow:
         prompt_tokens=int(row[5]),
         completion_tokens=int(row[6]),
         total_tokens=int(row[7]),
-        cost_cents=int(row[8]),
-        confirmed_spend_cents=int(row[9]),
-        estimated_spend_cents=int(row[10]),
+        cost_cents=aggregate_micro_cents_to_cents(row[8]),
+        confirmed_spend_cents=aggregate_micro_cents_to_cents(row[9]),
+        estimated_spend_cents=aggregate_micro_cents_to_cents(row[10]),
         unknown_usage_count=int(row[11]),
         unknown_total_tokens=int(row[12]),
         average_latency_ms=None if row[13] is None else round(row[13]),
@@ -216,7 +235,7 @@ async def _recent_errors(*filters, db: AsyncSession) -> list[UsageRecentError]:
 
 def _spend_classification_columns():
     unknown_condition = (
-        (UsageRecord.cost_cents.is_(None))
+        (UsageRecord.cost_micro_cents.is_(None) & UsageRecord.cost_cents.is_(None))
         | (UsageRecord.usage_source.is_(None))
         | (UsageRecord.usage_source == "unknown")
     )
@@ -226,8 +245,14 @@ def _spend_classification_columns():
                 case(
                     (
                         (UsageRecord.usage_source == "provider_reported")
-                        & UsageRecord.cost_cents.is_not(None),
-                        UsageRecord.cost_cents,
+                        & (
+                            UsageRecord.cost_micro_cents.is_not(None)
+                            | UsageRecord.cost_cents.is_not(None)
+                        ),
+                        effective_micro_cents(
+                            UsageRecord.cost_micro_cents,
+                            UsageRecord.cost_cents,
+                        ),
                     ),
                     else_=0,
                 )
@@ -239,8 +264,14 @@ def _spend_classification_columns():
                 case(
                     (
                         (UsageRecord.usage_source == "estimated")
-                        & UsageRecord.cost_cents.is_not(None),
-                        UsageRecord.cost_cents,
+                        & (
+                            UsageRecord.cost_micro_cents.is_not(None)
+                            | UsageRecord.cost_cents.is_not(None)
+                        ),
+                        effective_micro_cents(
+                            UsageRecord.cost_micro_cents,
+                            UsageRecord.cost_cents,
+                        ),
                     ),
                     else_=0,
                 )

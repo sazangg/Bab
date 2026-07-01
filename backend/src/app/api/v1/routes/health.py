@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.core.database import engine
 from app.core.migrations import get_migration_state
 from app.core.problems import ProblemException
+from app.core.redis_client import ping_redis
 
 router = APIRouter(tags=["health"])
 root_router = APIRouter(tags=["health"])
@@ -55,6 +56,19 @@ async def readiness_check() -> dict[str, Any]:
         }
     except Exception as exc:  # noqa: BLE001 - readiness should report dependency state.
         checks["migrations"] = {"ok": False, "error": exc.__class__.__name__}
+
+    if (
+        settings.rate_limit_enabled
+        or settings.provider_runtime_state_backend == "redis"
+    ):
+        try:
+            await ping_redis()
+            checks["redis"] = {"ok": True}
+        except Exception as exc:  # noqa: BLE001 - readiness reports dependency state.
+            checks["redis"] = {
+                "ok": False,
+                "error": exc.__class__.__name__,
+            }
 
     ready = all(check["ok"] for check in checks.values())
     if not ready:

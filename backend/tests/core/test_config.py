@@ -28,6 +28,95 @@ def test_development_allows_sqlite_database() -> None:
     validate_runtime_settings(settings)
 
 
+def test_production_requires_redis_when_rate_limiting_enabled() -> None:
+    settings = Settings.model_construct(
+        environment="production",
+        database_url="postgresql+asyncpg://user:pass@db/bab",
+        secret_key="changed-secret-key-with-more-than-32-chars",
+        encryption_key="different-fernet-key",
+        default_admin_password="changed-admin-password",
+        rate_limit_enabled=True,
+        redis_url=None,
+    )
+
+    with pytest.raises(RuntimeError, match="BAB_REDIS_URL"):
+        validate_runtime_settings(settings)
+
+
+def test_production_allows_missing_redis_when_rate_limiting_disabled() -> None:
+    settings = Settings.model_construct(
+        environment="production",
+        database_url="postgresql+asyncpg://user:pass@db/bab",
+        secret_key="changed-secret-key-with-more-than-32-chars",
+        encryption_key="different-fernet-key",
+        default_admin_password="changed-admin-password",
+        rate_limit_enabled=False,
+        redis_url=None,
+    )
+
+    validate_runtime_settings(settings)
+
+
+@pytest.mark.parametrize(
+    "redis_url",
+    [
+        "redis://localhost:6379/0",
+        "rediss://cache.example.com/0",
+        "unix:///var/run/redis.sock",
+    ],
+)
+def test_valid_redis_url_schemes_are_accepted(redis_url: str) -> None:
+    settings = Settings(
+        BAB_SECRET_KEY="changed-secret-key-with-more-than-32-chars",
+        BAB_ENCRYPTION_KEY="mC2XCkbSXUHnJS1bAgRZ1LMvw4mDhF-GqXFf0ySFyDw=",
+        BAB_REDIS_URL=redis_url,
+    )
+
+    assert settings.redis_url == redis_url
+
+
+@pytest.mark.parametrize(
+    "redis_url",
+    ["http://localhost:6379", "redis://", "redis://localhost:not-a-port"],
+)
+def test_invalid_redis_urls_are_rejected(redis_url: str) -> None:
+    with pytest.raises(ValueError, match="BAB_REDIS_URL"):
+        Settings(
+            BAB_SECRET_KEY="changed-secret-key-with-more-than-32-chars",
+            BAB_ENCRYPTION_KEY="mC2XCkbSXUHnJS1bAgRZ1LMvw4mDhF-GqXFf0ySFyDw=",
+            BAB_REDIS_URL=redis_url,
+        )
+
+
+def test_provider_runtime_state_backend_defaults_to_memory() -> None:
+    settings = Settings(
+        BAB_SECRET_KEY="changed-secret-key-with-more-than-32-chars",
+        BAB_ENCRYPTION_KEY="mC2XCkbSXUHnJS1bAgRZ1LMvw4mDhF-GqXFf0ySFyDw=",
+    )
+
+    assert settings.provider_runtime_state_backend == "memory"
+
+
+def test_provider_runtime_redis_requires_redis_url() -> None:
+    settings = Settings(
+        BAB_SECRET_KEY="changed-secret-key-with-more-than-32-chars",
+        BAB_ENCRYPTION_KEY="mC2XCkbSXUHnJS1bAgRZ1LMvw4mDhF-GqXFf0ySFyDw=",
+        BAB_PROVIDER_RUNTIME_STATE_BACKEND="redis",
+    )
+
+    with pytest.raises(RuntimeError, match="BAB_REDIS_URL"):
+        validate_runtime_settings(settings)
+
+
+def test_invalid_provider_runtime_state_backend_is_rejected() -> None:
+    with pytest.raises(ValueError, match="BAB_PROVIDER_RUNTIME_STATE_BACKEND"):
+        Settings(
+            BAB_SECRET_KEY="changed-secret-key-with-more-than-32-chars",
+            BAB_ENCRYPTION_KEY="mC2XCkbSXUHnJS1bAgRZ1LMvw4mDhF-GqXFf0ySFyDw=",
+            BAB_PROVIDER_RUNTIME_STATE_BACKEND="database",
+        )
+
+
 def test_usage_retention_defaults_to_no_deletion_intent() -> None:
     settings = Settings.model_construct(
         usage_retention_days=None,

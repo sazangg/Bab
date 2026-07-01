@@ -11,7 +11,11 @@ from app.modules.usage.internal.query_utils import (
     _json_array_contains,
     _usage_filters,
 )
-from app.modules.usage.internal.report_utils import _breakdown
+from app.modules.usage.internal.report_utils import (
+    _breakdown,
+    aggregate_micro_cents_to_cents,
+    effective_micro_cents,
+)
 from app.modules.usage.internal.types import LimitBudgetRuleLike
 from app.modules.usage.schemas import LimitPolicyBudgetBurnRow, SpendInsights
 
@@ -159,7 +163,10 @@ async def _limit_policy_budget_burn(
                                 rule.limit_policy_rule_id,
                                 db=db,
                             ),
-                            UsageRecord.cost_cents,
+                            effective_micro_cents(
+                                UsageRecord.cost_micro_cents,
+                                UsageRecord.cost_cents,
+                            ),
                         ),
                         else_=0,
                     )
@@ -170,7 +177,9 @@ async def _limit_policy_budget_burn(
         ]
         spent_values = (await db.execute(select(*columns).where(*filters))).one()
         for rule, spent in zip(rules, spent_values, strict=True):
-            spent_cents_by_rule_id[rule.limit_policy_rule_id] = int(spent or 0)
+            spent_cents_by_rule_id[rule.limit_policy_rule_id] = (
+                aggregate_micro_cents_to_cents(int(spent or 0))
+            )
 
     rows: list[LimitPolicyBudgetBurnRow] = []
     for rule in limit_budget_rule_references:

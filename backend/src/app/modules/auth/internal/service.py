@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope, transaction
@@ -27,7 +28,6 @@ from app.modules.auth.errors import (
     LastOwnerError,
     MemberAlreadyExistsError,
     MemberNotFoundError,
-    MemberOrganizationConflictError,
     PermissionDeniedError,
     RefreshTokenReuseError,
 )
@@ -883,6 +883,7 @@ async def create_invite(
     db: AsyncSession,
 ) -> InviteResponse:
     raw_token = generate_secret_token()
+    email = str(payload.email).lower()
     async with transaction(db):
         team, project = await _validate_invite_target(payload=payload, scope=scope, db=db)
         _raise_permission_denied(
@@ -898,9 +899,11 @@ async def create_invite(
                 ),
             )
         )
+        if await db.scalar(select(User.id).where(User.email == email)) is not None:
+            raise MemberAlreadyExistsError
         await _ensure_no_duplicate_pending_invite(
             org_id=scope.org_id,
-            email=str(payload.email).lower(),
+            email=email,
             team_id=payload.team_id,
             project_id=payload.project_id,
             db=db,
@@ -909,7 +912,7 @@ async def create_invite(
             org_id=scope.org_id,
             team_id=payload.team_id,
             project_id=payload.project_id,
-            email=str(payload.email).lower(),
+            email=email,
             role=payload.role,
             team_role=payload.team_role,
             project_role=payload.project_role,
@@ -1139,12 +1142,17 @@ async def accept_invite(
     payload: AcceptInviteRequest, db: AsyncSession
 ) -> tuple[TokenResponse, str]:
     token_hash = hash_token(payload.token)
-    async with transaction(db):
-        invite = await db.scalar(select(Invite).where(Invite.token_hash == token_hash))
-        if invite is None or invite.status != "pending" or _is_past(invite.expires_at):
-            raise InvalidCredentialsError
-        user = await db.scalar(select(User).where(User.email == invite.email))
-        if user is None:
+    invite_email: str | None = None
+    try:
+        async with transaction(db):
+            invite = await db.scalar(
+                select(Invite).where(Invite.token_hash == token_hash).with_for_update()
+            )
+            if invite is None or invite.status != "pending" or _is_past(invite.expires_at):
+                raise InvalidCredentialsError
+            invite_email = invite.email
+            if await db.scalar(select(User.id).where(User.email == invite.email)) is not None:
+                raise InvalidCredentialsError
             user = User(
                 email=invite.email,
                 name=payload.name,
@@ -1160,13 +1168,6 @@ async def accept_invite(
                     email=user.email,
                 )
             )
-        else:
-            user.name = payload.name or user.name
-            user.password_hash = user.password_hash or hash_password(payload.password)
-        existing_membership = await db.scalar(
-            select(OrganizationMembership).where(OrganizationMembership.user_id == user.id)
-        )
-        if existing_membership is None:
             db.add(
                 OrganizationMembership(
                     org_id=invite.org_id,
@@ -1175,20 +1176,7 @@ async def accept_invite(
                     status="active",
                 )
             )
-        elif existing_membership.org_id != invite.org_id:
-            # An account belongs to exactly one organization; the invited email is
-            # already a member of a different org.
-            raise MemberOrganizationConflictError
-        elif existing_membership.status != "active":
-            raise InviteLifecycleError
-        if invite.team_id and invite.team_role:
-            team_membership = await db.scalar(
-                select(TeamMembership).where(
-                    TeamMembership.team_id == invite.team_id,
-                    TeamMembership.user_id == user.id,
-                )
-            )
-            if team_membership is None:
+            if invite.team_id and invite.team_role:
                 db.add(
                     TeamMembership(
                         org_id=invite.org_id,
@@ -1197,14 +1185,7 @@ async def accept_invite(
                         role=invite.team_role,
                     )
                 )
-        if invite.project_id and invite.project_role:
-            project_membership = await db.scalar(
-                select(ProjectMembership).where(
-                    ProjectMembership.project_id == invite.project_id,
-                    ProjectMembership.user_id == user.id,
-                )
-            )
-            if project_membership is None:
+            if invite.project_id and invite.project_role:
                 db.add(
                     ProjectMembership(
                         org_id=invite.org_id,
@@ -1213,35 +1194,39 @@ async def accept_invite(
                         role=invite.project_role,
                     )
                 )
-        invite.status = "accepted"
-        invite.accepted_by_user_id = user.id
-        invite.accepted_at = datetime.now(UTC)
-        await db.flush()
-        principal = await _principal_for_user(user.id, db)
-        await audit_facade.record_audit_event(
-            actor=principal,
-            action="invite.accepted",
-            entity_type="invite",
-            entity_id=invite.id,
-            metadata={
-                "email": invite.email,
-                "previous_status": "pending",
-                "status": "accepted",
-                "role": invite.role,
-                "team_id": str(invite.team_id) if invite.team_id else None,
-                "team_role": invite.team_role,
-                "project_id": str(invite.project_id) if invite.project_id else None,
-                "project_role": invite.project_role,
-            },
-            db=db,
-        )
-        raw_refresh_token = await create_refresh_session(
-            user_id=principal.id,
-            org_id=principal.org_id,
-            db=db,
-        )
+            invite.status = "accepted"
+            invite.accepted_by_user_id = user.id
+            invite.accepted_at = datetime.now(UTC)
+            await db.flush()
+            principal = await _principal_for_user(user.id, db)
+            await audit_facade.record_audit_event(
+                actor=principal,
+                action="invite.accepted",
+                entity_type="invite",
+                entity_id=invite.id,
+                metadata={
+                    "email": invite.email,
+                    "previous_status": "pending",
+                    "status": "accepted",
+                    "role": invite.role,
+                    "team_id": str(invite.team_id) if invite.team_id else None,
+                    "team_role": invite.team_role,
+                    "project_id": str(invite.project_id) if invite.project_id else None,
+                    "project_role": invite.project_role,
+                },
+                db=db,
+            )
+            raw_refresh_token = await create_refresh_session(
+                user_id=principal.id,
+                org_id=principal.org_id,
+                db=db,
+            )
+    except IntegrityError:
+        await db.rollback()
+        if invite_email and await db.scalar(select(User.id).where(User.email == invite_email)):
+            raise InvalidCredentialsError from None
+        raise
     return _access_response(principal), raw_refresh_token
-
 
 async def _require_team(
     *, team_id: UUID, scope: Scope, db: AsyncSession

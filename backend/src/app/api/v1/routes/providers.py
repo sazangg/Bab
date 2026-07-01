@@ -1,12 +1,12 @@
 from typing import Annotated
 from uuid import UUID
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_scope, require_permission
 from app.core.database import Scope, get_db
+from app.core.provider_http import provider_async_client
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.authorization.permissions import Permissions
 from app.modules.providers import facade
@@ -63,7 +63,10 @@ async def list_providers(
     db: DatabaseSession,
     _: ProviderViewer,
 ) -> list[ProviderResponse]:
-    return await facade.list_providers(scope=scope, db=db)
+    try:
+        return await facade.list_providers(scope=scope, db=db)
+    except ProviderUpstreamError as exc:
+        _raise_provider_state_problem(exc)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -77,6 +80,8 @@ async def create_provider(
         return await facade.create_provider(payload=payload, actor=actor, scope=scope, db=db)
     except ProviderSlugConflictError as exc:
         raise HTTPException(status_code=409, detail="provider slug already exists") from exc
+    except ProviderUpstreamError as exc:
+        _raise_provider_state_problem(exc)
 
 
 @router.get("/{provider_id}")
@@ -90,6 +95,8 @@ async def get_provider(
         return await facade.get_provider(provider_id=provider_id, scope=scope, db=db)
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc
+    except ProviderUpstreamError as exc:
+        _raise_provider_state_problem(exc)
 
 
 @router.get("/{provider_id}/impact")
@@ -376,7 +383,7 @@ async def test_provider_credential(
     db: DatabaseSession,
 ) -> TestProviderCredentialResponse:
     try:
-        async with httpx.AsyncClient(timeout=30) as http_client:
+        async with provider_async_client(timeout=30) as http_client:
             return await facade.test_provider_credential(
                 provider_id=provider_id,
                 provider_credential_id=provider_credential_id,
@@ -512,7 +519,7 @@ async def test_model_offering(
     payload: TestProviderModelOfferingRequest | None = None,
 ) -> TestProviderModelOfferingResponse:
     try:
-        async with httpx.AsyncClient(timeout=30) as http_client:
+        async with provider_async_client(timeout=30) as http_client:
             return await facade.test_model_offering(
                 provider_id=provider_id,
                 model_offering_id=model_offering_id,
@@ -566,7 +573,7 @@ async def sync_model_offerings(
     try:
         org_settings = await settings_facade.get_organization_settings(scope=scope, db=db)
         provider = await facade.get_provider(provider_id=provider_id, scope=scope, db=db)
-        async with httpx.AsyncClient(timeout=30) as http_client:
+        async with provider_async_client(timeout=30) as http_client:
             return await facade.sync_model_offerings(
                 provider_id=provider_id,
                 actor=actor,
@@ -613,6 +620,17 @@ async def update_provider(
         raise HTTPException(status_code=404, detail="provider not found") from exc
     except ProviderSlugConflictError as exc:
         raise HTTPException(status_code=409, detail="provider slug already exists") from exc
+    except ProviderUpstreamError as exc:
+        _raise_provider_state_problem(exc)
+
+
+def _raise_provider_state_problem(exc: ProviderUpstreamError) -> None:
+    if exc.failure_reason != "provider_state_unavailable":
+        raise exc
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="provider state unavailable",
+    ) from exc
 
 
 @router.delete("/{provider_id}", status_code=status.HTTP_204_NO_CONTENT)

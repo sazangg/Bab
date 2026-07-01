@@ -14,8 +14,8 @@ from app.modules.audit.internal.service import record_audit_event, verify_audit_
 from app.modules.auth import facade as auth_facade
 from app.modules.auth.errors import (
     InvalidAccessTokenError,
+    InvalidCredentialsError,
     InvalidRefreshTokenError,
-    MemberOrganizationConflictError,
 )
 from app.modules.auth.internal.models import (
     Invite,
@@ -159,7 +159,7 @@ async def test_accept_invite_rejects_email_already_in_another_org(db_session: As
     )
     await db_session.commit()
 
-    with pytest.raises(MemberOrganizationConflictError):
+    with pytest.raises(InvalidCredentialsError):
         await auth_facade.accept_invite(
             AcceptInviteRequest(token=raw_token, password="password123"), db_session
         )

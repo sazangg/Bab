@@ -26,6 +26,7 @@ from app.modules.providers.read_models import (
 from app.modules.providers.schemas import (
     CreateProviderRequest,
     ProviderCredentialSummary,
+    ProviderOperationalState,
     ProviderReadiness,
     ProviderResponse,
     UpdateProviderRequest,
@@ -70,9 +71,14 @@ async def create_provider(
             provider_id=provider.id,
             db=db,
         )
+        states = await execution.provider_operational_states([provider])
+        response = _to_response(
+            provider,
+            operational_state=_operational_state(provider, states),
+        )
 
     logger.info("provider_created", provider_id=str(provider.id), org_id=str(scope.org_id))
-    return _to_response(provider)
+    return response
 
 
 async def list_providers(*, scope: Scope, db: AsyncSession) -> list[ProviderResponse]:
@@ -81,7 +87,15 @@ async def list_providers(*, scope: Scope, db: AsyncSession) -> list[ProviderResp
     summaries = _credential_summaries(credentials)
     _attach_active_credential_health(providers=providers, credentials=credentials)
     await _attach_provider_readiness_data(providers=providers, org_id=scope.org_id, db=db)
-    return [_to_response(provider, summaries.get(provider.id)) for provider in providers]
+    states = await execution.provider_operational_states(providers)
+    return [
+        _to_response(
+            provider,
+            summaries.get(provider.id),
+            operational_state=_operational_state(provider, states),
+        )
+        for provider in providers
+    ]
 
 
 async def get_provider(*, provider_id: UUID, scope: Scope, db: AsyncSession) -> ProviderResponse:
@@ -93,7 +107,12 @@ async def get_provider(*, provider_id: UUID, scope: Scope, db: AsyncSession) -> 
     )
     _attach_active_credential_health(providers=[provider], credentials=credentials)
     await _attach_provider_readiness_data(providers=[provider], org_id=scope.org_id, db=db)
-    return _to_response(provider, _credential_summary(credentials))
+    states = await execution.provider_operational_states([provider])
+    return _to_response(
+        provider,
+        _credential_summary(credentials),
+        operational_state=_operational_state(provider, states),
+    )
 
 
 async def update_provider(
@@ -151,9 +170,14 @@ async def update_provider(
             provider_id=provider.id,
             db=db,
         )
+        states = await execution.provider_operational_states([provider])
+        response = _to_response(
+            provider,
+            operational_state=_operational_state(provider, states),
+        )
 
     logger.info("provider_updated", provider_id=str(provider.id), org_id=str(scope.org_id))
-    return _to_response(provider)
+    return response
 
 
 async def deactivate_provider(
@@ -189,6 +213,8 @@ async def _get_provider_or_raise(*, provider_id: UUID, scope: Scope, db: AsyncSe
 def _to_response(
     provider: Provider,
     credential_summary: ProviderCredentialSummary | None = None,
+    *,
+    operational_state: ProviderOperationalState,
 ) -> ProviderResponse:
     response = ProviderResponse.model_validate(provider)
     response.credential_summary = credential_summary or ProviderCredentialSummary()
@@ -196,8 +222,23 @@ def _to_response(
     response.capabilities = _aggregate_provider_capabilities(provider)
     response.integration_capabilities = provider_integration_capabilities(provider)
     response.readiness = _provider_readiness(provider, response.credential_summary)
-    response.operational_state = execution.provider_operational_state(provider)
+    response.operational_state = operational_state
     return response
+
+
+def _operational_state(
+    provider: Provider,
+    states,
+) -> ProviderOperationalState:
+    policy = execution.circuit_policy(provider)
+    snapshot = states[provider.id]
+    return ProviderOperationalState(
+        circuit_breaker_enabled=policy.enabled,
+        circuit_state=snapshot.state,
+        circuit_open_until=snapshot.open_until,
+        recent_circuit_failures=snapshot.failures,
+        recent_circuit_successes=snapshot.successes,
+    )
 
 
 async def _attach_provider_readiness_data(

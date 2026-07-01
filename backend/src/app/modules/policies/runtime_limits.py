@@ -27,6 +27,7 @@ class RuntimeLimitEvaluationInput:
     estimated_cost_micro_cents: int | None
     gateway_endpoint: str | None = None
     limit_types: set[str] | None = None
+    matching_limits: list[ResolvedLimitPolicy] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,16 +71,14 @@ async def evaluate_runtime_limits_readonly(
         resolved=resolved,
         gateway_endpoint=payload.gateway_endpoint,
     )
-    matched_limits = [
-        limit
-        for limit in resolved.limit_policies
-        if (payload.limit_types is None or limit.limit_type in payload.limit_types)
-        and await limit_rule_matches_runtime_subject(
-            limit=limit,
+    matched_limits = payload.matching_limits
+    if matched_limits is None:
+        matched_limits = await matching_runtime_limits(
+            resolved=resolved,
             subject=dimension_subject,
+            limit_types=payload.limit_types,
             db=db,
         )
-    ]
     results: list[RuntimeLimitResult] = []
     for limit in matched_limits:
         static_result = _static_limit_result(
@@ -175,6 +174,21 @@ async def evaluate_runtime_limits_readonly(
         ),
         results=results,
     )
+
+
+async def matching_runtime_limits(
+    *,
+    resolved: Any,
+    subject: dict[str, Any],
+    limit_types: set[str] | None,
+    db: AsyncSession,
+) -> list[ResolvedLimitPolicy]:
+    return [
+        limit
+        for limit in resolved.limit_policies
+        if (limit_types is None or limit.limit_type in limit_types)
+        and await limit_rule_matches_runtime_subject(limit=limit, subject=subject, db=db)
+    ]
 
 
 def _static_limit_result(

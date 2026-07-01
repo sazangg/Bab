@@ -16,6 +16,7 @@ from app.modules.usage.internal.report_utils import (
     _row_to_totals,
     _spend_classification_columns,
     _totals,
+    aggregate_cost_cents_expression,
 )
 from app.modules.usage.schemas import (
     OrganizationUsageSummary,
@@ -156,7 +157,7 @@ async def get_organization_usage_timeseries(
                 func.coalesce(func.sum(UsageRecord.prompt_tokens), 0),
                 func.coalesce(func.sum(UsageRecord.completion_tokens), 0),
                 func.coalesce(func.sum(UsageRecord.total_tokens), 0),
-                func.coalesce(func.sum(UsageRecord.cost_cents), 0),
+                aggregate_cost_cents_expression(),
                 *_spend_classification_columns(),
                 func.avg(UsageRecord.latency_ms),
                 func.max(UsageRecord.created_at),

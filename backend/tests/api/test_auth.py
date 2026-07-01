@@ -8,7 +8,8 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import bootstrap
+from app.core import bootstrap, rate_limiter
+from app.core.rate_limiter import InMemoryRateLimitBackend, set_rate_limit_backend
 from app.core.security import decode_access_token, hash_token
 from app.modules.audit.internal.models import AuditEvent
 from app.modules.auth.internal.models import (
@@ -25,6 +26,12 @@ from app.modules.workspace.internal.models import Team
 def _parse_api_datetime(value: str) -> datetime:
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def _enable_test_rate_limiter(monkeypatch) -> None:
+    set_rate_limit_backend(InMemoryRateLimitBackend())
+    monkeypatch.setattr(rate_limiter.settings, "rate_limit_enabled", True)
+    monkeypatch.setattr(rate_limiter.settings, "rate_limit_fail_closed", True)
 
 
 @pytest.mark.asyncio
@@ -863,6 +870,148 @@ async def test_invite_lifecycle_and_target_validation(
     assert expired_accept_response.status_code == 400
     assert expired_revoke_response.status_code == 400
     assert listed_expired["status"] == "expired"
+
+
+@pytest.mark.asyncio
+async def test_create_invite_for_existing_users_returns_conflict(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "owner@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    await bootstrap.sync_default_workspace(db_session)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_client),
+        base_url="http://testserver",
+    ) as client:
+        owner_login = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "owner@example.com", "password": "correct-password"},
+        )
+        owner_headers = {"Authorization": f"Bearer {owner_login.json()['access_token']}"}
+        member_response = await client.post(
+            "/api/v1/auth/members",
+            json={
+                "email": "existing-member@example.com",
+                "password": "member-password",
+                "role": "org_member",
+            },
+            headers=owner_headers,
+        )
+        owner_invite_response = await client.post(
+            "/api/v1/auth/invites",
+            json={"email": "owner@example.com", "role": "org_member"},
+            headers=owner_headers,
+        )
+        member_invite_response = await client.post(
+            "/api/v1/auth/invites",
+            json={"email": "existing-member@example.com", "role": "org_member"},
+            headers=owner_headers,
+        )
+
+    assert member_response.status_code == 201
+    assert owner_invite_response.status_code == 409
+    assert owner_invite_response.json()["detail"] == "member already exists"
+    assert member_invite_response.status_code == 409
+    assert member_invite_response.json()["detail"] == "member already exists"
+
+
+@pytest.mark.asyncio
+async def test_bad_login_attempts_are_rate_limited_but_unrelated_login_works(
+    app_client,
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    _enable_test_rate_limiter(monkeypatch)
+    monkeypatch.setattr(bootstrap.settings, "default_admin_email", "owner@example.com")
+    monkeypatch.setattr(bootstrap.settings, "default_admin_password", "correct-password")
+    await bootstrap.sync_default_workspace(db_session)
+
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app_client, client=("203.0.113.10", 1234)),
+            base_url="http://testserver",
+        ) as abusive_client:
+            responses = [
+                await abusive_client.post(
+                    "/api/v1/auth/login",
+                    json={"email": "attacker@example.com", "password": "wrong-password"},
+                )
+                for _ in range(6)
+            ]
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app_client, client=("203.0.113.20", 1234)),
+            base_url="http://testserver",
+        ) as normal_client:
+            correct_login = await normal_client.post(
+                "/api/v1/auth/login",
+                json={"email": "owner@example.com", "password": "correct-password"},
+            )
+    finally:
+        set_rate_limit_backend(None)
+
+    assert [response.status_code for response in responses[:5]] == [401] * 5
+    assert responses[5].status_code == 429
+    assert responses[5].json()["detail"] == "too many requests"
+    assert "retry-after" in responses[5].headers
+    assert correct_login.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_repeated_invalid_invite_accept_is_rate_limited(
+    app_client,
+    monkeypatch,
+) -> None:
+    _enable_test_rate_limiter(monkeypatch)
+
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app_client, client=("203.0.113.30", 1234)),
+            base_url="http://testserver",
+        ) as client:
+            responses = [
+                await client.post(
+                    "/api/v1/auth/invites/accept",
+                    json={"token": "bad-invite-token", "password": "correct-password"},
+                )
+                for _ in range(6)
+            ]
+    finally:
+        set_rate_limit_backend(None)
+
+    assert [response.status_code for response in responses[:5]] == [400] * 5
+    assert responses[5].status_code == 429
+    assert responses[5].headers["retry-after"]
+
+
+@pytest.mark.asyncio
+async def test_repeated_bad_refresh_is_rate_limited(
+    app_client,
+    monkeypatch,
+) -> None:
+    _enable_test_rate_limiter(monkeypatch)
+
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app_client, client=("203.0.113.40", 1234)),
+            base_url="http://testserver",
+        ) as client:
+            responses = [
+                await client.post(
+                    "/api/v1/auth/refresh",
+                    headers={"Cookie": "bab_refresh_token=bad-refresh-token"},
+                )
+                for _ in range(11)
+            ]
+    finally:
+        set_rate_limit_backend(None)
+
+    assert [response.status_code for response in responses[:10]] == [401] * 10
+    assert responses[10].status_code == 429
+    assert responses[10].headers["retry-after"]
 
 
 @pytest.mark.asyncio

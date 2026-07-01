@@ -56,8 +56,8 @@ import { EventDetailSheet, type EventDetailRow } from "@/shared/components/Event
 import { FilterToolbar, type FilterChip } from "@/shared/components/FilterToolbar";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { getProblemDetail } from "@/shared/api/problem-detail";
+import { NO_SCOPE, scopedGrantError } from "@/features/users/lib/scoped-grants";
 
-const NO_SCOPE = "__none__";
 const ALL_STATUSES = "__all_statuses__";
 const ALL_ROLES = "__all_roles__";
 
@@ -1303,21 +1303,6 @@ function DestructiveActionDialog({
       </DialogContent>
     </Dialog>
   );
-}
-
-export function scopedGrantError(
-  teamId: string,
-  teamRole: string,
-  projectId: string,
-  projectRole: string,
-) {
-  if (projectId !== NO_SCOPE && projectRole === NO_SCOPE) {
-    return "Choose a project role before submitting.";
-  }
-  if (teamId !== NO_SCOPE && projectId === NO_SCOPE && teamRole === NO_SCOPE) {
-    return "Choose a team role before submitting.";
-  }
-  return null;
 }
 
 function InviteAccess({

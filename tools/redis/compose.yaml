@@ -1,0 +1,6 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${BAB_TEST_REDIS_PORT:-16379}:6379"
+    command: ["redis-server", "--save", "", "--appendonly", "no"]

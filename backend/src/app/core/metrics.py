@@ -48,6 +48,46 @@ GATEWAY_DENIALS_TOTAL = Counter(
     "Gateway denials and blocks recorded by Bab.",
     ("denial_type", "gateway_endpoint", "phase"),
 )
+RATE_LIMIT_REJECTIONS_TOTAL = Counter(
+    "bab_rate_limit_rejections_total",
+    "Rate-limit rejections emitted by Bab.",
+    ("route_group", "bucket_type"),
+)
+PROVIDER_CIRCUIT_TRANSITIONS_TOTAL = Counter(
+    "bab_provider_circuit_transitions_total",
+    "Provider circuit state transitions.",
+    ("from_state", "to_state", "reason", "backend"),
+)
+PROVIDER_CIRCUIT_REJECTIONS_TOTAL = Counter(
+    "bab_provider_circuit_rejections_total",
+    "Provider operations rejected by an open circuit.",
+    ("backend",),
+)
+PROVIDER_CIRCUIT_STORAGE_FAILURES_TOTAL = Counter(
+    "bab_provider_circuit_storage_failures_total",
+    "Provider circuit storage failures.",
+    ("backend",),
+)
+PROVIDER_CONCURRENCY_REJECTIONS_TOTAL = Counter(
+    "bab_provider_concurrency_rejections_total",
+    "Provider concurrency rejections.",
+    ("backend", "reason"),
+)
+PROVIDER_CONCURRENCY_STORAGE_FAILURES_TOTAL = Counter(
+    "bab_provider_concurrency_storage_failures_total",
+    "Provider concurrency storage failures.",
+    ("backend",),
+)
+PROVIDER_CONCURRENCY_RENEWAL_LOSSES_TOTAL = Counter(
+    "bab_provider_concurrency_renewal_losses_total",
+    "Provider concurrency permit renewal ownership losses.",
+    ("backend",),
+)
+PROVIDER_CONCURRENCY_WAIT_SECONDS = Histogram(
+    "bab_provider_concurrency_wait_seconds",
+    "Provider concurrency wait duration in seconds.",
+    ("backend", "outcome"),
+)
 
 
 def record_http_request(
@@ -138,6 +178,76 @@ def record_gateway_denial(
         "phase": _label(phase, UNKNOWN),
     }
     _best_effort(lambda: GATEWAY_DENIALS_TOTAL.labels(**labels).inc())
+
+
+def record_rate_limit_rejection(*, route_group: str, bucket_type: str) -> None:
+    labels = {
+        "route_group": _label(route_group, UNKNOWN),
+        "bucket_type": _label(bucket_type, UNKNOWN),
+    }
+    _best_effort(lambda: RATE_LIMIT_REJECTIONS_TOTAL.labels(**labels).inc())
+
+
+def record_provider_circuit_transition(
+    *,
+    from_state: str,
+    to_state: str,
+    reason: str,
+    backend: str,
+) -> None:
+    _best_effort(
+        lambda: PROVIDER_CIRCUIT_TRANSITIONS_TOTAL.labels(
+            from_state=from_state,
+            to_state=to_state,
+            reason=reason,
+            backend=backend,
+        ).inc()
+    )
+
+
+def record_provider_circuit_rejection(*, backend: str) -> None:
+    _best_effort(lambda: PROVIDER_CIRCUIT_REJECTIONS_TOTAL.labels(backend=backend).inc())
+
+
+def record_provider_circuit_storage_failure(*, backend: str) -> None:
+    _best_effort(
+        lambda: PROVIDER_CIRCUIT_STORAGE_FAILURES_TOTAL.labels(backend=backend).inc()
+    )
+
+
+def record_provider_concurrency_rejection(*, backend: str, reason: str) -> None:
+    _best_effort(
+        lambda: PROVIDER_CONCURRENCY_REJECTIONS_TOTAL.labels(
+            backend=backend,
+            reason=reason,
+        ).inc()
+    )
+
+
+def record_provider_concurrency_storage_failure(*, backend: str) -> None:
+    _best_effort(
+        lambda: PROVIDER_CONCURRENCY_STORAGE_FAILURES_TOTAL.labels(backend=backend).inc()
+    )
+
+
+def record_provider_concurrency_renewal_loss(*, backend: str) -> None:
+    _best_effort(
+        lambda: PROVIDER_CONCURRENCY_RENEWAL_LOSSES_TOTAL.labels(backend=backend).inc()
+    )
+
+
+def record_provider_concurrency_wait(
+    *,
+    backend: str,
+    outcome: str,
+    duration_seconds: float,
+) -> None:
+    _best_effort(
+        lambda: PROVIDER_CONCURRENCY_WAIT_SECONDS.labels(
+            backend=backend,
+            outcome=outcome,
+        ).observe(duration_seconds)
+    )
 
 
 def metrics_response() -> Response:

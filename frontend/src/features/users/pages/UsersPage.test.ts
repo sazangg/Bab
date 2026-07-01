@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { scopedGrantError } from "./UsersPage";
+import { scopedGrantError } from "@/features/users/lib/scoped-grants";
 
 describe("scopedGrantError", () => {
   it("requires a team role for a team-only grant", () => {

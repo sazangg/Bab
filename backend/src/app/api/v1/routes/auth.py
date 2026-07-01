@@ -6,6 +6,11 @@ from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, get_scope, require_permission
+from app.api.v1.rate_limits import (
+    enforce_auth_login_rate_limit,
+    enforce_invite_accept_rate_limit,
+    enforce_refresh_rate_limit,
+)
 from app.core.config import settings
 from app.core.database import Scope, get_db
 from app.modules.auth import facade
@@ -51,9 +56,11 @@ CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]
 @router.post("/login")
 async def login(
     payload: LoginRequest,
+    request: Request,
     response: Response,
     db: DatabaseSession,
 ) -> TokenResponse:
+    await enforce_auth_login_rate_limit(request=request, email=payload.email)
     try:
         token_response, raw_refresh_token = await facade.login(payload, db)
     except InvalidCredentialsError as exc:
@@ -69,9 +76,11 @@ async def login(
 @router.post("/invites/accept")
 async def accept_invite(
     payload: AcceptInviteRequest,
+    request: Request,
     response: Response,
     db: DatabaseSession,
 ) -> TokenResponse:
+    await enforce_invite_accept_rate_limit(request=request, token=payload.token)
     try:
         token_response, raw_refresh_token = await facade.accept_invite(payload, db)
     except MemberOrganizationConflictError as exc:
@@ -89,10 +98,12 @@ async def accept_invite(
 
 @router.post("/refresh")
 async def refresh(
+    request: Request,
     response: Response,
     db: DatabaseSession,
     raw_refresh_token: RefreshCookie = None,
 ) -> TokenResponse:
+    await enforce_refresh_rate_limit(request=request, refresh_token=raw_refresh_token)
     try:
         token_response, new_raw_refresh_token = await facade.refresh(raw_refresh_token, db)
     except InvalidRefreshTokenError as exc:
@@ -231,6 +242,8 @@ async def create_invite(
         )
     except InvalidInviteTargetError as exc:
         raise HTTPException(status_code=400, detail="invalid invite target") from exc
+    except MemberAlreadyExistsError as exc:
+        raise HTTPException(status_code=409, detail="member already exists") from exc
     except DuplicateInviteError as exc:
         raise HTTPException(status_code=409, detail="pending invite already exists") from exc
     except PermissionDeniedError as exc:

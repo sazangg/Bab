@@ -27,6 +27,8 @@ from app.core.database import engine
 from app.core.logging import configure_logging
 from app.core.migrations import run_database_migrations
 from app.core.problems import install_problem_handlers, install_problem_openapi
+from app.core.rate_limiter import close_rate_limit_backend
+from app.core.redis_client import close_redis_client
 from app.core.request_context import request_context_middleware
 from app.core.tracing import configure_tracing
 
@@ -34,11 +36,15 @@ from app.core.tracing import configure_tracing
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     validate_runtime_settings()
-    if settings.environment == "development":
-        await create_development_database()
-        await run_database_migrations(engine)
-        await ensure_default_workspace()
-    yield
+    try:
+        if settings.environment == "development":
+            await create_development_database()
+            await run_database_migrations(engine)
+            await ensure_default_workspace()
+        yield
+    finally:
+        await close_rate_limit_backend()
+        await close_redis_client()
 
 
 def create_app() -> FastAPI:

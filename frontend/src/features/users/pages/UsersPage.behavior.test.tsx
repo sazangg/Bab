@@ -11,7 +11,8 @@ const revokeInviteHook = vi.hoisted(() => vi.fn());
 const inviteMutate = vi.hoisted(() => vi.fn());
 const statusMutate = vi.hoisted(() => vi.fn());
 const revokeMutate = vi.hoisted(() => vi.fn());
-const inviteState = vi.hoisted(() => ({ options: null as any }));
+type InviteHookOptions = { mutation: { onError: (error: Error) => void } };
+const inviteState = vi.hoisted((): { options: InviteHookOptions | null } => ({ options: null }));
 
 vi.mock("@/shared/api/generated/auth/auth", () => ({
   useMeApiV1AuthMeGet: () => ({
@@ -67,6 +68,9 @@ describe("UsersPage behavior", () => {
     const email = screen.getByLabelText("Email");
     await user.type(email, "teammate@example.com");
     await user.click(screen.getByRole("button", { name: "Invite user" }));
+    if (!inviteState.options) {
+      throw new Error("Invite hook options were not captured.");
+    }
     inviteState.options.mutation.onError(new Error("failed"));
 
     expect(email).toHaveValue("teammate@example.com");

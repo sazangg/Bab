@@ -9,6 +9,7 @@ from app.api.v1.routes import health as health_routes
 from app.core.database import Base
 from app.core.migrations import run_database_migrations
 from app.core.model_imports import import_all_models
+from app.core.redis_client import RedisStorageError
 from app.main import create_app
 
 
@@ -82,6 +83,73 @@ async def test_readiness_reports_database_and_migrations() -> None:
     assert readyz_body["status"] == "ready"
     assert body["checks"]["database"]["ok"] is True
     assert body["checks"]["migrations"]["ok"] is True
+    assert "redis" not in body["checks"]
+
+
+@pytest.mark.asyncio
+async def test_readiness_checks_enabled_redis(monkeypatch) -> None:
+    async def healthy_storage() -> None:
+        return None
+
+    monkeypatch.setattr(health_routes.settings, "rate_limit_enabled", True)
+    monkeypatch.setattr(health_routes, "ping_redis", healthy_storage)
+    app = create_app()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get("/api/v1/ready")
+        readyz_response = await client.get("/readyz")
+
+    assert response.json()["checks"]["redis"] == {"ok": True}
+    assert readyz_response.json()["checks"]["redis"] == {"ok": True}
+
+
+@pytest.mark.asyncio
+async def test_readiness_checks_provider_runtime_redis(monkeypatch) -> None:
+    async def healthy_storage() -> None:
+        return None
+
+    monkeypatch.setattr(
+        health_routes.settings,
+        "provider_runtime_state_backend",
+        "redis",
+    )
+    monkeypatch.setattr(health_routes, "ping_redis", healthy_storage)
+    app = create_app()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get("/api/v1/ready")
+
+    assert response.json()["checks"]["redis"] == {"ok": True}
+
+
+@pytest.mark.asyncio
+async def test_readiness_safely_reports_unavailable_redis(monkeypatch) -> None:
+    async def unavailable_storage() -> None:
+        raise RedisStorageError("redis://user:secret@private-host")
+
+    monkeypatch.setattr(health_routes.settings, "rate_limit_enabled", True)
+    monkeypatch.setattr(health_routes, "ping_redis", unavailable_storage)
+    app = create_app()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get("/api/v1/ready")
+
+    body = response.json()
+    assert response.status_code == 503
+    assert body["checks"]["redis"] == {
+        "ok": False,
+        "error": "RedisStorageError",
+    }
+    assert "private-host" not in response.text
 
 
 @pytest.mark.asyncio

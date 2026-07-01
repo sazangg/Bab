@@ -6,6 +6,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.usage.internal.models import UsageRecord
+from app.modules.usage.internal.report_utils import (
+    aggregate_cost_cents_expression,
+    aggregate_micro_cents_to_cents,
+)
 
 
 class UsageCostSummary(BaseModel):
@@ -92,7 +96,7 @@ async def _usage_summary(
         await db.execute(
             select(
                 func.count(UsageRecord.id),
-                func.coalesce(func.sum(UsageRecord.cost_cents), 0),
+                aggregate_cost_cents_expression(),
             ).where(
                 UsageRecord.org_id == org_id,
                 UsageRecord.created_at >= since,
@@ -100,4 +104,7 @@ async def _usage_summary(
             )
         )
     ).one()
-    return UsageCostSummary(request_count=int(row[0]), cost_cents=int(row[1]))
+    return UsageCostSummary(
+        request_count=int(row[0]),
+        cost_cents=aggregate_micro_cents_to_cents(row[1]),
+    )

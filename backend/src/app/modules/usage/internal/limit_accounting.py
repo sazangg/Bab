@@ -12,6 +12,10 @@ from app.modules.usage.internal.models import (
     LimitPolicyReservation,
     UsageRecord,
 )
+from app.modules.usage.internal.report_utils import (
+    aggregate_micro_cents_to_cents,
+    effective_micro_cents,
+)
 from app.modules.usage.schemas import (
     LimitPolicyReservationSummary,
     RecordLimitPolicyCommittedUsage,
@@ -107,8 +111,15 @@ async def summarize_active_limit_policy_reservations(
                 func.coalesce(func.sum(LimitPolicyReservation.reserved_prompt_tokens), 0),
                 func.coalesce(func.sum(LimitPolicyReservation.reserved_completion_tokens), 0),
                 func.coalesce(func.sum(LimitPolicyReservation.reserved_total_tokens), 0),
-                func.coalesce(func.sum(LimitPolicyReservation.reserved_cost_cents), 0),
-                func.coalesce(func.sum(LimitPolicyReservation.reserved_cost_micro_cents), 0),
+                func.coalesce(
+                    func.sum(
+                        effective_micro_cents(
+                            LimitPolicyReservation.reserved_cost_micro_cents,
+                            LimitPolicyReservation.reserved_cost_cents,
+                        )
+                    ),
+                    0,
+                ),
             ).where(*filters)
         )
     ).one()
@@ -117,8 +128,8 @@ async def summarize_active_limit_policy_reservations(
         prompt_tokens=int(row[1]),
         completion_tokens=int(row[2]),
         total_tokens=int(row[3]),
-        cost_cents=int(row[4]),
-        cost_micro_cents=int(row[5]),
+        cost_cents=aggregate_micro_cents_to_cents(row[4]),
+        cost_micro_cents=int(row[4]),
     )
 
 
@@ -143,8 +154,15 @@ async def summarize_active_virtual_key_reservations(
                 func.coalesce(func.sum(LimitPolicyReservation.reserved_prompt_tokens), 0),
                 func.coalesce(func.sum(LimitPolicyReservation.reserved_completion_tokens), 0),
                 func.coalesce(func.sum(LimitPolicyReservation.reserved_total_tokens), 0),
-                func.coalesce(func.sum(LimitPolicyReservation.reserved_cost_cents), 0),
-                func.coalesce(func.sum(LimitPolicyReservation.reserved_cost_micro_cents), 0),
+                func.coalesce(
+                    func.sum(
+                        effective_micro_cents(
+                            LimitPolicyReservation.reserved_cost_micro_cents,
+                            LimitPolicyReservation.reserved_cost_cents,
+                        )
+                    ),
+                    0,
+                ),
             ).where(*filters)
         )
     ).one()
@@ -153,8 +171,8 @@ async def summarize_active_virtual_key_reservations(
         prompt_tokens=int(row[1]),
         completion_tokens=int(row[2]),
         total_tokens=int(row[3]),
-        cost_cents=int(row[4]),
-        cost_micro_cents=int(row[5]),
+        cost_cents=aggregate_micro_cents_to_cents(row[4]),
+        cost_micro_cents=int(row[4]),
     )
 
 
@@ -241,12 +259,25 @@ async def summarize_limit_policy_usage(
                 func.count(LimitPolicyCommittedUsage.id),
                 func.coalesce(func.sum(LimitPolicyCommittedUsage.prompt_tokens), 0),
                 func.coalesce(func.sum(LimitPolicyCommittedUsage.completion_tokens), 0),
-                func.coalesce(func.sum(LimitPolicyCommittedUsage.cost_cents), 0),
-                func.coalesce(func.sum(LimitPolicyCommittedUsage.cost_micro_cents), 0),
+                func.coalesce(
+                    func.sum(
+                        effective_micro_cents(
+                            LimitPolicyCommittedUsage.cost_micro_cents,
+                            LimitPolicyCommittedUsage.cost_cents,
+                        )
+                    ),
+                    0,
+                ),
             ).where(*filters)
         )
     ).one()
-    return int(row[0]), int(row[1]), int(row[2]), int(row[3]), int(row[4])
+    return (
+        int(row[0]),
+        int(row[1]),
+        int(row[2]),
+        aggregate_micro_cents_to_cents(row[3]),
+        int(row[3] or 0),
+    )
 
 
 async def summarize_virtual_key_usage(

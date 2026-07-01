@@ -39,6 +39,17 @@ class AccountingResolvedAccess(Protocol):
     output_price_per_million_tokens: int | None
 
 
+def _ordered_policy_ids(limits: list[Any]) -> list[str]:
+    seen: set[UUID] = set()
+    policy_ids: list[str] = []
+    for limit in limits:
+        if limit.limit_policy_id is None or limit.limit_policy_id in seen:
+            continue
+        seen.add(limit.limit_policy_id)
+        policy_ids.append(str(limit.limit_policy_id))
+    return policy_ids
+
+
 @sqlite_write_unit
 async def record_proxy_request(
     *,
@@ -57,6 +68,7 @@ async def record_proxy_request(
     fallback_trigger_reason: str | None = None,
     attempt_failure_reason: str | None = None,
     gateway_endpoint: str | None = None,
+    count_toward_limits: bool | None = None,
 ) -> int | None:
     cost_cents = gateway_costing.calculate_cost_cents(resolved=resolved, usage=usage)
     cost_micro_cents = gateway_costing.calculate_cost_micro_cents(
@@ -79,12 +91,16 @@ async def record_proxy_request(
             route_attempt_id=route_attempt_id,
             public_model_id=resolved.public_model_id,
             route_candidate_id=resolved.route_candidate_id,
-            limit_policy_ids=[str(limit_id) for limit_id in resolved.limit_policy_ids],
+            limit_policy_ids=_ordered_policy_ids(limit_usage_context.matching_limits),
             limit_policy_rule_ids=[
-                str(limit.limit_policy_rule_id) for limit in resolved.limit_policies
+                str(limit.limit_policy_rule_id)
+                for limit in limit_usage_context.matching_limits
+                if limit.limit_policy_rule_id is not None
             ],
             limit_policy_assignment_ids=[
-                str(limit.limit_policy_assignment_id) for limit in resolved.limit_policies
+                str(limit.limit_policy_assignment_id)
+                for limit in limit_usage_context.matching_limits
+                if limit.limit_policy_assignment_id is not None
             ],
             limit_counter_key=limit_usage_context.limit_counter_key,
             limit_counting_unit=limit_usage_context.limit_counting_unit,
@@ -118,7 +134,10 @@ async def record_proxy_request(
         ),
         db=db,
     )
-    if http_status < 400:
+    should_count_toward_limits = (
+        http_status < 400 if count_toward_limits is None else count_toward_limits
+    )
+    if should_count_toward_limits:
         await gateway_limits.record_committed_usage(
             resolved=resolved,
             usage_record_id=usage_record_id,
@@ -127,6 +146,7 @@ async def record_proxy_request(
             cost_micro_cents=cost_micro_cents,
             dimension_subject=limit_usage_context.dimension_subject,
             dimension_snapshot=limit_usage_context.dimension_snapshot,
+            matching_limits=limit_usage_context.matching_limits,
             db=db,
         )
         await db.commit()

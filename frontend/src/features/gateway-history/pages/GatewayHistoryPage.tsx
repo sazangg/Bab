@@ -17,12 +17,14 @@ import type {
   GatewayRequestTraceListItem,
   ListGatewayRequestsApiV1GatewayHistoryRequestsGetParams,
 } from "@/shared/api/generated/schemas";
+import {
+  buildGatewayHistoryParams,
+  GATEWAY_HISTORY_PAGE_SIZE,
+} from "@/features/gateway-history/lib/gateway-history-params";
 import { getProblemDetail } from "@/shared/api/problem-detail";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { HttpStatusBadge } from "@/shared/components/StatusBadge";
 import { RequestTraceSheet } from "@/features/gateway-history/components/RequestTraceSheet";
-
-const PAGE_SIZE = 25;
 
 type HistoryWindow = NonNullable<ListGatewayRequestsApiV1GatewayHistoryRequestsGetParams["window"]>;
 type HistoryStatus = NonNullable<ListGatewayRequestsApiV1GatewayHistoryRequestsGetParams["status"]>;
@@ -45,9 +47,14 @@ export function GatewayHistoryPage() {
   const pageData =
     requestsQuery.data?.status === 200
       ? requestsQuery.data.data
-      : { items: [], has_more: false, limit: PAGE_SIZE, offset: page * PAGE_SIZE };
-  const start = pageData.items.length > 0 ? page * PAGE_SIZE + 1 : 0;
-  const end = page * PAGE_SIZE + pageData.items.length;
+      : {
+          items: [],
+          has_more: false,
+          limit: GATEWAY_HISTORY_PAGE_SIZE,
+          offset: page * GATEWAY_HISTORY_PAGE_SIZE,
+        };
+  const start = pageData.items.length > 0 ? page * GATEWAY_HISTORY_PAGE_SIZE + 1 : 0;
+  const end = page * GATEWAY_HISTORY_PAGE_SIZE + pageData.items.length;
   const hasActiveFilters =
     trimmedSearch.length > 0 || status !== "all" || fallback !== "all" || window !== "24h";
   const clearFilters = () => {
@@ -257,29 +264,6 @@ export function GatewayHistoryPage() {
       />
     </div>
   );
-}
-
-export function buildGatewayHistoryParams({
-  window,
-  status,
-  fallback,
-  search,
-  page,
-}: {
-  window: HistoryWindow;
-  status: HistoryStatus | "all";
-  fallback: HistoryFallback | "all";
-  search: string;
-  page: number;
-}): ListGatewayRequestsApiV1GatewayHistoryRequestsGetParams {
-  return {
-    window,
-    status: status === "all" ? undefined : status,
-    fallback: fallback === "all" ? undefined : fallback,
-    search: search || undefined,
-    limit: PAGE_SIZE,
-    offset: page * PAGE_SIZE,
-  };
 }
 
 function shortId(value: string | null | undefined) {

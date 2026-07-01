@@ -8,6 +8,14 @@ from app.core.metrics import (
     record_gateway_request_finalized,
     record_gateway_route_attempt_finalized,
     record_http_request,
+    record_provider_circuit_rejection,
+    record_provider_circuit_storage_failure,
+    record_provider_circuit_transition,
+    record_provider_concurrency_rejection,
+    record_provider_concurrency_renewal_loss,
+    record_provider_concurrency_storage_failure,
+    record_provider_concurrency_wait,
+    record_rate_limit_rejection,
 )
 
 
@@ -93,6 +101,69 @@ def test_metrics_helpers_emit_expected_metric_families() -> None:
             'gateway_endpoint="test_endpoint"',
             'phase="request"',
         ],
+    )
+
+
+def test_rate_limit_rejection_metric_is_exposed() -> None:
+    record_rate_limit_rejection(route_group="auth_login", bucket_type="email")
+
+    body = metrics_response().body.decode()
+
+    assert _sample_with_labels(
+        body,
+        "bab_rate_limit_rejections_total",
+        ['route_group="auth_login"', 'bucket_type="email"'],
+    )
+
+
+def test_provider_circuit_metrics_are_exposed() -> None:
+    record_provider_circuit_transition(
+        from_state="closed",
+        to_state="open",
+        reason="failure_threshold",
+        backend="memory",
+    )
+    record_provider_circuit_rejection(backend="memory")
+    record_provider_circuit_storage_failure(backend="redis")
+
+    body = metrics_response().body.decode()
+
+    assert "bab_provider_circuit_transitions_total" in body
+    assert "bab_provider_circuit_rejections_total" in body
+    assert "bab_provider_circuit_storage_failures_total" in body
+
+
+def test_provider_concurrency_metrics_are_exposed() -> None:
+    record_provider_concurrency_rejection(backend="redis", reason="timeout")
+    record_provider_concurrency_storage_failure(backend="redis")
+    record_provider_concurrency_renewal_loss(backend="redis")
+    record_provider_concurrency_wait(
+        backend="redis",
+        outcome="acquired",
+        duration_seconds=0.01,
+    )
+
+    body = metrics_response().body.decode()
+
+    assert _sample_with_labels(
+        body,
+        "bab_provider_concurrency_rejections_total",
+        ['backend="redis"', 'reason="timeout"'],
+    )
+    assert _sample_with_labels(
+        body,
+        "bab_provider_concurrency_storage_failures_total",
+        ['backend="redis"'],
+    )
+    assert _sample_with_labels(
+        body,
+        "bab_provider_concurrency_renewal_losses_total",
+        ['backend="redis"'],
+    )
+    assert _sample_with_labels(
+        body,
+        "bab_provider_concurrency_wait_seconds_bucket",
+        ['backend="redis"', 'outcome="acquired"'],
     )
 
 

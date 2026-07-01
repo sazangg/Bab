@@ -6,6 +6,8 @@ from cryptography.fernet import Fernet
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+INSECURE_PUBLISHED_ENCRYPTION_KEY = "mC2XCkbSXUHnJS1bAgRZ1LMvw4mDhF-GqXFf0ySFyDw="
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -39,6 +41,19 @@ class Settings(BaseSettings):
     allow_private_provider_urls: bool = Field(
         default=False,
         validation_alias="BAB_ALLOW_PRIVATE_PROVIDER_URLS",
+    )
+    redis_url: str | None = Field(default=None, validation_alias="BAB_REDIS_URL")
+    rate_limit_enabled: bool = Field(
+        default=False,
+        validation_alias="BAB_RATE_LIMIT_ENABLED",
+    )
+    rate_limit_fail_closed: bool = Field(
+        default=True,
+        validation_alias="BAB_RATE_LIMIT_FAIL_CLOSED",
+    )
+    provider_runtime_state_backend: str = Field(
+        default="memory",
+        validation_alias="BAB_PROVIDER_RUNTIME_STATE_BACKEND",
     )
     public_app_url: str | None = Field(default=None, validation_alias="BAB_PUBLIC_APP_URL")
     assets_dir: str = Field(
@@ -140,6 +155,16 @@ class Settings(BaseSettings):
             raise ValueError("BAB_OTEL_EXPORTER must be none, console, or otlp")
         return normalized
 
+    @field_validator("provider_runtime_state_backend")
+    @classmethod
+    def validate_provider_runtime_state_backend(cls, value: str) -> str:
+        normalized = value.lower()
+        if normalized not in {"memory", "redis"}:
+            raise ValueError(
+                "BAB_PROVIDER_RUNTIME_STATE_BACKEND must be memory or redis"
+            )
+        return normalized
+
     @field_validator(
         "usage_retention_days",
         "activity_retention_days",
@@ -179,6 +204,31 @@ class Settings(BaseSettings):
             raise ValueError("BAB_PUBLIC_APP_URL must be an app origin URL")
         return stripped.rstrip("/")
 
+    @field_validator("redis_url")
+    @classmethod
+    def validate_redis_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            return None
+        parsed = urlparse(stripped)
+        try:
+            _ = parsed.port
+        except ValueError as exc:
+            raise ValueError("BAB_REDIS_URL must be a valid Redis URL") from exc
+        if parsed.scheme in {"redis", "rediss"}:
+            valid = bool(parsed.hostname)
+        elif parsed.scheme == "unix":
+            valid = bool(parsed.path)
+        else:
+            valid = False
+        if not valid:
+            raise ValueError(
+                "BAB_REDIS_URL must use redis://, rediss://, or unix://"
+            )
+        return stripped
+
     @field_validator("encryption_key")
     @classmethod
     def validate_encryption_key(cls, value: str) -> str:
@@ -195,6 +245,18 @@ class Settings(BaseSettings):
 
 def validate_runtime_settings(current_settings: Settings | None = None) -> None:
     current_settings = current_settings or settings
+    if current_settings.rate_limit_enabled and not current_settings.redis_url:
+        raise RuntimeError(
+            "Invalid configuration: BAB_REDIS_URL is required when BAB_RATE_LIMIT_ENABLED=true"
+        )
+    if (
+        current_settings.provider_runtime_state_backend == "redis"
+        and not current_settings.redis_url
+    ):
+        raise RuntimeError(
+            "Invalid configuration: BAB_REDIS_URL is required when "
+            "BAB_PROVIDER_RUNTIME_STATE_BACKEND=redis"
+        )
     if current_settings.environment != "production":
         return
 
@@ -205,6 +267,8 @@ def validate_runtime_settings(current_settings: Settings | None = None) -> None:
         errors.append("BAB_DEFAULT_ADMIN_PASSWORD must be changed in production")
     if current_settings.secret_key == "change-me-to-at-least-32-characters":
         errors.append("BAB_SECRET_KEY must be changed in production")
+    if current_settings.encryption_key == INSECURE_PUBLISHED_ENCRYPTION_KEY:
+        errors.append("BAB_ENCRYPTION_KEY must not use the repository example key")
 
     if errors:
         raise RuntimeError("Invalid production configuration: " + "; ".join(errors))

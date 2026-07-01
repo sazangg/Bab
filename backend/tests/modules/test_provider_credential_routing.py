@@ -4,9 +4,11 @@ from uuid import uuid4
 
 import httpx
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Scope
+from app.modules.activity.internal.models import ActivityEvent
 from app.modules.auth.schemas import AuthenticatedUser
 from app.modules.gateway.provider_execution import (
     ProviderBodyTooLargeError,
@@ -18,7 +20,11 @@ from app.modules.providers.errors import (
     ProviderResourceConflictError,
     ProviderUpstreamError,
 )
-from app.modules.providers.internal import credential_routing, execution, repository
+from app.modules.providers.internal import concurrency, credential_routing, execution, repository
+from app.modules.providers.internal.circuit_breaker import (
+    InMemoryCircuitBackend,
+    set_circuit_backend_for_tests,
+)
 from app.modules.providers.internal.models import (
     CredentialPoolCredential,
     ModelOffering,
@@ -36,6 +42,7 @@ from app.modules.providers.schemas import (
     CreateProviderModelOfferingRequest,
     CreateProviderRequest,
     ModelMetadataSyncMode,
+    ProviderAnthropicMessagesRequest,
     ProviderChatCompletionRequest,
     ProviderCredentialRoutingPolicy,
     UpdateProviderCredentialRequest,
@@ -56,6 +63,160 @@ async def _create_actor_scope(db_session: AsyncSession) -> tuple[AuthenticatedUs
         role="super_admin",
     )
     return actor, Scope(org_id=org.id)
+
+
+async def test_provider_create_rolls_back_when_state_loading_fails(
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    actor, scope = await _create_actor_scope(db_session)
+
+    async def unavailable(_providers):
+        raise ProviderUpstreamError(
+            status_code=503,
+            body=None,
+            failure_reason="provider_state_unavailable",
+        )
+
+    monkeypatch.setattr(execution, "provider_operational_states", unavailable)
+
+    with pytest.raises(ProviderUpstreamError):
+        await providers_facade.create_provider(
+            payload=CreateProviderRequest(
+                name="Rollback Provider",
+                base_url="https://rollback.example/v1",
+            ),
+            actor=actor,
+            scope=scope,
+            db=db_session,
+        )
+
+    providers = (
+        await db_session.execute(select(Provider).where(Provider.org_id == scope.org_id))
+    ).scalars().all()
+    events = (
+        await db_session.execute(
+            select(ActivityEvent).where(ActivityEvent.org_id == scope.org_id)
+        )
+    ).scalars().all()
+    assert providers == []
+    assert events == []
+
+
+async def test_provider_update_rolls_back_when_state_loading_fails(
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    actor, scope = await _create_actor_scope(db_session)
+    provider = await providers_facade.create_provider(
+        payload=CreateProviderRequest(
+            name="Original Provider",
+            base_url="https://original.example/v1",
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+
+    async def unavailable(_providers):
+        raise ProviderUpstreamError(
+            status_code=503,
+            body=None,
+            failure_reason="provider_state_unavailable",
+        )
+
+    monkeypatch.setattr(execution, "provider_operational_states", unavailable)
+
+    with pytest.raises(ProviderUpstreamError):
+        await providers_facade.update_provider(
+            provider_id=provider.id,
+            payload=UpdateProviderRequest(name="Changed Provider"),
+            actor=actor,
+            scope=scope,
+            db=db_session,
+        )
+
+    db_session.expire_all()
+    stored = await db_session.get(Provider, provider.id)
+    assert stored is not None
+    assert stored.name == "Original Provider"
+
+
+@pytest.mark.parametrize(
+    ("status_code", "expected_failures", "expected_successes"),
+    [(200, 0, 1), (401, 0, 1), (500, 1, 0)],
+)
+async def test_anthropic_final_outcome_is_recorded_once(
+    db_session: AsyncSession,
+    status_code: int,
+    expected_failures: int,
+    expected_successes: int,
+) -> None:
+    actor, scope = await _create_actor_scope(db_session)
+    created = await providers_facade.create_provider(
+        payload=CreateProviderRequest(
+            name=f"Anthropic Circuit {status_code}",
+            base_url="https://api.anthropic.com/v1",
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    provider = await db_session.get(Provider, created.id)
+    assert provider is not None
+    provider.supported_integration = "anthropic_messages"
+    provider.circuit_breaker_policy = {
+        "enabled": True,
+        "failure_threshold_pct": 100,
+        "min_request_count": 10,
+        "window_seconds": 60,
+        "cooldown_seconds": 30,
+    }
+    credential = await providers_facade.create_provider_credential(
+        provider_id=provider.id,
+        payload=CreateProviderCredentialRequest(
+            name="Credential",
+            api_key="anthropic-secret",
+        ),
+        actor=actor,
+        scope=scope,
+        db=db_session,
+    )
+    await db_session.commit()
+    backend = InMemoryCircuitBackend()
+    set_circuit_backend_for_tests(backend)
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code, json={"id": "msg-test"})
+
+    try:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+            operation = providers_facade.create_anthropic_message(
+                provider_id=provider.id,
+                pool_id=None,
+                provider_credential_id=credential.id,
+                payload=ProviderAnthropicMessagesRequest(
+                    model="claude-test",
+                    messages=[{"role": "user", "content": "Hello"}],
+                    extra_body={"max_tokens": 8},
+                ),
+                anthropic_version="2023-06-01",
+                scope=scope,
+                db=db_session,
+                http_client=http_client,
+            )
+            if status_code >= 400:
+                with pytest.raises(ProviderUpstreamError):
+                    await operation
+            else:
+                await operation
+
+        snapshots = await execution.provider_operational_states([provider])
+    finally:
+        set_circuit_backend_for_tests(None)
+
+    assert snapshots[provider.id].failures == expected_failures
+    assert snapshots[provider.id].successes == expected_successes
 
 
 async def _get_provider_credential_row(
@@ -1254,15 +1415,16 @@ async def test_circuit_breaker_opens_after_configured_failure_rate(
 
 
 def test_provider_concurrency_slot_tracks_limit_changes() -> None:
+    concurrency._provider_semaphores.clear()
     provider = type(
         "Provider",
         (),
-        {"id": uuid4(), "max_concurrent_requests": 1},
+        {"id": uuid4(), "org_id": uuid4(), "max_concurrent_requests": 1},
     )()
 
-    first_slot = execution._provider_concurrency_slot(provider)
+    first_slot = concurrency.provider_concurrency_slot(provider, wait_timeout_seconds=1)
     provider.max_concurrent_requests = 2
-    second_slot = execution._provider_concurrency_slot(provider)
+    second_slot = concurrency.provider_concurrency_slot(provider, wait_timeout_seconds=1)
 
     assert first_slot is not second_slot
 

@@ -13,9 +13,14 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
+from app.api.v1.rate_limits import (
+    preflight_proxy_auth_rate_limit,
+    record_proxy_auth_failure,
+)
 from app.core.config import settings
 from app.core.database import Scope, get_db
 from app.core.problems import ProblemException
+from app.core.provider_http import provider_async_client
 from app.modules.gateway import failures as gateway_failures
 from app.modules.gateway import guardrails as gateway_guardrails
 from app.modules.gateway import limits as gateway_limits
@@ -54,7 +59,7 @@ AnthropicApiKey = Annotated[str | None, Header(alias="x-api-key")]
 
 
 async def get_proxy_http_client() -> AsyncGenerator[httpx.AsyncClient]:
-    async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
+    async with provider_async_client(timeout=httpx.Timeout(60.0)) as client:
         yield client
 
 
@@ -63,13 +68,21 @@ ProxyHttpClient = Annotated[httpx.AsyncClient, Depends(get_proxy_http_client)]
 
 @router.get("/models")
 async def list_models(
+    request: Request,
     db: DatabaseSession,
     authorization: VirtualKeyAuthorization = None,
 ) -> dict[str, Any]:
-    raw_key = _extract_bearer_token(authorization)
+    raw_key = await _extract_bearer_token_or_rate_limit(
+        request=request,
+        authorization=authorization,
+    )
     try:
         models = await keys_runtime_facade.list_accessible_models(raw_key=raw_key, db=db)
     except InvalidVirtualKeyError as exc:
+        await record_proxy_auth_failure(
+            request=request,
+            presented_key=raw_key,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="invalid virtual key",
@@ -104,6 +117,7 @@ async def create_completion(
         gateway_endpoint="completions",
         db=db,
         http_client=http_client,
+        request=request,
         authorization=authorization,
         provider_id=provider_id,
         response_transform=lambda response_body: _chat_response_to_completion(response_body, body),
@@ -131,6 +145,7 @@ async def create_response(
         gateway_endpoint="responses",
         db=db,
         http_client=http_client,
+        request=request,
         authorization=authorization,
         provider_id=provider_id,
         response_transform=lambda response_body: _chat_response_to_response(response_body, body),
@@ -157,13 +172,17 @@ async def create_chat_completion(
             gateway_endpoint="chat_completions",
             db=db,
             http_client=http_client,
+            request=request,
             authorization=authorization,
             provider_id=provider_id,
             response_transform=lambda response_body: response_body,
         )
 
     provider_payload = _to_provider_payload(body)
-    raw_key = _extract_bearer_token(authorization)
+    raw_key = await _extract_bearer_token_or_rate_limit(
+        request=request,
+        authorization=authorization,
+    )
     resolved = None
     gateway_request_id: UUID | None = None
     current_route_attempt_id: UUID | None = None
@@ -244,6 +263,10 @@ async def create_chat_completion(
         await gateway_failures.finalize_invalid_virtual_key(
             gateway_request_id=gateway_request_id,
             db=db,
+        )
+        await record_proxy_auth_failure(
+            request=request,
+            presented_key=raw_key,
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -413,7 +436,8 @@ async def create_anthropic_message(
         raise HTTPException(status_code=400, detail="native Anthropic streaming is not supported")
 
     provider_payload = _to_anthropic_payload(body)
-    raw_key = _extract_anthropic_virtual_key(
+    raw_key = await _extract_anthropic_virtual_key_or_rate_limit(
+        request=request,
         authorization=authorization,
         api_key=anthropic_api_key,
     )
@@ -534,6 +558,10 @@ async def create_anthropic_message(
         await gateway_failures.finalize_invalid_virtual_key(
             gateway_request_id=gateway_request_id,
             db=db,
+        )
+        await record_proxy_auth_failure(
+            request=request,
+            presented_key=raw_key,
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -708,12 +736,16 @@ async def _handle_openai_compatible_proxy(
     gateway_endpoint: str,
     db: AsyncSession,
     http_client: httpx.AsyncClient,
+    request: Request,
     authorization: str | None,
     provider_id: UUID | None,
     response_transform,
 ) -> Response:
     provider_payload = _to_provider_payload(body)
-    raw_key = _extract_bearer_token(authorization)
+    raw_key = await _extract_bearer_token_or_rate_limit(
+        request=request,
+        authorization=authorization,
+    )
     resolved = None
     plan: ResolvedAccessPlan | None = None
     gateway_request_id: UUID | None = None
@@ -828,6 +860,10 @@ async def _handle_openai_compatible_proxy(
         await gateway_failures.finalize_invalid_virtual_key(
             gateway_request_id=gateway_request_id,
             db=db,
+        )
+        await record_proxy_auth_failure(
+            request=request,
+            presented_key=raw_key,
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -1221,6 +1257,26 @@ def _extract_bearer_token(authorization: str | None) -> str:
     return token
 
 
+async def _extract_bearer_token_or_rate_limit(
+    *,
+    request: Request,
+    authorization: str | None,
+) -> str:
+    presented_key = _presented_bearer_value(authorization)
+    await preflight_proxy_auth_rate_limit(
+        request=request,
+        presented_key=presented_key,
+    )
+    try:
+        return _extract_bearer_token(authorization)
+    except HTTPException:
+        await record_proxy_auth_failure(
+            request=request,
+            presented_key=presented_key,
+        )
+        raise
+
+
 def _extract_anthropic_virtual_key(*, authorization: str | None, api_key: str | None) -> str:
     bearer_key = _extract_bearer_token(authorization) if authorization is not None else None
     header_key = api_key.strip() if api_key else None
@@ -1233,6 +1289,37 @@ def _extract_anthropic_virtual_key(*, authorization: str | None, api_key: str | 
     if not key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing virtual key")
     return key
+
+
+async def _extract_anthropic_virtual_key_or_rate_limit(
+    *,
+    request: Request,
+    authorization: str | None,
+    api_key: str | None,
+) -> str:
+    presented_key = api_key.strip() if api_key else _presented_bearer_value(authorization)
+    await preflight_proxy_auth_rate_limit(
+        request=request,
+        presented_key=presented_key,
+    )
+    try:
+        return _extract_anthropic_virtual_key(authorization=authorization, api_key=api_key)
+    except HTTPException:
+        await record_proxy_auth_failure(
+            request=request,
+            presented_key=presented_key,
+        )
+        raise
+
+
+def _presented_bearer_value(authorization: str | None) -> str | None:
+    if authorization is None:
+        return None
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() == "bearer" and token:
+        return token
+    stripped = authorization.strip()
+    return stripped or None
 
 
 

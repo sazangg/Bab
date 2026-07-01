@@ -18,7 +18,7 @@ from app.modules.policies.runtime_limits import (
     limit_rule_counter_identity,
     limit_rule_counter_key,
     limit_rule_counting_unit,
-    limit_rule_matches_runtime_subject,
+    matching_runtime_limits,
 )
 from app.modules.policy_kernel import repository as policy_kernel_repository
 from app.modules.usage import facade as usage_facade
@@ -71,6 +71,7 @@ class GatewayLimitDeniedError(Exception):
 class CommittedUsageContext:
     dimension_subject: dict[str, Any]
     dimension_snapshot: dict[str, Any]
+    matching_limits: list[Any]
     limit_counter_key: str | None
     limit_counting_unit: str
     limit_window_descriptor: str | None
@@ -131,16 +132,12 @@ async def enforce_limit_policies(
         resolved=resolved,
         gateway_endpoint=gateway_endpoint,
     )
-    matched_limits = [
-        limit
-        for limit in resolved.limit_policies
-        if (limit_types is None or limit.limit_type in limit_types)
-        and await limit_rule_matches_runtime_subject(
-            limit=limit,
-            subject=dimension_subject,
-            db=db,
-        )
-    ]
+    matched_limits = await matching_runtime_limits(
+        resolved=resolved,
+        subject=dimension_subject,
+        limit_types=limit_types,
+        db=db,
+    )
     for counter_identity in sorted(
         {
             await limit_rule_counter_identity(
@@ -163,6 +160,7 @@ async def enforce_limit_policies(
             estimated_cost_micro_cents=estimated_cost_micro_cents,
             gateway_endpoint=gateway_endpoint,
             limit_types=limit_types,
+            matching_limits=matched_limits,
         ),
         db=db,
     )
@@ -274,19 +272,30 @@ async def build_committed_usage_context(
         resolved=resolved,
         gateway_endpoint=gateway_endpoint,
     )
+    matching_limits = await matching_runtime_limits(
+        resolved=resolved,
+        subject=dimension_subject,
+        limit_types=None,
+        db=db,
+    )
     return CommittedUsageContext(
         dimension_subject=dimension_subject,
         dimension_snapshot=to_dimension_snapshot(
             dimension_subject,
             stage=PolicyDimensionStage.LIMIT_COMMIT,
         ),
+        matching_limits=matching_limits,
         limit_counter_key=await _usage_limit_counter_key(
-            resolved=resolved,
+            limits=matching_limits,
             subject=dimension_subject,
             db=db,
         ),
-        limit_counting_unit=await _usage_limit_counting_unit(resolved=resolved, db=db),
-        limit_window_descriptor=_usage_limit_window_descriptor(resolved=resolved),
+        limit_counting_unit=await _usage_limit_counting_unit(
+            org_id=resolved.org_id,
+            limits=matching_limits,
+            db=db,
+        ),
+        limit_window_descriptor=_usage_limit_window_descriptor(limits=matching_limits),
     )
 
 
@@ -299,9 +308,10 @@ async def record_committed_usage(
     cost_micro_cents: int | None,
     dimension_subject: dict[str, Any],
     dimension_snapshot: dict[str, Any],
+    matching_limits: list[Any],
     db: AsyncSession,
 ) -> None:
-    for limit in resolved.limit_policies:
+    for limit in matching_limits:
         limit_reference = persisted_limit_reference(limit)
         counter_key = await limit_rule_counter_key(
             limit=limit,
@@ -459,13 +469,13 @@ async def record_gateway_limit_decision(
 
 async def _usage_limit_counter_key(
     *,
-    resolved: LimitResolvedAccess,
+    limits: list[Any],
     subject: dict[str, Any],
     db: AsyncSession,
 ) -> str | None:
     counter_keys = {
         counter_key
-        for limit in resolved.limit_policies
+        for limit in limits
         if (
             counter_key := await limit_rule_counter_key(
                 limit=limit,
@@ -480,10 +490,10 @@ async def _usage_limit_counter_key(
     return None
 
 
-def _usage_limit_window_descriptor(*, resolved: LimitResolvedAccess) -> str | None:
+def _usage_limit_window_descriptor(*, limits: list[Any]) -> str | None:
     descriptors = {
         limit_policy_window_descriptor(limit)
-        for limit in resolved.limit_policies
+        for limit in limits
         if limit.limit_type != "tokens_per_request"
     }
     if len(descriptors) == 1:
@@ -493,12 +503,13 @@ def _usage_limit_window_descriptor(*, resolved: LimitResolvedAccess) -> str | No
 
 async def _usage_limit_counting_unit(
     *,
-    resolved: LimitResolvedAccess,
+    org_id: UUID,
+    limits: list[Any],
     db: AsyncSession,
 ) -> str:
     counting_units = {
-        await limit_rule_counting_unit(org_id=resolved.org_id, limit=limit, db=db)
-        for limit in resolved.limit_policies
+        await limit_rule_counting_unit(org_id=org_id, limit=limit, db=db)
+        for limit in limits
         if limit.limit_type == "requests"
     }
     if counting_units == {"route_attempt"}:

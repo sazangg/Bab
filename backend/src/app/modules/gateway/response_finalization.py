@@ -91,6 +91,7 @@ async def finalize_openai_compatible_non_streaming_response(
             provider_credential_id=upstream.provider_credential_id,
             routing_attempt_index=selected_attempt_index,
             gateway_endpoint=gateway_endpoint,
+            count_toward_limits=True,
             db=db,
         )
         actual_cost_micro_cents = gateway_costing.calculate_cost_micro_cents(
@@ -271,6 +272,7 @@ async def finalize_native_anthropic_non_streaming_response(
             provider_credential_id=upstream.provider_credential_id,
             routing_attempt_index=selected_attempt_index,
             gateway_endpoint="anthropic_messages",
+            count_toward_limits=True,
             db=db,
         )
         actual_cost_micro_cents = gateway_costing.calculate_cost_micro_cents(

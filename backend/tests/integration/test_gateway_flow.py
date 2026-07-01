@@ -9,10 +9,12 @@ from sqlalchemy import inspect, select
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.api.v1.routes.proxy import get_proxy_http_client
+from app.core import rate_limiter
 from app.core.bootstrap import sync_default_workspace
 from app.core.config import settings
 from app.core.database import Base
 from app.core.migrations import get_migration_state, run_database_migrations
+from app.core.rate_limiter import InMemoryRateLimitBackend, set_rate_limit_backend
 from app.modules.gateway_history.internal.models import (
     GatewayPolicyDecision,
     GatewayRequest,
@@ -22,6 +24,12 @@ from app.modules.guardrails.internal.models import GuardrailEvent
 from app.modules.keys import facade as keys_facade
 from app.modules.keys.schemas import ResolveAccessRequest
 from app.modules.usage.internal.models import LimitPolicyReservation, UsageRecord
+
+
+def _enable_test_rate_limiter(monkeypatch) -> None:
+    set_rate_limit_backend(InMemoryRateLimitBackend())
+    monkeypatch.setattr(rate_limiter.settings, "rate_limit_enabled", True)
+    monkeypatch.setattr(rate_limiter.settings, "rate_limit_fail_closed", True)
 
 
 async def _login(client: AsyncClient) -> dict[str, str]:
@@ -805,6 +813,124 @@ async def test_native_anthropic_messages_rejects_missing_and_conflicting_virtual
     assert missing.json()["detail"] == "missing virtual key"
     assert conflicting.status_code == 400
     assert conflicting.json()["detail"] == "conflicting virtual key headers"
+
+
+@pytest.mark.asyncio
+async def test_repeated_invalid_virtual_key_attempts_are_rate_limited(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    await sync_default_workspace(db_session)
+    _enable_test_rate_limiter(monkeypatch)
+
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app_client, client=("203.0.113.50", 1234)),
+            base_url="http://test",
+        ) as client:
+            responses = [
+                await client.post(
+                    "/v1/chat/completions",
+                    headers={"Authorization": "Bearer bab-sk-invalid"},
+                    json={
+                        "model": "gpt-test",
+                        "messages": [{"role": "user", "content": "Hi"}],
+                    },
+                )
+                for _ in range(21)
+            ]
+            request_count_after_boundary = len(
+                (await db_session.execute(select(GatewayRequest))).scalars().all()
+            )
+            attempt_count_after_boundary = len(
+                (await db_session.execute(select(GatewayRouteAttempt))).scalars().all()
+            )
+            blocked_response = await client.post(
+                "/v1/chat/completions",
+                headers={"Authorization": "Bearer bab-sk-invalid"},
+                json={
+                    "model": "gpt-test",
+                    "messages": [{"role": "user", "content": "Hi"}],
+                },
+            )
+            request_count_after_blocked = len(
+                (await db_session.execute(select(GatewayRequest))).scalars().all()
+            )
+            attempt_count_after_blocked = len(
+                (await db_session.execute(select(GatewayRouteAttempt))).scalars().all()
+            )
+    finally:
+        set_rate_limit_backend(None)
+
+    assert [response.status_code for response in responses[:20]] == [401] * 20
+    assert responses[20].status_code == 429
+    assert responses[20].json()["detail"] == "too many requests"
+    assert responses[20].headers["retry-after"]
+    assert blocked_response.status_code == 429
+    assert request_count_after_blocked == request_count_after_boundary
+    assert attempt_count_after_blocked == attempt_count_after_boundary
+
+
+@pytest.mark.asyncio
+async def test_missing_virtual_key_records_ip_failure(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    await sync_default_workspace(db_session)
+    _enable_test_rate_limiter(monkeypatch)
+
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app_client, client=("203.0.113.52", 1234)),
+            base_url="http://test",
+        ) as client:
+            responses = [await client.get("/v1/models") for _ in range(61)]
+    finally:
+        set_rate_limit_backend(None)
+
+    assert [response.status_code for response in responses[:60]] == [401] * 60
+    assert responses[60].status_code == 429
+
+
+@pytest.mark.asyncio
+async def test_valid_virtual_key_does_not_consume_proxy_failure_bucket(
+    app_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    await sync_default_workspace(db_session)
+    backend = InMemoryRateLimitBackend()
+    set_rate_limit_backend(backend)
+    monkeypatch.setattr(rate_limiter.settings, "rate_limit_enabled", True)
+
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app_client, client=("203.0.113.51", 1234)),
+            base_url="http://test",
+        ) as client:
+            admin_headers = await _login(client)
+            virtual_key, _, _ = await _provision_gateway_path(client, admin_headers)
+            response = await client.get(
+                "/v1/models",
+                headers={"Authorization": f"Bearer {virtual_key}"},
+            )
+
+        ip_rule = rate_limiter.RateLimitRule("proxy_auth", "ip", "203.0.113.51", 60, 60)
+        key_rule = rate_limiter.RateLimitRule("proxy_auth", "key", virtual_key, 20, 60)
+        assert (await backend.inspect(
+            key=rate_limiter.rate_limit_key(ip_rule),
+            window_seconds=60,
+        ))[0] == 0
+        assert (await backend.inspect(
+            key=rate_limiter.rate_limit_key(key_rule),
+            window_seconds=60,
+        ))[0] == 0
+    finally:
+        set_rate_limit_backend(None)
+
+    assert response.status_code == 200
 
 
 @pytest.mark.asyncio

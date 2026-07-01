@@ -72,3 +72,21 @@ def _looks_like_ip(host: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+async def resolve_public_addresses(host: str) -> list[str]:
+    addresses = [host] if _looks_like_ip(host) else await asyncio.to_thread(_resolve_host, host)
+    if not addresses:
+        raise SsrfValidationError(f"could not resolve host: {host}")
+    normalized = [_normalize_ip_address(address) for address in addresses]
+    for address in normalized:
+        if _is_disallowed_ip(address):
+            raise SsrfValidationError("host resolves to a non-public address")
+    return normalized
+
+
+def _normalize_ip_address(value: str) -> str:
+    address = ipaddress.ip_address(value)
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        address = address.ipv4_mapped
+    return str(address)

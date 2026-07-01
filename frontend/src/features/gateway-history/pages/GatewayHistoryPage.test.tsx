@@ -2,7 +2,9 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildGatewayHistoryParams, GatewayHistoryPage } from "./GatewayHistoryPage";
+import { buildGatewayHistoryParams } from "@/features/gateway-history/lib/gateway-history-params";
+
+import { GatewayHistoryPage } from "./GatewayHistoryPage";
 
 const listRequests = vi.hoisted(() => vi.fn());
 

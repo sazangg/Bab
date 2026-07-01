@@ -1,15 +1,20 @@
 import asyncio
-from collections import defaultdict, deque
 from collections.abc import AsyncIterator, Awaitable, Callable
-from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
 import httpx
+import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import Scope, sqlite_write_coordinator
+from app.core.metrics import (
+    record_provider_circuit_rejection,
+    record_provider_circuit_storage_failure,
+    record_provider_circuit_transition,
+)
 from app.modules.providers.errors import (
     ProviderAdapterNotFoundError,
     ProviderCredentialRequiredError,
@@ -17,12 +22,13 @@ from app.modules.providers.errors import (
     ProviderNotFoundError,
     ProviderUpstreamError,
 )
-from app.modules.providers.internal import credential_routing, repository
+from app.modules.providers.internal import circuit_breaker, credential_routing, repository
 from app.modules.providers.internal.adapters import (
     AdapterProvider,
     anthropic_messages_adapter,
     default_adapter_registry,
 )
+from app.modules.providers.internal.concurrency import provider_concurrency_slot
 from app.modules.providers.internal.models import Provider, ProviderCredential
 from app.modules.providers.internal.secret_backends import ProviderSecretBackendRegistry
 from app.modules.providers.schemas import (
@@ -31,13 +37,10 @@ from app.modules.providers.schemas import (
     ProviderChatCompletionRequest,
     ProviderChatCompletionResponse,
     ProviderChatCompletionStream,
-    ProviderOperationalState,
 )
 from app.modules.settings import facade as settings_facade
 
-_provider_semaphores: dict[UUID, tuple[int, asyncio.Semaphore]] = {}
-_provider_circuit_events: dict[UUID, deque[tuple[datetime, bool]]] = defaultdict(deque)
-_provider_circuit_open_until: dict[UUID, datetime] = {}
+logger = structlog.get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -46,6 +49,163 @@ class _StreamExecutionContext:
     request_timeout_seconds: int
     adapter: Any
     routed_credentials: list[ProviderCredential | None]
+
+
+@dataclass
+class _CircuitExecution:
+    provider: Provider
+    policy: circuit_breaker.CircuitPolicy
+    permission: circuit_breaker.CircuitPermission
+    renewal_task: asyncio.Task | None = None
+    finished: bool = False
+    finish_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+
+    @classmethod
+    async def acquire(cls, provider: Provider) -> "_CircuitExecution":
+        policy = circuit_policy(provider)
+        if not policy.enabled:
+            return cls(
+                provider,
+                policy,
+                circuit_breaker.CircuitPermission("closed"),
+            )
+        try:
+            permission = await circuit_breaker.get_circuit_backend().acquire(
+                org_id=provider.org_id,
+                provider_id=provider.id,
+                policy=policy,
+            )
+        except circuit_breaker.CircuitStorageError as exc:
+            record_provider_circuit_storage_failure(backend=_circuit_backend_label())
+            raise _provider_state_unavailable() from exc
+        if permission.state == "open":
+            record_provider_circuit_rejection(backend=_circuit_backend_label())
+            logger.warning(
+                "provider_circuit_rejected",
+                provider_id=str(provider.id),
+                org_id=str(provider.org_id),
+            )
+            raise ProviderUpstreamError(
+                status_code=503,
+                body={"error": "provider circuit is open"},
+                failure_reason="circuit_open",
+            )
+        if permission.state == "half_open":
+            record_provider_circuit_transition(
+                from_state="open",
+                to_state="half_open",
+                reason="cooldown_elapsed",
+                backend=_circuit_backend_label(),
+            )
+            logger.warning(
+                "provider_circuit_half_opened",
+                provider_id=str(provider.id),
+                org_id=str(provider.org_id),
+            )
+        execution = cls(provider, policy, permission)
+        if permission.probe_token:
+            execution.renewal_task = asyncio.create_task(execution._renew_probe())
+        return execution
+
+    async def success(self) -> None:
+        await self._finish("success")
+
+    async def failure(self) -> None:
+        await self._finish("failure")
+
+    async def abandon(self) -> None:
+        await self._finish("abandon")
+
+    async def _finish(self, outcome: str) -> None:
+        async with self.finish_lock:
+            if self.finished:
+                return
+            await self._stop_renewal()
+            if not self.policy.enabled:
+                self.finished = True
+                return
+            backend = circuit_breaker.get_circuit_backend()
+            operation = {
+                "success": backend.record_success,
+                "failure": backend.record_failure,
+                "abandon": backend.abandon,
+            }[outcome]
+            try:
+                transition = await operation(
+                    org_id=self.provider.org_id,
+                    provider_id=self.provider.id,
+                    policy=self.policy,
+                    permission=self.permission,
+                )
+                if transition:
+                    from_state, to_state, reason = {
+                        "opened": ("closed", "open", "failure_threshold"),
+                        "reopened": ("half_open", "open", "probe_failure"),
+                        "closed": ("half_open", "closed", "probe_success"),
+                    }[transition]
+                    record_provider_circuit_transition(
+                        from_state=from_state,
+                        to_state=to_state,
+                        reason=reason,
+                        backend=_circuit_backend_label(),
+                    )
+                    event = {
+                        "open": "provider_circuit_opened",
+                        "closed": "provider_circuit_closed",
+                    }[to_state]
+                    logger.warning(
+                        event,
+                        provider_id=str(self.provider.id),
+                        org_id=str(self.provider.org_id),
+                        reason=reason,
+                    )
+            except circuit_breaker.CircuitStorageError:
+                record_provider_circuit_storage_failure(backend=_circuit_backend_label())
+                logger.warning(
+                    "provider_circuit_storage_failed",
+                    provider_id=str(self.provider.id),
+                    org_id=str(self.provider.org_id),
+                    operation=outcome,
+                )
+            self.finished = True
+
+    async def _renew_probe(self) -> None:
+        while True:
+            await asyncio.sleep(circuit_breaker.PROBE_LEASE_SECONDS / 3)
+            try:
+                owned = await circuit_breaker.get_circuit_backend().renew_probe(
+                    org_id=self.provider.org_id,
+                    provider_id=self.provider.id,
+                    policy=self.policy,
+                    permission=self.permission,
+                )
+                if not owned:
+                    logger.warning(
+                        "provider_circuit_probe_lease_lost",
+                        provider_id=str(self.provider.id),
+                        org_id=str(self.provider.org_id),
+                    )
+                    return
+            except circuit_breaker.CircuitStorageError:
+                record_provider_circuit_storage_failure(
+                    backend=_circuit_backend_label()
+                )
+                logger.warning(
+                    "provider_circuit_probe_renewal_failed",
+                    provider_id=str(self.provider.id),
+                    org_id=str(self.provider.org_id),
+                )
+                return
+
+    async def _stop_renewal(self) -> None:
+        if self.renewal_task is None:
+            return
+        self.renewal_task.cancel()
+        try:
+            await self.renewal_task
+        except asyncio.CancelledError:
+            pass
+        self.renewal_task = None
 
 
 async def _mark_provider_credential_used(
@@ -97,7 +257,6 @@ async def create_chat_completion(
         default_retry_count=org_settings.default_retry_count,
     )
 
-    _raise_if_circuit_open(provider)
     adapter = default_adapter_registry.get(provider.adapter_type)
     routed_credentials = await credential_routing.resolve_provider_credential_route(
         provider=provider,
@@ -106,57 +265,64 @@ async def create_chat_completion(
         scope=scope,
         db=db,
     )
-    last_error: ProviderUpstreamError | None = None
-    async with _provider_concurrency_slot(provider):
-        for credential in routed_credentials:
+    circuit = await _CircuitExecution.acquire(provider)
+    try:
+        last_error: ProviderUpstreamError | None = None
+        async with provider_concurrency_slot(
+            provider,
+            wait_timeout_seconds=request_timeout_seconds,
+        ):
+            for credential in routed_credentials:
 
-            async def call_upstream(
-                routed_credential: ProviderCredential | None = credential,
-            ) -> ProviderChatCompletionResponse:
-                return await adapter.create_chat_completion(
-                    provider=AdapterProvider(
-                        base_url=provider.base_url,
-                        api_key=await credential_routing.api_key_for_routed_credential(
-                            provider=provider,
-                            credential=routed_credential,
-                            secret_registry=secret_registry,
+                async def call_upstream(
+                    routed_credential: ProviderCredential | None = credential,
+                ) -> ProviderChatCompletionResponse:
+                    return await adapter.create_chat_completion(
+                        provider=AdapterProvider(
+                            base_url=provider.base_url,
+                            api_key=await credential_routing.api_key_for_routed_credential(
+                                provider=provider,
+                                credential=routed_credential,
+                                secret_registry=secret_registry,
+                            ),
                         ),
-                    ),
-                    payload=payload,
-                    http_client=http_client,
-                )
-
-            try:
-                response = await _call_with_retries(
-                    call=call_upstream,
-                    request_timeout_seconds=request_timeout_seconds,
-                    retry_policy=retry_policy,
-                )
-                _record_circuit_success(provider)
-                if credential is not None:
-                    await _mark_provider_credential_used(
-                        provider_credential=credential, db=db
+                        payload=payload,
+                        http_client=http_client,
                     )
-                    response.provider_credential_id = credential.id
-                return response
-            except ProviderUpstreamError as exc:
-                last_error = exc
-                _record_circuit_failure(provider)
-                if credential is not None:
-                    await _mark_provider_credential_failed(
-                        provider_credential=credential,
-                        error=exc,
-                        db=db,
-                    )
-                if (
-                    provider_credential_id is not None
-                    or not credential_routing.should_try_next_credential(exc)
-                ):
-                    break
 
-    if last_error is not None:
-        raise last_error
-    raise ProviderCredentialRequiredError
+                try:
+                    response = await _call_with_retries(
+                        call=call_upstream,
+                        request_timeout_seconds=request_timeout_seconds,
+                        retry_policy=retry_policy,
+                    )
+                    await circuit.success()
+                    if credential is not None:
+                        await _mark_provider_credential_used(
+                            provider_credential=credential, db=db
+                        )
+                        response.provider_credential_id = credential.id
+                    return response
+                except ProviderUpstreamError as exc:
+                    last_error = exc
+                    if credential is not None:
+                        await _mark_provider_credential_failed(
+                            provider_credential=credential,
+                            error=exc,
+                            db=db,
+                        )
+                    if (
+                        provider_credential_id is not None
+                        or not credential_routing.should_try_next_credential(exc)
+                    ):
+                        break
+
+        if last_error is not None:
+            await _record_final_circuit_error(circuit, last_error)
+            raise last_error
+        raise ProviderCredentialRequiredError
+    finally:
+        await circuit.abandon()
 
 
 async def create_anthropic_message(
@@ -182,7 +348,6 @@ async def create_anthropic_message(
         provider.request_timeout_seconds or org_settings.default_request_timeout_seconds
     )
     retry_policy = _retry_policy(provider, default_retry_count=org_settings.default_retry_count)
-    _raise_if_circuit_open(provider)
     routed_credentials = await credential_routing.resolve_provider_credential_route(
         provider=provider,
         pool_id=pool_id,
@@ -190,58 +355,65 @@ async def create_anthropic_message(
         scope=scope,
         db=db,
     )
-    last_error: ProviderUpstreamError | None = None
-    async with _provider_concurrency_slot(provider):
-        for credential in routed_credentials:
+    circuit = await _CircuitExecution.acquire(provider)
+    try:
+        last_error: ProviderUpstreamError | None = None
+        async with provider_concurrency_slot(
+            provider,
+            wait_timeout_seconds=request_timeout_seconds,
+        ):
+            for credential in routed_credentials:
 
-            async def call_upstream(
-                routed_credential: ProviderCredential | None = credential,
-            ) -> ProviderAnthropicMessagesResponse:
-                return await anthropic_messages_adapter.create_message(
-                    provider=AdapterProvider(
-                        base_url=provider.base_url,
-                        api_key=await credential_routing.api_key_for_routed_credential(
-                            provider=provider,
-                            credential=routed_credential,
-                            secret_registry=secret_registry,
+                async def call_upstream(
+                    routed_credential: ProviderCredential | None = credential,
+                ) -> ProviderAnthropicMessagesResponse:
+                    return await anthropic_messages_adapter.create_message(
+                        provider=AdapterProvider(
+                            base_url=provider.base_url,
+                            api_key=await credential_routing.api_key_for_routed_credential(
+                                provider=provider,
+                                credential=routed_credential,
+                                secret_registry=secret_registry,
+                            ),
                         ),
-                    ),
-                    payload=payload,
-                    anthropic_version=anthropic_version,
-                    http_client=http_client,
-                )
-
-            try:
-                response = await _call_with_retries(
-                    call=call_upstream,
-                    request_timeout_seconds=request_timeout_seconds,
-                    retry_policy=retry_policy,
-                )
-                _record_circuit_success(provider)
-                if credential is not None:
-                    await _mark_provider_credential_used(
-                        provider_credential=credential, db=db
+                        payload=payload,
+                        anthropic_version=anthropic_version,
+                        http_client=http_client,
                     )
-                    response.provider_credential_id = credential.id
-                return response
-            except ProviderUpstreamError as exc:
-                last_error = exc
-                _record_circuit_failure(provider)
-                if credential is not None:
-                    await _mark_provider_credential_failed(
-                        provider_credential=credential,
-                        error=exc,
-                        db=db,
-                    )
-                if (
-                    provider_credential_id is not None
-                    or not credential_routing.should_try_next_credential(exc)
-                ):
-                    break
 
-    if last_error is not None:
-        raise last_error
-    raise ProviderCredentialRequiredError
+                try:
+                    response = await _call_with_retries(
+                        call=call_upstream,
+                        request_timeout_seconds=request_timeout_seconds,
+                        retry_policy=retry_policy,
+                    )
+                    await circuit.success()
+                    if credential is not None:
+                        await _mark_provider_credential_used(
+                            provider_credential=credential, db=db
+                        )
+                        response.provider_credential_id = credential.id
+                    return response
+                except ProviderUpstreamError as exc:
+                    last_error = exc
+                    if credential is not None:
+                        await _mark_provider_credential_failed(
+                            provider_credential=credential,
+                            error=exc,
+                            db=db,
+                        )
+                    if (
+                        provider_credential_id is not None
+                        or not credential_routing.should_try_next_credential(exc)
+                    ):
+                        break
+
+        if last_error is not None:
+            await _record_final_circuit_error(circuit, last_error)
+            raise last_error
+        raise ProviderCredentialRequiredError
+    finally:
+        await circuit.abandon()
 
 
 async def stream_chat_completion(
@@ -263,11 +435,16 @@ async def stream_chat_completion(
         db=db,
     )
     provider = context.provider
-    _raise_if_circuit_open(provider)
-    concurrency_slot = _provider_concurrency_slot(provider)
-    await concurrency_slot.__aenter__()
+    circuit = await _CircuitExecution.acquire(provider)
+    concurrency_slot = provider_concurrency_slot(
+        provider,
+        wait_timeout_seconds=context.request_timeout_seconds,
+    )
+    concurrency_entered = False
     stream_returned = False
     try:
+        await concurrency_slot.__aenter__()
+        concurrency_entered = True
         stream = await _stream_chat_completion_with_routed_credentials(
             context=context,
             provider_credential_id=provider_credential_id,
@@ -276,12 +453,15 @@ async def stream_chat_completion(
             http_client=http_client,
             secret_registry=secret_registry,
             concurrency_slot=concurrency_slot,
+            circuit=circuit,
         )
         stream_returned = True
         return stream
     finally:
         if not stream_returned:
-            await concurrency_slot.__aexit__(None, None, None)
+            await circuit.abandon()
+            if concurrency_entered:
+                await concurrency_slot.__aexit__(None, None, None)
 
 
 async def _stream_execution_context(
@@ -322,6 +502,7 @@ async def _stream_chat_completion_with_routed_credentials(
     http_client: httpx.AsyncClient,
     secret_registry: ProviderSecretBackendRegistry | None,
     concurrency_slot,
+    circuit: _CircuitExecution,
 ) -> ProviderChatCompletionStream:
     last_error: ProviderUpstreamError | None = None
     for credential in context.routed_credentials:
@@ -335,11 +516,11 @@ async def _stream_chat_completion_with_routed_credentials(
                 db=db,
             )
             return _managed_provider_stream(
-                provider=context.provider,
                 stream=stream,
                 credential=credential,
                 db=db,
                 concurrency_slot=concurrency_slot,
+                circuit=circuit,
             )
         except TimeoutError as exc:
             last_error = ProviderUpstreamError(
@@ -348,12 +529,12 @@ async def _stream_chat_completion_with_routed_credentials(
                 failure_reason="timeout",
             )
             await _mark_stream_failure(
-                provider=context.provider,
                 credential=credential,
                 error=last_error,
                 db=db,
             )
             if provider_credential_id is not None:
+                await _record_final_circuit_error(circuit, last_error)
                 raise last_error from exc
         except httpx.RequestError as exc:
             last_error = ProviderUpstreamError(
@@ -362,17 +543,16 @@ async def _stream_chat_completion_with_routed_credentials(
                 failure_reason="connection_failed",
             )
             await _mark_stream_failure(
-                provider=context.provider,
                 credential=credential,
                 error=last_error,
                 db=db,
             )
             if provider_credential_id is not None:
+                await _record_final_circuit_error(circuit, last_error)
                 raise last_error from exc
         except ProviderUpstreamError as exc:
             last_error = exc
             await _mark_stream_failure(
-                provider=context.provider,
                 credential=credential,
                 error=exc,
                 db=db,
@@ -382,9 +562,12 @@ async def _stream_chat_completion_with_routed_credentials(
                 or not credential_routing.should_try_next_credential(exc)
             )
             if should_stop:
+                await _record_final_circuit_error(circuit, last_error)
                 raise
     if last_error is not None:
+        await _record_final_circuit_error(circuit, last_error)
         raise last_error
+    await circuit.abandon()
     raise ProviderCredentialRequiredError
 
 
@@ -418,11 +601,11 @@ async def _open_stream_for_credential(
 
 def _managed_provider_stream(
     *,
-    provider: Provider,
     stream: ProviderChatCompletionStream,
     credential: ProviderCredential | None,
     db: AsyncSession,
     concurrency_slot,
+    circuit: _CircuitExecution,
 ) -> ProviderChatCompletionStream:
     original_chunks = stream.chunks
     original_close = stream.close
@@ -435,8 +618,11 @@ def _managed_provider_stream(
         if released:
             return
         released = True
-        await close_stream()
-        await concurrency_slot.__aexit__(None, None, None)
+        await circuit.abandon()
+        try:
+            await close_stream()
+        finally:
+            await concurrency_slot.__aexit__(None, None, None)
 
     async def managed_chunks(
         chunks: AsyncIterator[bytes] = original_chunks,
@@ -455,14 +641,14 @@ def _managed_provider_stream(
                 )
             )
             await _mark_stream_failure(
-                provider=provider,
                 credential=credential,
                 error=error,
                 db=db,
             )
+            await _record_final_circuit_error(circuit, error)
             raise
         else:
-            _record_circuit_success(provider)
+            await circuit.success()
         finally:
             await release_stream()
 
@@ -473,33 +659,16 @@ def _managed_provider_stream(
 
 async def _mark_stream_failure(
     *,
-    provider: Provider,
     credential: ProviderCredential | None,
     error: ProviderUpstreamError,
     db: AsyncSession,
 ) -> None:
-    _record_circuit_failure(provider)
     if credential is not None:
         await _mark_provider_credential_failed(
             provider_credential=credential,
             error=error,
             db=db,
         )
-
-
-def provider_operational_state(provider: Provider) -> ProviderOperationalState:
-    circuit_policy = _circuit_breaker_policy(provider)
-    events = list(_provider_circuit_events.get(provider.id, []))
-    open_until = _provider_circuit_open_until.get(provider.id)
-    if open_until is not None and open_until <= datetime.now(UTC):
-        open_until = None
-    return ProviderOperationalState(
-        circuit_breaker_enabled=circuit_policy["enabled"],
-        circuit_state="open" if open_until is not None else "closed",
-        circuit_open_until=open_until,
-        recent_circuit_failures=sum(1 for _created_at, succeeded in events if not succeeded),
-        recent_circuit_successes=sum(1 for _created_at, succeeded in events if succeeded),
-    )
 
 
 async def _call_with_retries(
@@ -581,99 +750,95 @@ def _retry_policy(provider: Provider, *, default_retry_count: int = 0) -> dict:
     }
 
 
-def _circuit_breaker_policy(provider: Provider) -> dict:
+def circuit_policy(provider: Provider) -> circuit_breaker.CircuitPolicy:
     stored = (
         provider.circuit_breaker_policy if isinstance(provider.circuit_breaker_policy, dict) else {}
     )
-    return {
-        "enabled": bool(stored.get("enabled", False)),
-        "failure_threshold_pct": _int_policy_value(
+    return circuit_breaker.CircuitPolicy(
+        enabled=bool(stored.get("enabled", False)),
+        failure_threshold_pct=_int_policy_value(
             stored.get("failure_threshold_pct"),
             50,
             minimum=0,
             maximum=100,
         ),
-        "min_request_count": _int_policy_value(stored.get("min_request_count"), 20, minimum=0),
-        "window_seconds": _int_policy_value(stored.get("window_seconds"), 60, minimum=1),
-        "cooldown_seconds": _int_policy_value(stored.get("cooldown_seconds"), 30, minimum=1),
-    }
-
-
-def _raise_if_circuit_open(provider: Provider) -> None:
-    policy = _circuit_breaker_policy(provider)
-    if not policy["enabled"]:
-        return
-    now = datetime.now(UTC)
-    open_until = _provider_circuit_open_until.get(provider.id)
-    if open_until and open_until > now:
-        raise ProviderUpstreamError(
-            status_code=503,
-            body={"error": "provider circuit is open"},
-            failure_reason="circuit_open",
-        )
-    if open_until:
-        _provider_circuit_open_until.pop(provider.id, None)
-
-
-def _record_circuit_success(provider: Provider) -> None:
-    policy = _circuit_breaker_policy(provider)
-    if not policy["enabled"]:
-        return
-    _record_circuit_event(provider, succeeded=True, policy=policy)
-    _provider_circuit_open_until.pop(provider.id, None)
-
-
-def _record_circuit_failure(provider: Provider) -> None:
-    policy = _circuit_breaker_policy(provider)
-    if not policy["enabled"]:
-        return
-    now = datetime.now(UTC)
-    events = _record_circuit_event(provider, succeeded=False, policy=policy, now=now)
-    if len(events) < policy["min_request_count"]:
-        return
-    failure_count = sum(1 for _, succeeded in events if not succeeded)
-    failure_pct = int((failure_count / len(events)) * 100)
-    if failure_pct < policy["failure_threshold_pct"]:
-        return
-    _provider_circuit_open_until[provider.id] = now + timedelta(
-        seconds=policy["cooldown_seconds"],
+        min_request_count=_int_policy_value(
+            stored.get("min_request_count"),
+            20,
+            minimum=0,
+        ),
+        window_seconds=_int_policy_value(
+            stored.get("window_seconds"),
+            60,
+            minimum=1,
+        ),
+        cooldown_seconds=_int_policy_value(
+            stored.get("cooldown_seconds"),
+            30,
+            minimum=1,
+        ),
     )
 
 
-def _record_circuit_event(
-    provider: Provider,
-    *,
-    succeeded: bool,
-    policy: dict,
-    now: datetime | None = None,
-) -> deque[tuple[datetime, bool]]:
-    recorded_at = now or datetime.now(UTC)
-    events = _provider_circuit_events[provider.id]
-    events.append((recorded_at, succeeded))
-    window_started_at = recorded_at.timestamp() - policy["window_seconds"]
-    while events and events[0][0].timestamp() < window_started_at:
-        events.popleft()
-    return events
+async def provider_operational_states(
+    providers: list[Provider],
+) -> dict[UUID, circuit_breaker.CircuitSnapshot]:
+    if not providers:
+        return {}
+    try:
+        return await circuit_breaker.get_circuit_backend().get_snapshots(
+            [
+                (provider.org_id, provider.id, circuit_policy(provider))
+                for provider in providers
+            ]
+        )
+    except circuit_breaker.CircuitStorageError as exc:
+        record_provider_circuit_storage_failure(backend=_circuit_backend_label())
+        logger.warning("provider_circuit_storage_failed", operation="snapshot")
+        raise _provider_state_unavailable() from exc
 
 
-def _provider_concurrency_slot(provider: Provider):
-    if provider.max_concurrent_requests is None:
-        return _NoopAsyncContext()
-    stored = _provider_semaphores.get(provider.id)
-    if stored is None or stored[0] != provider.max_concurrent_requests:
-        semaphore = asyncio.Semaphore(provider.max_concurrent_requests)
-        _provider_semaphores[provider.id] = (provider.max_concurrent_requests, semaphore)
-        return semaphore
-    _, semaphore = stored
-    return semaphore
+async def _record_final_circuit_error(
+    circuit: _CircuitExecution,
+    error: ProviderUpstreamError,
+) -> None:
+    if _is_circuit_failure(error):
+        await circuit.failure()
+    elif error.failure_reason in {
+        "circuit_open",
+        "credential_error",
+        "provider_state_unavailable",
+    }:
+        await circuit.abandon()
+    else:
+        await circuit.success()
 
 
-class _NoopAsyncContext:
-    async def __aenter__(self):
-        return None
-
-    async def __aexit__(self, exc_type, exc, tb):
+def _is_circuit_failure(error: ProviderUpstreamError) -> bool:
+    if error.failure_reason in {
+        "circuit_open",
+        "credential_error",
+        "provider_state_unavailable",
+    }:
         return False
+    return (
+        error.failure_reason
+        in {"timeout", "rate_limited", "connection_failed", "stream_failed", "invalid_response"}
+        or error.status_code in {408, 429}
+        or error.status_code >= 500
+    )
+
+
+def _provider_state_unavailable() -> ProviderUpstreamError:
+    return ProviderUpstreamError(
+        status_code=503,
+        body={"error": "provider state unavailable"},
+        failure_reason="provider_state_unavailable",
+    )
+
+
+def _circuit_backend_label() -> str:
+    return settings.provider_runtime_state_backend
 
 
 def _int_policy_value(

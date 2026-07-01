@@ -207,6 +207,55 @@ async def test_spend_insights_returns_limit_policy_budget_burn(db_session: Async
 
 
 @pytest.mark.asyncio
+async def test_budget_burn_aggregates_micro_cents_before_rounding(
+    db_session: AsyncSession,
+) -> None:
+    identity = await _create_usage_identity(db_session)
+    limit_policy_id = uuid4()
+    limit_policy_rule_id = uuid4()
+    await _create_limit_policy_fixture(
+        db_session,
+        org_id=identity.org_id,
+        policy_id=limit_policy_id,
+        rule_id=limit_policy_rule_id,
+        name="Tiny request budget",
+        rule_name="Monthly budget",
+        limit_type="budget_cents",
+        limit_value=1000,
+    )
+    shared = {
+        "org_id": identity.org_id,
+        "team_id": identity.team_id,
+        "project_id": identity.project_id,
+        "limit_policy_ids": [str(limit_policy_id)],
+        "limit_policy_rule_ids": [str(limit_policy_rule_id)],
+        "virtual_key_id": identity.virtual_key_id,
+        "pool_id": identity.pool_id,
+        "provider_id": identity.provider_id,
+        "provider_credential_id": None,
+        "requested_model": "gpt-5-mini",
+        "provider_model": "gpt-5-mini",
+        "http_status": 200,
+        "latency_ms": 100,
+        "total_tokens": 1,
+        "cost_cents": 1,
+        "cost_micro_cents": 15,
+        "usage_source": "estimated",
+    }
+    db_session.add_all(UsageRecord(**shared) for _ in range(10_000))
+    await db_session.commit()
+
+    insights = await usage_facade.get_spend_insights(
+        org_id=identity.org_id,
+        window="lifetime",
+        db=db_session,
+    )
+
+    assert insights.limit_policy_budget_burn[0].spent_cents == 1
+    assert insights.limit_policy_budget_burn[0].remaining_cents == 999
+
+
+@pytest.mark.asyncio
 async def test_budget_burn_uses_policy_rule_interval_not_usage_window(
     db_session: AsyncSession,
 ) -> None:
@@ -578,7 +627,7 @@ async def test_limit_policy_usage_matches_exact_json_uuid_values(
             completion_tokens=0,
             total_tokens=10,
             cost_cents=25,
-            cost_micro_cents=0,
+            cost_micro_cents=None,
             dimension_snapshot={},
             created_at=target_usage.created_at,
         )
@@ -603,7 +652,7 @@ async def test_limit_policy_usage_matches_exact_json_uuid_values(
     assert prompt_tokens == 10
     assert completion_tokens == 0
     assert cost_cents == 25
-    assert cost_micro_cents == 0
+    assert cost_micro_cents == 25_000_000
 
 
 @pytest.mark.asyncio
